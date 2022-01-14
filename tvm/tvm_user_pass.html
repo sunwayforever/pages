@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TVM User Pass</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">TVM User Pass</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org55784a0">1. <span class="done DONE">DONE</span> TVM User Pass</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org55784a0" class="outline-2">
+<h2 id="org55784a0"><span class="section-number-2">1</span> <span class="done DONE">DONE</span> TVM User Pass</h2>
+<div class="outline-text-2" id="text-1">
+<ul class="org-ul">
+<li>State "DONE"       from              <span class="timestamp-wrapper"><span class="timestamp">[2021-09-26 日 12:18]</span></span></li>
+</ul>
+
+
+<p>
+下面实现的 `Broadcast` transform 是为了解决 dnnl 无法处理 broadcast 的问题, 做法是针对某些操作 (如 add), 把它的 lhs 和 rhs 按需加上 broadcast_to 操作
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-09-24 10:32</span>
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+<span style="color: #859900;">from</span> tvm.contrib <span style="color: #859900;">import</span> graph_executor
+<span style="color: #859900;">from</span> tvm.topi.utils <span style="color: #859900;">import</span> get_const_tuple
+
+
+<span style="color: #b58900;">@relay.transform.function_pass</span><span style="color: #757575;">(</span>opt_level=1<span style="color: #757575;">)</span>
+<span style="color: #859900;">class</span> <span style="color: #b58900;">Broadcast</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> *args<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">self</span>.supported_ops = args
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">transform_function</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> func<span style="color: #757575;">,</span> mod<span style="color: #757575;">,</span> ctx<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">obj</span> = <span style="color: #859900;">self</span>
+
+        <span style="color: #859900;">class</span> <span style="color: #b58900;">BroadcastTo</span><span style="color: #757575;">(</span>tvm.relay.ExprMutator<span style="color: #757575;">)</span>:
+            <span style="color: #859900;">def</span> <span style="color: #268bd2;">infer_type</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> node<span style="color: #757575;">)</span>:
+                <span style="color: #268bd2;">mod</span> = tvm.IRModule.from_expr<span style="color: #757575;">(</span>node<span style="color: #757575;">)</span>
+                <span style="color: #268bd2;">mod</span> = relay.transform.InferType<span style="color: #757575;">()(</span>mod<span style="color: #757575;">)</span>
+                <span style="color: #268bd2;">entry</span> = mod[<span style="color: #2aa198;">"main"</span>]
+                <span style="color: #859900;">return</span> entry <span style="color: #859900;">if</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>node<span style="color: #757575;">,</span> relay.Function<span style="color: #757575;">)</span> <span style="color: #859900;">else</span> entry.body
+
+            <span style="color: #859900;">def</span> <span style="color: #268bd2;">visit_call</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> call<span style="color: #757575;">)</span>:
+                <span style="color: #859900;">if</span> call.op.name <span style="color: #859900;">not</span> <span style="color: #859900;">in</span> obj.supported_ops:
+                    <span style="color: #859900;">return</span> <span style="color: #839496;">super</span><span style="color: #757575;">()</span>.visit_call<span style="color: #757575;">(</span>call<span style="color: #757575;">)</span>
+
+                <span style="color: #859900;">if</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span>call.args<span style="color: #757575;">)</span> != 2:
+                    <span style="color: #859900;">raise</span> <span style="color: #b58900;">TypeError</span><span style="color: #757575;">(</span>
+                        f<span style="color: #2aa198;">"only 2 args is supported, {call.op.name} have {len(call.args)} args"</span>
+                    <span style="color: #757575;">)</span>
+                <span style="color: #268bd2;">lhs</span> = <span style="color: #859900;">self</span>.visit<span style="color: #757575;">(</span>call.args[0]<span style="color: #757575;">)</span>
+                <span style="color: #268bd2;">rhs</span> = <span style="color: #859900;">self</span>.visit<span style="color: #757575;">(</span>call.args[1]<span style="color: #757575;">)</span>
+                <span style="color: #268bd2;">lhs_shape</span> = get_const_tuple<span style="color: #757575;">(</span><span style="color: #859900;">self</span>.infer_type<span style="color: #757575;">(</span>lhs<span style="color: #757575;">)</span>.checked_type.shape<span style="color: #757575;">)</span>
+                <span style="color: #268bd2;">rhs_shape</span> = get_const_tuple<span style="color: #757575;">(</span><span style="color: #859900;">self</span>.infer_type<span style="color: #757575;">(</span>rhs<span style="color: #757575;">)</span>.checked_type.shape<span style="color: #757575;">)</span>
+
+                <span style="color: #268bd2;">dtype</span> = <span style="color: #859900;">self</span>.infer_type<span style="color: #757575;">(</span>lhs<span style="color: #757575;">)</span>.checked_type.dtype
+                <span style="color: #268bd2;">out_shape</span> = np.broadcast<span style="color: #757575;">(</span>np.empty<span style="color: #757575;">(</span>lhs_shape<span style="color: #757575;">),</span> np.empty<span style="color: #757575;">(</span>rhs_shape<span style="color: #757575;">))</span>.shape
+
+                <span style="color: #859900;">if</span> out_shape != lhs_shape:
+                    <span style="color: #268bd2;">lhs</span> = relay.op.broadcast_to<span style="color: #757575;">(</span>lhs<span style="color: #757575;">,</span> out_shape<span style="color: #757575;">)</span>
+                <span style="color: #859900;">if</span> out_shape != rhs_shape:
+                    <span style="color: #268bd2;">rhs</span> = relay.op.broadcast_to<span style="color: #757575;">(</span>rhs<span style="color: #757575;">,</span> out_shape<span style="color: #757575;">)</span>
+
+                <span style="color: #859900;">return</span> relay.expr.Call<span style="color: #757575;">(</span>
+                    call.op<span style="color: #757575;">,</span> <span style="color: #757575;">(</span>lhs<span style="color: #757575;">,</span> rhs<span style="color: #757575;">),</span> call.attrs<span style="color: #757575;">,</span> call.type_args<span style="color: #757575;">,</span> call.span
+                <span style="color: #757575;">)</span>
+
+        <span style="color: #859900;">return</span> BroadcastTo<span style="color: #757575;">()</span>.visit<span style="color: #757575;">(</span>func<span style="color: #757575;">)</span>
+
+
+<span style="color: #268bd2;">shape_a</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">shape_b</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">shape_c</span> = <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">),</span> <span style="color: #757575;">(</span>1<span style="color: #757575;">,),</span> <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">a</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"a"</span><span style="color: #757575;">,</span> shape=shape_a<span style="color: #757575;">,</span> dtype=<span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">b</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"b"</span><span style="color: #757575;">,</span> shape=shape_b<span style="color: #757575;">,</span> dtype=<span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">c</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"c"</span><span style="color: #757575;">,</span> shape=shape_c<span style="color: #757575;">,</span> dtype=<span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">out</span> = relay.add<span style="color: #757575;">(</span>a<span style="color: #757575;">,</span> b<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">out</span> = relay.add<span style="color: #757575;">(</span>out<span style="color: #757575;">,</span> c<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">func</span> = relay.Function<span style="color: #757575;">(</span>[a<span style="color: #757575;">,</span> b<span style="color: #757575;">,</span> c]<span style="color: #757575;">,</span> out<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span> = tvm.IRModule.from_expr<span style="color: #757575;">(</span>func<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"----------before----------"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"----------after----------"</span><span style="color: #757575;">)</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">tvm &#30340; dnnl &#30340; add &#25805;&#20316;&#19981;&#25903;&#25345;&#33258;&#21160; broadcast, &#25152;&#20197;&#27809;&#26377;&#19979;&#38754;&#19968;&#21477;&#20250;&#25253;&#38169;</span>
+<span style="color: #268bd2;">mod</span> = Broadcast<span style="color: #757575;">(</span><span style="color: #2aa198;">"add"</span><span style="color: #757575;">)(</span>mod<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span> = relay.transform.AnnotateTarget<span style="color: #757575;">(</span><span style="color: #2aa198;">"dnnl"</span><span style="color: #757575;">)(</span>mod<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span> = relay.transform.PartitionGraph<span style="color: #757575;">()(</span>mod<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>opt_level=0<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">lib</span> = relay.build<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> target=<span style="color: #2aa198;">"llvm"</span><span style="color: #757575;">,</span> params=<span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">rt_mod</span> = graph_executor.GraphModule<span style="color: #757575;">(</span>lib[<span style="color: #2aa198;">"default"</span>]<span style="color: #757575;">(</span>tvm.cpu<span style="color: #757575;">(</span>0<span style="color: #757575;">)))</span>
+<span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">z</span> = np.ones<span style="color: #757575;">(</span>shape_a<span style="color: #757575;">),</span> np.ones<span style="color: #757575;">(</span>shape_b<span style="color: #757575;">),</span> np.ones<span style="color: #757575;">(</span>shape_c<span style="color: #757575;">)</span>
+rt_mod.set_input<span style="color: #757575;">(</span><span style="color: #2aa198;">"a"</span><span style="color: #757575;">,</span> x<span style="color: #757575;">)</span>
+rt_mod.set_input<span style="color: #757575;">(</span><span style="color: #2aa198;">"b"</span><span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+rt_mod.set_input<span style="color: #757575;">(</span><span style="color: #2aa198;">"c"</span><span style="color: #757575;">,</span> z<span style="color: #757575;">)</span>
+rt_mod.run<span style="color: #757575;">()</span>
+<span style="color: #268bd2;">result</span> = rt_mod.get_output<span style="color: #757575;">(</span>0<span style="color: #757575;">)</span>.numpy<span style="color: #757575;">()</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>result<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+-----&#x2013;&#x2014;before-----&#x2013;&#x2014;
+def @main(%a: Tensor[(1, 10), float32], %b: Tensor[(1), float32], %c: Tensor[(1, 10), float32]) {
+  %0 = add(%a, %b);
+  add(%0, %c)
+}
+</p>
+
+<p>
+-----&#x2013;&#x2014;after-----&#x2013;&#x2014;
+def @main(%a: Tensor[(1, 10), float32], %b: Tensor[(1), float32], %c: Tensor[(1, 10), float32]) -&gt; Tensor[(1, 10), float32] {
+  %0 = broadcast_to(%b, shape=[1, 10], dtype="") <i>* ty=Tensor[(1, 10), float32] *</i>;
+  %1 = @tvmgen_default_dnnl_main_0(%a, %0) <i>* ty=Tensor[(1, 10), float32] *</i>;
+  @tvmgen_default_dnnl_main_2(%1, %c) <i>* ty=Tensor[(1, 10), float32] *</i>
+}
+</p>
+
+<p>
+def @tvmgen_default_dnnl_main_0(%dnnl_0_i0: Tensor[(1, 10), float32], %dnnl_0_i1: Tensor[(1, 10), float32], Inline=1, Compiler="dnnl", global_symbol="tvmgen_default_dnnl_main_0", Primitive=1) -&gt; Tensor[(1, 10), float32] {
+  add(%dnnl_0_i0, %dnnl_0_i1) <i>* ty=Tensor[(1, 10), float32] *</i>
+}
+</p>
+
+<p>
+def @tvmgen_default_dnnl_main_2(%dnnl_2_i0: Tensor[(1, 10), float32], %dnnl_2_i1: Tensor[(1, 10), float32], Inline=1, Compiler="dnnl", global_symbol="tvmgen_default_dnnl_main_2", Primitive=1) -&gt; Tensor[(1, 10), float32] {
+  add(%dnnl_2_i0, %dnnl_2_i1) <i>* ty=Tensor[(1, 10), float32] *</i>
+}
+</p>
+
+<p>
+
+</p>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

@@ -1,0 +1,422 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rust Trait</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Rust Trait</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgaa0001b">1. Rust Trait</a>
+<ul>
+<li><a href="#org6a7eda1">1.1. Overview</a></li>
+<li><a href="#orgf5dfdb5">1.2. static dispatching: trait bounds</a></li>
+<li><a href="#org2782b96">1.3. dynamic dispatching: trait object</a></li>
+<li><a href="#orgf1d895c">1.4. trait object layout</a></li>
+<li><a href="#org534906c">1.5. built-in trait</a>
+<ul>
+<li><a href="#orgbe1d5e3">1.5.1. Drop</a></li>
+<li><a href="#org97eb962">1.5.2. Clone</a></li>
+<li><a href="#org8e803c1">1.5.3. Copy</a></li>
+<li><a href="#org2f8f651">1.5.4. Deref &amp; DerefMut</a></li>
+<li><a href="#org4da5964">1.5.5. From &amp; To</a></li>
+<li><a href="#orga9da9d3">1.5.6. AsRef &amp; AsMut</a></li>
+<li><a href="#orgd711c8e">1.5.7. FromIterator</a></li>
+<li><a href="#orgfa59d49">1.5.8. IntoIterator</a></li>
+<li><a href="#org9580aa8">1.5.9. Default</a></li>
+<li><a href="#org9ba828c">1.5.10. Debug</a></li>
+<li><a href="#orgd8f73f8">1.5.11. Fn &amp; FnMut &amp; FnOnce</a></li>
+<li><a href="#orge9f3986">1.5.12. PartialOrd, PartialEq</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgaa0001b" class="outline-2">
+<h2 id="orgaa0001b"><span class="section-number-2">1</span> Rust Trait</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org6a7eda1" class="outline-3">
+<h3 id="org6a7eda1"><span class="section-number-3">1.1</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #859900;">use</span> <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #268bd2; font-weight: bold;">cell</span>::<span style="color: #b58900;">RefCell</span>;
+<span style="color: #859900;">use</span> <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #268bd2; font-weight: bold;">rc</span>::<span style="color: #b58900;">Rc</span>;
+<span style="color: #859900;">trait</span> <span style="color: #b58900;">Move</span> <span style="color: #757575;">{</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#40664;&#35748;&#23454;&#29616;</span>
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">walk</span><span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"default walk"</span><span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">run</span><span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span> -&gt; <span style="color: #757575;">()</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">struct</span> <span style="color: #b58900;">Cat</span><span style="color: #757575;">()</span>;
+<span style="color: #859900;">impl</span> <span style="color: #b58900;">Move</span> <span style="color: #859900;">for</span> <span style="color: #b58900;">Cat</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">run</span><span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span> -&gt; <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"cat run"</span><span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">struct</span> <span style="color: #b58900;">Dog</span><span style="color: #757575;">()</span>;
+<span style="color: #859900;">impl</span> <span style="color: #b58900;">Move</span> <span style="color: #859900;">for</span> <span style="color: #b58900;">Dog</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">run</span><span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span> -&gt; <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"dog run"</span><span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">walk</span><span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span> -&gt; <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"dog walk"</span><span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">struct</span> <span style="color: #b58900;">Donkey</span><span style="color: #757575;">()</span>;
+<span style="color: #859900;">impl</span> <span style="color: #b58900;">Move</span> <span style="color: #859900;">for</span> <span style="color: #b58900;">Donkey</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">run</span><span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span> -&gt; <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"donkey run"</span><span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">walk</span><span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span> -&gt; <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"donkey walk"</span><span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">do_move_static</span>&lt;<span style="color: #b58900;">T</span>&gt;<span style="color: #757575;">(</span><span style="color: #268bd2;">t</span>: <span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #b58900;">T</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">where</span>
+    <span style="color: #268bd2;">T</span>: <span style="color: #b58900;">Move</span><span style="color: #757575;">,</span>
+<span style="color: #757575;">{</span>
+    t.run<span style="color: #757575;">()</span>;
+    t.walk<span style="color: #757575;">()</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">do_move_static_2</span><span style="color: #757575;">(</span><span style="color: #268bd2;">t</span>: <span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">impl</span> <span style="color: #b58900;">Move</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    t.run<span style="color: #757575;">()</span>;
+    t.walk<span style="color: #757575;">()</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">do_move_dynamaic</span><span style="color: #757575;">(</span><span style="color: #268bd2;">t</span>: <span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #b58900;">Move</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    t.run<span style="color: #757575;">()</span>;
+    t.walk<span style="color: #757575;">()</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">do_move_dynamaic_2</span><span style="color: #757575;">(</span><span style="color: #268bd2;">t</span>: <span style="color: #b58900;">Box</span>&lt;<span style="color: #859900;">dyn</span> <span style="color: #b58900;">Move</span>&gt;<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    t.run<span style="color: #757575;">()</span>;
+    t.walk<span style="color: #757575;">()</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">do_move_dynamaic_3</span><span style="color: #757575;">(</span><span style="color: #268bd2;">t</span>: <span style="color: #b58900;">Rc</span>&lt;<span style="color: #859900;">dyn</span> <span style="color: #b58900;">Move</span>&gt;<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    t.run<span style="color: #757575;">()</span>;
+    t.walk<span style="color: #757575;">()</span>;
+<span style="color: #757575;">}</span>
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"-------------"</span><span style="color: #757575;">)</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">cat</span> = <span style="color: #b58900;">Cat</span><span style="color: #757575;">()</span>;
+    cat.walk<span style="color: #757575;">()</span>;
+    cat.run<span style="color: #757575;">()</span>;
+
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"-------------"</span><span style="color: #757575;">)</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">dog</span> = <span style="color: #b58900;">Dog</span><span style="color: #757575;">()</span>;
+    dog.walk<span style="color: #757575;">()</span>;
+    dog.run<span style="color: #757575;">()</span>;
+
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"-------------"</span><span style="color: #757575;">)</span>;
+    do_move_static<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #b58900;">Donkey</span><span style="color: #757575;">())</span>;
+    do_move_static_2<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #b58900;">Donkey</span><span style="color: #757575;">())</span>;
+
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"-------------"</span><span style="color: #757575;">)</span>;
+    do_move_dynamaic<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #b58900;">Donkey</span><span style="color: #757575;">())</span>;
+    do_move_dynamaic_2<span style="color: #757575;">(</span><span style="color: #b58900;">Box</span>::new<span style="color: #757575;">(</span><span style="color: #b58900;">Cat</span><span style="color: #757575;">()))</span>;
+    do_move_dynamaic_3<span style="color: #757575;">(</span><span style="color: #b58900;">Rc</span>::new<span style="color: #757575;">(</span><span style="color: #b58900;">Donkey</span><span style="color: #757575;">()))</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+default walk
+cat run
+dog walk
+dog run
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf5dfdb5" class="outline-3">
+<h3 id="orgf5dfdb5"><span class="section-number-3">1.2</span> static dispatching: trait bounds</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+
+</p>
+</div>
+</div>
+
+<div id="outline-container-org2782b96" class="outline-3">
+<h3 id="org2782b96"><span class="section-number-3">1.3</span> dynamic dispatching: trait object</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+<a href="https://brson.github.io/rust-anthology/1/all-about-trait-objects.html">https://brson.github.io/rust-anthology/1/all-about-trait-objects.html</a>
+<a href="https://alschwalm.com/blog/static/2017/03/07/exploring-dynamic-dispatch-in-rust/">https://alschwalm.com/blog/static/2017/03/07/exploring-dynamic-dispatch-in-rust/</a>
+</p>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #859900;">trait</span> <span style="color: #b58900;">Move</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">walk</span><span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span>;
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">run</span><span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">struct</span> <span style="color: #b58900;">Dog</span><span style="color: #757575;">()</span>;
+<span style="color: #859900;">impl</span> <span style="color: #b58900;">Move</span> <span style="color: #859900;">for</span> <span style="color: #b58900;">Dog</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">run</span><span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span> -&gt; <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"dog run"</span><span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">walk</span><span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span> -&gt; <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"dog walk"</span><span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">error[E0277]: the size for values of type `(dyn Move + 'static)` cannot be</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">known at compilation time</span>
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">do_move_dynamaic</span><span style="color: #757575;">(</span><span style="color: #268bd2;">t</span>: <span style="color: #b58900;">Move</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    t.run<span style="color: #757575;">()</span>;
+    t.walk<span style="color: #757575;">()</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    do_move_dynamaic<span style="color: #757575;">(</span><span style="color: #b58900;">Dog</span><span style="color: #757575;">())</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+上面的代码编译出错, 因为 do_move_dynamaic 的参数大小未知: t 的值可能是 Cat 或
+Dog, 两种 struct 的大小并不一定相同, 导致无法编译 do_move_dynamaic.
+</p>
+
+<p>
+解决的方法是 do_move_dynamaic 接受一个 Move 的 `引用`, 例如 `&amp;Move`, 或
+`Box&lt;Move&gt;`, `Rc&lt;Move&gt;`
+</p>
+
+<p>
+但实际情况 do_move_dynamaic 并非简单的接受一个引用: 编译器会生成一个新的类型:
+trait object, 即编译时报错的 `(dyn Move + `static)` 类型. do_move_dynamaic 的参数实际上是 trait object 的引用
+</p>
+
+<p>
+trait object 是编译器自动生成的, 其格式大约是:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #859900;">pub</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">TraitObject</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">pub</span> <span style="color: #268bd2;">data</span>: *<span style="color: #859900;">mut</span> <span style="color: #757575;">(),</span>
+    <span style="color: #859900;">pub</span> <span style="color: #268bd2;">vtable</span>: *<span style="color: #859900;">mut</span> <span style="color: #757575;">(),</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+当调用 `do_move_dynamaic(&amp;Dog())` 时, 会生成一个针对 Dog 的 TraitObject:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #859900;">static</span> <span style="color: #268bd2;">move_for_dog_vtable</span>: <span style="color: #b58900;">DogVtable</span> = <span style="color: #b58900;">DogVtable</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2;">destructor</span>: <span style="color: #586e75;">/* </span><span style="color: #586e75;">compiler magic */</span><span style="color: #757575;">,</span>
+    <span style="color: #268bd2;">size</span>: 2<span style="color: #757575;">,</span>
+    <span style="color: #268bd2;">align</span>: 1<span style="color: #757575;">,</span>
+
+    <span style="color: #268bd2;">method</span>: walk_of_dog <span style="color: #859900;">as</span> <span style="color: #859900;">fn</span><span style="color: #757575;">(</span>*<span style="color: #859900;">const</span> <span style="color: #757575;">()),</span>
+    <span style="color: #268bd2;">method</span>: run_of_dog <span style="color: #859900;">as</span> <span style="color: #859900;">fn</span><span style="color: #757575;">(</span>*<span style="color: #859900;">const</span> <span style="color: #757575;">()),</span>
+<span style="color: #757575;">}</span>;
+
+<span style="color: #859900;">let</span> <span style="color: #268bd2;">dog</span>: <span style="color: #b58900;">Dog</span> = <span style="color: #b58900;">Dog</span><span style="color: #757575;">()</span>;
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">let b: &amp;Foo = &amp;a;</span>
+<span style="color: #859900;">let</span> <span style="color: #268bd2;">dog_trait</span> = <span style="color: #b58900;">TraitObject</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2;">data</span>: <span style="color: #839496; background-color: #002b36;">&amp;</span>dog<span style="color: #757575;">,</span>
+    <span style="color: #268bd2;">vtable</span>: <span style="color: #839496; background-color: #002b36;">&amp;</span>move_for_dog_vtable
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+
+<p>
+当调用 Move.walk 时, 会使用类似的代码:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #757575;">(</span>dog_trait.vtable.walk_of_dog<span style="color: #757575;">)</span>.<span style="color: #757575;">(</span>dog_trait.data<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgf1d895c" class="outline-3">
+<h3 id="orgf1d895c"><span class="section-number-3">1.4</span> trait object layout</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+`call (&amp;||{})` 时, `call` 拿到的参数 `f` 实际是一个自动生成的 trait object.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #859900;">fn</span> <span style="color: #268bd2;">call</span><span style="color: #757575;">(</span><span style="color: #268bd2;">f</span>: <span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">dyn</span> <span style="color: #b58900;">Fn</span><span style="color: #757575;">())</span> -&gt; <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"\ncall:"</span><span style="color: #757575;">)</span>;
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"f is at: </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #839496; background-color: #002b36;">&amp;</span>f <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _<span style="color: #757575;">)</span>;
+
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"\nmain:"</span><span style="color: #757575;">)</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">x</span> = -1 <span style="color: #859900;">as</span> <span style="color: #b58900;">i64</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">c</span> = <span style="color: #859900;">move</span> || <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> x<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>;
+
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"size of closure: </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #268bd2; font-weight: bold;">mem</span>::size_of_val<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span>c<span style="color: #757575;">))</span>;
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"closure is at: </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #839496; background-color: #002b36;">&amp;</span>c <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _<span style="color: #757575;">)</span>;
+    <span style="color: #cb4b16; font-weight: bold;">unsafe</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"closure value: </span><span style="color: #2aa198; font-style: italic;">{:x}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> *<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span>c <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _ <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> <span style="color: #b58900;">i64</span><span style="color: #757575;">))</span>;
+    <span style="color: #757575;">}</span>
+    call<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span>c<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+使用 rust-gdb 观察:
+</p>
+
+<pre class="example" id="orgc97347e">
+$&gt; rust-gdb ./Test
+(gdb)
+main:
+size of closure: 8
+closure is at: 0x7fffffffd4a0
+closure value: ffffffffffffffff
+
+call:
+f is at: 0x7fffffffd380
+
+(gdb) x /2gx 0x7fffffffd380
+0x7fffffffd380: 0x00007fffffffd4a0      0x0000555555583180
+
+// 0x00007fffffffd4a0 是 closure 的地址, 0x0000555555583180 是 vtable 的地址
+// 所以 trait object 格式为 [closure_addr; vtable_addr]
+
+(gdb) x /20gx 0x0000555555583180
+0x555555583180: 0x0000555555558470      0x0000000000000008
+0x555555583190: 0x0000000000000008      0x0000555555558620
+
+// 一个典型的 vtable 的格式为:
+// struct FooVtable {
+//     destructor: fn(*mut ()),
+//     size: usize,
+//     align: usize,
+//     method: fn(*const ()) -&gt; (),
+// }
+
+所以 0x0000555555558620 应该是 closure 的代码:
+
+$&gt; nm -C Test|grep closure
+666:0000000000004620 t Test::main::{{closure}}
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org534906c" class="outline-3">
+<h3 id="org534906c"><span class="section-number-3">1.5</span> built-in trait</h3>
+<div class="outline-text-3" id="text-1-5">
+</div>
+<div id="outline-container-orgbe1d5e3" class="outline-4">
+<h4 id="orgbe1d5e3"><span class="section-number-4">1.5.1</span> Drop</h4>
+</div>
+
+<div id="outline-container-org97eb962" class="outline-4">
+<h4 id="org97eb962"><span class="section-number-4">1.5.2</span> Clone</h4>
+</div>
+
+<div id="outline-container-org8e803c1" class="outline-4">
+<h4 id="org8e803c1"><span class="section-number-4">1.5.3</span> Copy</h4>
+</div>
+
+<div id="outline-container-org2f8f651" class="outline-4">
+<h4 id="org2f8f651"><span class="section-number-4">1.5.4</span> Deref &amp; DerefMut</h4>
+</div>
+
+<div id="outline-container-org4da5964" class="outline-4">
+<h4 id="org4da5964"><span class="section-number-4">1.5.5</span> From &amp; To</h4>
+</div>
+
+<div id="outline-container-orga9da9d3" class="outline-4">
+<h4 id="orga9da9d3"><span class="section-number-4">1.5.6</span> AsRef &amp; AsMut</h4>
+</div>
+
+<div id="outline-container-orgd711c8e" class="outline-4">
+<h4 id="orgd711c8e"><span class="section-number-4">1.5.7</span> FromIterator</h4>
+</div>
+
+<div id="outline-container-orgfa59d49" class="outline-4">
+<h4 id="orgfa59d49"><span class="section-number-4">1.5.8</span> IntoIterator</h4>
+</div>
+
+<div id="outline-container-org9580aa8" class="outline-4">
+<h4 id="org9580aa8"><span class="section-number-4">1.5.9</span> Default</h4>
+</div>
+
+<div id="outline-container-org9ba828c" class="outline-4">
+<h4 id="org9ba828c"><span class="section-number-4">1.5.10</span> Debug</h4>
+</div>
+
+<div id="outline-container-orgd8f73f8" class="outline-4">
+<h4 id="orgd8f73f8"><span class="section-number-4">1.5.11</span> Fn &amp; FnMut &amp; FnOnce</h4>
+</div>
+
+<div id="outline-container-orge9f3986" class="outline-4">
+<h4 id="orge9f3986"><span class="section-number-4">1.5.12</span> PartialOrd, PartialEq</h4>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

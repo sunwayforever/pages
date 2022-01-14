@@ -1,0 +1,335 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Backtrace</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Backtrace</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org8a78b48">1. <span class="done DONE">DONE</span> backtrace/libcorkscrew 原理</a>
+<ul>
+<li><a href="#orgb708aec">1.1. unwind_backtrace</a>
+<ul>
+<li><a href="#org64b06dd">1.1.1. 基于 frame pointer</a></li>
+<li><a href="#org37439da">1.1.2. 基于 dwarf</a></li>
+<li><a href="#org9e3f324">1.1.3. 基于代码分析</a></li>
+</ul>
+</li>
+<li><a href="#orgd7e10e1">1.2. find_symbol</a></li>
+<li><a href="#orgb3ad7be">1.3. misc</a>
+<ul>
+<li><a href="#org4c07169">1.3.1. 使用了 omit-frame-pointer 同时又调用了 alloca 的代码如何 unwindle</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org8a78b48" class="outline-2">
+<h2 id="org8a78b48"><span class="section-number-2">1</span> <span class="done DONE">DONE</span> backtrace/libcorkscrew 原理</h2>
+<div class="outline-text-2" id="text-1">
+<ul class="org-ul">
+<li>State "DONE"       from "WAIT"       <span class="timestamp-wrapper"><span class="timestamp">[2020-11-26 四 21:35]</span></span></li>
+</ul>
+<p>
+<span class="timestamp-wrapper"><span class="timestamp">[2020-11-26 四]</span></span>
+</p>
+</div>
+
+<div id="outline-container-orgb708aec" class="outline-3">
+<h3 id="orgb708aec"><span class="section-number-3">1.1</span> unwind_backtrace</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+stack unwindling 的目的是为了得到保存在每个 stack frame 里的 ra (return addr),
+然后在 elf 的符号表中可以 ra 对应的符号
+</p>
+</div>
+
+<div id="outline-container-org64b06dd" class="outline-4">
+<h4 id="org64b06dd"><span class="section-number-4">1.1.1</span> 基于 frame pointer</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+当编译器没有使用 omit-frame-pointer 时, 函数调用时大约会这样:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-mips"><span style="color: #859900;">sw</span>      <span style="color: #b58900;">$fp</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">0</span><span style="color: #757575;">(</span><span style="color: #b58900;">$sp</span><span style="color: #757575;">)</span>         <span style="color: #586e75;"># &#20445;&#23384; fp</span>
+<span style="color: #859900;">move</span>    <span style="color: #b58900;">$fp</span><span style="color: #757575;">,</span> <span style="color: #b58900;">$sp</span>            <span style="color: #586e75;"># fp &#25351;&#21521;&#24403;&#21069; stack base</span>
+<span style="color: #859900;">sub</span>     <span style="color: #b58900;">$sp</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">12</span>             <span style="color: #586e75;"># &#20998;&#37197; stack frame</span>
+<span style="color: #859900;">sw</span>      <span style="color: #b58900;">$ra</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">-4</span><span style="color: #757575;">(</span><span style="color: #b58900;">$fp</span><span style="color: #757575;">)</span>        <span style="color: #586e75;"># &#20445;&#23384; ra, &#20063;&#21487;&#20197;&#29992; sw $ra, 4($sp)</span>
+<span style="color: #859900;">sw</span>      <span style="color: #b58900;">$s1</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">-8</span><span style="color: #757575;">(</span><span style="color: #b58900;">$fp</span><span style="color: #757575;">)</span>        <span style="color: #586e75;"># &#20445;&#23384; callee saved reg, &#20063;&#21487;&#20197;&#29992; sw $ra, 0($sp)</span>
+</pre>
+</div>
+
+<p>
+所以 stack unwindling 时:
+</p>
+
+<ol class="org-ol">
+<li>通过 fp 可以得到当前 stack base</li>
+<li>*(fp) 即上一个 stack frame 的 fp</li>
+<li>*(fp-4) 即 ra</li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-org37439da" class="outline-4">
+<h4 id="org37439da"><span class="section-number-4">1.1.2</span> 基于 dwarf</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+<a href="linux/dwarf.html#org6c15ebe">debug_frame 与 frame unwinding</a>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org9e3f324" class="outline-4">
+<h4 id="org9e3f324"><span class="section-number-4">1.1.3</span> 基于代码分析</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<p>
+当 elf 既没有使用 frame pointer, 又没有提供 eh_debug 时, 如何进行 stack
+unwindling?
+</p>
+
+<p>
+libcorkscrew 的方法大概是:
+</p>
+
+<ol class="org-ol">
+<li>通过 signal 或 ptrace 获得当前 frame 的 pc, sp</li>
+
+<li>ra &lt;- pc</li>
+
+<li>从 ra 开始, 向后依次读取每条指令, 当读到 `add sp, imm` 时, 认为 imm 即是 stack
+size, 把 sp+imm 做为当前 frame 的基址 BP</li>
+
+<li>继续向后扫描到 `sw ra, imm(sp)`, 确定 ra 的 offset 为 imm, 则 BP+imm 的值即是
+ra</li>
+
+<li>重复 3, 处理下一个 frame</li>
+</ol>
+
+
+<div class="org-src-container">
+<pre class="src src-C"><span style="color: #859900;">static</span> <span style="color: #b58900;">ssize_t</span> <span style="color: #268bd2;">unwind_backtrace_common</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">memory_t</span>* <span style="color: #268bd2;">memory</span><span style="color: #757575;">,</span>
+                                       <span style="color: #859900;">const</span> <span style="color: #b58900;">map_info_t</span>* <span style="color: #268bd2;">map_info_list</span><span style="color: #757575;">,</span>
+                                       <span style="color: #b58900;">unwind_state_t</span>* <span style="color: #268bd2;">state</span><span style="color: #757575;">,</span>
+                                       <span style="color: #b58900;">backtrace_frame_t</span>* <span style="color: #268bd2;">backtrace</span><span style="color: #757575;">,</span>
+                                       <span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">ignore_depth</span><span style="color: #757575;">,</span> <span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">max_depth</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">ignored_frames</span> = 0;
+    <span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">returned_frames</span> = 0;
+
+    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">index</span> = 0; returned_frames &lt; max_depth; index++<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #b58900;">uintptr_t</span> <span style="color: #268bd2;">pc</span> = state-&gt;pc;
+
+        frame = add_backtrace_entry<span style="color: #757575;">(</span>pc<span style="color: #757575;">,</span> backtrace<span style="color: #757575;">,</span> ignore_depth<span style="color: #757575;">,</span> max_depth<span style="color: #757575;">,</span>
+                                    &amp;ignored_frames<span style="color: #757575;">,</span> &amp;returned_frames<span style="color: #757575;">)</span>;
+
+        <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>addr = state-&gt;pc; maxcheck-- &gt; 0 &amp;&amp; <span style="color: #b58900; font-weight: bold;">!</span>found_start; addr -= 4<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            <span style="color: #b58900;">uint32_t</span> <span style="color: #268bd2;">op</span>;
+            <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>try_get_word<span style="color: #757575;">(</span>memory<span style="color: #757575;">,</span> addr<span style="color: #757575;">,</span> &amp;op<span style="color: #757575;">))</span> <span style="color: #859900;">break</span>;
+
+            <span style="color: #586e75;">/* </span><span style="color: #586e75;">gcc &#32534;&#35793;&#22120;&#20250;&#29983;&#25104;&#19979;&#38754;&#30340;&#20195;&#30721;:</span>
+<span style="color: #586e75;">             * sw ra, imm(sp)</span>
+<span style="color: #586e75;">             * addiu sp, imm</span>
+<span style="color: #586e75;">             * &#21363;&#21453;&#21521;&#26597;&#25214;&#25351;&#20196;&#26102;, &#20250;&#20808;&#25214;&#21040; 0x27bd0000, &#20877;&#25214;&#21040; 0xafbf0000</span>
+<span style="color: #586e75;">             *</span><span style="color: #586e75;"> */</span>
+            <span style="color: #859900;">switch</span> <span style="color: #757575;">(</span>op &amp; 0xffff0000<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+                <span style="color: #859900;">case</span> 0x27bd0000:  <span style="color: #586e75;">// </span><span style="color: #586e75;">addiu sp, imm</span>
+                <span style="color: #757575;">{</span>
+                    <span style="color: #586e75;">// </span><span style="color: #586e75;">looking for stack being decremented</span>
+                    <span style="color: #b58900;">int32_t</span> <span style="color: #268bd2;">immediate</span> = <span style="color: #757575;">((((</span><span style="color: #b58900;">int</span><span style="color: #757575;">)</span>op<span style="color: #757575;">)</span> &lt;&lt; 16<span style="color: #757575;">)</span> &gt;&gt; 16<span style="color: #757575;">)</span>;
+                    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>immediate &lt; 0<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+                        stack_size = -immediate;
+                        found_start = <span style="color: #268bd2; font-weight: bold;">true</span>;
+                        ALOGV<span style="color: #757575;">(</span><span style="color: #2aa198;">"@0x%08x: found stack adjustment=%d\n"</span><span style="color: #757575;">,</span> addr<span style="color: #757575;">,</span>
+                              stack_size<span style="color: #757575;">)</span>;
+                    <span style="color: #757575;">}</span>
+                <span style="color: #757575;">}</span> <span style="color: #859900;">break</span>;
+                <span style="color: #859900;">case</span> 0xafbf0000:  <span style="color: #586e75;">// </span><span style="color: #586e75;">sw ra, imm(sp)</span>
+                    ra_offset = <span style="color: #757575;">((((</span><span style="color: #b58900;">int</span><span style="color: #757575;">)</span>op<span style="color: #757575;">)</span> &lt;&lt; 16<span style="color: #757575;">)</span> &gt;&gt; 16<span style="color: #757575;">)</span>;
+                    ALOGV<span style="color: #757575;">(</span><span style="color: #2aa198;">"@0x%08x: found ra offset=%d\n"</span><span style="color: #757575;">,</span> addr<span style="color: #757575;">,</span> ra_offset<span style="color: #757575;">)</span>;
+                    <span style="color: #859900;">break</span>;
+                <span style="color: #859900;">default</span>:
+                    <span style="color: #859900;">break</span>;
+            <span style="color: #757575;">}</span>
+        <span style="color: #757575;">}</span>
+
+        <span style="color: #586e75;">/* </span><span style="color: #7cfc00;">NOTE</span><span style="color: #586e75;">: &#21521;&#21518;&#25195;&#25551;&#25351;&#20196;&#26102;&#20250;&#20462;&#27491; state-&gt;sp, &#28982;&#21518;&#20877;&#35835;&#21462; ra_offset &#22788;&#30340;&#20540;</span><span style="color: #586e75;"> */</span>
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>ra_offset<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            <span style="color: #b58900;">uint32_t</span> <span style="color: #268bd2;">next_ra</span>;
+            <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>try_get_word<span style="color: #757575;">(</span>memory<span style="color: #757575;">,</span> state-&gt;sp + ra_offset<span style="color: #757575;">,</span> &amp;next_ra<span style="color: #757575;">))</span> <span style="color: #859900;">break</span>;
+            state-&gt;ra = next_ra;
+        <span style="color: #757575;">}</span>
+
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>stack_size<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>frame<span style="color: #757575;">)</span> frame-&gt;stack_size = stack_size;
+            state-&gt;sp += stack_size;
+        <span style="color: #757575;">}</span>
+
+        state-&gt;pc = state-&gt;ra;
+    <span style="color: #757575;">}</span>
+
+    <span style="color: #859900;">return</span> returned_frames;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgd7e10e1" class="outline-3">
+<h3 id="orgd7e10e1"><span class="section-number-3">1.2</span> find_symbol</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+stack unwindling 确定了每个 frame 对应的 pc, 通过查找 elf 符号表 (symtab,
+dynsym) 来确定每个 frame 对应哪个函数.
+</p>
+
+<p>
+这一步只需要符号表, 并不需要 debug 信息, 所以无法确定具体的行号.
+</p>
+
+<p>
+例如:
+</p>
+
+<pre class="example" id="orgf88748b">
+62: 0000000000001160    22 FUNC    GLOBAL DEFAULT   16 main
+</pre>
+
+<p>
+0x1160 main 在 elf 中的 <b>相对</b> 地址, 22 是 main 的 大小
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span style="color: #b58900;">void</span> <span style="color: #268bd2;">find_symbol_ptrace</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">ptrace_context_t</span>* <span style="color: #268bd2;">context</span><span style="color: #757575;">,</span> <span style="color: #b58900;">uintptr_t</span> <span style="color: #268bd2;">addr</span><span style="color: #757575;">,</span>
+                        <span style="color: #859900;">const</span> <span style="color: #b58900;">map_info_t</span>** <span style="color: #268bd2;">out_map_info</span><span style="color: #757575;">,</span>
+                        <span style="color: #859900;">const</span> <span style="color: #b58900;">symbol_t</span>** <span style="color: #268bd2;">out_symbol</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">map_info_t</span>* <span style="color: #268bd2;">mi</span> = find_map_info<span style="color: #757575;">(</span>context-&gt;map_info_list<span style="color: #757575;">,</span> addr<span style="color: #757575;">)</span>;
+
+    symbol = find_symbol<span style="color: #757575;">(</span>data-&gt;symbol_table<span style="color: #757575;">,</span> addr - mi-&gt;start<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<ol class="org-ol">
+<li>libcorkscrew 拿到的 addr 是进程中的绝对地址</li>
+<li>通过读取 /proc/pid/maps 获得 maps, 根据 addr 获得它位哪个 map</li>
+<li>通过 addr - mi-&gt;start 获得相对地址</li>
+<li>用这个相对地址在 elf 符号表中查找它对应的符号</li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-orgb3ad7be" class="outline-3">
+<h3 id="orgb3ad7be"><span class="section-number-3">1.3</span> misc</h3>
+<div class="outline-text-3" id="text-1-3">
+</div>
+<div id="outline-container-org4c07169" class="outline-4">
+<h4 id="org4c07169"><span class="section-number-4">1.3.1</span> 使用了 omit-frame-pointer 同时又调用了 alloca 的代码如何 unwindle</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<p>
+使用了 alloca 的代码会忽略 omit-frame-pointer&#x2026;
+</p>
+
+<pre class="example" id="orgf237115">
+$&gt; cat test.c
+void foo() {
+  alloca(0xff);
+} 
+$&gt; gcc test.c -c -fomit-frame-pointer -O0
+$&gt; objdump -d test.o
+00000000 &lt;foo&gt;:
+0:   27bdffe8        addiu   sp,sp,-24
+4:   afbe0014        sw      s8,20(sp)
+8:   03a0f025        move    s8,sp           ;; s8 即 fp
+c:   27bdff40        addiu   sp,sp,-256      ;; alloca
+10:   00000000        nop
+14:   03c0e825        move    sp,s8
+18:   8fbe0014        lw      s8,20(sp)
+1c:   27bd0018        addiu   sp,sp,24
+20:   03e00008        jr      ra
+24:   00000000        nop
+
+$&gt; cat test.c
+void foo() {}
+$&gt; gcc test.c -c -O0
+$&gt; objdump -d test.o
+
+00000000 &lt;foo&gt;:
+0:   27bdfff8        addiu   sp,sp,-8
+4:   afbe0004        sw      s8,4(sp)
+8:   03a0f025        move    s8,sp
+c:   00000000        nop
+10:   03c0e825        move    sp,s8
+14:   8fbe0004        lw      s8,4(sp)
+18:   27bd0008        addiu   sp,sp,8
+1c:   03e00008        jr      ra
+20:   00000000        nop
+
+$&gt; gcc test.c -c -O0 -fomit-frame-pointer
+$&gt; objdump -d test.o
+
+00000000 &lt;foo&gt;:
+0:   00000000        nop
+4:   03e00008        jr      ra
+8:   00000000        nop
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

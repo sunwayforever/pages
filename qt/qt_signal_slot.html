@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Qt Signal Slot</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Qt Signal Slot</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org80fd533">1. Qt Signal Slot</a>
+<ul>
+<li><a href="#org8796a73">1.1. Overview</a></li>
+<li><a href="#orgc65de0f">1.2. 找到 id</a></li>
+<li><a href="#orgee49660">1.3. connect</a></li>
+<li><a href="#org8e5ce1e">1.4. activate</a></li>
+<li><a href="#orge37083b">1.5. functor-based signal</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org80fd533" class="outline-2">
+<h2 id="org80fd533"><span class="section-number-2">1</span> Qt Signal Slot</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org8796a73" class="outline-3">
+<h3 id="org8796a73"><span class="section-number-3">1.1</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+qt 底层如何使用 meta object 信息实现 signal / slot, 具体的:
+</p>
+
+<ol class="org-ol">
+<li>如何找到 signal 和 slot 对应的 id</li>
+<li>connection 如何建立</li>
+<li>signal 如何 dispatch 到对应的 slot</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgc65de0f" class="outline-3">
+<h3 id="orgc65de0f"><span class="section-number-3">1.2</span> 找到 id</h3>
+<div class="outline-text-3" id="text-1-2">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::<span style="color: #b58900;">Connection</span> <span style="color: #268bd2; font-weight: bold;">QObject</span>::<span style="color: #268bd2;">connect</span><span style="color: #757575;">(</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">QObject</span> *<span style="color: #268bd2;">sender</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">signal</span><span style="color: #757575;">,</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">QObject</span> *<span style="color: #268bd2;">receiver</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">method</span><span style="color: #757575;">,</span>
+    <span style="color: #268bd2; font-weight: bold;">Qt</span>::<span style="color: #b58900;">ConnectionType</span> <span style="color: #268bd2;">type</span><span style="color: #757575;">)</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">signal, method &#30340;&#31867;&#22411;&#20026; char *, &#26159;&#22240;&#20026; SIGNAL &#21644; SLOT &#23439;&#23454;&#38469;&#19978;&#20026;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;"># define SLOT(a)     "1"#a</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;"># define SIGNAL(a)   "2"#a</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#23427;&#20204;&#25226;&#35201;&#35843;&#29992;&#30340; signal slot &#21464;&#25104;&#20026;&#23383;&#31526;&#20018;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25214;&#21040; signal index</span>
+  <span style="color: #b58900;">int</span> <span style="color: #268bd2;">signal_index</span> = <span style="color: #268bd2; font-weight: bold;">QMetaObjectPrivate</span>::indexOfSignalRelative<span style="color: #757575;">(</span>
+            &amp;smeta<span style="color: #757575;">,</span> signalName<span style="color: #757575;">,</span> signalTypes.size<span style="color: #757575;">(),</span> signalTypes.constData<span style="color: #757575;">())</span>;
+    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">QMetaObject</span> *<span style="color: #268bd2;">m</span> = *baseObject; m; m = m-&gt;d.superdata<span style="color: #757575;">)</span> : 
+      <span style="color: #b58900;">int</span> i = <span style="color: #757575;">(</span>MethodType == MethodSignal<span style="color: #757575;">)</span>
+            ? <span style="color: #757575;">(</span>priv<span style="color: #757575;">(</span>m-&gt;d.data<span style="color: #757575;">)</span>-&gt;signalCount - 1<span style="color: #757575;">)</span> : <span style="color: #757575;">(</span>priv<span style="color: #757575;">(</span>m-&gt;d.data<span style="color: #757575;">)</span>-&gt;methodCount - 1<span style="color: #757575;">)</span>;
+      <span style="color: #859900;">const</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">end</span> = <span style="color: #757575;">(</span>MethodType == MethodSlot<span style="color: #757575;">)</span>
+                    ? <span style="color: #757575;">(</span>priv<span style="color: #757575;">(</span>m-&gt;d.data<span style="color: #757575;">)</span>-&gt;signalCount<span style="color: #757575;">)</span> : 0;
+
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20351;&#29992; metadata &#36827;&#34892;&#20102;&#26576;&#31181;&#23383;&#31526;&#20018;&#30340;&#21305;&#37197;</span>
+      <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>; i &gt;= end; --i<span style="color: #757575;">)</span> : 
+        <span style="color: #b58900;">int</span> handle = priv<span style="color: #757575;">(</span>m-&gt;d.data<span style="color: #757575;">)</span>-&gt;methodData + 5*i;
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>methodMatch<span style="color: #757575;">(</span>m<span style="color: #757575;">,</span> handle<span style="color: #757575;">,</span> name<span style="color: #757575;">,</span> argc<span style="color: #757575;">,</span> types<span style="color: #757575;">))</span>: 
+            *baseObject = m;
+            <span style="color: #859900;">return</span> i;
+    <span style="color: #859900;">return</span> -1;
+
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25214;&#21040; slot index</span>
+  method_index_relative = <span style="color: #268bd2; font-weight: bold;">QMetaObjectPrivate</span>::indexOfSlotRelative<span style="color: #757575;">(</span>
+    &amp;rmeta<span style="color: #757575;">,</span> methodName<span style="color: #757575;">,</span> methodTypes.size<span style="color: #757575;">(),</span> methodTypes.constData<span style="color: #757575;">())</span>;
+
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">connect, &#23454;&#38469;&#19978;&#26159;&#25226; slot index &#21152;&#21040; signal index &#23545;&#24212;&#30340;&#38142;&#34920;&#19978;</span>
+  <span style="color: #268bd2; font-weight: bold;">QMetaObjectPrivate</span>::connect<span style="color: #757575;">(</span>
+    sender<span style="color: #757575;">,</span> signal_index<span style="color: #757575;">,</span> smeta<span style="color: #757575;">,</span> receiver<span style="color: #757575;">,</span> method_index_relative<span style="color: #757575;">,</span> rmeta <span style="color: #757575;">,</span>type<span style="color: #757575;">,</span> types<span style="color: #757575;">)</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgee49660" class="outline-3">
+<h3 id="orgee49660"><span class="section-number-3">1.3</span> connect</h3>
+<div class="outline-text-3" id="text-1-3">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #268bd2; font-weight: bold;">QObjectPrivate</span>::<span style="color: #b58900;">Connection</span> *<span style="color: #268bd2; font-weight: bold;">QMetaObjectPrivate</span>::<span style="color: #268bd2;">connect</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">QObject</span> *<span style="color: #268bd2;">sender</span><span style="color: #757575;">,</span>
+                                                        <span style="color: #b58900;">int</span> <span style="color: #268bd2;">signal_index</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">QMetaObject</span> *<span style="color: #268bd2;">smeta</span><span style="color: #757575;">,</span>
+                                                        <span style="color: #859900;">const</span> <span style="color: #b58900;">QObject</span> *<span style="color: #268bd2;">receiver</span><span style="color: #757575;">,</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">method_index</span><span style="color: #757575;">,</span>
+                                                        <span style="color: #859900;">const</span> <span style="color: #b58900;">QMetaObject</span> *<span style="color: #268bd2;">rmeta</span><span style="color: #757575;">,</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">type</span><span style="color: #757575;">,</span> <span style="color: #b58900;">int</span> *<span style="color: #268bd2;">types</span><span style="color: #757575;">)</span>
+  <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">unique_ptr</span>&lt;<span style="color: #268bd2; font-weight: bold;">QObjectPrivate</span>::<span style="color: #b58900;">Connection</span>&gt; <span style="color: #268bd2;">c</span><span style="color: #757575;">{</span><span style="color: #859900;">new</span> <span style="color: #268bd2; font-weight: bold;">QObjectPrivate</span>::<span style="color: #b58900;">Connection</span><span style="color: #757575;">}</span>;
+  c-&gt;sender = s;
+  c-&gt;signal_index = signal_index;
+  c-&gt;receiver.storeRelaxed<span style="color: #757575;">(</span>r<span style="color: #757575;">)</span>;
+  c-&gt;method_relative = method_index;
+  c-&gt;method_offset = method_offset;
+  <span style="color: #268bd2; font-weight: bold;">QObjectPrivate</span>::get<span style="color: #757575;">(</span>s<span style="color: #757575;">)</span>-&gt;addConnection<span style="color: #757575;">(</span>signal_index<span style="color: #757575;">,</span> c.get<span style="color: #757575;">())</span>;
+    <span style="color: #b58900;">ConnectionList</span> &amp;<span style="color: #268bd2;">connectionList</span> = cd-&gt;connectionsForSignal<span style="color: #757575;">(</span>signal<span style="color: #757575;">)</span>;
+      <span style="color: #859900;">return</span> signalVector.loadRelaxed<span style="color: #757575;">()</span>-&gt;at<span style="color: #757575;">(</span>signal<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">... &#25805;&#20316;&#38142;&#34920;</span>
+    connectionList.first.storeRelaxed<span style="color: #757575;">(</span>c<span style="color: #757575;">)</span>;
+    c-&gt;prevConnectionList = connectionList.last.loadRelaxed<span style="color: #757575;">()</span>;
+    connectionList.last.storeRelaxed<span style="color: #757575;">(</span>c<span style="color: #757575;">)</span>;
+    c-&gt;next = *c-&gt;prev;
+    *c-&gt;prev = c;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org8e5ce1e" class="outline-3">
+<h3 id="org8e5ce1e"><span class="section-number-3">1.4</span> activate</h3>
+<div class="outline-text-3" id="text-1-4">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #b58900;">void</span> <span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::<span style="color: #268bd2;">activate</span><span style="color: #757575;">(</span><span style="color: #b58900;">QObject</span> *<span style="color: #268bd2;">sender</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">QMetaObject</span> *<span style="color: #268bd2;">m</span><span style="color: #757575;">,</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">local_signal_index</span><span style="color: #757575;">,</span><span style="color: #b58900;">void</span> **<span style="color: #268bd2;">argv</span><span style="color: #757575;">)</span>
+  doActivate<span style="color: #757575;">(</span>sender<span style="color: #757575;">,</span> signal_index<span style="color: #757575;">,</span> argv<span style="color: #757575;">)</span>;
+    list = &amp;signalVector-&gt;at<span style="color: #757575;">(</span>signal_index<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36941;&#21382;&#25152;&#26377;&#30340; slot, &#26681;&#25454; connection type &#21644; receiver &#26159;&#21542;&#21644; sender &#22312;&#30456;&#21516;&#30340;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">thread, &#20915;&#23450;&#26159;&#30452;&#25509;&#35843;&#29992;, postEvent, &#25110;&#32773; postEvent &#24182;&#38459;&#22622; </span>
+  <span style="color: #859900;">do</span> : 
+    <span style="color: #268bd2; font-weight: bold;">QObjectPrivate</span>::Connection *c = list-&gt;first.loadRelaxed<span style="color: #757575;">()</span>;
+    <span style="color: #859900;">do</span> : 
+      QObject * <span style="color: #859900;">const</span> receiver = c-&gt;receiver.loadRelaxed<span style="color: #757575;">()</span>;
+      <span style="color: #b58900;">bool</span> <span style="color: #268bd2;">receiverInSameThread</span>;
+      receiverInSameThread = currentThreadId == td-&gt;threadId.loadRelaxed<span style="color: #757575;">()</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">determine if this connection should be sent immediately or</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">put into the event queue</span>
+      <span style="color: #859900;">if</span> <span style="color: #757575;">((</span>c-&gt;connectionType == <span style="color: #268bd2; font-weight: bold;">Qt</span>::AutoConnection &amp;&amp; <span style="color: #b58900; font-weight: bold;">!</span>receiverInSameThread<span style="color: #757575;">)</span>
+          || <span style="color: #757575;">(</span>c-&gt;connectionType == <span style="color: #268bd2; font-weight: bold;">Qt</span>::QueuedConnection<span style="color: #757575;">))</span>: 
+        queued_activate<span style="color: #757575;">(</span>sender<span style="color: #757575;">,</span> signal_index<span style="color: #757575;">,</span> c<span style="color: #757575;">,</span> argv<span style="color: #757575;">)</span>;
+        <span style="color: #859900;">continue</span>;
+      <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>c-&gt;connectionType == <span style="color: #268bd2; font-weight: bold;">Qt</span>::BlockingQueuedConnection<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>receiverInSameThread<span style="color: #757575;">)</span>:
+            <span style="color: #b58900;">QSemaphore</span> <span style="color: #268bd2;">semaphore</span>;
+            <span style="color: #757575;">{</span>
+                <span style="color: #268bd2; font-weight: bold;">QCoreApplication</span>::postEvent<span style="color: #757575;">(</span>receiver<span style="color: #757575;">,</span> ev<span style="color: #757575;">)</span>;
+            <span style="color: #757575;">}</span>
+            semaphore.acquire<span style="color: #757575;">()</span>;
+      <span style="color: #859900;">else</span>:
+        <span style="color: #859900;">const</span> <span style="color: #b58900;">int</span> method = c-&gt;method_relative + c-&gt;method_offset;
+        <span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::metacall<span style="color: #757575;">(</span>receiver<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::InvokeMetaMethod<span style="color: #757575;">,</span> method<span style="color: #757575;">,</span> argv<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">while</span> <span style="color: #757575;">((</span>c = c-&gt;nextConnectionList.loadRelaxed<span style="color: #757575;">())</span> != <span style="color: #268bd2; font-weight: bold;">nullptr</span> &amp;&amp; c-&gt;id &lt;= highestConnectionId<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orge37083b" class="outline-3">
+<h3 id="orge37083b"><span class="section-number-3">1.5</span> functor-based signal</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+<a href="https://doc.qt.io/qt-5/signalsandslots-syntaxes.html">https://doc.qt.io/qt-5/signalsandslots-syntaxes.html</a>#
+</p>
+
+<p>
+旧的 signal 系统称为 string-based, 因为它需要把 signal, slot 用 SIGNAL/SLOT 宏转换为字符串, 并通过 introspection 在运行时把字符串转换为 index
+</p>
+
+<p>
+新的 functor-based signal 提供的是 signal, slot 的函数指针, 在运行时通过
+static_cast 就能获得 index
+</p>
+
+<p>
+优点:
+</p>
+
+<ol class="org-ol">
+<li>没有运行时的开销</li>
+<li>可以把 lambda 作为 slot</li>
+<li>支持 namespace, typedef 等, 因为 namespace, typedef 的作用变为字符串难以处理</li>
+</ol>
+
+<p>
+缺点:
+</p>
+
+<ol class="org-ol">
+<li>functor-based signal 只能在 c++ 内部使用, QML 无法使用</li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

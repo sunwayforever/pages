@@ -1,0 +1,1994 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TVM Relay IR</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">TVM Relay IR</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org98d0070">1. TVM Relay IR</a>
+<ul>
+<li><a href="#orgf96731b">1.1. 编译一个简单的 function</a>
+<ul>
+<li><a href="#orgc658b97">1.1.1. 使用 Relay IR 定义一个 function</a></li>
+<li><a href="#org2ae80be">1.1.2. C Target</a></li>
+<li><a href="#org61f48ba">1.1.3. LLVM Target</a></li>
+<li><a href="#orgb27fae7">1.1.4. Opencl Target</a></li>
+</ul>
+</li>
+<li><a href="#org5bf4bc8">1.2. 编译一个 onnx 模型</a></li>
+<li><a href="#org2b9adbf">1.3. Relay IR 列表</a>
+<ul>
+<li><a href="#org3441a3b">1.3.1. tvm.relay</a></li>
+<li><a href="#orgf886f02">1.3.2. tvm.relay.annotation</a></li>
+<li><a href="#orgabd3682">1.3.3. tvm.relay.nn</a></li>
+<li><a href="#orgeb951e5">1.3.4. tv.relay.image</a></li>
+<li><a href="#orgadcfb52">1.3.5. tv.relay.vision</a></li>
+</ul>
+</li>
+<li><a href="#org4e4b927">1.4. Relay IR Transform</a></li>
+<li><a href="#org851bf59">1.5. Relay IR Frontend</a></li>
+<li><a href="#orgf46b05b">1.6. <span class="done DONE">DONE</span> Add Relay OP</a>
+<ul>
+<li><a href="#orgbb368dd">1.6.1. Registry</a></li>
+<li><a href="#org41ddd9c">1.6.2. TypeRelation</a></li>
+<li><a href="#orgeeb7a30">1.6.3. Relay Operator Strategy</a></li>
+</ul>
+</li>
+<li><a href="#org62439c5">1.7. <span class="done DONE">DONE</span> Let Expression</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org98d0070" class="outline-2">
+<h2 id="org98d0070"><span class="section-number-2">1</span> TVM Relay IR</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="file:///home/sunway/source/tvm/docs/dev/relay_intro.rst">file:~/source/tvm/docs/dev/relay_intro.rst</a>
+</p>
+
+<p>
+<a href="https://export.arxiv.org/pdf/1904.08368">Relay: A High-Level Compiler for Deep Learning</a>
+</p>
+</div>
+
+<div id="outline-container-orgf96731b" class="outline-3">
+<h3 id="orgf96731b"><span class="section-number-3">1.1</span> 编译一个简单的 function</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-orgc658b97" class="outline-4">
+<h4 id="orgc658b97"><span class="section-number-4">1.1.1</span> 使用 Relay IR 定义一个 function</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-08-03 11:11</span>
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+
+<span style="color: #268bd2;">x</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"x"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 1000<span style="color: #757575;">),</span> dtype=<span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">y</span> = relay.add<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> x<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">func</span> = relay.Function<span style="color: #757575;">(</span>[x]<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span> = tvm.IRModule.from_expr<span style="color: #757575;">(</span>func<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+
+</pre>
+</div>
+
+<p>
+def @main(%x: Tensor[(1, 1000), float32]) {
+  add(%x, %x)
+}
+</p>
+</div>
+</div>
+
+<div id="outline-container-org2ae80be" class="outline-4">
+<h4 id="org2ae80be"><span class="section-number-4">1.1.2</span> C Target</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>opt_level=3<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> target=<span style="color: #2aa198;">"c -mcpu=skylake-avx512"</span><span style="color: #757575;">,</span> params=<span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>graph<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>lib.get_source<span style="color: #757575;">())</span>
+</pre>
+</div>
+
+<p>
+// tvm target: c -keys=cpu -link-params=0 -mcpu=skylake-avx512
+#define TVM_EXPORTS
+#include "tvm/runtime/c_runtime_api.h"
+#include "tvm/runtime/c_backend_api.h"
+#include &lt;math.h&gt;
+#ifdef __cplusplus
+extern "C"
+#endif
+TVM_DLL int32_t tvmgen_default_fused_add(void* args, void* arg_type_ids, int32_t num_args, void* out_ret_value, void* out_ret_tcode, void* resource_handle) {
+  void* arg0 = (((TVMValue*)args)[0].v_handle);
+  int32_t arg0_code = ((int32_t*)arg_type_ids)[(0)];
+  void* arg1 = (((TVMValue*)args)[1].v_handle);
+  int32_t arg1_code = ((int32_t*)arg_type_ids)[(1)];
+  void* placeholder = (((DLTensor*)arg0)[0].data);
+  void* arg0_shape = (((DLTensor*)arg0)[0].shape);
+  void* arg0_strides = (((DLTensor*)arg0)[0].strides);
+  int32_t dev_id = (((DLTensor*)arg0)[0].device.device_id);
+  void* T_add = (((DLTensor*)arg1)[0].data);
+  void* arg1_shape = (((DLTensor*)arg1)[0].shape);
+  void* arg1_strides = (((DLTensor*)arg1)[0].strides);
+  if (!(arg0_strides == NULL)) {
+  }
+  if (!(arg1_strides == NULL)) {
+  }
+  for (int32_t ax1_outer = 0; ax1_outer &lt; 63; ++ax1_outer) {
+    for (int32_t ax1_inner_s = 0; ax1_inner_s &lt; 16; ++ax1_inner_s) {
+      if (((ax1_outer * 16) + ax1_inner_s) &lt; 1000) {
+        ((float*)T_add)[(((ax1_outer * 16) + ax1_inner_s))] = (((float*)placeholder)[(((ax1_outer * 16) + ax1_inner_s))] + ((float*)placeholder)[(((ax1_outer * 16) + ax1_inner_s))]);
+      }
+    }
+  }
+  return 0;
+}
+</p>
+</div>
+</div>
+
+<div id="outline-container-org61f48ba" class="outline-4">
+<h4 id="org61f48ba"><span class="section-number-4">1.1.3</span> LLVM Target</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>opt_level=3<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>
+        mod<span style="color: #757575;">,</span> target=<span style="color: #2aa198;">"llvm -mcpu=skylake-avx512"</span><span style="color: #757575;">,</span> params=<span style="color: #268bd2; font-weight: bold;">None</span>
+    <span style="color: #757575;">)</span>
+lib.save<span style="color: #757575;">(</span><span style="color: #2aa198;">"/tmp/a.o"</span><span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+/tmp/ipykernel_30923/3795460359.py:2: DeprecationWarning: legacy graph executor behavior of producing json / lib / params will be removed in the next release. Please see documents of tvm.contrib.graph_executor.GraphModule for the  new recommended usage.
+  graph, lib, params = relay.build(
+</p>
+
+<div class="org-src-container">
+<pre class="src src-shell">objdump -d /tmp/a.o
+</pre>
+</div>
+
+<p>
+
+</p>
+
+<p>
+/tmp/a.o:     file format elf64-x86-64
+</p>
+
+
+<p>
+Disassembly of section .text:
+</p>
+
+<p>
+0000000000000000 &lt;tvmgen_default_fused_add&gt;:
+       0:	50                   	push   %rax
+       1:	83 fa 02             	cmp    $0x2,%edx
+       4:	0f 85 70 01 00 00    	jne    17a &lt;tvmgen_default_fused_add+0x17a&gt;
+       a:	8b 06                	mov    (%rsi),%eax
+       c:	83 f8 0d             	cmp    $0xd,%eax
+       f:	0f 87 3e 01 00 00    	ja     153 &lt;tvmgen_default_fused_add+0x153&gt;
+      15:	b9 98 20 00 00       	mov    $0x2098,%ecx
+      1a:	0f a3 c1             	bt     %eax,%ecx
+      1d:	0f 83 30 01 00 00    	jae    153 &lt;tvmgen_default_fused_add+0x153&gt;
+      23:	8b 46 04             	mov    0x4(%rsi),%eax
+      26:	83 f8 0d             	cmp    $0xd,%eax
+      29:	0f 87 34 01 00 00    	ja     163 &lt;tvmgen_default_fused_add+0x163&gt;
+      2f:	b9 98 20 00 00       	mov    $0x2098,%ecx
+      34:	0f a3 c1             	bt     %eax,%ecx
+      37:	0f 83 26 01 00 00    	jae    163 &lt;tvmgen_default_fused_add+0x163&gt;
+      3d:	48 8b 0f             	mov    (%rdi),%rcx
+      40:	83 79 10 02          	cmpl   $0x2,0x10(%rcx)
+      44:	0f 85 40 01 00 00    	jne    18a &lt;tvmgen_default_fused_add+0x18a&gt;
+      4a:	66 83 79 16 01       	cmpw   $0x1,0x16(%rcx)
+      4f:	0f 85 45 01 00 00    	jne    19a &lt;tvmgen_default_fused_add+0x19a&gt;
+      55:	80 79 15 20          	cmpb   $0x20,0x15(%rcx)
+      59:	0f 85 3b 01 00 00    	jne    19a &lt;tvmgen_default_fused_add+0x19a&gt;
+      5f:	80 79 14 02          	cmpb   $0x2,0x14(%rcx)
+      63:	0f 85 31 01 00 00    	jne    19a &lt;tvmgen_default_fused_add+0x19a&gt;
+      69:	48 8b 41 18          	mov    0x18(%rcx),%rax
+      6d:	83 38 01             	cmpl   $0x1,(%rax)
+      70:	0f 85 34 01 00 00    	jne    1aa &lt;tvmgen_default_fused_add+0x1aa&gt;
+      76:	81 78 08 e8 03 00 00 	cmpl   $0x3e8,0x8(%rax)
+      7d:	0f 85 37 01 00 00    	jne    1ba &lt;tvmgen_default_fused_add+0x1ba&gt;
+      83:	48 8b 47 08          	mov    0x8(%rdi),%rax
+      87:	48 8b 31             	mov    (%rcx),%rsi
+      8a:	48 8b 51 20          	mov    0x20(%rcx),%rdx
+      8e:	44 8b 41 0c          	mov    0xc(%rcx),%r8d
+      92:	48 8b 38             	mov    (%rax),%rdi
+      95:	4c 8b 48 18          	mov    0x18(%rax),%r9
+      99:	4c 8b 50 20          	mov    0x20(%rax),%r10
+      9d:	48 85 d2             	test   %rdx,%rdx
+      a0:	74 16                	je     b8 &lt;tvmgen_default_fused_add+0xb8&gt;
+      a2:	81 3a e8 03 00 00    	cmpl   $0x3e8,(%rdx)
+      a8:	0f 85 1c 01 00 00    	jne    1ca &lt;tvmgen_default_fused_add+0x1ca&gt;
+      ae:	83 7a 08 01          	cmpl   $0x1,0x8(%rdx)
+      b2:	0f 85 12 01 00 00    	jne    1ca &lt;tvmgen_default_fused_add+0x1ca&gt;
+      b8:	48 83 79 28 00       	cmpq   $0x0,0x28(%rcx)
+      bd:	0f 85 17 01 00 00    	jne    1da &lt;tvmgen_default_fused_add+0x1da&gt;
+      c3:	83 79 08 01          	cmpl   $0x1,0x8(%rcx)
+      c7:	0f 85 1d 01 00 00    	jne    1ea &lt;tvmgen_default_fused_add+0x1ea&gt;
+      cd:	83 78 10 02          	cmpl   $0x2,0x10(%rax)
+      d1:	0f 85 26 01 00 00    	jne    1fd &lt;tvmgen_default_fused_add+0x1fd&gt;
+      d7:	66 83 78 16 01       	cmpw   $0x1,0x16(%rax)
+      dc:	0f 85 2e 01 00 00    	jne    210 &lt;tvmgen_default_fused_add+0x210&gt;
+      e2:	80 78 15 20          	cmpb   $0x20,0x15(%rax)
+      e6:	0f 85 24 01 00 00    	jne    210 &lt;tvmgen_default_fused_add+0x210&gt;
+      ec:	80 78 14 02          	cmpb   $0x2,0x14(%rax)
+      f0:	0f 85 1a 01 00 00    	jne    210 &lt;tvmgen_default_fused_add+0x210&gt;
+      f6:	41 83 39 01          	cmpl   $0x1,(%r9)
+      fa:	0f 85 23 01 00 00    	jne    223 &lt;tvmgen_default_fused_add+0x223&gt;
+     100:	41 81 79 08 e8 03 00 	cmpl   $0x3e8,0x8(%r9)
+     107:	00 
+     108:	0f 85 28 01 00 00    	jne    236 &lt;tvmgen_default_fused_add+0x236&gt;
+     10e:	4d 85 d2             	test   %r10,%r10
+     111:	74 18                	je     12b &lt;tvmgen_default_fused_add+0x12b&gt;
+     113:	41 81 3a e8 03 00 00 	cmpl   $0x3e8,(%r10)
+     11a:	0f 85 29 01 00 00    	jne    249 &lt;tvmgen_default_fused_add+0x249&gt;
+     120:	41 83 7a 08 01       	cmpl   $0x1,0x8(%r10)
+     125:	0f 85 1e 01 00 00    	jne    249 &lt;tvmgen_default_fused_add+0x249&gt;
+     12b:	48 83 78 28 00       	cmpq   $0x0,0x28(%rax)
+     130:	0f 85 26 01 00 00    	jne    25c &lt;tvmgen_default_fused_add+0x25c&gt;
+     136:	83 78 08 01          	cmpl   $0x1,0x8(%rax)
+     13a:	0f 85 2f 01 00 00    	jne    26f &lt;tvmgen_default_fused_add+0x26f&gt;
+     140:	44 3b 40 0c          	cmp    0xc(%rax),%r8d
+     144:	0f 85 38 01 00 00    	jne    282 &lt;tvmgen_default_fused_add+0x282&gt;
+     14a:	e8 51 01 00 00       	callq  2a0 &lt;tvmgen_default_fused_add_compute_&gt;
+     14f:	31 c0                	xor    %eax,%eax
+     151:	59                   	pop    %rcx
+     152:	c3                   	retq   
+     153:	48 8b 05 00 00 00 00 	mov    0x0(%rip),%rax        # 15a &lt;tvmgen_default_fused_add+0x15a&gt;
+     15a:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 161 &lt;tvmgen_default_fused_add+0x161&gt;
+     161:	eb 0e                	jmp    171 &lt;tvmgen_default_fused_add+0x171&gt;
+     163:	48 8b 05 00 00 00 00 	mov    0x0(%rip),%rax        # 16a &lt;tvmgen_default_fused_add+0x16a&gt;
+     16a:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 171 &lt;tvmgen_default_fused_add+0x171&gt;
+     171:	ff 10                	callq  *(%rax)
+     173:	b8 ff ff ff ff       	mov    $0xffffffff,%eax
+     178:	59                   	pop    %rcx
+     179:	c3                   	retq   
+     17a:	48 8b 05 00 00 00 00 	mov    0x0(%rip),%rax        # 181 &lt;tvmgen_default_fused_add+0x181&gt;
+     181:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 188 &lt;tvmgen_default_fused_add+0x188&gt;
+     188:	eb e7                	jmp    171 &lt;tvmgen_default_fused_add+0x171&gt;
+     18a:	48 8b 05 00 00 00 00 	mov    0x0(%rip),%rax        # 191 &lt;tvmgen_default_fused_add+0x191&gt;
+     191:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 198 &lt;tvmgen_default_fused_add+0x198&gt;
+     198:	eb d7                	jmp    171 &lt;tvmgen_default_fused_add+0x171&gt;
+     19a:	48 8b 05 00 00 00 00 	mov    0x0(%rip),%rax        # 1a1 &lt;tvmgen_default_fused_add+0x1a1&gt;
+     1a1:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 1a8 &lt;tvmgen_default_fused_add+0x1a8&gt;
+     1a8:	eb c7                	jmp    171 &lt;tvmgen_default_fused_add+0x171&gt;
+     1aa:	48 8b 05 00 00 00 00 	mov    0x0(%rip),%rax        # 1b1 &lt;tvmgen_default_fused_add+0x1b1&gt;
+     1b1:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 1b8 &lt;tvmgen_default_fused_add+0x1b8&gt;
+     1b8:	eb b7                	jmp    171 &lt;tvmgen_default_fused_add+0x171&gt;
+     1ba:	48 8b 05 00 00 00 00 	mov    0x0(%rip),%rax        # 1c1 &lt;tvmgen_default_fused_add+0x1c1&gt;
+     1c1:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 1c8 &lt;tvmgen_default_fused_add+0x1c8&gt;
+     1c8:	eb a7                	jmp    171 &lt;tvmgen_default_fused_add+0x171&gt;
+     1ca:	48 8b 05 00 00 00 00 	mov    0x0(%rip),%rax        # 1d1 &lt;tvmgen_default_fused_add+0x1d1&gt;
+     1d1:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 1d8 &lt;tvmgen_default_fused_add+0x1d8&gt;
+     1d8:	eb 97                	jmp    171 &lt;tvmgen_default_fused_add+0x171&gt;
+     1da:	48 8b 05 00 00 00 00 	mov    0x0(%rip),%rax        # 1e1 &lt;tvmgen_default_fused_add+0x1e1&gt;
+     1e1:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 1e8 &lt;tvmgen_default_fused_add+0x1e8&gt;
+     1e8:	eb 87                	jmp    171 &lt;tvmgen_default_fused_add+0x171&gt;
+     1ea:	48 8b 05 00 00 00 00 	mov    0x0(%rip),%rax        # 1f1 &lt;tvmgen_default_fused_add+0x1f1&gt;
+     1f1:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 1f8 &lt;tvmgen_default_fused_add+0x1f8&gt;
+     1f8:	e9 74 ff ff ff       	jmpq   171 &lt;tvmgen_default_fused_add+0x171&gt;
+     1fd:	48 8b 05 00 00 00 00 	mov    0x0(%rip),%rax        # 204 &lt;tvmgen_default_fused_add+0x204&gt;
+     204:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 20b &lt;tvmgen_default_fused_add+0x20b&gt;
+     20b:	e9 61 ff ff ff       	jmpq   171 &lt;tvmgen_default_fused_add+0x171&gt;
+     210:	48 8b 05 00 00 00 00 	mov    0x0(%rip),%rax        # 217 &lt;tvmgen_default_fused_add+0x217&gt;
+     217:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 21e &lt;tvmgen_default_fused_add+0x21e&gt;
+     21e:	e9 4e ff ff ff       	jmpq   171 &lt;tvmgen_default_fused_add+0x171&gt;
+     223:	48 8b 05 00 00 00 00 	mov    0x0(%rip),%rax        # 22a &lt;tvmgen_default_fused_add+0x22a&gt;
+     22a:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 231 &lt;tvmgen_default_fused_add+0x231&gt;
+     231:	e9 3b ff ff ff       	jmpq   171 &lt;tvmgen_default_fused_add+0x171&gt;
+     236:	48 8b 05 00 00 00 00 	mov    0x0(%rip),%rax        # 23d &lt;tvmgen_default_fused_add+0x23d&gt;
+     23d:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 244 &lt;tvmgen_default_fused_add+0x244&gt;
+     244:	e9 28 ff ff ff       	jmpq   171 &lt;tvmgen_default_fused_add+0x171&gt;
+     249:	48 8b 05 00 00 00 00 	mov    0x0(%rip),%rax        # 250 &lt;tvmgen_default_fused_add+0x250&gt;
+     250:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 257 &lt;tvmgen_default_fused_add+0x257&gt;
+     257:	e9 15 ff ff ff       	jmpq   171 &lt;tvmgen_default_fused_add+0x171&gt;
+     25c:	48 8b 05 00 00 00 00 	mov    0x0(%rip),%rax        # 263 &lt;tvmgen_default_fused_add+0x263&gt;
+     263:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 26a &lt;tvmgen_default_fused_add+0x26a&gt;
+     26a:	e9 02 ff ff ff       	jmpq   171 &lt;tvmgen_default_fused_add+0x171&gt;
+     26f:	48 8b 05 00 00 00 00 	mov    0x0(%rip),%rax        # 276 &lt;tvmgen_default_fused_add+0x276&gt;
+     276:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 27d &lt;tvmgen_default_fused_add+0x27d&gt;
+     27d:	e9 ef fe ff ff       	jmpq   171 &lt;tvmgen_default_fused_add+0x171&gt;
+     282:	48 8b 05 00 00 00 00 	mov    0x0(%rip),%rax        # 289 &lt;tvmgen_default_fused_add+0x289&gt;
+     289:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 290 &lt;tvmgen_default_fused_add+0x290&gt;
+     290:	e9 dc fe ff ff       	jmpq   171 &lt;tvmgen_default_fused_add+0x171&gt;
+     295:	66 2e 0f 1f 84 00 00 	nopw   %cs:0x0(%rax,%rax,1)
+     29c:	00 00 00 
+     29f:	90                   	nop
+</p>
+
+<p>
+00000000000002a0 &lt;tvmgen_default_fused_add_compute_&gt;:
+     2a0:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 2a8 &lt;tvmgen_default_fused_add_compute_+0x8&gt;
+     2a7:	00 
+     2a8:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     2ac:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     2b3:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     2b7:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     2bb:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     2c2:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 2ca &lt;tvmgen_default_fused_add_compute_+0x2a&gt;
+     2c9:	00 
+     2ca:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     2ce:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     2d5:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     2d9:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     2dd:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     2e4:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 2ec &lt;tvmgen_default_fused_add_compute_+0x4c&gt;
+     2eb:	00 
+     2ec:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     2f0:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     2f7:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     2fb:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     2ff:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     306:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 30e &lt;tvmgen_default_fused_add_compute_+0x6e&gt;
+     30d:	00 
+     30e:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     312:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     319:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     31d:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     321:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     328:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 330 &lt;tvmgen_default_fused_add_compute_+0x90&gt;
+     32f:	00 
+     330:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     334:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     33b:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     33f:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     343:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     34a:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 352 &lt;tvmgen_default_fused_add_compute_+0xb2&gt;
+     351:	00 
+     352:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     356:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     35d:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     361:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     365:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     36c:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 374 &lt;tvmgen_default_fused_add_compute_+0xd4&gt;
+     373:	00 
+     374:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     378:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     37f:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     383:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     387:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     38e:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 396 &lt;tvmgen_default_fused_add_compute_+0xf6&gt;
+     395:	00 
+     396:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     39a:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     3a1:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     3a5:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     3a9:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     3b0:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 3b8 &lt;tvmgen_default_fused_add_compute_+0x118&gt;
+     3b7:	00 
+     3b8:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     3bc:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     3c3:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     3c7:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     3cb:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     3d2:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 3da &lt;tvmgen_default_fused_add_compute_+0x13a&gt;
+     3d9:	00 
+     3da:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     3de:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     3e5:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     3e9:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     3ed:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     3f4:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 3fc &lt;tvmgen_default_fused_add_compute_+0x15c&gt;
+     3fb:	00 
+     3fc:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     400:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     407:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     40b:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     40f:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     416:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 41e &lt;tvmgen_default_fused_add_compute_+0x17e&gt;
+     41d:	00 
+     41e:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     422:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     429:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     42d:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     431:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     438:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 440 &lt;tvmgen_default_fused_add_compute_+0x1a0&gt;
+     43f:	00 
+     440:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     444:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     44b:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     44f:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     453:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     45a:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 462 &lt;tvmgen_default_fused_add_compute_+0x1c2&gt;
+     461:	00 
+     462:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     466:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     46d:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     471:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     475:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     47c:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 484 &lt;tvmgen_default_fused_add_compute_+0x1e4&gt;
+     483:	00 
+     484:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     488:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     48f:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     493:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     497:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     49e:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 4a6 &lt;tvmgen_default_fused_add_compute_+0x206&gt;
+     4a5:	00 
+     4a6:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     4aa:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     4b1:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     4b5:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     4b9:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     4c0:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 4c8 &lt;tvmgen_default_fused_add_compute_+0x228&gt;
+     4c7:	00 
+     4c8:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     4cc:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     4d3:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     4d7:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     4db:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     4e2:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 4ea &lt;tvmgen_default_fused_add_compute_+0x24a&gt;
+     4e9:	00 
+     4ea:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     4ee:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     4f5:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     4f9:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     4fd:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     504:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 50c &lt;tvmgen_default_fused_add_compute_+0x26c&gt;
+     50b:	00 
+     50c:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     510:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     517:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     51b:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     51f:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     526:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 52e &lt;tvmgen_default_fused_add_compute_+0x28e&gt;
+     52d:	00 
+     52e:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     532:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     539:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     53d:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     541:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     548:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 550 &lt;tvmgen_default_fused_add_compute_+0x2b0&gt;
+     54f:	00 
+     550:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     554:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     55b:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     55f:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     563:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     56a:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 572 &lt;tvmgen_default_fused_add_compute_+0x2d2&gt;
+     571:	00 
+     572:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     576:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     57d:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     581:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     585:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     58c:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 594 &lt;tvmgen_default_fused_add_compute_+0x2f4&gt;
+     593:	00 
+     594:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     598:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     59f:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     5a3:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     5a7:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     5ae:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 5b6 &lt;tvmgen_default_fused_add_compute_+0x316&gt;
+     5b5:	00 
+     5b6:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     5ba:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     5c1:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     5c5:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     5c9:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     5d0:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 5d8 &lt;tvmgen_default_fused_add_compute_+0x338&gt;
+     5d7:	00 
+     5d8:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     5dc:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     5e3:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     5e7:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     5eb:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     5f2:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 5fa &lt;tvmgen_default_fused_add_compute_+0x35a&gt;
+     5f9:	00 
+     5fa:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     5fe:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     605:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     609:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     60d:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     614:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 61c &lt;tvmgen_default_fused_add_compute_+0x37c&gt;
+     61b:	00 
+     61c:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     620:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     627:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     62b:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     62f:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     636:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 63e &lt;tvmgen_default_fused_add_compute_+0x39e&gt;
+     63d:	00 
+     63e:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     642:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     649:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     64d:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     651:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     658:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 660 &lt;tvmgen_default_fused_add_compute_+0x3c0&gt;
+     65f:	00 
+     660:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     664:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     66b:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     66f:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     673:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     67a:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 682 &lt;tvmgen_default_fused_add_compute_+0x3e2&gt;
+     681:	00 
+     682:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     686:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     68d:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     691:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     695:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     69c:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 6a4 &lt;tvmgen_default_fused_add_compute_+0x404&gt;
+     6a3:	00 
+     6a4:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     6a8:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     6af:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     6b3:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     6b7:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     6be:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 6c6 &lt;tvmgen_default_fused_add_compute_+0x426&gt;
+     6c5:	00 
+     6c6:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     6ca:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     6d1:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     6d5:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     6d9:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     6e0:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 6e8 &lt;tvmgen_default_fused_add_compute_+0x448&gt;
+     6e7:	00 
+     6e8:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     6ec:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     6f3:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     6f7:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     6fb:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     702:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 70a &lt;tvmgen_default_fused_add_compute_+0x46a&gt;
+     709:	00 
+     70a:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     70e:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     715:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     719:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     71d:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     724:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 72c &lt;tvmgen_default_fused_add_compute_+0x48c&gt;
+     72b:	00 
+     72c:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     730:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     737:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     73b:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     73f:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     746:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 74e &lt;tvmgen_default_fused_add_compute_+0x4ae&gt;
+     74d:	00 
+     74e:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     752:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     759:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     75d:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     761:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     768:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 770 &lt;tvmgen_default_fused_add_compute_+0x4d0&gt;
+     76f:	00 
+     770:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     774:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     77b:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     77f:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     783:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     78a:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 792 &lt;tvmgen_default_fused_add_compute_+0x4f2&gt;
+     791:	00 
+     792:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     796:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     79d:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     7a1:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     7a5:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     7ac:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 7b4 &lt;tvmgen_default_fused_add_compute_+0x514&gt;
+     7b3:	00 
+     7b4:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     7b8:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     7bf:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     7c3:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     7c7:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     7ce:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 7d6 &lt;tvmgen_default_fused_add_compute_+0x536&gt;
+     7d5:	00 
+     7d6:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     7da:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     7e1:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     7e5:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     7e9:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     7f0:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 7f8 &lt;tvmgen_default_fused_add_compute_+0x558&gt;
+     7f7:	00 
+     7f8:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     7fc:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     803:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     807:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     80b:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     812:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 81a &lt;tvmgen_default_fused_add_compute_+0x57a&gt;
+     819:	00 
+     81a:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     81e:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     825:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     829:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     82d:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     834:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 83c &lt;tvmgen_default_fused_add_compute_+0x59c&gt;
+     83b:	00 
+     83c:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     840:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     847:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     84b:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     84f:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     856:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 85e &lt;tvmgen_default_fused_add_compute_+0x5be&gt;
+     85d:	00 
+     85e:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     862:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     869:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     86d:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     871:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     878:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 880 &lt;tvmgen_default_fused_add_compute_+0x5e0&gt;
+     87f:	00 
+     880:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     884:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     88b:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     88f:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     893:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     89a:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 8a2 &lt;tvmgen_default_fused_add_compute_+0x602&gt;
+     8a1:	00 
+     8a2:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     8a6:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     8ad:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     8b1:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     8b5:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     8bc:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 8c4 &lt;tvmgen_default_fused_add_compute_+0x624&gt;
+     8c3:	00 
+     8c4:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     8c8:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     8cf:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     8d3:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     8d7:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     8de:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 8e6 &lt;tvmgen_default_fused_add_compute_+0x646&gt;
+     8e5:	00 
+     8e6:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     8ea:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     8f1:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     8f5:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     8f9:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     900:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 908 &lt;tvmgen_default_fused_add_compute_+0x668&gt;
+     907:	00 
+     908:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     90c:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     913:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     917:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     91b:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     922:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 92a &lt;tvmgen_default_fused_add_compute_+0x68a&gt;
+     929:	00 
+     92a:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     92e:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     935:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     939:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     93d:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     944:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 94c &lt;tvmgen_default_fused_add_compute_+0x6ac&gt;
+     94b:	00 
+     94c:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     950:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     957:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     95b:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     95f:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     966:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 96e &lt;tvmgen_default_fused_add_compute_+0x6ce&gt;
+     96d:	00 
+     96e:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     972:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     979:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     97d:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     981:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     988:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 990 &lt;tvmgen_default_fused_add_compute_+0x6f0&gt;
+     98f:	00 
+     990:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     994:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     99b:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     99f:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     9a3:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     9aa:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 9b2 &lt;tvmgen_default_fused_add_compute_+0x712&gt;
+     9b1:	00 
+     9b2:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     9b6:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     9bd:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     9c1:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     9c5:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     9cc:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 9d4 &lt;tvmgen_default_fused_add_compute_+0x734&gt;
+     9d3:	00 
+     9d4:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     9d8:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     9df:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     9e3:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     9e7:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     9ee:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 9f6 &lt;tvmgen_default_fused_add_compute_+0x756&gt;
+     9f5:	00 
+     9f6:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     9fa:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     a01:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     a05:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     a09:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     a10:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # a18 &lt;tvmgen_default_fused_add_compute_+0x778&gt;
+     a17:	00 
+     a18:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     a1c:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     a23:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     a27:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     a2b:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     a32:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # a3a &lt;tvmgen_default_fused_add_compute_+0x79a&gt;
+     a39:	00 
+     a3a:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     a3e:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     a45:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     a49:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     a4d:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     a54:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # a5c &lt;tvmgen_default_fused_add_compute_+0x7bc&gt;
+     a5b:	00 
+     a5c:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     a60:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     a67:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     a6b:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     a6f:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     a76:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # a7e &lt;tvmgen_default_fused_add_compute_+0x7de&gt;
+     a7d:	00 
+     a7e:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     a82:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     a89:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     a8d:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     a91:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     a98:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # aa0 &lt;tvmgen_default_fused_add_compute_+0x800&gt;
+     a9f:	00 
+     aa0:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     aa4:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     aab:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     aaf:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     ab3:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     aba:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # ac2 &lt;tvmgen_default_fused_add_compute_+0x822&gt;
+     ac1:	00 
+     ac2:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     ac6:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     acd:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     ad1:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     ad5:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     adc:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # ae4 &lt;tvmgen_default_fused_add_compute_+0x844&gt;
+     ae3:	00 
+     ae4:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     ae8:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     aef:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     af3:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     af7:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     afe:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # b06 &lt;tvmgen_default_fused_add_compute_+0x866&gt;
+     b05:	00 
+     b06:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     b0a:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     b11:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     b15:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     b19:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     b20:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # b28 &lt;tvmgen_default_fused_add_compute_+0x888&gt;
+     b27:	00 
+     b28:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     b2c:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     b33:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     b37:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     b3b:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     b42:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # b4a &lt;tvmgen_default_fused_add_compute_+0x8aa&gt;
+     b49:	00 
+     b4a:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     b4e:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     b55:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     b59:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     b5d:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     b64:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # b6c &lt;tvmgen_default_fused_add_compute_+0x8cc&gt;
+     b6b:	00 
+     b6c:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     b70:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     b77:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     b7b:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     b7f:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     b86:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # b8e &lt;tvmgen_default_fused_add_compute_+0x8ee&gt;
+     b8d:	00 
+     b8e:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     b92:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     b99:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     b9d:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     ba1:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     ba8:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # bb0 &lt;tvmgen_default_fused_add_compute_+0x910&gt;
+     baf:	00 
+     bb0:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     bb4:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     bbb:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     bbf:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     bc3:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     bca:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # bd2 &lt;tvmgen_default_fused_add_compute_+0x932&gt;
+     bd1:	00 
+     bd2:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     bd6:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     bdd:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     be1:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     be5:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     bec:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # bf4 &lt;tvmgen_default_fused_add_compute_+0x954&gt;
+     bf3:	00 
+     bf4:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     bf8:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     bff:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     c03:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     c07:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     c0e:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # c16 &lt;tvmgen_default_fused_add_compute_+0x976&gt;
+     c15:	00 
+     c16:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     c1a:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     c21:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     c25:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     c29:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     c30:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # c38 &lt;tvmgen_default_fused_add_compute_+0x998&gt;
+     c37:	00 
+     c38:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     c3c:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     c43:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     c47:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     c4b:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     c52:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # c5a &lt;tvmgen_default_fused_add_compute_+0x9ba&gt;
+     c59:	00 
+     c5a:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     c5e:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     c65:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     c69:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     c6d:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     c74:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # c7c &lt;tvmgen_default_fused_add_compute_+0x9dc&gt;
+     c7b:	00 
+     c7c:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     c80:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     c87:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     c8b:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     c8f:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     c96:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # c9e &lt;tvmgen_default_fused_add_compute_+0x9fe&gt;
+     c9d:	00 
+     c9e:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     ca2:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     ca9:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     cad:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     cb1:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     cb8:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # cc0 &lt;tvmgen_default_fused_add_compute_+0xa20&gt;
+     cbf:	00 
+     cc0:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     cc4:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     ccb:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     ccf:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     cd3:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     cda:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # ce2 &lt;tvmgen_default_fused_add_compute_+0xa42&gt;
+     ce1:	00 
+     ce2:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     ce6:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     ced:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     cf1:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     cf5:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     cfc:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # d04 &lt;tvmgen_default_fused_add_compute_+0xa64&gt;
+     d03:	00 
+     d04:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     d08:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     d0f:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     d13:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     d17:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     d1e:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # d26 &lt;tvmgen_default_fused_add_compute_+0xa86&gt;
+     d25:	00 
+     d26:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     d2a:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     d31:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     d35:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     d39:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     d40:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # d48 &lt;tvmgen_default_fused_add_compute_+0xaa8&gt;
+     d47:	00 
+     d48:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     d4c:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     d53:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     d57:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     d5b:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     d62:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # d6a &lt;tvmgen_default_fused_add_compute_+0xaca&gt;
+     d69:	00 
+     d6a:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     d6e:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     d75:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     d79:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     d7d:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     d84:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # d8c &lt;tvmgen_default_fused_add_compute_+0xaec&gt;
+     d8b:	00 
+     d8c:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     d90:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     d97:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     d9b:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     d9f:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     da6:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # dae &lt;tvmgen_default_fused_add_compute_+0xb0e&gt;
+     dad:	00 
+     dae:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     db2:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     db9:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     dbd:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     dc1:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     dc8:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # dd0 &lt;tvmgen_default_fused_add_compute_+0xb30&gt;
+     dcf:	00 
+     dd0:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     dd4:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     ddb:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     ddf:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     de3:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     dea:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # df2 &lt;tvmgen_default_fused_add_compute_+0xb52&gt;
+     df1:	00 
+     df2:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     df6:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     dfd:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     e01:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     e05:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     e0c:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # e14 &lt;tvmgen_default_fused_add_compute_+0xb74&gt;
+     e13:	00 
+     e14:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     e18:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     e1f:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     e23:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     e27:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     e2e:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # e36 &lt;tvmgen_default_fused_add_compute_+0xb96&gt;
+     e35:	00 
+     e36:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     e3a:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     e41:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     e45:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     e49:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     e50:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # e58 &lt;tvmgen_default_fused_add_compute_+0xbb8&gt;
+     e57:	00 
+     e58:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     e5c:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     e63:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     e67:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     e6b:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     e72:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # e7a &lt;tvmgen_default_fused_add_compute_+0xbda&gt;
+     e79:	00 
+     e7a:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     e7e:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     e85:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     e89:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     e8d:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     e94:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # e9c &lt;tvmgen_default_fused_add_compute_+0xbfc&gt;
+     e9b:	00 
+     e9c:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     ea0:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     ea7:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     eab:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     eaf:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     eb6:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # ebe &lt;tvmgen_default_fused_add_compute_+0xc1e&gt;
+     ebd:	00 
+     ebe:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     ec2:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     ec9:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     ecd:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     ed1:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     ed8:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # ee0 &lt;tvmgen_default_fused_add_compute_+0xc40&gt;
+     edf:	00 
+     ee0:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     ee4:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     eeb:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     eef:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     ef3:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     efa:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # f02 &lt;tvmgen_default_fused_add_compute_+0xc62&gt;
+     f01:	00 
+     f02:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     f06:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     f0d:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     f11:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     f15:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     f1c:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # f24 &lt;tvmgen_default_fused_add_compute_+0xc84&gt;
+     f23:	00 
+     f24:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     f28:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     f2f:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     f33:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     f37:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     f3e:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # f46 &lt;tvmgen_default_fused_add_compute_+0xca6&gt;
+     f45:	00 
+     f46:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     f4a:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     f51:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     f55:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     f59:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     f60:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # f68 &lt;tvmgen_default_fused_add_compute_+0xcc8&gt;
+     f67:	00 
+     f68:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     f6c:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     f73:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     f77:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     f7b:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     f82:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # f8a &lt;tvmgen_default_fused_add_compute_+0xcea&gt;
+     f89:	00 
+     f8a:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     f8e:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     f95:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     f99:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     f9d:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     fa4:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # fac &lt;tvmgen_default_fused_add_compute_+0xd0c&gt;
+     fab:	00 
+     fac:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     fb0:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     fb7:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     fbb:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     fbf:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     fc6:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # fce &lt;tvmgen_default_fused_add_compute_+0xd2e&gt;
+     fcd:	00 
+     fce:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     fd2:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     fd9:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     fdd:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     fe1:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+     fe8:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # ff0 &lt;tvmgen_default_fused_add_compute_+0xd50&gt;
+     fef:	00 
+     ff0:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+     ff4:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+     ffb:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+     fff:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    1003:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+    100a:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 1012 &lt;tvmgen_default_fused_add_compute_+0xd72&gt;
+    1011:	00 
+    1012:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    1016:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+    101d:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+    1021:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    1025:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+    102c:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 1034 &lt;tvmgen_default_fused_add_compute_+0xd94&gt;
+    1033:	00 
+    1034:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    1038:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+    103f:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+    1043:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    1047:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+    104e:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 1056 &lt;tvmgen_default_fused_add_compute_+0xdb6&gt;
+    1055:	00 
+    1056:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    105a:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+    1061:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+    1065:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    1069:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+    1070:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 1078 &lt;tvmgen_default_fused_add_compute_+0xdd8&gt;
+    1077:	00 
+    1078:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    107c:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+    1083:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+    1087:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    108b:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+    1092:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 109a &lt;tvmgen_default_fused_add_compute_+0xdfa&gt;
+    1099:	00 
+    109a:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    109e:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+    10a5:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+    10a9:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    10ad:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+    10b4:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 10bc &lt;tvmgen_default_fused_add_compute_+0xe1c&gt;
+    10bb:	00 
+    10bc:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    10c0:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+    10c7:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+    10cb:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    10cf:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+    10d6:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 10de &lt;tvmgen_default_fused_add_compute_+0xe3e&gt;
+    10dd:	00 
+    10de:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    10e2:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+    10e9:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+    10ed:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    10f1:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+    10f8:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 1100 &lt;tvmgen_default_fused_add_compute_+0xe60&gt;
+    10ff:	00 
+    1100:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    1104:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+    110b:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+    110f:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    1113:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+    111a:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 1122 &lt;tvmgen_default_fused_add_compute_+0xe82&gt;
+    1121:	00 
+    1122:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    1126:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+    112d:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+    1131:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    1135:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+    113c:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 1144 &lt;tvmgen_default_fused_add_compute_+0xea4&gt;
+    1143:	00 
+    1144:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    1148:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+    114f:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+    1153:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    1157:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+    115e:	c5 fc 28 05 00 00 00 	vmovaps 0x0(%rip),%ymm0        # 1166 &lt;tvmgen_default_fused_add_compute_+0xec6&gt;
+    1165:	00 
+    1166:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    116a:	62 f2 7d 29 92 0c 86 	vgatherdps (%rsi,%ymm0,4),%ymm1{%k1}
+    1171:	c5 fc 46 c8          	kxnorw %k0,%k0,%k1
+    1175:	c5 f4 58 c9          	vaddps %ymm1,%ymm1,%ymm1
+    1179:	62 f2 7d 29 a2 0c 87 	vscatterdps %ymm1,(%rdi,%ymm0,4){%k1}
+    1180:	c5 fc 28 86 00 0e 00 	vmovaps 0xe00(%rsi),%ymm0
+    1187:	00 
+    1188:	c5 fc 58 c0          	vaddps %ymm0,%ymm0,%ymm0
+    118c:	c5 fc 29 87 00 0e 00 	vmovaps %ymm0,0xe00(%rdi)
+    1193:	00 
+    1194:	c5 fa 10 86 20 0e 00 	vmovss 0xe20(%rsi),%xmm0
+    119b:	00 
+    119c:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    11a0:	c5 fa 11 87 20 0e 00 	vmovss %xmm0,0xe20(%rdi)
+    11a7:	00 
+    11a8:	c5 fa 10 86 24 0e 00 	vmovss 0xe24(%rsi),%xmm0
+    11af:	00 
+    11b0:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    11b4:	c5 fa 11 87 24 0e 00 	vmovss %xmm0,0xe24(%rdi)
+    11bb:	00 
+    11bc:	c5 fa 10 86 28 0e 00 	vmovss 0xe28(%rsi),%xmm0
+    11c3:	00 
+    11c4:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    11c8:	c5 fa 11 87 28 0e 00 	vmovss %xmm0,0xe28(%rdi)
+    11cf:	00 
+    11d0:	c5 fa 10 86 2c 0e 00 	vmovss 0xe2c(%rsi),%xmm0
+    11d7:	00 
+    11d8:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    11dc:	c5 fa 11 87 2c 0e 00 	vmovss %xmm0,0xe2c(%rdi)
+    11e3:	00 
+    11e4:	c5 fa 10 86 30 0e 00 	vmovss 0xe30(%rsi),%xmm0
+    11eb:	00 
+    11ec:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    11f0:	c5 fa 11 87 30 0e 00 	vmovss %xmm0,0xe30(%rdi)
+    11f7:	00 
+    11f8:	c5 fa 10 86 34 0e 00 	vmovss 0xe34(%rsi),%xmm0
+    11ff:	00 
+    1200:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1204:	c5 fa 11 87 34 0e 00 	vmovss %xmm0,0xe34(%rdi)
+    120b:	00 
+    120c:	c5 fa 10 86 38 0e 00 	vmovss 0xe38(%rsi),%xmm0
+    1213:	00 
+    1214:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1218:	c5 fa 11 87 38 0e 00 	vmovss %xmm0,0xe38(%rdi)
+    121f:	00 
+    1220:	c5 fa 10 86 3c 0e 00 	vmovss 0xe3c(%rsi),%xmm0
+    1227:	00 
+    1228:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    122c:	c5 fa 11 87 3c 0e 00 	vmovss %xmm0,0xe3c(%rdi)
+    1233:	00 
+    1234:	c5 fc 28 86 40 0e 00 	vmovaps 0xe40(%rsi),%ymm0
+    123b:	00 
+    123c:	c5 fc 58 c0          	vaddps %ymm0,%ymm0,%ymm0
+    1240:	c5 fc 29 87 40 0e 00 	vmovaps %ymm0,0xe40(%rdi)
+    1247:	00 
+    1248:	c5 fa 10 86 60 0e 00 	vmovss 0xe60(%rsi),%xmm0
+    124f:	00 
+    1250:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1254:	c5 fa 11 87 60 0e 00 	vmovss %xmm0,0xe60(%rdi)
+    125b:	00 
+    125c:	c5 fa 10 86 64 0e 00 	vmovss 0xe64(%rsi),%xmm0
+    1263:	00 
+    1264:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1268:	c5 fa 11 87 64 0e 00 	vmovss %xmm0,0xe64(%rdi)
+    126f:	00 
+    1270:	c5 fa 10 86 68 0e 00 	vmovss 0xe68(%rsi),%xmm0
+    1277:	00 
+    1278:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    127c:	c5 fa 11 87 68 0e 00 	vmovss %xmm0,0xe68(%rdi)
+    1283:	00 
+    1284:	c5 fa 10 86 6c 0e 00 	vmovss 0xe6c(%rsi),%xmm0
+    128b:	00 
+    128c:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1290:	c5 fa 11 87 6c 0e 00 	vmovss %xmm0,0xe6c(%rdi)
+    1297:	00 
+    1298:	c5 fa 10 86 70 0e 00 	vmovss 0xe70(%rsi),%xmm0
+    129f:	00 
+    12a0:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    12a4:	c5 fa 11 87 70 0e 00 	vmovss %xmm0,0xe70(%rdi)
+    12ab:	00 
+    12ac:	c5 fa 10 86 74 0e 00 	vmovss 0xe74(%rsi),%xmm0
+    12b3:	00 
+    12b4:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    12b8:	c5 fa 11 87 74 0e 00 	vmovss %xmm0,0xe74(%rdi)
+    12bf:	00 
+    12c0:	c5 fa 10 86 78 0e 00 	vmovss 0xe78(%rsi),%xmm0
+    12c7:	00 
+    12c8:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    12cc:	c5 fa 11 87 78 0e 00 	vmovss %xmm0,0xe78(%rdi)
+    12d3:	00 
+    12d4:	c5 fa 10 86 7c 0e 00 	vmovss 0xe7c(%rsi),%xmm0
+    12db:	00 
+    12dc:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    12e0:	c5 fa 11 87 7c 0e 00 	vmovss %xmm0,0xe7c(%rdi)
+    12e7:	00 
+    12e8:	c5 fc 28 86 80 0e 00 	vmovaps 0xe80(%rsi),%ymm0
+    12ef:	00 
+    12f0:	c5 fc 58 c0          	vaddps %ymm0,%ymm0,%ymm0
+    12f4:	c5 fc 29 87 80 0e 00 	vmovaps %ymm0,0xe80(%rdi)
+    12fb:	00 
+    12fc:	c5 fa 10 86 a0 0e 00 	vmovss 0xea0(%rsi),%xmm0
+    1303:	00 
+    1304:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1308:	c5 fa 11 87 a0 0e 00 	vmovss %xmm0,0xea0(%rdi)
+    130f:	00 
+    1310:	c5 fa 10 86 a4 0e 00 	vmovss 0xea4(%rsi),%xmm0
+    1317:	00 
+    1318:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    131c:	c5 fa 11 87 a4 0e 00 	vmovss %xmm0,0xea4(%rdi)
+    1323:	00 
+    1324:	c5 fa 10 86 a8 0e 00 	vmovss 0xea8(%rsi),%xmm0
+    132b:	00 
+    132c:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1330:	c5 fa 11 87 a8 0e 00 	vmovss %xmm0,0xea8(%rdi)
+    1337:	00 
+    1338:	c5 fa 10 86 ac 0e 00 	vmovss 0xeac(%rsi),%xmm0
+    133f:	00 
+    1340:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1344:	c5 fa 11 87 ac 0e 00 	vmovss %xmm0,0xeac(%rdi)
+    134b:	00 
+    134c:	c5 fa 10 86 b0 0e 00 	vmovss 0xeb0(%rsi),%xmm0
+    1353:	00 
+    1354:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1358:	c5 fa 11 87 b0 0e 00 	vmovss %xmm0,0xeb0(%rdi)
+    135f:	00 
+    1360:	c5 fa 10 86 b4 0e 00 	vmovss 0xeb4(%rsi),%xmm0
+    1367:	00 
+    1368:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    136c:	c5 fa 11 87 b4 0e 00 	vmovss %xmm0,0xeb4(%rdi)
+    1373:	00 
+    1374:	c5 fa 10 86 b8 0e 00 	vmovss 0xeb8(%rsi),%xmm0
+    137b:	00 
+    137c:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1380:	c5 fa 11 87 b8 0e 00 	vmovss %xmm0,0xeb8(%rdi)
+    1387:	00 
+    1388:	c5 fa 10 86 bc 0e 00 	vmovss 0xebc(%rsi),%xmm0
+    138f:	00 
+    1390:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1394:	c5 fa 11 87 bc 0e 00 	vmovss %xmm0,0xebc(%rdi)
+    139b:	00 
+    139c:	c5 fc 28 86 c0 0e 00 	vmovaps 0xec0(%rsi),%ymm0
+    13a3:	00 
+    13a4:	c5 fc 58 c0          	vaddps %ymm0,%ymm0,%ymm0
+    13a8:	c5 fc 29 87 c0 0e 00 	vmovaps %ymm0,0xec0(%rdi)
+    13af:	00 
+    13b0:	c5 fa 10 86 e0 0e 00 	vmovss 0xee0(%rsi),%xmm0
+    13b7:	00 
+    13b8:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    13bc:	c5 fa 11 87 e0 0e 00 	vmovss %xmm0,0xee0(%rdi)
+    13c3:	00 
+    13c4:	c5 fa 10 86 e4 0e 00 	vmovss 0xee4(%rsi),%xmm0
+    13cb:	00 
+    13cc:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    13d0:	c5 fa 11 87 e4 0e 00 	vmovss %xmm0,0xee4(%rdi)
+    13d7:	00 
+    13d8:	c5 fa 10 86 e8 0e 00 	vmovss 0xee8(%rsi),%xmm0
+    13df:	00 
+    13e0:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    13e4:	c5 fa 11 87 e8 0e 00 	vmovss %xmm0,0xee8(%rdi)
+    13eb:	00 
+    13ec:	c5 fa 10 86 ec 0e 00 	vmovss 0xeec(%rsi),%xmm0
+    13f3:	00 
+    13f4:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    13f8:	c5 fa 11 87 ec 0e 00 	vmovss %xmm0,0xeec(%rdi)
+    13ff:	00 
+    1400:	c5 fa 10 86 f0 0e 00 	vmovss 0xef0(%rsi),%xmm0
+    1407:	00 
+    1408:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    140c:	c5 fa 11 87 f0 0e 00 	vmovss %xmm0,0xef0(%rdi)
+    1413:	00 
+    1414:	c5 fa 10 86 f4 0e 00 	vmovss 0xef4(%rsi),%xmm0
+    141b:	00 
+    141c:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1420:	c5 fa 11 87 f4 0e 00 	vmovss %xmm0,0xef4(%rdi)
+    1427:	00 
+    1428:	c5 fa 10 86 f8 0e 00 	vmovss 0xef8(%rsi),%xmm0
+    142f:	00 
+    1430:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1434:	c5 fa 11 87 f8 0e 00 	vmovss %xmm0,0xef8(%rdi)
+    143b:	00 
+    143c:	c5 fa 10 86 fc 0e 00 	vmovss 0xefc(%rsi),%xmm0
+    1443:	00 
+    1444:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1448:	c5 fa 11 87 fc 0e 00 	vmovss %xmm0,0xefc(%rdi)
+    144f:	00 
+    1450:	c5 fc 28 86 00 0f 00 	vmovaps 0xf00(%rsi),%ymm0
+    1457:	00 
+    1458:	c5 fc 58 c0          	vaddps %ymm0,%ymm0,%ymm0
+    145c:	c5 fc 29 87 00 0f 00 	vmovaps %ymm0,0xf00(%rdi)
+    1463:	00 
+    1464:	c5 fa 10 86 20 0f 00 	vmovss 0xf20(%rsi),%xmm0
+    146b:	00 
+    146c:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1470:	c5 fa 11 87 20 0f 00 	vmovss %xmm0,0xf20(%rdi)
+    1477:	00 
+    1478:	c5 fa 10 86 24 0f 00 	vmovss 0xf24(%rsi),%xmm0
+    147f:	00 
+    1480:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1484:	c5 fa 11 87 24 0f 00 	vmovss %xmm0,0xf24(%rdi)
+    148b:	00 
+    148c:	c5 fa 10 86 28 0f 00 	vmovss 0xf28(%rsi),%xmm0
+    1493:	00 
+    1494:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1498:	c5 fa 11 87 28 0f 00 	vmovss %xmm0,0xf28(%rdi)
+    149f:	00 
+    14a0:	c5 fa 10 86 2c 0f 00 	vmovss 0xf2c(%rsi),%xmm0
+    14a7:	00 
+    14a8:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    14ac:	c5 fa 11 87 2c 0f 00 	vmovss %xmm0,0xf2c(%rdi)
+    14b3:	00 
+    14b4:	c5 fa 10 86 30 0f 00 	vmovss 0xf30(%rsi),%xmm0
+    14bb:	00 
+    14bc:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    14c0:	c5 fa 11 87 30 0f 00 	vmovss %xmm0,0xf30(%rdi)
+    14c7:	00 
+    14c8:	c5 fa 10 86 34 0f 00 	vmovss 0xf34(%rsi),%xmm0
+    14cf:	00 
+    14d0:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    14d4:	c5 fa 11 87 34 0f 00 	vmovss %xmm0,0xf34(%rdi)
+    14db:	00 
+    14dc:	c5 fa 10 86 38 0f 00 	vmovss 0xf38(%rsi),%xmm0
+    14e3:	00 
+    14e4:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    14e8:	c5 fa 11 87 38 0f 00 	vmovss %xmm0,0xf38(%rdi)
+    14ef:	00 
+    14f0:	c5 fa 10 86 3c 0f 00 	vmovss 0xf3c(%rsi),%xmm0
+    14f7:	00 
+    14f8:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    14fc:	c5 fa 11 87 3c 0f 00 	vmovss %xmm0,0xf3c(%rdi)
+    1503:	00 
+    1504:	c5 fc 28 86 40 0f 00 	vmovaps 0xf40(%rsi),%ymm0
+    150b:	00 
+    150c:	c5 fc 58 c0          	vaddps %ymm0,%ymm0,%ymm0
+    1510:	c5 fc 29 87 40 0f 00 	vmovaps %ymm0,0xf40(%rdi)
+    1517:	00 
+    1518:	c5 fa 10 86 60 0f 00 	vmovss 0xf60(%rsi),%xmm0
+    151f:	00 
+    1520:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1524:	c5 fa 11 87 60 0f 00 	vmovss %xmm0,0xf60(%rdi)
+    152b:	00 
+    152c:	c5 fa 10 86 64 0f 00 	vmovss 0xf64(%rsi),%xmm0
+    1533:	00 
+    1534:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1538:	c5 fa 11 87 64 0f 00 	vmovss %xmm0,0xf64(%rdi)
+    153f:	00 
+    1540:	c5 fa 10 86 68 0f 00 	vmovss 0xf68(%rsi),%xmm0
+    1547:	00 
+    1548:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    154c:	c5 fa 11 87 68 0f 00 	vmovss %xmm0,0xf68(%rdi)
+    1553:	00 
+    1554:	c5 fa 10 86 6c 0f 00 	vmovss 0xf6c(%rsi),%xmm0
+    155b:	00 
+    155c:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1560:	c5 fa 11 87 6c 0f 00 	vmovss %xmm0,0xf6c(%rdi)
+    1567:	00 
+    1568:	c5 fa 10 86 70 0f 00 	vmovss 0xf70(%rsi),%xmm0
+    156f:	00 
+    1570:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1574:	c5 fa 11 87 70 0f 00 	vmovss %xmm0,0xf70(%rdi)
+    157b:	00 
+    157c:	c5 fa 10 86 74 0f 00 	vmovss 0xf74(%rsi),%xmm0
+    1583:	00 
+    1584:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    1588:	c5 fa 11 87 74 0f 00 	vmovss %xmm0,0xf74(%rdi)
+    158f:	00 
+    1590:	c5 fa 10 86 78 0f 00 	vmovss 0xf78(%rsi),%xmm0
+    1597:	00 
+    1598:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    159c:	c5 fa 11 87 78 0f 00 	vmovss %xmm0,0xf78(%rdi)
+    15a3:	00 
+    15a4:	c5 fa 10 86 7c 0f 00 	vmovss 0xf7c(%rsi),%xmm0
+    15ab:	00 
+    15ac:	c5 fa 58 c0          	vaddss %xmm0,%xmm0,%xmm0
+    15b0:	c5 fa 11 87 7c 0f 00 	vmovss %xmm0,0xf7c(%rdi)
+    15b7:	00 
+    15b8:	c5 fc 28 86 80 0f 00 	vmovaps 0xf80(%rsi),%ymm0
+    15bf:	00 
+    15c0:	c5 fc 58 c0          	vaddps %ymm0,%ymm0,%ymm0
+    15c4:	c5 fc 29 87 80 0f 00 	vmovaps %ymm0,0xf80(%rdi)
+    15cb:	00 
+    15cc:	c5 f8 77             	vzeroupper 
+    15cf:	c3                   	retq   
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgb27fae7" class="outline-4">
+<h4 id="orgb27fae7"><span class="section-number-4">1.1.4</span> Opencl Target</h4>
+<div class="outline-text-4" id="text-1-1-4">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>opt_level=3<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> target=<span style="color: #2aa198;">"opencl"</span><span style="color: #757575;">,</span> params=<span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">,</span> target_host= <span style="color: #2aa198;">"llvm"</span><span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>lib.imported_modules[0].get_source<span style="color: #757575;">())</span>
+lib.export_library<span style="color: #757575;">(</span><span style="color: #2aa198;">"/tmp/a.elf"</span><span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+// Function: tvmgen_default_fused_add_kernel0
+__kernel void tvmgen_default_fused_add_kernel0(__global float* restrict T_add, __global float* restrict placeholder) {
+  if (((((int)get_group_id(0)) * 256) + ((int)get_local_id(0))) &lt; 1000) {
+    T_add[(((((int)get_group_id(0)) * 256) + ((int)get_local_id(0))))] = (placeholder[(((((int)get_group_id(0)) * 256) + ((int)get_local_id(0))))] + placeholder[(((((int)get_group_id(0)) * 256) + ((int)get_local_id(0))))]);
+  }
+}
+</p>
+
+<div class="org-src-container">
+<pre class="src src-shell">readelf -p .rodata /tmp/a.elf|grep Function
+</pre>
+</div>
+
+<p>
+[   ab7]  // Function: tvmgen_default_fused_add_kernel0^J__kernel void tvmgen_default_fused_add_kernel0(__global float* restrict T_add, __global float* restrict placeholder) {^J  if (((((int)get_group_id(0)) * 256) + ((int)get_local_id(0))) &lt; 1000) {^J    T_add[(((((int)get_group_id(0)) * 256) + ((int)get_local_id(0))))] = (placeholder[(((((int)get_group_id(0)) * 256) + ((int)get_local_id(0))))] + placeholder[(((((int)get_group_id(0)) * 256) + ((int)get_local_id(0))))]);^J  }^J}^J^J^L
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org5bf4bc8" class="outline-3">
+<h3 id="org5bf4bc8"><span class="section-number-3">1.2</span> 编译一个 onnx 模型</h3>
+<div class="outline-text-3" id="text-1-2">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> onnx
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> te
+<span style="color: #859900;">import</span> tvm.relay <span style="color: #859900;">as</span> relay
+<span style="color: #859900;">from</span> tvm.contrib.download <span style="color: #859900;">import</span> download_testdata
+
+<span style="color: #268bd2;">onnx_model</span> = onnx.load<span style="color: #757575;">(</span>
+    download_testdata<span style="color: #757575;">(</span>
+        <span style="color: #2aa198;">"https://gist.github.com/zhreshold/bcda4716699ac97ea44f791c24310193/raw/93672b029103648953c4e5ad3ac3aadf346a4cdc/super_resolution_0.2.onnx"</span><span style="color: #757575;">,</span>
+        <span style="color: #2aa198;">"super_resolution.onnx"</span><span style="color: #757575;">,</span>
+        module=<span style="color: #2aa198;">"onnx"</span><span style="color: #757575;">,</span>
+    <span style="color: #757575;">)</span>
+<span style="color: #757575;">)</span>
+
+
+<span style="color: #268bd2;">shape_dict</span> = <span style="color: #757575;">{</span><span style="color: #2aa198;">"1"</span>: <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 1<span style="color: #757575;">,</span> 224<span style="color: #757575;">,</span> 224<span style="color: #757575;">)}</span>
+<span style="color: #268bd2;">mod</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.frontend.from_onnx<span style="color: #757575;">(</span>onnx_model<span style="color: #757575;">,</span> shape_dict<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>opt_level=3<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> target=<span style="color: #2aa198;">"llvm"</span><span style="color: #757575;">,</span> params=params<span style="color: #757575;">)</span>
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">graph &#26159;&#20445;&#23384;&#22270;&#30340;&#32467;&#26500;</span>
+<span style="color: #268bd2;">graph_json_path</span> = <span style="color: #2aa198;">"/tmp/a.json"</span>
+<span style="color: #859900;">with</span> <span style="color: #839496;">open</span><span style="color: #757575;">(</span>graph_json_path<span style="color: #757575;">,</span> <span style="color: #2aa198;">"w"</span><span style="color: #757575;">)</span> <span style="color: #859900;">as</span> f:
+    f.write<span style="color: #757575;">(</span>graph<span style="color: #757575;">)</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">lib &#26159;&#22270;&#19978; operator &#23545;&#24212;&#30340;&#23454;&#29616;</span>
+<span style="color: #268bd2;">param_path</span> = <span style="color: #2aa198;">"/tmp/a.params"</span>
+<span style="color: #859900;">with</span> <span style="color: #839496;">open</span><span style="color: #757575;">(</span>param_path<span style="color: #757575;">,</span> <span style="color: #2aa198;">"wb"</span><span style="color: #757575;">)</span> <span style="color: #859900;">as</span> f:
+    f.write<span style="color: #757575;">(</span>relay.save_param_dict<span style="color: #757575;">(</span>params<span style="color: #757575;">))</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">params &#26159;&#22270;&#30340;&#21442;&#25968;</span>
+lib.export_library<span style="color: #757575;">(</span><span style="color: #2aa198;">"/tmp/liba.so"</span><span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+/tmp/ipykernel_30923/1147443566.py:21: DeprecationWarning: legacy graph executor behavior of producing json / lib / params will be removed in the next release. Please see documents of tvm.contrib.graph_executor.GraphModule for the  new recommended usage.
+  graph, lib, params = relay.build(mod, target="llvm", params=params)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-shell"><span style="color: #839496;">echo</span> <span style="color: #2aa198;">"------function implemented in lib"</span>
+objdump -d /tmp/liba.so |grep <span style="color: #2aa198;">" &lt;tvmgen.*:"</span>|grep -v compute
+<span style="color: #839496;">echo</span> <span style="color: #2aa198;">"------function used in graph"</span>
+grep <span style="color: #2aa198;">"func_name"</span> /tmp/a.json 
+
+</pre>
+</div>
+
+<p>
+-&#x2013;&#x2014;function implemented in lib
+0000000000001110 &lt;tvmgen_default_fused_nn_contrib_conv2d_NCHWc_add_nn_relu&gt;:
+0000000000005360 &lt;tvmgen_default_fused_nn_contrib_conv2d_NCHWc_add&gt;:
+0000000000007230 &lt;tvmgen_default_fused_layout_transform_2&gt;:
+00000000000076e0 &lt;tvmgen_default_fused_layout_transform_reshape_transpose_reshape&gt;:
+0000000000008330 &lt;tvmgen_default_fused_nn_contrib_conv2d_NCHWc_add_nn_relu_2&gt;:
+000000000000c4b0 &lt;tvmgen_default_fused_layout_transform&gt;:
+000000000000cbe0 &lt;tvmgen_default_fused_layout_transform_3&gt;:
+000000000000d080 &lt;tvmgen_default_fused_layout_transform_1&gt;:
+000000000000d6a0 &lt;tvmgen_default_fused_nn_contrib_conv2d_NCHWc_add_nn_relu_1&gt;:
+-&#x2013;&#x2014;function used in graph
+        "func_name": "tvmgen_default_fused_layout_transform", 
+        "func_name": "tvmgen_default_fused_nn_contrib_conv2d_NCHWc_add_nn_relu"
+        "func_name": "tvmgen_default_fused_layout_transform_1", 
+        "func_name": "tvmgen_default_fused_nn_contrib_conv2d_NCHWc_add_nn_relu_1"
+        "func_name": "tvmgen_default_fused_layout_transform_2", 
+        "func_name": "tvmgen_default_fused_nn_contrib_conv2d_NCHWc_add_nn_relu_2"
+        "func_name": "tvmgen_default_fused_layout_transform_3", 
+        "func_name": "tvmgen_default_fused_nn_contrib_conv2d_NCHWc_add", 
+        "func_name": "tvmgen_default_fused_layout_transform_reshape_transpose_reshape", 
+</p>
+
+<p>
+所以，tvm 的 frontend 并不是把 nn 网络做为整体编译成单个 function, 而是以
+operator 为单位编译成多个 function, 在设备上运行时需要借助 tvm runtime 载入
+graph, params 后才能运行 
+</p>
+</div>
+</div>
+
+<div id="outline-container-org2b9adbf" class="outline-3">
+<h3 id="org2b9adbf"><span class="section-number-3">1.3</span> Relay IR 列表</h3>
+<div class="outline-text-3" id="text-1-3">
+</div>
+<div id="outline-container-org3441a3b" class="outline-4">
+<h4 id="org3441a3b"><span class="section-number-4">1.3.1</span> tvm.relay</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<p>
+<a href="http://tvm.apache.org/docs/api/python/relay/index.html">http://tvm.apache.org/docs/api/python/relay/index.html</a>
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf886f02" class="outline-4">
+<h4 id="orgf886f02"><span class="section-number-4">1.3.2</span> tvm.relay.annotation</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<p>
+通过 relay.annotation.on_device, 可以指定 relay ir 在哪个 device 上执行, 而不再由 relay.build 时的 target 指定, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #268bd2;">ir1</span> = relay.annotation.on_device<span style="color: #757575;">(</span>ir<span style="color: #757575;">,</span> <span style="color: #2aa198;">"cpu"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">ir2</span> = relay.annotation.on_device<span style="color: #757575;">(</span>ir<span style="color: #757575;">,</span> <span style="color: #2aa198;">"dpu"</span><span style="color: #757575;">)</span>
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">&#27492;&#26102; relay.build &#30340; target &#38656;&#35201;&#26159;&#19968;&#20010; mapping &#32780;&#19981;&#26159;&#21333;&#29420;&#19968;&#20010; target</span>
+relay.build<span style="color: #757575;">(</span>xxx<span style="color: #757575;">,</span> target = <span style="color: #757575;">{</span><span style="color: #2aa198;">"cpu"</span>: <span style="color: #2aa198;">"llvm"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"dpu"</span>: <span style="color: #2aa198;">"ext_dev -keys=vta,cpu -device=vta -model=sim_1x16_i8w8a32_15_15_18_17"</span><span style="color: #757575;">})</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgabd3682" class="outline-4">
+<h4 id="orgabd3682"><span class="section-number-4">1.3.3</span> tvm.relay.nn</h4>
+<div class="outline-text-4" id="text-1-3-3">
+<p>
+<a href="http://tvm.apache.org/docs/api/python/relay/nn.html">http://tvm.apache.org/docs/api/python/relay/nn.html</a>
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgeb951e5" class="outline-4">
+<h4 id="orgeb951e5"><span class="section-number-4">1.3.4</span> tv.relay.image</h4>
+<div class="outline-text-4" id="text-1-3-4">
+<p>
+<a href="http://tvm.apache.org/docs/api/python/relay/image.html">http://tvm.apache.org/docs/api/python/relay/image.html</a>
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgadcfb52" class="outline-4">
+<h4 id="orgadcfb52"><span class="section-number-4">1.3.5</span> tv.relay.vision</h4>
+<div class="outline-text-4" id="text-1-3-5">
+<p>
+<a href="http://tvm.apache.org/docs/api/python/relay/vision.html">http://tvm.apache.org/docs/api/python/relay/vision.html</a>
+</p>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org4e4b927" class="outline-3">
+<h3 id="org4e4b927"><span class="section-number-3">1.4</span> Relay IR Transform</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+<a href="http://tvm.apache.org/docs/api/python/relay/transform.html">http://tvm.apache.org/docs/api/python/relay/transform.html</a>
+</p>
+
+<p>
+
+</p>
+</div>
+</div>
+
+<div id="outline-container-org851bf59" class="outline-3">
+<h3 id="org851bf59"><span class="section-number-3">1.5</span> Relay IR Frontend</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+<a href="http://tvm.apache.org/docs/api/python/relay/frontend.html">http://tvm.apache.org/docs/api/python/relay/frontend.html</a>
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf46b05b" class="outline-3">
+<h3 id="orgf46b05b"><span class="section-number-3">1.6</span> <span class="done DONE">DONE</span> Add Relay OP</h3>
+<div class="outline-text-3" id="text-1-6">
+<ul class="org-ul">
+<li>State "DONE"       from "TODO"       <span class="timestamp-wrapper"><span class="timestamp">[2021-10-14 四 10:24]</span></span></li>
+</ul>
+
+<p>
+<a href="file:///home/sunway/source/tvm/docs/dev/relay_add_op.rst">file:~/source/tvm/docs/dev/relay_add_op.rst</a>
+</p>
+
+<p>
+<a href="https://github.com/sunwayforever/tvm/tree/my_add">https://github.com/sunwayforever/tvm/tree/my_add</a>
+</p>
+
+<p>
+TVM 针对 Relay OP 的注册的核心的机制是 OpRegistry, 无论是 c++ 的 tvm_register_op
+宏还是 python 的 register_compute, 都是通过 OpRegistry 完成注册的, 通过
+OpRegistry, c++ 和 python 可以透明的读写 Op 的属性:
+</p>
+
+<ol class="org-ol">
+<li>type relation</li>
+<li>compute</li>
+<li>schedule</li>
+<li>&#x2026;</li>
+</ol>
+</div>
+
+<div id="outline-container-orgbb368dd" class="outline-4">
+<h4 id="orgbb368dd"><span class="section-number-4">1.6.1</span> Registry</h4>
+<div class="outline-text-4" id="text-1-6-1">
+<p>
+Relay OP 转换为 tvm::relay::Call
+</p>
+
+<p>
+以 relay.add() 为例, 它最终会返回 Call(Op::Get("add"), {lhs, rhs}, Attrs(), {})
+这个 expr, build 时会通过 OpRegistry 查找 `add` op 对应的信息, 例如 compute,
+schedule 等
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #268bd2;">y</span> = relay.add<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> x<span style="color: #757575;">)</span>
+  <span style="color: #859900;">return</span> _make.add<span style="color: #757575;">(</span>lhs<span style="color: #757575;">,</span> rhs<span style="color: #757575;">)</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">_make.add &#26368;&#32456;&#20250;&#36820;&#22238; Call(Op::Get("add"), {lhs, rhs}, Attrs(), {})</span>
+    Call<span style="color: #757575;">(</span>Op::Get<span style="color: #757575;">(</span><span style="color: #2aa198;">"add"</span><span style="color: #757575;">),</span> <span style="color: #757575;">{</span>lhs<span style="color: #757575;">,</span> rhs<span style="color: #757575;">},</span> Attrs<span style="color: #757575;">(),</span> <span style="color: #757575;">{})</span>
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">&#20851;&#20110; _make &#27169;&#22359;</span>
+tvm._ffi._init_api<span style="color: #757575;">(</span><span style="color: #2aa198;">"relay.op._make"</span><span style="color: #757575;">,</span> <span style="color: #839496;">__name__</span><span style="color: #757575;">)</span>
+  _init_api_prefix<span style="color: #757575;">(</span>target_module_name<span style="color: #757575;">,</span> namespace<span style="color: #757575;">)</span>
+    <span style="color: #859900;">for</span> name <span style="color: #859900;">in</span> list_global_func_names<span style="color: #757575;">()</span>:
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">&#25214;&#21040;&#25152;&#26377;&#30340; relay.op._make.xxx &#20989;&#25968;</span>
+        <span style="color: #859900;">if</span> <span style="color: #859900;">not</span> name.startswith<span style="color: #757575;">(</span>prefix<span style="color: #757575;">)</span>:
+            <span style="color: #859900;">continue</span>
+
+        <span style="color: #268bd2;">fname</span> = name[<span style="color: #839496;">len</span><span style="color: #757575;">(</span>prefix<span style="color: #757575;">)</span> + 1 :]
+        <span style="color: #268bd2;">target_module</span> = module
+
+        <span style="color: #268bd2;">f</span> = get_global_func<span style="color: #757575;">(</span>name<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">ff</span> = _get_api<span style="color: #757575;">(</span>f<span style="color: #757575;">)</span>
+        ff.<span style="color: #839496;">__name__</span> = fname
+        ff.<span style="color: #839496;">__doc__</span> = <span style="color: #2aa198;">"TVM PackedFunc %s. "</span> % fname
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">&#36825;&#37324;&#23548;&#33268; .make.{sort, add...} &#21487;&#20197;&#35775;&#38382;&#20102;</span>
+        <span style="color: #839496;">setattr</span><span style="color: #757575;">(</span>target_module<span style="color: #757575;">,</span> fname<span style="color: #757575;">,</span> ff<span style="color: #757575;">)</span>
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">relay.op._make.add &#19981;&#26159;&#30452;&#25509;&#23450;&#20041;&#30340;, &#32780;&#26159;&#36890;&#36807; RELAY_REGISTER_BINARY_OP &#23450;&#20041;&#30340;</span>
+
+<span style="color: #586e75;">#</span><span style="color: #586e75;">define RELAY_REGISTER_BINARY_OP(OpName)                                                \</span>
+  TVM_REGISTER_GLOBAL<span style="color: #757575;">(</span><span style="color: #2aa198;">"relay.op._make."</span> OpName<span style="color: #757575;">)</span>.set_body_typed<span style="color: #757575;">(</span>[]<span style="color: #757575;">(</span>Expr lhs<span style="color: #757575;">,</span> Expr rhs<span style="color: #757575;">)</span> <span style="color: #757575;">{</span> \
+    static const Op&amp; op = Op::Get<span style="color: #757575;">(</span>OpName<span style="color: #757575;">)</span>;                                              \
+    <span style="color: #859900;">return</span> Call<span style="color: #757575;">(</span>op<span style="color: #757575;">,</span> <span style="color: #757575;">{</span>lhs<span style="color: #757575;">,</span> rhs<span style="color: #757575;">},</span> Attrs<span style="color: #757575;">(),</span> <span style="color: #757575;">{})</span>;                                           \
+  <span style="color: #757575;">})</span>;                                                                                   \
+  RELAY_REGISTER_OP<span style="color: #757575;">(</span>OpName<span style="color: #757575;">)</span>                                                             \
+      .set_num_inputs<span style="color: #757575;">(</span>2<span style="color: #757575;">)</span>                                                                \
+      .add_argument<span style="color: #757575;">(</span><span style="color: #2aa198;">"lhs"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"Tensor"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"The left hand side tensor."</span><span style="color: #757575;">)</span>                      \
+      .add_argument<span style="color: #757575;">(</span><span style="color: #2aa198;">"rhs"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"Tensor"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"The right hand side tensor."</span><span style="color: #757575;">)</span>                     \
+      .add_type_rel<span style="color: #757575;">(</span><span style="color: #2aa198;">"Broadcast"</span><span style="color: #757575;">,</span> BroadcastRel<span style="color: #757575;">)</span>                                          \
+      .set_attr&lt;TOpPattern&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"TOpPattern"</span><span style="color: #757575;">,</span> kBroadcast<span style="color: #757575;">)</span>                                   \
+      .set_attr&lt;TOpIsStateful&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"TOpIsStateful"</span><span style="color: #757575;">,</span> false<span style="color: #757575;">)</span>                                  \
+      .set_attr&lt;FInferCorrectLayout&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"FInferCorrectLayout"</span><span style="color: #757575;">,</span> BinaryBroadcastLayout<span style="color: #757575;">)</span>
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">&#36825;&#37324;&#23548;&#33268; relay.op._make.add() &#20250;&#36820;&#22238; Call(Op::Get("add"), {lhs, rhs}, Attrs(),</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">{}), &#21478;&#22806;, add &#30340; compute &#26159;&#22312; c++ &#37324;&#27880;&#20876;&#30340;, &#32780;&#19981;&#26159;&#36890;&#36807; python &#30340;</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">register_compute</span>
+RELAY_REGISTER_BINARY_OP<span style="color: #757575;">(</span><span style="color: #2aa198;">"add"</span><span style="color: #757575;">)</span>
+    .describe<span style="color: #757575;">(</span><span style="color: #2aa198;">"Elementwise add with broadcasting"</span><span style="color: #757575;">)</span>
+    .set_support_level<span style="color: #757575;">(</span>1<span style="color: #757575;">)</span>
+    .set_attr&lt;FTVMCompute&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"FTVMCompute"</span><span style="color: #757575;">,</span> RELAY_BINARY_COMPUTE<span style="color: #757575;">(</span>topi::add<span style="color: #757575;">))</span>;
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org41ddd9c" class="outline-4">
+<h4 id="org41ddd9c"><span class="section-number-4">1.6.2</span> TypeRelation</h4>
+<div class="outline-text-4" id="text-1-6-2">
+<p>
+TypeRelation 的目的是为了支持 tvm 的 <a href="tvm_infertype.html#orgbd92f1f">TVM InferType</a> 功能
+</p>
+
+<p>
+RELAY_REGISTER_BINARY_OP 时通过 add_type_rel 指定 op 的 TypeRelation
+</p>
+
+<p>
+以 Conv2D 为例:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++">RELAY_REGISTER_OP<span style="color: #757575;">(</span><span style="color: #2aa198;">"nn.conv2d"</span><span style="color: #757575;">)</span>
+    .add_type_rel<span style="color: #757575;">(</span><span style="color: #2aa198;">"Conv2D"</span><span style="color: #757575;">,</span> <span style="color: #b58900;">Conv2DRel</span>&lt;Conv2DAttrs&gt;<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">template</span> &lt;<span style="color: #859900;">typename</span> <span style="color: #b58900;">AttrType</span>&gt;
+<span style="color: #b58900;">bool</span> <span style="color: #268bd2;">Conv2DRel</span><span style="color: #757575;">(</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">Array</span>&lt;Type&gt;&amp; <span style="color: #268bd2;">types</span><span style="color: #757575;">,</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">num_inputs</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">Attrs</span>&amp; <span style="color: #268bd2;">attrs</span><span style="color: #757575;">,</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">TypeReporter</span>&amp; <span style="color: #268bd2;">reporter</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+    <span style="color: #b58900;">Array</span>&lt;IndexExpr&gt; <span style="color: #268bd2;">oshape</span><span style="color: #757575;">({</span>dshape_nchw[0]<span style="color: #757575;">,</span> channels<span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> 0<span style="color: #757575;">})</span>;
+    <span style="color: #b58900;">IndexExpr</span> <span style="color: #268bd2;">pad_h</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">pad_w</span>;
+    GetPaddingHeightWidth<span style="color: #757575;">(</span>param-&gt;padding<span style="color: #757575;">,</span> &amp;pad_h<span style="color: #757575;">,</span> &amp;pad_w<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">((I+2P-K)/S) + 1</span>
+    oshape.Set<span style="color: #757575;">(</span>2<span style="color: #757575;">,</span>indexdiv<span style="color: #757575;">(</span>dshape_nchw[2] + pad_h - dilated_ksize_y<span style="color: #757575;">,</span> param-&gt;strides[0]<span style="color: #757575;">)</span> +1<span style="color: #757575;">)</span>;    
+    oshape.Set<span style="color: #757575;">(</span>3<span style="color: #757575;">,</span>indexdiv<span style="color: #757575;">(</span>dshape_nchw[3] + pad_w - dilated_ksize_x<span style="color: #757575;">,</span> param-&gt;strides[1]<span style="color: #757575;">)</span> +1<span style="color: #757575;">)</span>;
+    oshape = trans_out_layout.BackwardShape<span style="color: #757575;">(</span>oshape<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">assign output type</span>
+    reporter-&gt;Assign<span style="color: #757575;">(</span>types[2]<span style="color: #757575;">,</span> TensorType<span style="color: #757575;">(</span>oshape<span style="color: #757575;">,</span> out_dtype<span style="color: #757575;">))</span>;
+    <span style="color: #859900;">return</span> <span style="color: #268bd2; font-weight: bold;">true</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgeeb7a30" class="outline-4">
+<h4 id="orgeeb7a30"><span class="section-number-4">1.6.3</span> Relay Operator Strategy</h4>
+<div class="outline-text-4" id="text-1-6-3">
+<p>
+<a href="file:///home/sunway/source/tvm/docs/dev/relay_op_strategy.rst">file:~/source/tvm/docs/dev/relay_op_strategy.rst</a>
+</p>
+
+<p>
+relay.build 的第一步是把 Relay IR 转换为 TE, 例如:
+</p>
+
+<p>
+relay.exp 会转换成
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python">te.compute<span style="color: #757575;">(</span>x.shape<span style="color: #757575;">,</span> <span style="color: #859900;">lambda</span> *i: te.exp<span style="color: #757575;">(</span>x<span style="color: #757575;">(</span>*i<span style="color: #757575;">)))</span>
+</pre>
+</div>
+
+<p>
+relay.log_softmax 会转换成
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #268bd2;">m</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">n</span> = x.shape
+<span style="color: #268bd2;">k</span> = te.reduce_axis<span style="color: #757575;">((</span>0<span style="color: #757575;">,</span> n<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"k"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">max_elem</span> = te.compute<span style="color: #757575;">((</span>m<span style="color: #757575;">,),</span> <span style="color: #859900;">lambda</span> i: tvm.te.<span style="color: #839496;">max</span><span style="color: #757575;">(</span>x[i<span style="color: #757575;">,</span> k]<span style="color: #757575;">,</span> axis=k<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">k</span> = te.reduce_axis<span style="color: #757575;">((</span>0<span style="color: #757575;">,</span> n<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"k"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">expsum</span> = te.compute<span style="color: #757575;">((</span>m<span style="color: #757575;">,),</span> <span style="color: #859900;">lambda</span> i: te.<span style="color: #839496;">sum</span><span style="color: #757575;">(</span>te.exp<span style="color: #757575;">(</span>x[i<span style="color: #757575;">,</span> k] - max_elem[i]<span style="color: #757575;">),</span> axis=k<span style="color: #757575;">))</span>
+<span style="color: #859900;">return</span> te.compute<span style="color: #757575;">(</span>x.shape<span style="color: #757575;">,</span> <span style="color: #859900;">lambda</span> i<span style="color: #757575;">,</span> j: x[i<span style="color: #757575;">,</span> j] - max_elem[i] - te.log<span style="color: #757575;">(</span>expsum[i]<span style="color: #757575;">))</span>
+
+</pre>
+</div>
+
+<p>
+这些具体的 TE 实现是在 TOPI (Tvm Operator Index Inventory) 中定义的, TVM 通过
+relay operator strategy 把 operator 与 TOPI 中定义的 `Compute` 和 `Schedule` 关联起来.
+</p>
+
+<p>
+<a href="file:///home/sunway/source/tvm/docs/dev/relay_op_strategy.rst">file:~/source/tvm/docs/dev/relay_op_strategy.rst</a>
+</p>
+</div>
+
+<div id="outline-container-org8e73032" class="outline-5">
+<h5 id="org8e73032"><span class="section-number-5">1.6.3.1</span> 定义 strategy</h5>
+<div class="outline-text-5" id="text-1-6-3-1">
+<p>
+<a href="file:///home/sunway/source/tvm/python/tvm/relay/op/strategy/generic.py#orgd6ad273">file:///home/sunway/source/tvm/python/tvm/relay/op/strategy/generic.py#orgd6ad273</a>
+</p>
+
+<p>
+strategy 包含两个数据:
+</p>
+
+<ol class="org-ol">
+<li>compute, 例如 topi.nn.softmax</li>
+<li>schedule, 例如 topi.generic.schedule_softmax</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #b58900;">@override_native_generic_func</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"softmax_strategy"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">softmax_strategy</span><span style="color: #757575;">(</span>attrs<span style="color: #757575;">,</span> inputs<span style="color: #757575;">,</span> out_type<span style="color: #757575;">,</span> target<span style="color: #757575;">)</span>:
+    <span style="color: #2aa198;">"""softmax generic strategy"""</span>
+    <span style="color: #268bd2;">strategy</span> = _op.OpStrategy<span style="color: #757575;">()</span>
+    strategy.add_implementation<span style="color: #757575;">(</span>
+        wrap_compute_softmax<span style="color: #757575;">(</span>topi.nn.softmax<span style="color: #757575;">),</span>
+        wrap_topi_schedule<span style="color: #757575;">(</span>topi.generic.schedule_softmax<span style="color: #757575;">),</span>
+        name=<span style="color: #2aa198;">"softmax.generic"</span><span style="color: #757575;">,</span>
+    <span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> strategy
+</pre>
+</div>
+
+<p>
+通过 override_native_generic_func, softmax_strategy 变成一个 generic_func, 这个
+generic_func 可以通过 xxx.register 添加另一个适用于不同 target 的版本
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #b58900;">@softmax_strategy.register</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"cpu"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">softmax_strategy_cpu</span><span style="color: #757575;">(</span>attrs<span style="color: #757575;">,</span> inputs<span style="color: #757575;">,</span> out_type<span style="color: #757575;">,</span> target<span style="color: #757575;">)</span>:
+    <span style="color: #2aa198;">"""softmax x86 strategy"""</span>
+    <span style="color: #268bd2;">strategy</span> = _op.OpStrategy<span style="color: #757575;">()</span>
+    strategy.add_implementation<span style="color: #757575;">(</span>
+        wrap_compute_softmax<span style="color: #757575;">(</span>topi.nn.softmax<span style="color: #757575;">),</span>
+        wrap_topi_schedule<span style="color: #757575;">(</span>topi.x86.schedule_softmax<span style="color: #757575;">),</span>
+        name=<span style="color: #2aa198;">"softmax.x86"</span><span style="color: #757575;">,</span>
+    <span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> strategy
+
+</pre>
+</div>
+
+<p>
+可见当 target 为 cpu 时, 针对 softmax 会使用不同的 schedule
+</p>
+</div>
+</div>
+
+<div id="outline-container-org92d9ff3" class="outline-5">
+<h5 id="org92d9ff3"><span class="section-number-5">1.6.3.2</span> 绑定 strategy 与 op</h5>
+<div class="outline-text-5" id="text-1-6-3-2">
+<p>
+<a href="file:///home/sunway/source/tvm/python/tvm/relay/op/nn/_nn.py">file:~/source/tvm/python/tvm/relay/op/nn/_nn.py</a>
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">reg.register_strategy<span style="color: #757575;">(</span><span style="color: #2aa198;">"nn.softmax"</span><span style="color: #757575;">,</span> strategy.softmax_strategy<span style="color: #757575;">)</span>
+  tvm.ir.register_op_attr<span style="color: #757575;">(</span>op_name<span style="color: #757575;">,</span> <span style="color: #2aa198;">"FTVMStrategy"</span><span style="color: #757575;">,</span> fstrategy<span style="color: #757575;">,</span> level<span style="color: #757575;">)</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org510a908" class="outline-5">
+<h5 id="org510a908"><span class="section-number-5">1.6.3.3</span> relay.build 时查找 strategy</h5>
+<div class="outline-text-5" id="text-1-6-3-3">
+<p>
+
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">def</span> <span style="color: #268bd2;">lower_call</span><span style="color: #757575;">(</span>call<span style="color: #757575;">,</span> inputs<span style="color: #757575;">,</span> target<span style="color: #757575;">)</span>:
+  <span style="color: #268bd2;">best_impl</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">outputs</span> = select_implementation<span style="color: #757575;">(</span>
+      op<span style="color: #757575;">,</span> call.attrs<span style="color: #757575;">,</span> inputs<span style="color: #757575;">,</span> ret_type<span style="color: #757575;">,</span> target<span style="color: #757575;">,</span> use_autotvm=<span style="color: #268bd2; font-weight: bold;">False</span>
+  <span style="color: #757575;">)</span>
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">select_implementation</span><span style="color: #757575;">(</span>op<span style="color: #757575;">,</span> attrs<span style="color: #757575;">,</span> inputs<span style="color: #757575;">,</span> out_type<span style="color: #757575;">,</span> target<span style="color: #757575;">,</span> use_autotvm=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>:
+  <span style="color: #268bd2;">all_impls</span> = get_valid_implementations<span style="color: #757575;">(</span>op<span style="color: #757575;">,</span> attrs<span style="color: #757575;">,</span> inputs<span style="color: #757575;">,</span> out_type<span style="color: #757575;">,</span> target<span style="color: #757575;">)</span>
+  <span style="color: #859900;">for</span> impl <span style="color: #859900;">in</span> all_impls:
+    <span style="color: #268bd2;">outs</span> = impl.compute<span style="color: #757575;">(</span>attrs<span style="color: #757575;">,</span> inputs<span style="color: #757575;">,</span> out_type<span style="color: #757575;">)</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">...</span>
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">get_valid_implementations</span><span style="color: #757575;">(</span>op<span style="color: #757575;">,</span> attrs<span style="color: #757575;">,</span> inputs<span style="color: #757575;">,</span> out_type<span style="color: #757575;">,</span> target<span style="color: #757575;">)</span>:
+  <span style="color: #268bd2;">fstrategy</span> = op.get_attr<span style="color: #757575;">(</span><span style="color: #2aa198;">"FTVMStrategy"</span><span style="color: #757575;">)</span>
+  <span style="color: #586e75;"># </span><span style="color: #586e75;">...</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org62439c5" class="outline-3">
+<h3 id="org62439c5"><span class="section-number-3">1.7</span> <span class="done DONE">DONE</span> Let Expression</h3>
+<div class="outline-text-3" id="text-1-7">
+<ul class="org-ul">
+<li>State "DONE"       from              <span class="timestamp-wrapper"><span class="timestamp">[2021-10-18 一 16:48]</span></span></li>
+</ul>
+
+<p>
+Let Expession 可以明确的表示变量的作用域, 更有利用编译器对代码的分析. 例如:
+</p>
+
+<pre class="example" id="org80ca848">
+// 不使用 let 的代码
+a=1
+b=2
+c=a+b
+# 此处 a, b 是否还是 live?
+
+// 使用 let 的代码
+let (a=1, b=2) {
+    c=a+b;
+    c
+}
+# 这里明确知道 a,b 不再 live
+</pre>
+
+<p>
+TVM 支持 let 形式的 relay, 但现在看并不能正常工作&#x2026;
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-10-11 11:00</span>
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">get_demo_mod</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">a</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"a"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">),</span> dtype=<span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">b</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"b"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">),</span> dtype=<span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">c</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"c"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">),</span> dtype=<span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">cond</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"cond"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(),</span> dtype=<span style="color: #2aa198;">"bool"</span><span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">sb</span> = relay.ScopeBuilder<span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">out1</span> = sb.let<span style="color: #757575;">(</span><span style="color: #2aa198;">"out1"</span><span style="color: #757575;">,</span> relay.add<span style="color: #757575;">(</span>a<span style="color: #757575;">,</span> b<span style="color: #757575;">))</span>
+    <span style="color: #268bd2;">out2</span> = sb.let<span style="color: #757575;">(</span><span style="color: #2aa198;">"out2"</span><span style="color: #757575;">,</span> relay.add<span style="color: #757575;">(</span>out1<span style="color: #757575;">,</span> c<span style="color: #757575;">))</span>
+    sb.ret<span style="color: #757575;">(</span>out2<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">sb2</span> = relay.ScopeBuilder<span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">out</span> = sb2.let<span style="color: #757575;">(</span><span style="color: #2aa198;">"out"</span><span style="color: #757575;">,</span> relay.multiply<span style="color: #757575;">(</span>sb.get<span style="color: #757575;">(),</span> c<span style="color: #757575;">))</span>
+    <span style="color: #859900;">with</span> sb2.if_scope<span style="color: #757575;">(</span>cond<span style="color: #757575;">)</span>:
+        sb2.ret<span style="color: #757575;">(</span>c<span style="color: #757575;">)</span>
+    <span style="color: #859900;">with</span> sb2.else_scope<span style="color: #757575;">()</span>:
+        sb2.ret<span style="color: #757575;">(</span>out<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">func</span> = relay.Function<span style="color: #757575;">(</span>[a<span style="color: #757575;">,</span> b<span style="color: #757575;">,</span> c<span style="color: #757575;">,</span> cond]<span style="color: #757575;">,</span> sb2.get<span style="color: #757575;">())</span>
+    <span style="color: #268bd2;">mod</span> = tvm.IRModule.from_expr<span style="color: #757575;">(</span>func<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">mod</span> = relay.transform.InferType<span style="color: #757575;">()(</span>mod<span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> mod
+
+
+<span style="color: #268bd2;">mod</span> = get_demo_mod<span style="color: #757575;">()</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+def @main(%a: Tensor[(1, 10), float32], %b: Tensor[(1, 10), float32], %c: Tensor[(1, 10), float32], %cond: bool) -&gt; Tensor[(1, 10), float32] {
+  %0 = (
+    let %out1: Tensor[(1, 10), float32] = add(%a, %b) <i>* ty=Tensor[(1, 10), float32] *</i>;
+    let %out2: Tensor[(1, 10), float32] = add(%out1, %c) <i>* ty=Tensor[(1, 10), float32] *</i>;
+    %out2
+  );
+  let %out: Tensor[(1, 10), float32] = multiply(%0, %c) <i>* ty=Tensor[(1, 10), float32] *</i>;
+  if (%cond) {
+    %c
+  } else {
+    %out
+  }
+}
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

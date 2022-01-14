@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Invoke Dynamic</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Invoke Dynamic</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org8745b68">1. Invoke Dynamic</a>
+<ul>
+<li><a href="#orgd948b5b">1.1. Overview</a></li>
+<li><a href="#org433c9eb">1.2. invokedynamic 与 lambda</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org8745b68" class="outline-2">
+<h2 id="org8745b68"><span class="section-number-2">1</span> Invoke Dynamic</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-orgd948b5b" class="outline-3">
+<h3 id="orgd948b5b"><span class="section-number-3">1.1</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+invokedynamic 是 java 1.7 添加一个新的 JVM OPCODE, 主要用来支持动态类型语言. 在
+java 1.8 中, OpenJDK 使用 invokedynamic 来实现 lambda.
+</p>
+
+<p>
+invokedynamic 要解决的主要问题是:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #268bd2;">function</span> <span style="color: #757575;">(</span><span style="color: #b58900;">x</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    x.foo<span style="color: #757575;">()</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+应该编译为什么样的 bytecode? x 的类型是未知的, 那么 `x.foo()` 应该编译成 invoke-?
+</p>
+
+<p>
+invokedynamic 的思想是:
+</p>
+
+<p>
+由于 x 的类型只有在运行时才能知道, 当需要确定 `x.foo` 如何 dispatch 时,把调用时相关的信息 (例如 x 对象, 字符串 "foo", foo 的 method type 或 signature) 作为参数传递给一个用户提供的 bootstrap 函数, 后者会返回一个 CallSite 对象, 包含了具体的对应于当前 callsite 的 target function (MethodHandle), 即由用户去实现具体的
+dispatch.
+</p>
+
+<ol class="org-ol">
+<li>invokedynamic 调用时是由 bootstrap 函数决定具体的 dispatch</li>
+
+<li>bootstrap 函数是用户可以提供的, 给各种动态语言基于 JVM 的实现提供了灵活性, 它相当于 linker 中的 dl_resolve 函数</li>
+
+<li>invokedynamic 相当于 `userspace` 的 dispatch</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org433c9eb" class="outline-3">
+<h3 id="org433c9eb"><span class="section-number-3">1.2</span> invokedynamic 与 lambda</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+OpenJDK 中 lambda 的实现:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">import</span> <span style="color: #268bd2; font-weight: bold;">java</span>.<span style="color: #268bd2; font-weight: bold;">util</span>.<span style="color: #268bd2; font-weight: bold;">function</span>.<span style="color: #b58900;">Consumer</span>;
+<span style="color: #859900;">import</span> <span style="color: #268bd2; font-weight: bold;">java</span>.<span style="color: #268bd2; font-weight: bold;">util</span>.<span style="color: #b58900;">ArrayList</span>;
+
+<span style="color: #859900;">public</span> <span style="color: #859900;">class</span> <span style="color: #b58900;">playground</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">foo</span><span style="color: #757575;">(</span><span style="color: #b58900;">Consumer</span>&lt;<span style="color: #b58900;">String</span>&gt; <span style="color: #268bd2;">c</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        c.accept<span style="color: #757575;">(</span><span style="color: #2aa198;">"hello"</span><span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+
+    <span style="color: #859900;">public</span> <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">String</span>[] <span style="color: #268bd2;">args</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        foo<span style="color: #757575;">(</span>v -&gt; <span style="color: #757575;">{</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">x</span> = v.length<span style="color: #757575;">()</span>;<span style="color: #757575;">})</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+对应的 bytecode 为:
+</p>
+
+<pre class="example" id="org2ef13ae">
+public static void main(java.lang.String[]);
+  0: invokedynamic #4,  0              // InvokeDynamic #0:accept:()Ljava/util/function/Consumer;
+  5: invokestatic  #5                  // Method foo:(Ljava/util/function/Consumer;)V
+  8: return
+
+private static void lambda$main$0(java.lang.String);
+  0: aload_0
+  1: invokevirtual #6                  // Method java/lang/String.length:()I
+  4: istore_1
+  5: return
+
+bootstrap method:
+0: #28 invokestatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #29 (Ljava/lang/Object;)V
+      #30 invokestatic playground.lambda$main$0:(Ljava/lang/String;)V
+      #31 (Ljava/lang/String;)V
+</pre>
+
+<p>
+与 类似, 首先 lambda 被编译为一个 static 函数, 然后由 invokedynamic 在运行时通过 metafactory 这个 bootstrap 函数提供了一个与 LambdaConsumer 类似的
+functional interface 的实例 ((通过 ASM 框架)
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

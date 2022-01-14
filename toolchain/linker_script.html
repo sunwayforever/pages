@@ -1,0 +1,544 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Linker Script</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Linker Script</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgb15a40a">1. Linker Script</a>
+<ul>
+<li><a href="#org972ea3b">1.1. 一个简单的 linker script 的例子</a></li>
+<li><a href="#orga7e7565">1.2. SECTIONS</a></li>
+<li><a href="#orgc926b8b">1.3. symbol</a>
+<ul>
+<li><a href="#org8ecc75d">1.3.1. 直接赋值</a></li>
+<li><a href="#org3a1b05a">1.3.2. PROVIDE</a></li>
+<li><a href="#orgdba5085">1.3.3. PIE</a></li>
+</ul>
+</li>
+<li><a href="#orga82cac6">1.4. Arithmetic Functions</a></li>
+<li><a href="#orgfb1f6d0">1.5. ENTRY</a></li>
+<li><a href="#orge4c816b">1.6. KEEP</a></li>
+<li><a href="#org7c92151">1.7. AT</a>
+<ul>
+<li><a href="#org8b64862">1.7.1. 通过指定 location counter 并不能造成 elf 中的空洞</a></li>
+<li><a href="#org67e4188">1.7.2. objcopy 生成过大的 binary</a></li>
+<li><a href="#org88fcfda">1.7.3. 使用 AT 避免过大的 binary</a></li>
+</ul>
+</li>
+<li><a href="#org52d9e1b">1.8. misc</a>
+<ul>
+<li><a href="#org5464b8d">1.8.1. how to get the default linker script</a></li>
+<li><a href="#org8f568c2">1.8.2. how to use linker script</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgb15a40a" class="outline-2">
+<h2 id="orgb15a40a"><span class="section-number-2">1</span> Linker Script</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org972ea3b" class="outline-3">
+<h3 id="org972ea3b"><span class="section-number-3">1.1</span> 一个简单的 linker script 的例子</h3>
+<div class="outline-text-3" id="text-1-1">
+<pre class="example" id="orgef43f9a">
+$&gt; cat test.lds
+PROVIDE (xxx = 0xcafebabe);
+SECTIONS
+{
+    . = 0x10000;
+    .text : { *(.text) }
+    . = 0x9000000;
+    .data : { *(.data) }
+    .bss : { *(.bss) }
+}
+
+$&gt; cat test.c
+#include &lt;string.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;stdlib.h&gt;
+
+extern int xxx;
+int main(int argc, char *argv[]) {
+    printf("%x\n", &amp;xxx);
+}
+
+$&gt; arm-linux-androideabi-gcc test.c -fPIE -pie -O0 -g3 -T test.lds 
+
+$&gt; ./a.out
+b886b012
+
+$&gt; arm-linux-androideabi-readelf -a ./a.out |grep '] .text'
+  [ 1] .text             PROGBITS        00010000 001000 0000f8 00  AX  0   0  4
+                                         ~~~~~~~~ &lt;---
+
+$&gt; arm-linux-androideabi-readelf -a ./a.out |grep '] .data'
+  [13] .data             PROGBITS        09000000 002000 000000 00  WA  0   0  1
+                                         ~~~~~~~~
+
+$&gt; arm-linux-androideabi-objdum -D ./a.out
+
+Disassembly of section .got:
+
+09000128 &lt;_GLOBAL_OFFSET_TABLE_-0x18&gt;:
+ 9000128:    09000010      stmdbeq         r0, {r4}
+ 900012c:    09000008      stmdbeq         r0, {r3}
+ 9000130:    09000000      stmdbeq         r0, {}	; &lt;UNPREDICTABLE&gt;
+ 9000134:    09000018      stmdbeq         r0, {r3, r4}
+ 9000138:    000100a8      andeq           r0, r1, r8, lsr #1
+ 900013c:    cafebabe      bgt             8faec3c &lt;note_end+0x8f9e950&gt;
+             ~~~~~~~~ &lt;---
+
+$&gt; arm-linux-androideabi-gcc test.c -fno-pie -O0 -g3 -T test.lds
+$&gt; arm-linux-androideabi-objdum -D ./a.out
+000100a8 &lt;main&gt;:
+   100a8:       e92d4800        push    {fp, lr}
+   100ac:       e28db004        add     fp, sp, #4
+   100b0:       e24dd008        sub     sp, sp, #8
+   100b4:       e50b0008        str     r0, [fp, #-8]
+   100b8:       e50b100c        str     r1, [fp, #-12]
+   100bc:       e59f0010        ldr     r0, [pc, #16]   ; 100d4 &lt;main+0x2c&gt;
+   100c0:       e59f1010        ldr     r1, [pc, #16]   ; 100d8 &lt;main+0x30&gt;
+   100c4:       eb00000f        bl      10108 &lt;printf@plt&gt;
+   100c8:       e1a00003        mov     r0, r3
+   100cc:       e24bd004        sub     sp, fp, #4
+   100d0:       e8bd8800        pop     {fp, pc}
+   100d4:       0001012c        andeq   r0, r1, ip, lsr #2
+   100d8:       cafebabe        bgt     fffbebd8 &lt;xxx+0x34fd311a&gt;
+                ~~~~~~~~ &lt;---
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orga7e7565" class="outline-3">
+<h3 id="orga7e7565"><span class="section-number-3">1.2</span> SECTIONS</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+SECTIONS 是 linker script 最主要的部分, 通过 SECTIONS 把多个文件的
+section 合并成一个 section, 并指定 section 的地址, 例如:
+</p>
+
+<pre class="example">
+SECTIONS {
+    /* 所有输入文件的 .text section 被合并在输出文件的 .text section 中
+    * , 并且 .text section 的 vaddr 为 0x20000 */
+    .text 0x20000: {
+        *(.text)
+    }
+    /* 把 location counter 置于 0x40000 */
+    . = 0x40000;
+    /* 把 foo.o 中的 .data 和 bar.o 中的 .data2 合并到输出文件的 .data 中
+    * 这里没有指定地址, 所以地址为 location counter 当前的值 (0x40000)*/
+    .data : {
+        foo.o(.data)
+        bar.o(.data2)
+    }
+    /* 这里 location counter 的值会自动加上 sizeof(.data), 所以 .bss
+    的地址会接着 .data */
+    .bss : {
+        *(.bss)
+    }
+
+    /* location counter 也可以这样赋值 */
+    . = . + 0x10000
+
+    /* 输入文件的 section 只能使用一次, 所以这里 .tmp 并不会有任何内容 */
+    .tmp : {
+        *(.bss)
+    }
+    /* 所有其它未指定的 section 会自动按同名的方式合并到输出文件中 */
+}
+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orgc926b8b" class="outline-3">
+<h3 id="orgc926b8b"><span class="section-number-3">1.3</span> symbol</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+通过 linker script 可以给全部符号赋值.
+</p>
+</div>
+
+<div id="outline-container-org8ecc75d" class="outline-4">
+<h4 id="org8ecc75d"><span class="section-number-4">1.3.1</span> 直接赋值</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<pre class="example">
+xxx = 0xabc;
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">extern</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">xxx</span>;
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%x\n"</span><span style="color: #757575;">,</span> &amp;xxx<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org7a03fac">
+$&gt; ./a.out
+b71b3abc
+</pre>
+
+<p>
+输出的结果中有 b71b3 前缀是因为 PIE 的原因
+</p>
+</div>
+</div>
+
+<div id="outline-container-org3a1b05a" class="outline-4">
+<h4 id="org3a1b05a"><span class="section-number-4">1.3.2</span> PROVIDE</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<p>
+PROVIDE 与直接赋值差不多, 但有一点差别:
+</p>
+
+<pre class="example">
+PROVIDE (xxx = 0xabc);
+</pre>
+
+<pre class="example" id="orgb7610be">
+$&gt; cat test.c
+extern int xxx;
+int main(int argc, char *argv[]) {
+    printf("%x\n", &amp;xxx);
+}
+
+$&gt; arm-linux-androideabi-gcc test.c -fPIE -pie -O0 -g3 -T test.lds
+$&gt; ./a.out
+af92babc
+
+$&gt; cat test2.c
+int xxx = 0;
+int main(int argc, char *argv[]) {
+    printf("%x\n", &amp;xxx);
+}
+
+$&gt; arm-linux-androideabi-gcc test2.c -fPIE -pie -O0 -g3 -T test.lds 
+$&gt; ./a.out
+ab8c9004
+</pre>
+
+<p>
+可见, PROVIDE 只能给未定义的全局符号赋值.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgdba5085" class="outline-4">
+<h4 id="orgdba5085"><span class="section-number-4">1.3.3</span> PIE</h4>
+</div>
+</div>
+
+
+<div id="outline-container-orga82cac6" class="outline-3">
+<h3 id="orga82cac6"><span class="section-number-3">1.4</span> Arithmetic Functions</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+给 symbol 或 location counter 赋值时可以使用如何的函数:
+</p>
+
+<ol class="org-ol">
+<li><p>
+ADDR (section)
+</p>
+
+<p>
+返回一个 section 的绝对地址
+</p></li>
+
+<li><p>
+DEFINED (symbol)
+</p>
+
+<p>
+是否已经定义了全局符号 symbol
+</p></li>
+
+<li>SIZEOF (section)</li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-orgfb1f6d0" class="outline-3">
+<h3 id="orgfb1f6d0"><span class="section-number-3">1.5</span> ENTRY</h3>
+<div class="outline-text-3" id="text-1-5">
+<pre class="example">
+ENTRY (foo);
+</pre>
+
+<p>
+通过 entry 可以指定 entry pointer address
+</p>
+</div>
+</div>
+
+<div id="outline-container-orge4c816b" class="outline-3">
+<h3 id="orge4c816b"><span class="section-number-3">1.6</span> KEEP</h3>
+</div>
+
+<div id="outline-container-org7c92151" class="outline-3">
+<h3 id="org7c92151"><span class="section-number-3">1.7</span> AT</h3>
+<div class="outline-text-3" id="text-1-7">
+</div>
+<div id="outline-container-org8b64862" class="outline-4">
+<h4 id="org8b64862"><span class="section-number-4">1.7.1</span> 通过指定 location counter 并不能造成 elf 中的空洞</h4>
+<div class="outline-text-4" id="text-1-7-1">
+<pre class="example" id="org48eb67d">
+$&gt; cat test.lds
+PROVIDE (xxx = 0xcafebabe);
+SECTIONS
+{
+    . = 0x10000;
+    .text : { *(.text) }
+    . = 0x9000000;
+    .rodata : { *(.rodata) }
+    .data : { *(.data) }
+    .bss : { *(.bss) }
+}
+
+</pre>
+
+<p>
+正常情况下 rodata 与 text 会在同一个 LOAD segment, 但指定了 location counter 后,
+rodata 会被放在另一个 segment: 即同一个 LOAD segment 总是连续的
+</p>
+
+<pre class="example" id="orgab7d309">
+Program Headers:
+  Type           Offset   VirtAddr   PhysAddr   FileSiz MemSiz  Flg Align
+  ABIFLAGS       0x020028 0x09000028 0x09000028 0x00018 0x00018 R   0x8
+  LOAD           0x010000 0x00010000 0x00010000 0x00230 0x00230 R E 0x10000
+  LOAD           0x020000 0x09000000 0x09000000 0x00058 0x00078 RW  0x10000
+
+ Section to Segment mapping:
+  Segment Sections...
+   00     .MIPS.abiflags 
+   01     .text .init .fini 
+   02     .rodata .MIPS.abiflags .eh_frame .ctors .dtors .sdata .bss
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org67e4188" class="outline-4">
+<h4 id="org67e4188"><span class="section-number-4">1.7.2</span> objcopy 生成过大的 binary</h4>
+<div class="outline-text-4" id="text-1-7-2">
+<p>
+objcopy -O binary 生成的 binary 需要对应到一个 elf 加载后的布局, 所有 LOAD
+segment 的上下限地址决定了 bin 的大小
+</p>
+
+<pre class="example" id="org6c93f08">
+#&gt; du a.bin  --apparent-size
+144M    a.bin
+#&gt; du a.out  --apparent-size
+149K    a.out
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org88fcfda" class="outline-4">
+<h4 id="org88fcfda"><span class="section-number-4">1.7.3</span> 使用 AT 避免过大的 binary</h4>
+<div class="outline-text-4" id="text-1-7-3">
+<pre class="example" id="orgf6ff768">
+PROVIDE (xxx = 0xcafebabe);
+SECTIONS
+{
+    . = 0x10000;
+    .text : { *(.text) }
+    . = 0x9000000;
+    .data : AT (0x60000) { *(.data) }
+    .bss : { *(.bss) }
+}
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #586e75;">// </span><span style="color: #586e75;">2020-11-09 11:45</span>
+
+<span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;stdio.h&gt;</span>
+<span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;stdlib.h&gt;</span>
+<span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;string.h&gt;</span>
+<span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;unistd.h&gt;</span>
+
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">xxx</span>[128 * 1024] = <span style="color: #757575;">{</span>0xcafe<span style="color: #757575;">,</span> 0xcafe<span style="color: #757575;">,</span> 0xcafe<span style="color: #757575;">,</span> 0xcafe<span style="color: #757575;">}</span>;
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">x</span> = xxx[0]; <span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+elf:
+</p>
+<pre class="example" id="org2a7800a">
+Program Headers:
+  Type           Offset   VirtAddr   PhysAddr   FileSiz MemSiz  Flg Align
+  ABIFLAGS       0x010240 0x00010240 0x00010240 0x00018 0x00018 R   0x8
+  LOAD           0x010000 0x00010000 0x00010000 0x0025c 0x0025c R E 0x10000
+  LOAD           0x020000 0x09000000 0x00060000 0x80014 0x80034 RW  0x10000
+</pre>
+
+<p>
+od -x a.out:
+</p>
+
+<p>
+0400000 == 0x20000
+</p>
+<pre class="example" id="orga053f34">
+*
+0400000 0000 feca 0000 feca 0000 feca 0000 feca
+0400020 0000 0000 0000 0000 0000 0000 0000 0000
+*
+</pre>
+
+<p>
+所以 elf 加载时并不需要考虑 PhysAddr: 它直接从 offset 开始 load 到 VirtAddr 即可
+</p>
+
+<p>
+但对于 binary 就有区别了:
+</p>
+
+<p>
+od -x a.bin:
+</p>
+
+<p>
+O1200000 == 0x50000
+</p>
+
+<pre class="example" id="org049a668">
+*
+1200000 0000 feca 0000 feca 0000 feca 0000 feca
+1200020 0000 0000 0000 0000 0000 0000 0000 0000
+*
+</pre>
+
+<p>
+之所以是 0x50000, 是因为 bin 将来需要被 load 到 0x10000 (第一个 LOAD segment 的
+VirtAddr)
+</p>
+
+<p>
+使用了 AT 后, bin 大小为 833K
+</p>
+
+<p>
+若不使用 AT:
+</p>
+
+<p>
+od -x a.bin:
+</p>
+
+<p>
+01077600000 == 0x8FF0000
+</p>
+
+<pre class="example" id="org4b226c3">
+*
+1077600000 0000 feca 0000 feca 0000 feca 0000 feca
+1077600020 0000 0000 0000 0000 0000 0000 0000 0000
+*
+
+</pre>
+
+<p>
+bin 大小为 145M
+</p>
+
+<p>
+最后需要注意的是, 虽然 xxx 位于 bin 的 0x50000 offset (或加载后的 0x60000 地址),
+但代码中涉及到 xxx 的地方还是使用的 VirtAddr, 即 0x9000000, 所以需要程序启动时手动的把 0x60000 的数据复制到 0x9000000
+</p>
+
+<p>
+AT 的典型用法是 bin 需要烧到一个较小的 rom 上, 但需要在较大的内存空间里运行
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org52d9e1b" class="outline-3">
+<h3 id="org52d9e1b"><span class="section-number-3">1.8</span> misc</h3>
+<div class="outline-text-3" id="text-1-8">
+</div>
+<div id="outline-container-org5464b8d" class="outline-4">
+<h4 id="org5464b8d"><span class="section-number-4">1.8.1</span> how to get the default linker script</h4>
+<div class="outline-text-4" id="text-1-8-1">
+<pre class="example" id="orga0d2cc3">
+$&gt; gcc test.c -Wl,-verbose
+$&gt; ld --verbose
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org8f568c2" class="outline-4">
+<h4 id="org8f568c2"><span class="section-number-4">1.8.2</span> how to use linker script</h4>
+<div class="outline-text-4" id="text-1-8-2">
+<pre class="example" id="orgd9a3c91">
+$&gt; gcc test.c -Wl,--script=test.lds
+$&gt; gcc test.c -T test.lds
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

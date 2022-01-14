@@ -1,0 +1,365 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LTO</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">LTO</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgc0b6ca1">1. <span class="done DONE">DONE</span> LTO</a>
+<ul>
+<li><a href="#orgf4ecfc7">1.1. Example</a>
+<ul>
+<li><a href="#org571efdf">1.1.1. 单个目标文件被优化</a></li>
+<li><a href="#orgf197f29">1.1.2. 多个目标文件时无法被优化</a></li>
+<li><a href="#orgc315242">1.1.3. LTO 优化多个目标文件</a></li>
+<li><a href="#orgd7a84bb">1.1.4. LTO 编译的 obj 并不是普通的 elf 文件</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgc0b6ca1" class="outline-2">
+<h2 id="orgc0b6ca1"><span class="section-number-2">1</span> <span class="done DONE">DONE</span> LTO</h2>
+<div class="outline-text-2" id="text-1">
+<ul class="org-ul">
+<li>State "DONE"       from              <span class="timestamp-wrapper"><span class="timestamp">[2021-09-17 五 13:55]</span></span></li>
+</ul>
+<p>
+LTO 即 link time optimization.
+</p>
+
+<p>
+gcc 一般的优化选项比如 `-O2` 针对的都是对单个目标文件的优化, 它无法同时看到多个目标文件的信息, 导致涉及多个目标文件的优化无法进行
+</p>
+</div>
+
+<div id="outline-container-orgf4ecfc7" class="outline-3">
+<h3 id="orgf4ecfc7"><span class="section-number-3">1.1</span> Example</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-org571efdf" class="outline-4">
+<h4 id="org571efdf"><span class="section-number-4">1.1.1</span> 单个目标文件被优化</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<div class="org-src-container">
+<pre class="src src-C"><span style="color: #b58900;">int</span> <span style="color: #268bd2;">inc</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">a</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span> <span style="color: #859900;">return</span> a + 1; <span style="color: #757575;">}</span>
+
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span>* <span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">r</span> = 0;
+    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">i</span> = 0; i &lt; 100; i++<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        r = inc<span style="color: #757575;">(</span>r<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">return</span> r;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-bash">gdb -batch -ex  <span style="color: #2aa198;">'disass main'</span> /tmp/a.out
+</pre>
+</div>
+
+<p>
+Dump of assembler code for function main:
+   0x0000000000001040 &lt;+0&gt;:	endbr64 
+   0x0000000000001044 &lt;+4&gt;:	mov    $0x64,%eax
+   0x0000000000001049 &lt;+9&gt;:	retq   
+End of assembler dump.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf197f29" class="outline-4">
+<h4 id="orgf197f29"><span class="section-number-4">1.1.2</span> 多个目标文件时无法被优化</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<div class="org-src-container">
+<pre class="src src-C"><span style="color: #b58900;">int</span> <span style="color: #268bd2;">inc</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">a</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span> <span style="color: #859900;">return</span> a + 1; <span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-C"><span style="color: #859900;">extern</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">inc</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span><span style="color: #757575;">)</span>;
+
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span>* <span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">r</span> = 0;
+    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">i</span> = 0; i &lt; 100; i++<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        r = inc<span style="color: #757575;">(</span>r<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">return</span> r;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-bash">gcc /tmp/a.o /tmp/b.o -o /tmp/a.out
+gdb --batch --ex <span style="color: #2aa198;">"disass main"</span> /tmp/a.out
+gdb --batch --ex <span style="color: #2aa198;">"disass inc"</span> /tmp/a.out
+</pre>
+</div>
+
+<p>
+Dump of assembler code for function main:
+   0x0000000000001040 &lt;+0&gt;:	endbr64 
+   0x0000000000001044 &lt;+4&gt;:	push   %rbx
+   0x0000000000001045 &lt;+5&gt;:	xor    %edi,%edi
+   0x0000000000001047 &lt;+7&gt;:	mov    $0x64,%ebx
+   0x000000000000104c &lt;+12&gt;:	nopl   0x0(%rax)
+   0x0000000000001050 &lt;+16&gt;:	callq  0x1150 &lt;inc&gt;
+   0x0000000000001055 &lt;+21&gt;:	mov    %eax,%edi
+   0x0000000000001057 &lt;+23&gt;:	sub    $0x1,%ebx
+   0x000000000000105a &lt;+26&gt;:	jne    0x1050 &lt;main+16&gt;
+   0x000000000000105c &lt;+28&gt;:	pop    %rbx
+   0x000000000000105d &lt;+29&gt;:	retq   
+End of assembler dump.
+Dump of assembler code for function inc:
+   0x0000000000001150 &lt;+0&gt;:	endbr64 
+   0x0000000000001154 &lt;+4&gt;:	lea    0x1(%rdi),%eax
+   0x0000000000001157 &lt;+7&gt;:	retq   
+End of assembler dump.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgc315242" class="outline-4">
+<h4 id="orgc315242"><span class="section-number-4">1.1.3</span> LTO 优化多个目标文件</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<div class="org-src-container">
+<pre class="src src-C"><span style="color: #b58900;">int</span> <span style="color: #268bd2;">inc</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">a</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span> <span style="color: #859900;">return</span> a + 1; <span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-C"><span style="color: #859900;">extern</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">inc</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span><span style="color: #757575;">)</span>;
+
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span>* <span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">r</span> = 0;
+    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">i</span> = 0; i &lt; 100; i++<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        r = inc<span style="color: #757575;">(</span>r<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">return</span> r;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-bash">gcc /tmp/a.o /tmp/b.o -o /tmp/a.out
+gdb --batch --ex <span style="color: #2aa198;">"disass main"</span> /tmp/a.out
+</pre>
+</div>
+
+<p>
+Dump of assembler code for function main:
+   0x0000000000001040 &lt;+0&gt;:	endbr64 
+   0x0000000000001044 &lt;+4&gt;:	mov    $0x64,%eax
+   0x0000000000001049 &lt;+9&gt;:	retq   
+End of assembler dump.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgd7a84bb" class="outline-4">
+<h4 id="orgd7a84bb"><span class="section-number-4">1.1.4</span> LTO 编译的 obj 并不是普通的 elf 文件</h4>
+<div class="outline-text-4" id="text-1-1-4">
+<div class="org-src-container">
+<pre class="src src-bash">objdump -d /tmp/a.o
+readelf -a /tmp/a.o
+</pre>
+</div>
+
+<p>
+
+</p>
+
+<p>
+/tmp/a.o:     file format elf64-x86-64
+</p>
+
+<p>
+ELF Header:
+  Magic:   7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00 
+  Class:                             ELF64
+  Data:                              2's complement, little endian
+  Version:                           1 (current)
+  OS/ABI:                            UNIX - System V
+  ABI Version:                       0
+  Type:                              REL (Relocatable file)
+  Machine:                           Advanced Micro Devices X86-64
+  Version:                           0x1
+  Entry point address:               0x0
+  Start of program headers:          0 (bytes into file)
+  Start of section headers:          2880 (bytes into file)
+  Flags:                             0x0
+  Size of this header:               64 (bytes)
+  Size of program headers:           0 (bytes)
+  Number of program headers:         0
+  Size of section headers:           64 (bytes)
+  Number of section headers:         21
+  Section header string table index: 20
+</p>
+
+<p>
+Section Headers:
+  [Nr] Name              Type             Address           Offset
+       Size              EntSize          Flags  Link  Info  Align
+  [ 0]                   NULL             0000000000000000  00000000
+       0000000000000000  0000000000000000           0     0     0
+  [ 1] .text             PROGBITS         0000000000000000  00000040
+       0000000000000000  0000000000000000  AX       0     0     1
+  [ 2] .data             PROGBITS         0000000000000000  00000040
+       0000000000000000  0000000000000000  WA       0     0     1
+  [ 3] .bss              NOBITS           0000000000000000  00000040
+       0000000000000000  0000000000000000  WA       0     0     1
+  [ 4] .gnu.lto_.profile PROGBITS         0000000000000000  00000040
+       000000000000000e  0000000000000000   E       0     0     1
+  [ 5] .gnu.lto_.icf.6ba PROGBITS         0000000000000000  0000004e
+       0000000000000018  0000000000000000   E       0     0     1
+  [ 6] .gnu.lto_.jmpfunc PROGBITS         0000000000000000  00000066
+       0000000000000025  0000000000000000   E       0     0     1
+  [ 7] .gnu.lto_.inline. PROGBITS         0000000000000000  0000008b
+       0000000000000038  0000000000000000   E       0     0     1
+  [ 8] .gnu.lto_.purecon PROGBITS         0000000000000000  000000c3
+       0000000000000012  0000000000000000   E       0     0     1
+  [ 9] .gnu.lto_main.6ba PROGBITS         0000000000000000  000000d5
+       0000000000000255  0000000000000000   E       0     0     1
+  [10] .gnu.lto_.symbol_ PROGBITS         0000000000000000  0000032a
+       0000000000000042  0000000000000000   E       0     0     1
+  [11] .gnu.lto_.refs.6b PROGBITS         0000000000000000  0000036c
+       000000000000000e  0000000000000000   E       0     0     1
+  [12] .gnu.lto_.decls.6 PROGBITS         0000000000000000  0000037a
+       00000000000002a9  0000000000000000   E       0     0     1
+  [13] .gnu.lto_.symtab. PROGBITS         0000000000000000  00000623
+       0000000000000027  0000000000000000   E       0     0     1
+  [14] .gnu.lto_.opts    PROGBITS         0000000000000000  0000064a
+       00000000000000c0  0000000000000000   E       0     0     1
+  [15] .comment          PROGBITS         0000000000000000  0000070a
+       000000000000002b  0000000000000001  MS       0     0     1
+  [16] .note.GNU-stack   PROGBITS         0000000000000000  00000735
+       0000000000000000  0000000000000000           0     0     1
+  [17] .note.gnu.propert NOTE             0000000000000000  00000738
+       0000000000000020  0000000000000000   A       0     0     8
+  [18] .symtab           SYMTAB           0000000000000000  00000758
+       00000000000001f8  0000000000000018          19    19     8
+  [19] .strtab           STRTAB           0000000000000000  00000950
+       000000000000002c  0000000000000000           0     0     1
+  [20] .shstrtab         STRTAB           0000000000000000  0000097c
+       00000000000001be  0000000000000000           0     0     1
+Key to Flags:
+  W (write), A (alloc), X (execute), M (merge), S (strings), I (info),
+  L (link order), O (extra OS processing required), G (group), T (TLS),
+  C (compressed), x (unknown), o (OS specific), E (exclude),
+  l (large), p (processor specific)
+</p>
+
+<p>
+There are no section groups in this file.
+</p>
+
+<p>
+There are no program headers in this file.
+</p>
+
+<p>
+There is no dynamic section in this file.
+</p>
+
+<p>
+There are no relocations in this file.
+</p>
+
+<p>
+The decoding of unwind sections for machine type Advanced Micro Devices X86-64 is not currently supported.
+</p>
+
+<p>
+Symbol table '.symtab' contains 21 entries:
+   Num:    Value          Size Type    Bind   Vis      Ndx Name
+     0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND 
+     1: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS C-src-v3ls18.c
+     2: 0000000000000000     0 SECTION LOCAL  DEFAULT    1 
+     3: 0000000000000000     0 SECTION LOCAL  DEFAULT    2 
+     4: 0000000000000000     0 SECTION LOCAL  DEFAULT    3 
+     5: 0000000000000000     0 SECTION LOCAL  DEFAULT    4 
+     6: 0000000000000000     0 SECTION LOCAL  DEFAULT    5 
+     7: 0000000000000000     0 SECTION LOCAL  DEFAULT    6 
+     8: 0000000000000000     0 SECTION LOCAL  DEFAULT    7 
+     9: 0000000000000000     0 SECTION LOCAL  DEFAULT    8 
+    10: 0000000000000000     0 SECTION LOCAL  DEFAULT    9 
+    11: 0000000000000000     0 SECTION LOCAL  DEFAULT   10 
+    12: 0000000000000000     0 SECTION LOCAL  DEFAULT   11 
+    13: 0000000000000000     0 SECTION LOCAL  DEFAULT   12 
+    14: 0000000000000000     0 SECTION LOCAL  DEFAULT   13 
+    15: 0000000000000000     0 SECTION LOCAL  DEFAULT   14 
+    16: 0000000000000000     0 SECTION LOCAL  DEFAULT   16 
+    17: 0000000000000000     0 SECTION LOCAL  DEFAULT   17 
+    18: 0000000000000000     0 SECTION LOCAL  DEFAULT   15 
+    19: 0000000000000001     1 OBJECT  GLOBAL DEFAULT  COM __gnu_lto_v1
+    20: 0000000000000001     1 OBJECT  GLOBAL DEFAULT  COM __gnu_lto_slim
+</p>
+
+<p>
+No version information found in this file.
+</p>
+
+<p>
+Displaying notes found in: .note.gnu.property
+  Owner                Data size 	Description
+  GNU                  0x00000010	NT_GNU_PROPERTY_TYPE_0
+      Properties: x86 feature: IBT, SHSTK
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

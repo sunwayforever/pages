@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Autograph</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Autograph</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org620e9f3">1. Autograph</a>
+<ul>
+<li><a href="#orgc18e957">1.1. 先编译成静态图再执行</a></li>
+<li><a href="#orge6a129f">1.2. 如何编译</a>
+<ul>
+<li><a href="#org684f115">1.2.1. tf.range 对应 while tensor</a></li>
+<li><a href="#org675d970">1.2.2. python range</a></li>
+</ul>
+</li>
+<li><a href="#org4577c02">1.3. 限制</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org620e9f3" class="outline-2">
+<h2 id="org620e9f3"><span class="section-number-2">1</span> Autograph</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-orgc18e957" class="outline-3">
+<h3 id="orgc18e957"><span class="section-number-3">1.1</span> 先编译成静态图再执行</h3>
+<div class="outline-text-3" id="text-1-1">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> tensorflow <span style="color: #859900;">as</span> tf
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np 
+
+<span style="color: #b58900;">@tf.function</span><span style="color: #757575;">(</span>autograph=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">myadd</span><span style="color: #757575;">(</span>a<span style="color: #757575;">,</span>b<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> tf.<span style="color: #839496;">range</span><span style="color: #757575;">(</span>3<span style="color: #757575;">)</span>:
+        tf.<span style="color: #859900;">print</span><span style="color: #757575;">(</span>i<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"tracing"</span><span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> a + b
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"=== first"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>myadd<span style="color: #757575;">(</span>tf.constant<span style="color: #757575;">(</span><span style="color: #2aa198;">"hello"</span><span style="color: #757575;">),</span> tf.constant<span style="color: #757575;">(</span><span style="color: #2aa198;">"world"</span><span style="color: #757575;">)))</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"=== second"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>myadd<span style="color: #757575;">(</span>tf.constant<span style="color: #757575;">(</span><span style="color: #2aa198;">"hello"</span><span style="color: #757575;">),</span> tf.constant<span style="color: #757575;">(</span><span style="color: #2aa198;">"world"</span><span style="color: #757575;">)))</span>
+</pre>
+</div>
+
+<p>
+第一次执行时需要先编译成 static graph, 由于 tf.range 会被编译为 while tensor (见下文), 所以 "tracing" 只输出了一次.
+</p>
+
+<p>
+第二次执行时不需要编译, 直接执行之前生成的 static graph, 所以不会再输出
+"tracing", 因为 python 的 print 并不会转换为 static graph 中的某个节点, 但
+tf.print 会以节点的形式存在于 graph 中, 所以每次都会打印出 0,1,2
+</p>
+
+<p>
+<code>=</code> first
+tracing
+0
+1
+2
+tf.Tensor(b'helloworld', shape=(), dtype=string)
+<code>=</code> second
+0
+1
+2
+tf.Tensor(b'helloworld', shape=(), dtype=string)
+</p>
+</div>
+</div>
+
+<div id="outline-container-orge6a129f" class="outline-3">
+<h3 id="orge6a129f"><span class="section-number-3">1.2</span> 如何编译</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+编译的过程是: 把函数做为普通的 python 函数执行一次, 执行过程中碰到 tf.xxx 则生成对应的 tensor 嵌入到 static graph 中
+</p>
+</div>
+
+<div id="outline-container-org684f115" class="outline-4">
+<h4 id="org684f115"><span class="section-number-4">1.2.1</span> tf.range 对应 while tensor</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> tensorflow <span style="color: #859900;">as</span> tf
+
+<span style="color: #268bd2;">writer</span> = tf.summary.create_file_writer<span style="color: #757575;">(</span><span style="color: #2aa198;">"/tmp/tf/"</span><span style="color: #757575;">)</span>
+tf.summary.trace_on<span style="color: #757575;">(</span>graph=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+
+<span style="color: #b58900;">@tf.function</span><span style="color: #757575;">(</span>autograph=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">myadd</span><span style="color: #757575;">(</span>a<span style="color: #757575;">,</span>b<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> tf.<span style="color: #839496;">range</span><span style="color: #757575;">(</span>3<span style="color: #757575;">)</span>:
+        tf.<span style="color: #859900;">print</span><span style="color: #757575;">(</span>i<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"tracing"</span><span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> a + b
+
+myadd<span style="color: #757575;">(</span>tf.constant<span style="color: #757575;">(</span><span style="color: #2aa198;">"hello"</span><span style="color: #757575;">),</span> tf.constant<span style="color: #757575;">(</span><span style="color: #2aa198;">"world"</span><span style="color: #757575;">))</span>
+
+<span style="color: #859900;">with</span> writer.as_default<span style="color: #757575;">()</span>:
+    tf.summary.trace_export<span style="color: #757575;">(</span>name = <span style="color: #2aa198;">"autograph"</span><span style="color: #757575;">,</span>step=0<span style="color: #757575;">)</span>
+
+</pre>
+</div>
+
+<p>
+autograph 把 myadd 中的的 tf.xxx 转换为相应的 node, tf.range 对应 graph 中的
+"while_loop" tensor
+</p>
+
+<p>
+tracing
+0
+1
+2
+</p>
+
+
+<div id="org563371f" class="figure">
+<p><img src="../extra/autograph.png" alt="autograph.png" />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org675d970" class="outline-4">
+<h4 id="org675d970"><span class="section-number-4">1.2.2</span> python range</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> tensorflow <span style="color: #859900;">as</span> tf
+
+<span style="color: #268bd2;">writer</span> = tf.summary.create_file_writer<span style="color: #757575;">(</span><span style="color: #2aa198;">"/tmp/tf/"</span><span style="color: #757575;">)</span>
+tf.summary.trace_on<span style="color: #757575;">(</span>graph=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+
+<span style="color: #b58900;">@tf.function</span><span style="color: #757575;">(</span>autograph=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">myadd</span><span style="color: #757575;">(</span>a<span style="color: #757575;">,</span>b<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">if</span> <span style="color: #268bd2; font-weight: bold;">True</span>:
+        <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>3<span style="color: #757575;">)</span>:
+            tf.<span style="color: #859900;">print</span><span style="color: #757575;">(</span>i<span style="color: #757575;">)</span>
+            <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"tracing"</span><span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> a + b
+
+myadd<span style="color: #757575;">(</span>tf.constant<span style="color: #757575;">(</span><span style="color: #2aa198;">"hello"</span><span style="color: #757575;">),</span> tf.constant<span style="color: #757575;">(</span><span style="color: #2aa198;">"world"</span><span style="color: #757575;">))</span>
+
+<span style="color: #859900;">with</span> writer.as_default<span style="color: #757575;">()</span>:
+    tf.summary.trace_export<span style="color: #757575;">(</span>name = <span style="color: #2aa198;">"autograph"</span><span style="color: #757575;">,</span>step=0<span style="color: #757575;">)</span>
+
+
+</pre>
+</div>
+
+<p>
+这里用 range 代替了 tf.range, 导致 graph 中生成了 3 个 PrintV2 tensor, 而不是一个 while_loop tensor
+</p>
+
+<p>
+tracing
+tracing
+tracing
+0
+1
+2
+</p>
+
+
+<div id="org94f2773" class="figure">
+<p><img src="../extra/autograph2.png" alt="autograph2.png" />
+</p>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org4577c02" class="outline-3">
+<h3 id="org4577c02"><span class="section-number-3">1.3</span> 限制</h3>
+<div class="outline-text-3" id="text-1-3">
+<ol class="org-ol">
+<li>python 代码 (而非 tf api) 只在编译时才会起作用, 导致一些意料之外的结果, 所以应尽可能使用 tf api.</li>
+
+<li>若参数包含非 tensor 类型, 则每次都调用都会导致重新编译, 因为参数可能导致不同的控制流, 而这些控制流的变化无法嵌入到 graph 中</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #268bd2;">data</span> = []
+
+<span style="color: #b58900;">@tf.function</span><span style="color: #757575;">(</span>autograph=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">myadd</span><span style="color: #757575;">(</span>a<span style="color: #757575;">,</span>b<span style="color: #757575;">,</span> x<span style="color: #757575;">)</span>:
+    data.append<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> a + b
+
+myadd<span style="color: #757575;">(</span>tf.constant<span style="color: #757575;">(</span><span style="color: #2aa198;">"hello"</span><span style="color: #757575;">),</span> tf.constant<span style="color: #757575;">(</span><span style="color: #2aa198;">"world"</span><span style="color: #757575;">),</span>1<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>data<span style="color: #757575;">)</span>
+myadd<span style="color: #757575;">(</span>tf.constant<span style="color: #757575;">(</span><span style="color: #2aa198;">"hello"</span><span style="color: #757575;">),</span> tf.constant<span style="color: #757575;">(</span><span style="color: #2aa198;">"world"</span><span style="color: #757575;">),</span>2<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>data<span style="color: #757575;">)</span>
+
+</pre>
+</div>
+
+<p>
+[1]
+[1, 2]
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

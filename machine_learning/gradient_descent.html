@@ -1,0 +1,1416 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gradient Descent</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Gradient Descent</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orge86d304">1. Gradient Descent</a>
+<ul>
+<li><a href="#org5b18934">1.1. 梯度下降公式</a></li>
+<li><a href="#org31cc1cb">1.2. 等高线</a></li>
+<li><a href="#org499db4f">1.3. 梯度下降的速度</a></li>
+<li><a href="#orgc21c971">1.4. 梯度下降与 feature scaling</a></li>
+<li><a href="#org606b88e">1.5. 梯度下降与 batch normalization</a></li>
+<li><a href="#org4bd2221">1.6. 梯度下降与泰勒级数</a></li>
+<li><a href="#orge095a27">1.7. 牛顿法</a></li>
+<li><a href="#org4383dea">1.8. 牛顿法与机器学习</a>
+<ul>
+<li><a href="#org03ae630">1.8.1. 牛顿法求极值</a></li>
+<li><a href="#orgacb1b74">1.8.2. 牛顿法的缺点</a></li>
+<li><a href="#org0ad686e">1.8.3. 举例: 牛顿法无法跳出鞍点</a></li>
+</ul>
+</li>
+<li><a href="#org1c32289">1.9. 牛顿法求平方根</a></li>
+<li><a href="#org76e25cd">1.10. 基于 momentum 的梯度下降</a></li>
+<li><a href="#org775fc5a">1.11. 基于学习率调整的梯度下降</a></li>
+<li><a href="#org9353588">1.12. 梯度消失</a>
+<ul>
+<li><a href="#orgab9bf7f">1.12.1. 如何解决</a></li>
+</ul>
+</li>
+<li><a href="#org240172e">1.13. 梯度爆炸</a></li>
+<li><a href="#org2ef6345">1.14. sigmoid 为何需要搭配 BCELoss</a>
+<ul>
+<li><a href="#orgad6053f">1.14.1. 使用 MSELoss</a></li>
+<li><a href="#org9341c0b">1.14.2. 使用 BCELoss</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orge86d304" class="outline-2">
+<h2 id="orge86d304"><span class="section-number-2">1</span> Gradient Descent</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org5b18934" class="outline-3">
+<h3 id="org5b18934"><span class="section-number-3">1.1</span> 梯度下降公式</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+梯度下降时, 先计算出 \(\nabla w=\frac{\partial{C}}{\partial{w}}\), 然后利用
+\(w=w-lr*\nabla w\) 对参数进行更新. 为什么这样?
+</p>
+
+<ol class="org-ol">
+<li><p>
+使损失函数下降
+</p>
+
+<p>
+根据导数的定义: \(\Delta C \approx \nabla w*\Delta w\), 即 w 有一个 <b>小</b> 的增量时, \(C\) 也有一定的增量. 梯度下降的目的是给 \(w\) 一个增量, 确保 \(C\) 的增量为负数, 以便\(C\) 能下降.
+</p>
+
+<p>
+若令 \(\Delta w = - \eta \nabla w\), 则 \(\Delta C \approx - \eta \nabla w *
+   \nabla w\), 则可以确保 \(\Delta C\) 是负数
+</p>
+
+<p>
+但是当 \(\eta\) 很大时无法保证 \(C\) 下降, 因为 \(\Delta C \approx \nabla w*\Delta
+   w\) 只是在 \(\Delta w\) 较小时近似成立, 当 \(\Delta w\) 很大时, 近似条件并不满足
+</p></li>
+
+<li><p>
+使损失函数收敛
+</p>
+
+<p>
+随着 C 的下降, \(\nabla w\) 会越来越小, 导致 \(\Delta w\) 也越来越小趋向于 0, 从而使损失函数收敛到最小值
+</p></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org31cc1cb" class="outline-3">
+<h3 id="org31cc1cb"><span class="section-number-3">1.2</span> 等高线</h3>
+<div class="outline-text-3" id="text-1-2">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+<span style="color: #859900;">import</span> torch
+
+plt.style.use<span style="color: #757575;">(</span><span style="color: #2aa198;">"classic"</span><span style="color: #757575;">)</span>
+plt.subplot<span style="color: #757575;">(</span>121<span style="color: #757575;">)</span>
+plt.axis<span style="color: #757575;">(</span><span style="color: #2aa198;">'equal'</span><span style="color: #757575;">)</span>      
+<span style="color: #268bd2;">x</span> = np.linspace<span style="color: #757575;">(</span>-500<span style="color: #757575;">,</span> 500<span style="color: #757575;">,</span> 1000<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">y</span> = np.linspace<span style="color: #757575;">(</span>-500<span style="color: #757575;">,</span> 500<span style="color: #757575;">,</span> 1000<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">xx</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">yy</span> = np.meshgrid<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">z</span> = xx ** 2 + yy ** 2
+plt.contour<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> z<span style="color: #757575;">,</span> 20<span style="color: #757575;">)</span>
+
+plt.subplot<span style="color: #757575;">(</span>122<span style="color: #757575;">)</span>
+plt.axis<span style="color: #757575;">(</span><span style="color: #2aa198;">'equal'</span><span style="color: #757575;">)</span>    
+<span style="color: #268bd2;">x</span> = np.linspace<span style="color: #757575;">(</span>-500<span style="color: #757575;">,</span> 500<span style="color: #757575;">,</span> 1000<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">y</span> = np.linspace<span style="color: #757575;">(</span>-500<span style="color: #757575;">,</span> 500<span style="color: #757575;">,</span> 1000<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">xx</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">yy</span> = np.meshgrid<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">z</span> = 5 * xx ** 2 + yy ** 2
+plt.contour<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> z<span style="color: #757575;">,</span> 20<span style="color: #757575;">)</span>
+
+plt.show<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+
+<div id="org23f5779" class="figure">
+<p><img src="../extra/contour.png" alt="contour.png" />
+</p>
+</div>
+
+<ul class="org-ul">
+<li>等高线越密, 表示越陡, 梯度的绝对值越大</li>
+<li><p>
+可以证明梯度下降的方向与等高线的切线垂直
+</p>
+
+<p>
+\(z=f(x,y)\), 按照定义, 梯度下降方向为
+\([\frac{\partial{f}}{\partial{x}},\frac{\partial{f}}{\partial{y}}]\), 等高线方程为 \(f(x,y)=C\), C 为常数. 这是 y 关于 x 的隐函数, 根据隐函数求导:
+\(\frac{\partial{f}}{\partial{x}}+\frac{\partial{f}}{\partial{y}}*y'=0\), 可得
+\(y'\) 方向为 \([-\frac{\partial{f}}{\partial{y}},\frac{\partial{f}}{\partial{x}}]\)
+</p>
+
+<p>
+切线向量与梯度向量的点积: \([\frac{\partial{f}}{\partial{x}},\frac{\partial{f}}{\partial{y}}] \cdot
+  [-\frac{\partial{f}}{\partial{y}},\frac{\partial{f}}{\partial{x}}] = 0\), 所以两者垂直
+</p></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org499db4f" class="outline-3">
+<h3 id="org499db4f"><span class="section-number-3">1.3</span> 梯度下降的速度</h3>
+<div class="outline-text-3" id="text-1-3">
+<ol class="org-ol">
+<li>梯度下降的方向与等高线垂直</li>
+<li>梯度下降的速度与梯度大小成正比, 而等高线的密度也反映了梯度的大小</li>
+</ol>
+
+<p>
+所以梯度下降的速度与等高线的形状关系很大
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+<span style="color: #859900;">import</span> torch
+
+<span style="color: #268bd2;">alpha</span> = 0.01
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">update</span><span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">xx</span> = torch.tensor<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">yy</span> = torch.tensor<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">zz</span> = 10 * xx ** 2 + yy ** 2
+    zz.backward<span style="color: #757575;">()</span>
+    <span style="color: #859900;">return</span> x - alpha * xx.grad<span style="color: #757575;">,</span> y - alpha * yy.grad
+
+plt.style.use<span style="color: #757575;">(</span><span style="color: #2aa198;">"classic"</span><span style="color: #757575;">)</span>
+plt.axis<span style="color: #757575;">(</span><span style="color: #2aa198;">'equal'</span><span style="color: #757575;">)</span>    
+
+<span style="color: #268bd2;">x</span> = np.linspace<span style="color: #757575;">(</span>-100<span style="color: #757575;">,</span> 100<span style="color: #757575;">,</span> 100<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">y</span> = np.linspace<span style="color: #757575;">(</span>-100<span style="color: #757575;">,</span> 100<span style="color: #757575;">,</span> 100<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">xx</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">yy</span> = np.meshgrid<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">z</span> = 10 * xx ** 2 + yy ** 2
+plt.contour<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> z<span style="color: #757575;">,</span> 20<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = 0.<span style="color: #757575;">,</span> 100.
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>20<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = update<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = -70.<span style="color: #757575;">,</span> 70.
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>20<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = update<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = -100.<span style="color: #757575;">,</span> 0.
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>20<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = update<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+
+plt.show<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+
+<div id="org07f34fe" class="figure">
+<p><img src="../extra/gradient_descent.png" alt="gradient_descent.png" />
+</p>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+<span style="color: #859900;">import</span> torch
+
+<span style="color: #268bd2;">alpha</span> = 0.1
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">update</span><span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">xx</span> = torch.tensor<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">yy</span> = torch.tensor<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">zz</span> = 10 * xx ** 2 + yy ** 2
+    zz.backward<span style="color: #757575;">()</span>
+    <span style="color: #859900;">return</span> x - alpha * xx.grad<span style="color: #757575;">,</span> y - alpha * yy.grad
+
+plt.axis<span style="color: #757575;">(</span><span style="color: #2aa198;">'equal'</span><span style="color: #757575;">)</span>    
+
+<span style="color: #268bd2;">x</span> = np.linspace<span style="color: #757575;">(</span>-500<span style="color: #757575;">,</span> 500<span style="color: #757575;">,</span> 1000<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">y</span> = np.linspace<span style="color: #757575;">(</span>-500<span style="color: #757575;">,</span> 500<span style="color: #757575;">,</span> 1000<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">xx</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">yy</span> = np.meshgrid<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">z</span> = 10 * xx ** 2 + yy ** 2
+plt.contour<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> z<span style="color: #757575;">,</span> 50<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = 100.<span style="color: #757575;">,</span> 500.
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>10<span style="color: #757575;">)</span>:
+    plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x2</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y2</span> = update<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    plt.plot<span style="color: #757575;">(</span>[x<span style="color: #757575;">,</span> x2]<span style="color: #757575;">,</span> [y<span style="color: #757575;">,</span> y2]<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = x2<span style="color: #757575;">,</span> y2
+
+<span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = 0.<span style="color: #757575;">,</span> -500.
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>10<span style="color: #757575;">)</span>:
+    plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x2</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y2</span> = update<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    plt.plot<span style="color: #757575;">(</span>[x<span style="color: #757575;">,</span> x2]<span style="color: #757575;">,</span> [y<span style="color: #757575;">,</span> y2]<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = x2<span style="color: #757575;">,</span> y2
+
+plt.show<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+
+<div id="org6f2844e" class="figure">
+<p><img src="../extra/gradient_descent_zigzag.png" alt="gradient_descent_zigzag.png" />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgc21c971" class="outline-3">
+<h3 id="orgc21c971"><span class="section-number-3">1.4</span> 梯度下降与 feature scaling</h3>
+<div class="outline-text-3" id="text-1-4">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+<span style="color: #859900;">import</span> torch
+
+<span style="color: #268bd2;">alpha</span> = 0.02
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">update_ellipse</span><span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">xx</span> = torch.tensor<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">yy</span> = torch.tensor<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">zz</span> = 20 * xx**2 + yy**2
+    zz.backward<span style="color: #757575;">()</span>
+    <span style="color: #859900;">return</span> x - alpha * xx.grad<span style="color: #757575;">,</span> y - alpha * yy.grad
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">update_circle</span><span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">xx</span> = torch.tensor<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">yy</span> = torch.tensor<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">zz</span> = xx**2 + yy**2
+    zz.backward<span style="color: #757575;">()</span>
+    <span style="color: #859900;">return</span> x - alpha * xx.grad<span style="color: #757575;">,</span> y - alpha * yy.grad
+
+
+<span style="color: #268bd2;">EPOCH</span> = 10
+
+plt.style.use<span style="color: #757575;">(</span><span style="color: #2aa198;">"classic"</span><span style="color: #757575;">)</span>
+plt.axis<span style="color: #757575;">(</span><span style="color: #2aa198;">'equal'</span><span style="color: #757575;">)</span>
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">train</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">x</span> = np.linspace<span style="color: #757575;">(</span>-100<span style="color: #757575;">,</span> 100<span style="color: #757575;">,</span> 100<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">y</span> = np.linspace<span style="color: #757575;">(</span>-100<span style="color: #757575;">,</span> 100<span style="color: #757575;">,</span> 100<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">xx</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">yy</span> = np.meshgrid<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+
+    plt.subplot<span style="color: #757575;">(</span>121<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">z</span> = xx**2 + yy**2
+    plt.contour<span style="color: #757575;">(</span>xx<span style="color: #757575;">,</span> yy<span style="color: #757575;">,</span> z<span style="color: #757575;">,</span> 20<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = -60.<span style="color: #757575;">,</span> 70.
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>EPOCH<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">tx</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">ty</span> = x<span style="color: #757575;">,</span> y
+        <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = update_circle<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+        plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+        plt.plot<span style="color: #757575;">(</span>[tx<span style="color: #757575;">,</span> x]<span style="color: #757575;">,</span> [ty<span style="color: #757575;">,</span> y]<span style="color: #757575;">)</span>
+
+    plt.subplot<span style="color: #757575;">(</span>122<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">z</span> = 20 * xx**2 + yy**2
+    plt.contour<span style="color: #757575;">(</span>xx<span style="color: #757575;">,</span> yy<span style="color: #757575;">,</span> z<span style="color: #757575;">,</span> 20<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">x2</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y2</span> = -60.<span style="color: #757575;">,</span> 70.
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>EPOCH<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">tx</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">ty</span> = x2<span style="color: #757575;">,</span> y2
+        <span style="color: #268bd2;">x2</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y2</span> = update_ellipse<span style="color: #757575;">(</span>x2<span style="color: #757575;">,</span> y2<span style="color: #757575;">)</span>
+        plt.scatter<span style="color: #757575;">(</span>x2<span style="color: #757575;">,</span> y2<span style="color: #757575;">)</span>
+        plt.plot<span style="color: #757575;">(</span>[tx<span style="color: #757575;">,</span> x2]<span style="color: #757575;">,</span> [ty<span style="color: #757575;">,</span> y2]<span style="color: #757575;">)</span>
+
+    plt.show<span style="color: #757575;">()</span>
+    <span style="color: #859900;">return</span> <span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> x2<span style="color: #757575;">,</span> y2<span style="color: #757575;">)</span>
+
+train<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<pre class="example" id="org47bcb7f">
+(tensor(-39.8899), tensor(46.5383), tensor(1.00000e-06 *
+-6.1440), tensor(46.5383))
+</pre>
+
+<div id="orgafd2f92" class="figure">
+<p><img src="../extra/sgd_with_scaling.png" alt="sgd_with_scaling.png" />
+</p>
+</div>
+
+<p>
+feature scaling 是通过 scaling 或 normalization 把 feature 大小调整到 [0,1] 范围内, 相当于保证等高线为圆形而非椭圆.
+</p>
+
+<p>
+通过上面的代码能看到, 不论是否 scaling, 梯度下降的速度实际是相同的: 甚至未经过
+scaling 的数据由于 x 方向的梯度更大反而在 x 方向下降更快. 由于两者 y 方向的梯度是相同的, 所以 y 方向会以相同的速度下降.
+</p>
+
+<p>
+那么 feature scaling 的意义是什么?
+</p>
+
+<p>
+对于非 scaling 数据, 提高 learning rate 时有可能因为 zigzag 导致下降变慢甚至无法收敛, 而
+scaling 后的数据一般不会有这种问题
+</p>
+
+<p>
+zigzag 导致 x 方向下降变慢
+</p>
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #268bd2;">alpha</span>=0.04
+train<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<pre class="example">
+(tensor(-26.0633), tensor(30.4072), tensor(-0.3628), tensor(30.4072))
+</pre>
+
+
+<div id="org7b34b61" class="figure">
+<p><img src="../extra/sgd_with_scaling_zig_zag.png" alt="sgd_with_scaling_zig_zag.png" />
+</p>
+</div>
+
+<p>
+zigzag 导致 x 方向不收敛
+</p>
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #268bd2;">alpha</span>=0.051
+train<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<pre class="example">
+(tensor(-20.4604), tensor(23.8705), tensor(-88.8146), tensor(23.8705))
+</pre>
+
+
+<div id="orgfd06c1f" class="figure">
+<p><img src="../extra/sgd_with_scaling_zig_zag_2.png" alt="sgd_with_scaling_zig_zag_2.png" />
+</p>
+</div>
+
+<p>
+feature scaling 是必要的, 本质上是因为 learning rate 是需要根据梯度调整的: 梯度大时减小 learning rate, 防止 zigzag. 梯度小时增大 learning rate, 防止下降过慢.
+当两个方向的梯度差别很大时, learning rate 无法兼顾.
+</p>
+
+<p>
+另外, feature scaling 后, 可以使用较大的 learning rate 进行梯度下降.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org606b88e" class="outline-3">
+<h3 id="org606b88e"><span class="section-number-3">1.5</span> 梯度下降与 batch normalization</h3>
+</div>
+
+<div id="outline-container-org4bd2221" class="outline-3">
+<h3 id="org4bd2221"><span class="section-number-3">1.6</span> 梯度下降与泰勒级数</h3>
+<div class="outline-text-3" id="text-1-6">
+<p>
+泰勒级数公式: \(f(x_0+h)=f(x_0)+f'(x_0)*h+f''(x_0)*\frac{h^2}{2!}+f'''(x_0)*\frac{h^3}{3!}+\ldots\)
+</p>
+
+<p>
+假设 f 的二阶以上导数很小, 只取前两项时 \(f(x_0+h)=f(x_0)+f'(x_0)*h\), 称为一阶泰勒展开, 即最开始时提到的 \(\Delta C \approx \nabla w*\Delta w\)
+</p>
+
+<p>
+泰勒级数可以推广到向量<sup><a id="fnr.1" class="footref" href="#fn.1">1</a></sup>, 对于 \(f(x_0)-f(x_0+h)=-f'(x_0)*h\).  \(x_0, f'(x_0), h\) 均为向量. 我们期望选一个 h (包含大小和方向), 使得 f 值下降的最大
+(\(f(x_0)-f(x_0+h)\) 最大化),即\(-f'(x_0)*h\) 最大化.
+</p>
+
+<p>
+若 h 方向确定, 则在保证近似相等的前提下, \(||h||\) 越大越好.
+若 \(||h||\) 确定, h 方向与 \(f'(x_0)\) 相反时最好, 因为 \(f'(x_0)\cdot
+h=||f'(x_0)||*||h||*cos(\theta)\), \(\theta\) 为两向量夹角, \(h\) 与 \(f'(x_0)\) 夹角
+180 度时, \(-f'(x_0)*h\) 最大
+</p>
+
+<p>
+梯度下降忽略了泰勒级数中一阶之后的余项, 所以若 \(f''(x_0)\) 较大时, 会导致梯度下降变慢.
+</p>
+
+<p>
+因为我们认为 \(x_0 \to x_0+h\) 后, \(f(x_0+h)\) 的值会下降为 \(f(x_0)+f'(x_0)*h\), 但实际值它的值仅仅下降为 \(f(x_0)+f'(x_0)*h+f''(x_0)*\frac{h^2}{2!}\)
+</p>
+
+<p>
+直观的理解就是: 当二阶导数较大时, 使用一阶导数预测函数走向有较大偏差.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orge095a27" class="outline-3">
+<h3 id="orge095a27"><span class="section-number-3">1.7</span> 牛顿法</h3>
+<div class="outline-text-3" id="text-1-7">
+<p>
+牛顿法可以用来求 \(f(x)\) 的根:
+</p>
+
+<ol class="org-ol">
+<li>首先, 对 \(f(x)\) 在 \(x_k\) 处一阶泰勒展开:
+\(f(x)=f(x_k)+f'(x_k)(x-x_k)\)</li>
+<li>\(x=x_{k+1}\) 为根时, \(f(x_{k+1})=0\), 所以 \(x_{k+1}=x_k-\frac{f(x_k)}{f'(x_k)}\)</li>
+</ol>
+
+
+<div id="org1a29360" class="figure">
+<p><img src="../extra/newton.gif" alt="newton.gif" />   
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org4383dea" class="outline-3">
+<h3 id="org4383dea"><span class="section-number-3">1.8</span> 牛顿法与机器学习</h3>
+<div class="outline-text-3" id="text-1-8">
+</div>
+<div id="outline-container-org03ae630" class="outline-4">
+<h4 id="org03ae630"><span class="section-number-4">1.8.1</span> 牛顿法求极值</h4>
+<div class="outline-text-4" id="text-1-8-1">
+<p>
+可以应用牛顿法求函数的极值, 即求 \(f'(x)\) 的根
+</p>
+
+<p>
+牛顿法在求函数极值时其更新公式为:
+\(x_{k+1}=x_k-\frac{f'(x_k)}{f''(x_k)}\)
+</p>
+
+<p>
+下面的代码中把曲线变为 \(f(x,y)=5x^3+y^3\) 来演示, 因为之前的例子中 \(f(x,y)\) 是关于 x,y 的二次函数, 二阶泰勒展开时不是近似而是完全等于原函数, 导致牛顿法只需一次迭代就会找到极值点&#x2026;
+</p>
+
+<p>
+另外, 当 \(x\) 为多个变量构成的向量时, 牛顿法公式中 \(\frac{1}{f''(x_k)}\) 需要修改为 \(H(f)^{-1}\), 其中 \(H(f)\) 称为 Hessian 矩阵, 它是 \(f(x)\) 的二阶偏导组成的方阵:
+</p>
+
+
+<div id="org7811d00" class="figure">
+<p><img src="../extra/hessian.png" alt="hessian.png" />
+</p>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+<span style="color: #859900;">import</span> torch
+
+<span style="color: #268bd2;">alpha</span> = 0.0001
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">update_gd</span><span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">xx</span> = torch.tensor<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">yy</span> = torch.tensor<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">zz</span> = 10 * xx**4 + yy**4
+    zz.backward<span style="color: #757575;">()</span>
+    <span style="color: #859900;">return</span> x - alpha * xx.grad<span style="color: #757575;">,</span> y - alpha * yy.grad
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">update_newton</span><span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">hessian &#30697;&#38453;&#20026;: [120x^2,0;0,12y^2], &#20854;&#36870;&#30697;&#38453;&#20026; [1/(120x^2),0;0;1/(12y^2)]</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">&#25152;&#20197; $[x,y]=[x,y]-[1/120x^2,0;0,1/12y^2]*[40x^3,4y^3]T=[x,y]-[x/3,y/]$</span>
+    <span style="color: #268bd2;">x</span> = x - x / 3.
+    <span style="color: #268bd2;">y</span> = y - y / 3.
+    <span style="color: #859900;">return</span> x<span style="color: #757575;">,</span> y
+
+
+plt.axis<span style="color: #757575;">(</span><span style="color: #2aa198;">'equal'</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">x</span> = np.linspace<span style="color: #757575;">(</span>-50<span style="color: #757575;">,</span> 50<span style="color: #757575;">,</span> 100<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">y</span> = np.linspace<span style="color: #757575;">(</span>-50<span style="color: #757575;">,</span> 50<span style="color: #757575;">,</span> 100<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">xx</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">yy</span> = np.meshgrid<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">z</span> = 10 * xx**4 + yy**4
+plt.contour<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> z<span style="color: #757575;">,</span> 60<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">EPOCH</span> = 20
+<span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = 20.<span style="color: #757575;">,</span> 30.
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>EPOCH<span style="color: #757575;">)</span>:
+    plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x2</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y2</span> = update_newton<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    plt.plot<span style="color: #757575;">(</span>[x<span style="color: #757575;">,</span> x2]<span style="color: #757575;">,</span> [y<span style="color: #757575;">,</span> y2]<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = x2<span style="color: #757575;">,</span> y2
+
+<span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = 20.<span style="color: #757575;">,</span> 30.
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>EPOCH<span style="color: #757575;">)</span>:
+    plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x2</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y2</span> = update_gd<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    plt.plot<span style="color: #757575;">(</span>[x<span style="color: #757575;">,</span> x2]<span style="color: #757575;">,</span> [y<span style="color: #757575;">,</span> y2]<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = x2<span style="color: #757575;">,</span> y2
+
+plt.show<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+
+<div id="org5ee9179" class="figure">
+<p><img src="../extra/gd_vs_newton.png" alt="gd_vs_newton.png" />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgacb1b74" class="outline-4">
+<h4 id="orgacb1b74"><span class="section-number-4">1.8.2</span> 牛顿法的缺点</h4>
+<div class="outline-text-4" id="text-1-8-2">
+<ol class="org-ol">
+<li>牛顿法计算量大, 比如求 Hessian 矩阵以及求它的逆矩阵</li>
+<li>牛顿法计算的是极值, 若原函数为凸函数, 则极值就是极小值. 否则, 极值也可能是极大值或鞍点. 所以牛顿法只适用于凸函数的情形, 而机器学习中许多问题并不是凸函数,
+所以无法适用牛顿法</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0ad686e" class="outline-4">
+<h4 id="org0ad686e"><span class="section-number-4">1.8.3</span> 举例: 牛顿法无法跳出鞍点</h4>
+<div class="outline-text-4" id="text-1-8-3">
+<p>
+鞍点是既不是极小值也不是极大值的临界点, 例如 \(f(x)=x^3\) 曲线上 \(x=0\) 对应的点为鞍点.
+</p>
+
+<p>
+牛顿法在 \(f(x)=x^3\) 上迭代时, 最终会稳定在 \(x=0\) 的点, 但显然这并非极小值.
+</p>
+
+<p>
+理论上梯度下降也无法跳出鞍点, 因为这一点的梯度为 0, 但实际上由于 learning rate
+的存在, 选择较大的 learning rate 时很容易跳过鞍点.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+<span style="color: #859900;">import</span> torch
+
+<span style="color: #268bd2;">alpha</span> = 0.0017
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">update_gd</span><span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">xx</span> = torch.tensor<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">yy</span> = torch.tensor<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">zz</span> = 5 * xx**3 + yy**3
+    zz.backward<span style="color: #757575;">()</span>
+    <span style="color: #859900;">return</span> x - alpha * xx.grad<span style="color: #757575;">,</span> y - alpha * yy.grad
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">update_newton</span><span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">hessian &#30697;&#38453;&#20026;: [30x,0;0,6y], &#20854;&#36870;&#30697;&#38453;&#20026; [1/(30x),0;0;1/(6y)]</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">&#25152;&#20197; $[x,y]=[x,y]-[1/30x,0;0,1/6y]*[15x^2,3y^2]T=[x,y]-[x/2,y/2]$</span>
+    <span style="color: #268bd2;">x</span> = x - x / 2.
+    <span style="color: #268bd2;">y</span> = y - y / 2.
+    <span style="color: #859900;">return</span> x<span style="color: #757575;">,</span> y
+
+
+plt.axis<span style="color: #757575;">(</span><span style="color: #2aa198;">'equal'</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">x</span> = np.linspace<span style="color: #757575;">(</span>-50<span style="color: #757575;">,</span> 50<span style="color: #757575;">,</span> 100<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">y</span> = np.linspace<span style="color: #757575;">(</span>-50<span style="color: #757575;">,</span> 50<span style="color: #757575;">,</span> 100<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">xx</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">yy</span> = np.meshgrid<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">z</span> = 5 * xx**3 + yy**3
+plt.contour<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> z<span style="color: #757575;">,</span> 60<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = 40.<span style="color: #757575;">,</span> 50.
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>100<span style="color: #757575;">)</span>:
+    plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x2</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y2</span> = update_newton<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    plt.plot<span style="color: #757575;">(</span>[x<span style="color: #757575;">,</span> x2]<span style="color: #757575;">,</span> [y<span style="color: #757575;">,</span> y2]<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = x2<span style="color: #757575;">,</span> y2
+
+<span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = 40.<span style="color: #757575;">,</span> 50.
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>50<span style="color: #757575;">)</span>:
+    plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x2</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y2</span> = update_gd<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    plt.plot<span style="color: #757575;">(</span>[x<span style="color: #757575;">,</span> x2]<span style="color: #757575;">,</span> [y<span style="color: #757575;">,</span> y2]<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = x2<span style="color: #757575;">,</span> y2
+
+plt.show<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+
+<div id="org6c12626" class="figure">
+<p><img src="../extra/newton_saddle_point.png" alt="newton_saddle_point.png" />
+</p>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org1c32289" class="outline-3">
+<h3 id="org1c32289"><span class="section-number-3">1.9</span> 牛顿法求平方根</h3>
+<div class="outline-text-3" id="text-1-9">
+<p>
+牛顿法还有一个应用是求平方根. 两种应用的本质是一样的: 解方程的根.
+</p>
+
+<p>
+对于上面求函数极值的问题, 实际上是解 \(f'(x)\) 的根.
+对于求 \(K\) 的平方根的问题, 实际是解 \(f(x)=x^2-K\) 的根
+</p>
+
+<p>
+以开方为例:
+\(x_{k+1}=x_k-\frac{f(x_k)}{f'(x_k)}=x_k-\frac{x_k^2-K}{2x_k}=\frac{x_k+\frac{K}{x_k}}{2}\),
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">def</span> <span style="color: #268bd2;">cube_root_newton</span><span style="color: #757575;">(</span>K<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">ret</span> = 1
+    <span style="color: #859900;">while</span> <span style="color: #757575;">(</span><span style="color: #839496;">abs</span><span style="color: #757575;">(</span>ret * ret * ret - K<span style="color: #757575;">)</span> &gt; 1e-9<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">ret</span> = <span style="color: #757575;">(</span>2 * ret + K / <span style="color: #757575;">(</span>ret * ret<span style="color: #757575;">))</span> / 3
+    <span style="color: #859900;">return</span> ret
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">square_root_newton</span><span style="color: #757575;">(</span>K<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">ret</span> = 1
+    <span style="color: #859900;">while</span> <span style="color: #757575;">(</span><span style="color: #839496;">abs</span><span style="color: #757575;">(</span>ret * ret - K<span style="color: #757575;">)</span> &gt; 1e-9<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">ret</span> = <span style="color: #757575;">(</span>ret + K / ret<span style="color: #757575;">)</span> / 2
+    <span style="color: #859900;">return</span> ret
+
+
+<span style="color: #757575;">((</span>square_root_newton<span style="color: #757575;">(</span>2<span style="color: #757575;">),</span> square_root_newton<span style="color: #757575;">(</span>3<span style="color: #757575;">),</span> square_root_newton<span style="color: #757575;">(</span>4<span style="color: #757575;">)),</span>
+ <span style="color: #757575;">(</span>cube_root_newton<span style="color: #757575;">(</span>2<span style="color: #757575;">),</span> cube_root_newton<span style="color: #757575;">(</span>3<span style="color: #757575;">),</span> cube_root_newton<span style="color: #757575;">(</span>4<span style="color: #757575;">)))</span>
+</pre>
+</div>
+
+<pre class="example" id="orgdd36836">
+((1.4142135623746899, 1.7320508075688772, 2.000000000000002),
+(1.2599210500177698, 1.4422495703074416, 1.5874010520152708))
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org76e25cd" class="outline-3">
+<h3 id="org76e25cd"><span class="section-number-3">1.10</span> 基于 momentum 的梯度下降</h3>
+<div class="outline-text-3" id="text-1-10">
+<p>
+momentum (动量) 是模拟的梯度下降时存在惯性: 当前梯度下降的方向不完全由当前梯度决定, 还取决于之前的方向
+</p>
+
+<p>
+momentum 与梯度同向时能加快下降:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+<span style="color: #859900;">import</span> torch
+
+<span style="color: #268bd2;">alpha</span> = 0.01
+
+<span style="color: #268bd2;">vx</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">vy</span> = 0<span style="color: #757575;">,</span> 0
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">update_momentum</span><span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">global</span> vx<span style="color: #757575;">,</span> vy
+    <span style="color: #268bd2;">xx</span> = torch.tensor<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">yy</span> = torch.tensor<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">zz</span> = 10 * xx ** 2 + yy ** 2
+    zz.backward<span style="color: #757575;">()</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">momentum</span>
+    <span style="color: #268bd2;">vx</span> = 0.8 * vx - alpha * xx.grad
+    <span style="color: #268bd2;">vy</span> = 0.8 * vy - alpha * yy.grad
+    <span style="color: #859900;">return</span> x + vx<span style="color: #757575;">,</span> y + vy
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">update_normal</span><span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">xx</span> = torch.tensor<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">yy</span> = torch.tensor<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">zz</span> = 10 * xx ** 2 + yy ** 2
+    zz.backward<span style="color: #757575;">()</span>
+    <span style="color: #859900;">return</span> x - alpha * xx.grad<span style="color: #757575;">,</span> y - alpha * yy.grad
+
+plt.style.use<span style="color: #757575;">(</span><span style="color: #2aa198;">"classic"</span><span style="color: #757575;">)</span>
+plt.axis<span style="color: #757575;">(</span><span style="color: #2aa198;">'equal'</span><span style="color: #757575;">)</span>    
+
+<span style="color: #268bd2;">x</span> = np.linspace<span style="color: #757575;">(</span>-100<span style="color: #757575;">,</span> 100<span style="color: #757575;">,</span> 100<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">y</span> = np.linspace<span style="color: #757575;">(</span>-100<span style="color: #757575;">,</span> 100<span style="color: #757575;">,</span> 100<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">xx</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">yy</span> = np.meshgrid<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">z</span> = 10 * xx ** 2 + yy ** 2
+plt.contour<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> z<span style="color: #757575;">,</span> 20<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = -70.<span style="color: #757575;">,</span> 70.
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>20<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = update_normal<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span>color=<span style="color: #2aa198;">"green"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = -70.<span style="color: #757575;">,</span> -70.
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>20<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = update_momentum<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span>color=<span style="color: #2aa198;">"red"</span><span style="color: #757575;">)</span>
+
+plt.show<span style="color: #757575;">()</span>
+
+</pre>
+</div>
+
+
+<div id="orgf37b444" class="figure">
+<p><img src="../extra/momentum.png" alt="momentum.png" />
+</p>
+</div>
+
+<p>
+momentum 与梯度反向时能抑制震荡:
+</p>
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+<span style="color: #859900;">import</span> torch
+
+<span style="color: #268bd2;">alpha</span> = 0.1
+
+<span style="color: #268bd2;">vx</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">vy</span> = 0<span style="color: #757575;">,</span> 0
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">update_momentum</span><span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">global</span> vx<span style="color: #757575;">,</span> vy
+    <span style="color: #268bd2;">xx</span> = torch.tensor<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">yy</span> = torch.tensor<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">zz</span> = 10 * xx**2 + yy**2
+    zz.backward<span style="color: #757575;">()</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">momentum</span>
+    <span style="color: #268bd2;">vx</span> = 0.5 * vx - alpha * xx.grad
+    <span style="color: #268bd2;">vy</span> = 0.5 * vy - alpha * yy.grad
+    <span style="color: #859900;">return</span> x + vx<span style="color: #757575;">,</span> y + vy
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">update_normal</span><span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">xx</span> = torch.tensor<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">yy</span> = torch.tensor<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">zz</span> = 10 * xx**2 + yy**2
+    zz.backward<span style="color: #757575;">()</span>
+    <span style="color: #859900;">return</span> x - alpha * xx.grad<span style="color: #757575;">,</span> y - alpha * yy.grad
+
+
+plt.axis<span style="color: #757575;">(</span><span style="color: #2aa198;">'equal'</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">x</span> = np.linspace<span style="color: #757575;">(</span>-500<span style="color: #757575;">,</span> 500<span style="color: #757575;">,</span> 1000<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">y</span> = np.linspace<span style="color: #757575;">(</span>-500<span style="color: #757575;">,</span> 500<span style="color: #757575;">,</span> 1000<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">xx</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">yy</span> = np.meshgrid<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">z</span> = 10 * xx**2 + yy**2
+plt.contour<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> z<span style="color: #757575;">,</span> 50<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = 100.<span style="color: #757575;">,</span> 500.
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>6<span style="color: #757575;">)</span>:
+    plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> color=<span style="color: #2aa198;">"green"</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x2</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y2</span> = update_normal<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    plt.plot<span style="color: #757575;">(</span>[x<span style="color: #757575;">,</span> x2]<span style="color: #757575;">,</span> [y<span style="color: #757575;">,</span> y2]<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = x2<span style="color: #757575;">,</span> y2
+
+<span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = 100.<span style="color: #757575;">,</span> -500.
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>6<span style="color: #757575;">)</span>:
+    plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> color=<span style="color: #2aa198;">"red"</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x2</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y2</span> = update_momentum<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+    plt.plot<span style="color: #757575;">(</span>[x<span style="color: #757575;">,</span> x2]<span style="color: #757575;">,</span> [y<span style="color: #757575;">,</span> y2]<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = x2<span style="color: #757575;">,</span> y2
+
+plt.show<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+
+<div id="orgbbc9d10" class="figure">
+<p><img src="../extra/momentum_2.png" alt="momentum_2.png" />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org775fc5a" class="outline-3">
+<h3 id="org775fc5a"><span class="section-number-3">1.11</span> 基于学习率调整的梯度下降</h3>
+<div class="outline-text-3" id="text-1-11">
+<p>
+上述的方法中, 每个参数的 learning rate 都是相同的，这种做法并不合理的：对于梯度较小的特征, 应提高其学习率, 反之降低学习率 (<a href="#orgc21c971">梯度下降与 feature scaling</a>)
+</p>
+
+<p>
+类似的算法有 Adagrad, RMSprop, Adam
+</p>
+
+<p>
+以 Adagrad 为例, 更新 w 的公式为:
+</p>
+
+<p>
+\(w=w-\frac{\alpha}{\sqrt{\sum{dw_i^2}}}dw\), 即每个参数的学习率是原始的学习率除以当前参数类积的梯度平方和再开方. 所以, 对于梯度较小的参数, 会有较大的学习率
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+<span style="color: #859900;">import</span> torch
+
+<span style="color: #268bd2;">alpha</span> = 0.01
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">update_normal</span><span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">xx</span> = torch.tensor<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">yy</span> = torch.tensor<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">zz</span> = 10 * xx**2 + yy**2
+    zz.backward<span style="color: #757575;">()</span>
+    <span style="color: #859900;">return</span> x - alpha * xx.grad<span style="color: #757575;">,</span> y - alpha * yy.grad
+
+
+plt.style.use<span style="color: #757575;">(</span><span style="color: #2aa198;">"classic"</span><span style="color: #757575;">)</span>
+plt.axis<span style="color: #757575;">(</span><span style="color: #2aa198;">'equal'</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">x</span> = np.linspace<span style="color: #757575;">(</span>-100<span style="color: #757575;">,</span> 100<span style="color: #757575;">,</span> 100<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">y</span> = np.linspace<span style="color: #757575;">(</span>-100<span style="color: #757575;">,</span> 100<span style="color: #757575;">,</span> 100<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">xx</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">yy</span> = np.meshgrid<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">z</span> = 10 * xx**2 + yy**2
+plt.contour<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> z<span style="color: #757575;">,</span> 20<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = -70.<span style="color: #757575;">,</span> 70.
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>10<span style="color: #757575;">)</span>:
+    plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> color=<span style="color: #2aa198;">"green"</span><span style="color: #757575;">)</span>  
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = update_normal<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">xx</span> = torch.tensor<span style="color: #757575;">(</span>-70.<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">yy</span> = torch.tensor<span style="color: #757575;">(</span>-70.<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">optimizer</span> = torch.optim.RMSprop<span style="color: #757575;">(</span>[xx<span style="color: #757575;">,</span> yy]<span style="color: #757575;">,</span> lr=3<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>10<span style="color: #757575;">)</span>:
+    plt.scatter<span style="color: #757575;">(</span>xx.item<span style="color: #757575;">(),</span> yy.item<span style="color: #757575;">(),</span> color=<span style="color: #2aa198;">"red"</span><span style="color: #757575;">)</span>  
+    <span style="color: #268bd2;">zz</span> = 10 * xx**2 + yy**2
+    optimizer.zero_grad<span style="color: #757575;">()</span>
+    zz.backward<span style="color: #757575;">()</span>
+    optimizer.step<span style="color: #757575;">()</span>
+plt.show<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+
+<div id="orgdc56269" class="figure">
+<p><img src="../extra/adam.png" alt="adam.png" />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org9353588" class="outline-3">
+<h3 id="org9353588"><span class="section-number-3">1.12</span> 梯度消失</h3>
+<div class="outline-text-3" id="text-1-12">
+<p>
+把网络简化定义为:
+</p>
+
+<p>
+\(\hat{y}=\underbrace{\delta_2\bigg( w_2*\overbrace{\delta_1\Big(w_1*
+\overbrace{\big(\delta_0(w_0*x)\big)}^\text{a0}\Big)}^\text{a1}\bigg)}_\text{a2}\)
+</p>
+
+<p>
+其中 \(\delta_0\) 表示第一层的激活函数, \(w_0\) 表示第一层的权重, \(x\) 表示网络的输入,
+\(a_0\) 表示第一层的输出.
+</p>
+
+<p>
+根据反向传播:
+</p>
+
+
+<p>
+\(\frac{d\hat{y}}{dw_1}=\delta_2 ' * w_2 * \delta_1 ' * a_0\)
+</p>
+
+<p>
+\(\frac{d\hat{y}}{dw_0}= \delta_2 ' * w_2 * \delta_1 ' * w_1 *
+\delta_0 ' * x\)
+</p>
+
+<p>
+假设 x 和 w 已经通过 feature scaling 及权重初始化正确处理, 且使用 sigmoid 做为激活函数.
+</p>
+
+<p>
+由于:
+</p>
+
+<ol class="org-ol">
+<li>sigmoid 最大梯度值为 sigmoid(0)=0.25</li>
+<li>sigmoid 的输出 a0, a1, a2 是 (0,1) 之间的数</li>
+<li>权重 w0, w1, w2 通常也是小于 1 的数</li>
+</ol>
+
+<p>
+因此在一次反向传播中, 权重的梯度会越来越小, \(w_0\) 的梯度会明显小于 $w_2$的梯度.
+网络越深, 梯度越难以向后传递.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+<span style="color: #859900;">import</span> torch
+
+<span style="color: #268bd2;">N</span> = 1000
+<span style="color: #268bd2;">LAYERS</span> = 30
+plt.style.use<span style="color: #757575;">(</span><span style="color: #2aa198;">"default"</span><span style="color: #757575;">)</span>
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">init_weight</span><span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">return</span> torch.nn.Parameter<span style="color: #757575;">(</span>torch.randn<span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">)</span> / np.sqrt<span style="color: #757575;">(</span>in_features<span style="color: #757575;">))</span>
+
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">Layer</span><span style="color: #757575;">(</span>torch.nn.Module<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">,</span> n<span style="color: #757575;">)</span>:
+        <span style="color: #839496;">super</span><span style="color: #757575;">()</span>.__init__<span style="color: #757575;">()</span>
+        <span style="color: #859900;">self</span>.n = n
+        <span style="color: #859900;">self</span>.w = init_weight<span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.bn = torch.nn.BatchNorm1d<span style="color: #757575;">(</span>N<span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">forward</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> <span style="color: #839496;">input</span><span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">ret</span> = torch.matmul<span style="color: #757575;">(</span><span style="color: #839496;">input</span><span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.w<span style="color: #757575;">)</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">ret = self.bn(ret)</span>
+        <span style="color: #268bd2;">ret</span> = torch.nn.functional.sigmoid<span style="color: #757575;">(</span>ret<span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.output = ret
+        <span style="color: #859900;">return</span> ret
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">visualize</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">grads</span> = [layer.w.grad.mean<span style="color: #757575;">()</span>.item<span style="color: #757575;">()</span> <span style="color: #859900;">for</span> layer <span style="color: #859900;">in</span> net]
+    <span style="color: #268bd2;">grads</span> = np.array<span style="color: #757575;">(</span>grads<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">grads</span> *= 100
+    plt.plot<span style="color: #757575;">(</span>grads<span style="color: #757575;">,</span> <span style="color: #2aa198;">"bx"</span><span style="color: #757575;">)</span>
+    plt.show<span style="color: #757575;">()</span>
+
+<span style="color: #268bd2;">criterion</span> = torch.nn.MSELoss<span style="color: #757575;">()</span>
+
+<span style="color: #268bd2;">net</span> = torch.nn.Sequential<span style="color: #757575;">()</span>
+
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>LAYERS<span style="color: #757575;">)</span>:
+    net.add_module<span style="color: #757575;">(</span><span style="color: #2aa198;">"linear%d"</span> % <span style="color: #757575;">(</span>i<span style="color: #757575;">),</span> Layer<span style="color: #757575;">(</span>N<span style="color: #757575;">,</span> N<span style="color: #757575;">,</span> i + 1<span style="color: #757575;">))</span>
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">train</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">x</span> = torch.rand<span style="color: #757575;">(</span>10<span style="color: #757575;">,</span> N<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">loss</span> = criterion<span style="color: #757575;">(</span>net<span style="color: #757575;">(</span>x<span style="color: #757575;">),</span> torch.zeros<span style="color: #757575;">(</span>10<span style="color: #757575;">,</span> N<span style="color: #757575;">))</span>
+    loss.backward<span style="color: #757575;">()</span>
+    visualize<span style="color: #757575;">()</span>
+
+train<span style="color: #757575;">()</span>      
+</pre>
+</div>
+
+
+<div id="org4722b90" class="figure">
+<p><img src="../extra/gradient_vanishing.png" alt="gradient_vanishing.png" />
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgab9bf7f" class="outline-4">
+<h4 id="orgab9bf7f"><span class="section-number-4">1.12.1</span> 如何解决</h4>
+<div class="outline-text-4" id="text-1-12-1">
+<p>
+梯度消失是深度神经网络的固有问题, 一定程度上也是合理的, 它发生的原因在于激活函数: 要么激活函数的输出偏小, 要么激活函数的梯度偏小
+</p>
+
+<p>
+解决方法有:
+</p>
+
+<ol class="org-ol">
+<li>减少网络层数</li>
+<li>为了增加激活函数的输出, 可以选择 ReLU 作为激活函数</li>
+<li>为了增加激活函数的梯度, 可以选择 ReLU 或 Tanh<sup><a id="fnr.2" class="footref" href="#fn.2">2</a></sup>, 或者通过 batch
+normalization 调整激活函数的输入</li>
+<li>修改网络的结构, 例如使用 LTSM, ResNet</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+<span style="color: #859900;">import</span> torch
+
+<span style="color: #268bd2;">N</span> = 1000
+<span style="color: #268bd2;">LAYERS</span> = 30
+plt.style.use<span style="color: #757575;">(</span><span style="color: #2aa198;">"default"</span><span style="color: #757575;">)</span>
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">init_weight</span><span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">return</span> torch.nn.Parameter<span style="color: #757575;">(</span>torch.randn<span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">)</span> / np.sqrt<span style="color: #757575;">(</span>in_features<span style="color: #757575;">))</span>
+
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">Layer</span><span style="color: #757575;">(</span>torch.nn.Module<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">,</span> n<span style="color: #757575;">)</span>:
+        <span style="color: #839496;">super</span><span style="color: #757575;">()</span>.__init__<span style="color: #757575;">()</span>
+        <span style="color: #859900;">self</span>.n = n
+        <span style="color: #859900;">self</span>.w = init_weight<span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.bn = torch.nn.BatchNorm1d<span style="color: #757575;">(</span>N<span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">forward</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> <span style="color: #839496;">input</span><span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">ret</span> = torch.matmul<span style="color: #757575;">(</span><span style="color: #839496;">input</span><span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.w<span style="color: #757575;">)</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">ret = self.bn(ret)</span>
+        <span style="color: #268bd2;">ret</span> = torch.nn.functional.relu<span style="color: #757575;">(</span>ret<span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.output = ret
+        <span style="color: #859900;">return</span> ret
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">visualize</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">grads</span> = [layer.w.grad.mean<span style="color: #757575;">()</span>.item<span style="color: #757575;">()</span> <span style="color: #859900;">for</span> layer <span style="color: #859900;">in</span> net]
+    <span style="color: #268bd2;">grads</span> = np.array<span style="color: #757575;">(</span>grads<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">grads</span> *= 100
+    plt.plot<span style="color: #757575;">(</span>grads<span style="color: #757575;">,</span> <span style="color: #2aa198;">"bx"</span><span style="color: #757575;">)</span>
+    plt.show<span style="color: #757575;">()</span>
+
+<span style="color: #268bd2;">criterion</span> = torch.nn.MSELoss<span style="color: #757575;">()</span>
+
+<span style="color: #268bd2;">net</span> = torch.nn.Sequential<span style="color: #757575;">()</span>
+
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>LAYERS<span style="color: #757575;">)</span>:
+    net.add_module<span style="color: #757575;">(</span><span style="color: #2aa198;">"linear%d"</span> % <span style="color: #757575;">(</span>i<span style="color: #757575;">),</span> Layer<span style="color: #757575;">(</span>N<span style="color: #757575;">,</span> N<span style="color: #757575;">,</span> i + 1<span style="color: #757575;">))</span>
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">train</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">x</span> = torch.rand<span style="color: #757575;">(</span>10<span style="color: #757575;">,</span> N<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">loss</span> = criterion<span style="color: #757575;">(</span>net<span style="color: #757575;">(</span>x<span style="color: #757575;">),</span> torch.zeros<span style="color: #757575;">(</span>10<span style="color: #757575;">,</span> N<span style="color: #757575;">))</span>
+    loss.backward<span style="color: #757575;">()</span>
+    visualize<span style="color: #757575;">()</span>
+
+train<span style="color: #757575;">()</span>      
+
+</pre>
+</div>
+
+
+<div id="org89774e6" class="figure">
+<p><img src="../extra/gradient_vanishing_relu.png" alt="gradient_vanishing_relu.png" />
+</p>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org240172e" class="outline-3">
+<h3 id="org240172e"><span class="section-number-3">1.13</span> 梯度爆炸</h3>
+<div class="outline-text-3" id="text-1-13">
+<p>
+与梯度消失类似, 当 activation 或 dw 大于 1 时, 链式求导后会导致梯度越来越大.
+</p>
+
+<p>
+解决的方法有:
+</p>
+
+<ol class="org-ol">
+<li>通过 BatchNorm 限制 activation 的大小</li>
+<li>通过 gradient clipping 和 gradient norm 来直接限制 gradient 的大小</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org2ef6345" class="outline-3">
+<h3 id="org2ef6345"><span class="section-number-3">1.14</span> sigmoid 为何需要搭配 BCELoss</h3>
+<div class="outline-text-3" id="text-1-14">
+<p>
+BCELoss 即 binary cross entropy loss, 输出是 sigmoid 时通常使用 BCELoss.
+</p>
+
+<p>
+其公式为: \(loss=-\frac{1}{n}\sum{y*log(\hat{y})}+(1-y)*log(1-\hat{y})\),
+</p>
+
+<p>
+其中 \(\hat{y}=sigmoid(w^Tx+b)=\frac{1}{1+e^{-(w^T+b)}}\)
+</p>
+
+<p>
+输出是 sigmoid 时为何使用 BCELoss 而不是 MSELoss?
+</p>
+
+<p>
+设计一个简单的神经元: 输入为 1, 输出端采用 sigmoid 且输出为 0, 通过梯度下降学习
+\(w\) 和 \(b\)
+</p>
+</div>
+
+<div id="outline-container-orgad6053f" class="outline-4">
+<h4 id="orgad6053f"><span class="section-number-4">1.14.1</span> 使用 MSELoss</h4>
+<div class="outline-text-4" id="text-1-14-1">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+<span style="color: #859900;">import</span> torch
+<span style="color: #859900;">import</span> torch.nn.functional <span style="color: #859900;">as</span> F
+<span style="color: #859900;">from</span> tensorboardX <span style="color: #859900;">import</span> SummaryWriter
+
+plt.style.use<span style="color: #757575;">(</span><span style="color: #2aa198;">"classic"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">alpha</span> = 0.15
+
+<span style="color: #268bd2;">criterion</span> = torch.nn.MSELoss<span style="color: #757575;">(</span><span style="color: #839496;">reduce</span>=<span style="color: #268bd2; font-weight: bold;">False</span><span style="color: #757575;">)</span>
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">update_gd</span><span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> step<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">xx</span> = torch.tensor<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">yy</span> = torch.tensor<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">zz</span> = F.sigmoid<span style="color: #757575;">(</span>xx + yy<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">loss</span> = criterion<span style="color: #757575;">(</span>zz<span style="color: #757575;">,</span> torch.tensor<span style="color: #757575;">(</span>0.<span style="color: #757575;">))</span>
+    writer.add_scalar<span style="color: #757575;">(</span><span style="color: #2aa198;">"loss"</span><span style="color: #757575;">,</span> loss<span style="color: #757575;">,</span> step<span style="color: #757575;">)</span>
+    loss.backward<span style="color: #757575;">()</span>
+    <span style="color: #859900;">return</span> x - alpha * xx.grad<span style="color: #757575;">,</span> y - alpha * yy.grad
+
+plt.axis<span style="color: #757575;">(</span><span style="color: #2aa198;">'equal'</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">x</span> = np.linspace<span style="color: #757575;">(</span>-10<span style="color: #757575;">,</span> 10<span style="color: #757575;">,</span> 50<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">y</span> = np.linspace<span style="color: #757575;">(</span>-10<span style="color: #757575;">,</span> 10<span style="color: #757575;">,</span> 50<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">xx</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">yy</span> = np.meshgrid<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">z</span> = F.sigmoid<span style="color: #757575;">(</span>torch.tensor<span style="color: #757575;">(</span>xx + yy<span style="color: #757575;">)</span>.unsqueeze<span style="color: #757575;">(</span>0<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">loss</span> = criterion<span style="color: #757575;">(</span>z<span style="color: #757575;">,</span> torch.zeros_like<span style="color: #757575;">(</span>z<span style="color: #757575;">))</span>.squeeze<span style="color: #757575;">(</span>0<span style="color: #757575;">)</span>.numpy<span style="color: #757575;">()</span>
+<span style="color: #268bd2;">CS</span> = plt.contour<span style="color: #757575;">(</span>xx<span style="color: #757575;">,</span> yy<span style="color: #757575;">,</span> loss<span style="color: #757575;">,</span> 20<span style="color: #757575;">)</span>
+plt.clabel<span style="color: #757575;">(</span>CS<span style="color: #757575;">,</span> inline=1<span style="color: #757575;">,</span> fontsize=10<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">with</span> SummaryWriter<span style="color: #757575;">(</span>log_dir=<span style="color: #2aa198;">"/tmp/runs/slooow"</span><span style="color: #757575;">)</span> <span style="color: #859900;">as</span> writer:
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = 3.<span style="color: #757575;">,</span> 2.
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>200<span style="color: #757575;">)</span>:
+        plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">x2</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y2</span> = update_gd<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> i<span style="color: #757575;">)</span>
+        plt.plot<span style="color: #757575;">(</span>[x<span style="color: #757575;">,</span> x2]<span style="color: #757575;">,</span> [y<span style="color: #757575;">,</span> y2]<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = x2<span style="color: #757575;">,</span> y2
+
+<span style="color: #859900;">with</span> SummaryWriter<span style="color: #757575;">(</span>log_dir=<span style="color: #2aa198;">"/tmp/runs/slow"</span><span style="color: #757575;">)</span> <span style="color: #859900;">as</span> writer:
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = 2.<span style="color: #757575;">,</span> 2.
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>200<span style="color: #757575;">)</span>:
+        plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">x2</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y2</span> = update_gd<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> i<span style="color: #757575;">)</span>
+        plt.plot<span style="color: #757575;">(</span>[x<span style="color: #757575;">,</span> x2]<span style="color: #757575;">,</span> [y<span style="color: #757575;">,</span> y2]<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = x2<span style="color: #757575;">,</span> y2
+
+
+<span style="color: #859900;">with</span> SummaryWriter<span style="color: #757575;">(</span>log_dir=<span style="color: #2aa198;">"/tmp/runs/fast"</span><span style="color: #757575;">)</span> <span style="color: #859900;">as</span> writer:
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = 2.<span style="color: #757575;">,</span> 0.
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>200<span style="color: #757575;">)</span>:
+        plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">x2</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y2</span> = update_gd<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> i<span style="color: #757575;">)</span>
+        plt.plot<span style="color: #757575;">(</span>[x<span style="color: #757575;">,</span> x2]<span style="color: #757575;">,</span> [y<span style="color: #757575;">,</span> y2]<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = x2<span style="color: #757575;">,</span> y2
+
+plt.show<span style="color: #757575;">()</span>    
+<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<pre class="example">
+(tensor(-0.2211), tensor(-2.2211))
+</pre>
+
+
+<div id="org9a48920" class="figure">
+<p><img src="../extra/mse_loss.png" alt="mse_loss.png" />
+</p>
+</div>
+
+
+<div id="orga53e327" class="figure">
+<p><img src="../extra/mse_loss_speed.png" alt="mse_loss_speed.png" />
+</p>
+</div>
+
+<p>
+当 x 初始为 [3,2] 时, 梯度下降的很慢. 原因在于 sigmoid 函数:
+</p>
+
+
+<div id="org8390e6e" class="figure">
+<p><img src="../extra/logistic2.png" alt="logistic2.png" />
+</p>
+</div>
+
+<p>
+初始 x 为 [3,2], 由于 output=sigmoid(x+y), 所以对应于上图上 x=6 的点, 这一点的梯度非常小, 导致下降很慢.
+</p>
+
+<p>
+根据反向传播, loss 传递到 sigmoid 时的梯度为 \(\hat{y}-y\), sigmoid 一层把梯度与它自身很小的梯度相乘后传递给 x,y, 所以最终导致 x,y 的梯度都很小.
+</p>
+
+<p>
+sigmoid 的形状也反映在等高线上: 中间密两端疏.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org9341c0b" class="outline-4">
+<h4 id="org9341c0b"><span class="section-number-4">1.14.2</span> 使用 BCELoss</h4>
+<div class="outline-text-4" id="text-1-14-2">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+<span style="color: #859900;">import</span> torch
+<span style="color: #859900;">import</span> torch.nn.functional <span style="color: #859900;">as</span> F
+<span style="color: #859900;">from</span> tensorboardX <span style="color: #859900;">import</span> SummaryWriter
+
+plt.style.use<span style="color: #757575;">(</span><span style="color: #2aa198;">"classic"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">alpha</span> = 0.15
+
+<span style="color: #268bd2;">criterion</span> = torch.nn.BCELoss<span style="color: #757575;">(</span><span style="color: #839496;">reduce</span>=<span style="color: #268bd2; font-weight: bold;">False</span><span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">update_gd</span><span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> step<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">xx</span> = torch.tensor<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">yy</span> = torch.tensor<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> requires_grad=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">zz</span> = F.sigmoid<span style="color: #757575;">(</span>xx + yy<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">loss</span> = criterion<span style="color: #757575;">(</span>zz<span style="color: #757575;">,</span> torch.tensor<span style="color: #757575;">(</span>0.<span style="color: #757575;">))</span>
+    writer.add_scalar<span style="color: #757575;">(</span><span style="color: #2aa198;">"loss"</span><span style="color: #757575;">,</span> loss<span style="color: #757575;">,</span> step<span style="color: #757575;">)</span>
+    loss.backward<span style="color: #757575;">()</span>
+    <span style="color: #859900;">return</span> x - alpha * xx.grad<span style="color: #757575;">,</span> y - alpha * yy.grad
+
+plt.axis<span style="color: #757575;">(</span><span style="color: #2aa198;">'equal'</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">x</span> = np.linspace<span style="color: #757575;">(</span>-10<span style="color: #757575;">,</span> 10<span style="color: #757575;">,</span> 50<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">y</span> = np.linspace<span style="color: #757575;">(</span>-10<span style="color: #757575;">,</span> 10<span style="color: #757575;">,</span> 50<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">xx</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">yy</span> = np.meshgrid<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">z</span> = F.sigmoid<span style="color: #757575;">(</span>torch.tensor<span style="color: #757575;">(</span>xx + yy<span style="color: #757575;">)</span>.unsqueeze<span style="color: #757575;">(</span>0<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">loss</span> = criterion<span style="color: #757575;">(</span>z<span style="color: #757575;">,</span> torch.zeros_like<span style="color: #757575;">(</span>z<span style="color: #757575;">))</span>.squeeze<span style="color: #757575;">(</span>0<span style="color: #757575;">)</span>.numpy<span style="color: #757575;">()</span>
+<span style="color: #268bd2;">CS</span> = plt.contour<span style="color: #757575;">(</span>xx<span style="color: #757575;">,</span> yy<span style="color: #757575;">,</span> loss<span style="color: #757575;">,</span> 20<span style="color: #757575;">)</span>
+plt.clabel<span style="color: #757575;">(</span>CS<span style="color: #757575;">,</span> inline=1<span style="color: #757575;">,</span> fontsize=10<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">with</span> SummaryWriter<span style="color: #757575;">(</span>log_dir=<span style="color: #2aa198;">"/tmp/runs/bce_loss1"</span><span style="color: #757575;">)</span> <span style="color: #859900;">as</span> writer:
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = 2.<span style="color: #757575;">,</span> 2.
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>200<span style="color: #757575;">)</span>:
+        plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">x2</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y2</span> = update_gd<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> i<span style="color: #757575;">)</span>
+        plt.plot<span style="color: #757575;">(</span>[x<span style="color: #757575;">,</span> x2]<span style="color: #757575;">,</span> [y<span style="color: #757575;">,</span> y2]<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = x2<span style="color: #757575;">,</span> y2
+
+
+<span style="color: #859900;">with</span> SummaryWriter<span style="color: #757575;">(</span>log_dir=<span style="color: #2aa198;">"/tmp/runs/bce_loss2"</span><span style="color: #757575;">)</span> <span style="color: #859900;">as</span> writer:
+    <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = 2.<span style="color: #757575;">,</span> 0.
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>200<span style="color: #757575;">)</span>:
+        plt.scatter<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">x2</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y2</span> = update_gd<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> i<span style="color: #757575;">)</span>
+        plt.plot<span style="color: #757575;">(</span>[x<span style="color: #757575;">,</span> x2]<span style="color: #757575;">,</span> [y<span style="color: #757575;">,</span> y2]<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = x2<span style="color: #757575;">,</span> y2
+
+plt.show<span style="color: #757575;">()</span>    
+<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<pre class="example">
+(tensor(-1.0011), tensor(-3.0011))
+</pre>
+
+
+<div id="org9d69f1f" class="figure">
+<p><img src="../extra/bce_loss.png" alt="bce_loss.png" />
+</p>
+</div>
+
+
+<div id="orgb9301a1" class="figure">
+<p><img src="../extra/bce_loss_speed.png" alt="bce_loss_speed.png" />
+</p>
+</div>
+
+<p>
+使用时 BCELoss 时, 从各个点梯度下降都很快, 而且等高线显示各处的梯度比较均匀.
+</p>
+
+<p>
+\(\frac{\partial}{\partial{W}}J(W,B)=-\sum{\frac{y}{\hat{y}}}\frac{\partial}{\partial{W}}\hat{y}-\frac{1-y}{1-\hat{y}}\frac{\partial}{\partial{W}}\hat{y}\)
+</p>
+
+<p>
+因此 BCELoss 反向传递到 sigmoid 时梯度为: \(\frac{1-y}{1-\hat{y}}-\frac{y}{\hat{y}}\),
+</p>
+
+<p>
+当 \(\hat{y} \to 1\) 或 \(\hat{y} \to 0\) 时, 这个梯度是一个很大的值, 直观上可能抵消后面从 sigmoid 向
+x,y 传递时乘上的那个极小的 sigmoid 梯度 \(\frac{\partial}{\partial{W}}\hat{y}\)
+</p>
+
+<p>
+实际上把 \(\frac{\partial}{\partial{W}}\hat{y}=\hat{y}*(1-\hat{y})*x\) 代入, 最终 BCELoss 对 \(w\) 求导结果为:
+</p>
+
+<p>
+\(\frac{\partial}{\partial{W}}J(W,B) = \frac{1}{m}{\sum{(\hat{y}-y})*x}\)
+</p>
+
+<p>
+对比 MSELoss:
+</p>
+
+<p>
+\(\frac{\partial}{\partial{W}}J(W,B) = \frac{1}{m}{\sum{(\hat{y}-y})*\hat{y}'}\)
+</p>
+
+<p>
+可见 BCELoss 求导时把 sigmoid 的导数抵消了, 所以梯度会比较大.
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="footnotes">
+<h2 class="footnotes">Footnotes: </h2>
+<div id="text-footnotes">
+
+<div class="footdef"><sup><a id="fn.1" class="footnum" href="#fnr.1">1</a></sup> <div class="footpara"><p class="footpara">
+当 f(x) 为标量, x 为向量时, \(f'(x)=\begin{bmatrix}\frac{\partial{f}}{\partial{x_1}}&\frac{\partial{f}}{\partial{x_2}}&\ldots\end{bmatrix}^T\)
+</p></div></div>
+
+<div class="footdef"><sup><a id="fn.2" class="footnum" href="#fnr.2">2</a></sup> <div class="footpara"><p class="footpara">
+因为 Tanh 在 0 点的梯度为 1, 比 sigmoid 的 0.25 更大
+</p></div></div>
+
+
+</div>
+</div></div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rust Coercions</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Rust Coercions</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org99a1dfe">1. Rust Coercions</a>
+<ul>
+<li><a href="#org2823d93">1.1. coercion site</a></li>
+<li><a href="#org669dcbb">1.2. coercion 的类型</a></li>
+<li><a href="#org520e6e7">1.3. method auto-deref</a></li>
+<li><a href="#orgcb5ac28">1.4. Reference</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org99a1dfe" class="outline-2">
+<h2 id="org99a1dfe"><span class="section-number-2">1</span> Rust Coercions</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+coercions 是指 a 与 b 交互时, 对于不一致的类型做隐式的类型转换的过程.
+</p>
+</div>
+
+<div id="outline-container-org2823d93" class="outline-3">
+<h3 id="org2823d93"><span class="section-number-3">1.1</span> coercion site</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+coercion site 指 coercion 发生的场合
+</p>
+
+<ol class="org-ol">
+<li><p>
+let 赋值
+</p>
+
+<p>
+let x:i32 = 10 时, 10 =&gt; i32
+</p></li>
+
+<li><p>
+函数调用
+</p>
+
+<p>
+fn foo(x: i32){}; foo(10) 调用时, 10 =&gt; i32
+</p></li>
+
+<li><p>
+方法调用
+</p>
+
+<p>
+fn foo(&amp;self){}; test.foo() 调用时, test =&gt; &amp;self
+</p></li>
+
+<li><p>
+函数返回
+</p>
+
+<p>
+fn foo() -&gt; i32 {return 10;}; foo 返回时, 10 =&gt; i32
+</p></li>
+
+<li>复合类型赋值
+
+<ul class="org-ul">
+<li><p>
+stuct
+</p>
+
+<p>
+struct test (i32); let x=test(10), 10 =&gt; i32
+</p></li>
+
+<li>tuple</li>
+
+<li>[T;n]</li>
+</ul></li>
+
+<li>其它
+
+<ul class="org-ul">
+<li>block 表达式 let x :i32 = {&#x2026;.; 10}, 10 =&gt; i32</li>
+</ul></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org669dcbb" class="outline-3">
+<h3 id="org669dcbb"><span class="section-number-3">1.2</span> coercion 的类型</h3>
+<div class="outline-text-3" id="text-1-2">
+<ol class="org-ol">
+<li>T =&gt; U, 如果 U 是 T 的 sub-type, 例如 T 转换为 trait</li>
+
+<li>T =&gt; U =&gt; V, 传递性</li>
+
+<li>&amp;mut T =&gt; &amp;T, 引用弱化</li>
+
+<li>deref coercion, 若 T Deref to U, 则 &amp;T =&gt; &amp;U</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org520e6e7" class="outline-3">
+<h3 id="org520e6e7"><span class="section-number-3">1.3</span> method auto-deref</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+auto-dref 是指涉及到 method 时 receiver 匹配的规则, 例如, 若 test::foo 定义为
+foo(&amp;self), 调用 test.foo() 时, test 会通过 coercion 变为 &amp;Test
+</p>
+
+<p>
+具体过程是:
+</p>
+
+<ol class="org-ol">
+<li>T 通过一系列的 deref 变为一个类型的序列, 例如, 原始类型为 &amp;&amp;T, 则序列为 {&amp;&amp;T,
+&amp;T, T)</li>
+
+<li>遍历这个序列, 针对每个类型 U
+<ul class="org-ul">
+<li>检查 U 是否与要求的类型一致</li>
+<li>若不一致, 对 U 进行一个 ref, 检查 &amp;U 是否一致</li>
+</ul></li>
+</ol>
+
+<p>
+针对上面的例子:
+</p>
+
+<ol class="org-ol">
+<li>调用 test.foo(), test 类型为 T, 与要求的 &amp;self 不一致, 进行一次 ref 后变为
+&amp;test, 与要求的一致了, 则最终调用 test.foo() 时, test 会隐式转型为 &amp;test.</li>
+
+<li>let test=&amp;&amp;T(), 则会先进行一个 deref, 变为 &amp;T, 然后发现一致.</li>
+</ol>
+
+<p>
+以上只针对 method 的 receiver, method 及 function 的普通参数并不支持 auto-deref
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgcb5ac28" class="outline-3">
+<h3 id="orgcb5ac28"><span class="section-number-3">1.4</span> Reference</h3>
+<div class="outline-text-3" id="text-1-4">
+<ol class="org-ol">
+<li><a href="https://stackoverflow.com/questions/28519997/what-are-rusts-exact-auto-dereferencing-rules">https://stackoverflow.com/questions/28519997/what-are-rusts-exact-auto-dereferencing-rules</a></li>
+
+<li><a href="https://github.com/rust-lang/rfcs/blob/master/text/0401-coercions.md">https://github.com/rust-lang/rfcs/blob/master/text/0401-coercions.md</a></li>
+
+<li><a href="https://github.com/rust-lang/rfcs/blob/master/text/0241-deref-conversions.md">https://github.com/rust-lang/rfcs/blob/master/text/0241-deref-conversions.md</a></li>
+
+<li><a href="https://users.rust-lang.org/t/why-does-this-compile-automatic-dereferencing/2183/2">https://users.rust-lang.org/t/why-does-this-compile-automatic-dereferencing/2183/2</a></li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

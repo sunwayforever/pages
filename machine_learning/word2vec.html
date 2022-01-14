@@ -1,0 +1,371 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Word2vec</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Word2vec</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org4ca3b9c">1. Word2vec</a>
+<ul>
+<li><a href="#orgb9f0626">1.1. 训练过程</a>
+<ul>
+<li><a href="#org41335ab">1.1.1. n-gram</a></li>
+<li><a href="#org3293d93">1.1.2. cbow</a></li>
+<li><a href="#orgaa54ff9">1.1.3. skip-gram</a></li>
+</ul>
+</li>
+<li><a href="#orgdb11fdb">1.2. gensim</a></li>
+<li><a href="#orgc448673">1.3. pytorch.nn.Embedding</a></li>
+<li><a href="#org5885ca5">1.4. 使用 word2vec 的例子</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org4ca3b9c" class="outline-2">
+<h2 id="org4ca3b9c"><span class="section-number-2">1</span> Word2vec</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+在 的例子中, 使用了 word2vec
+</p>
+
+<p>
+普通的 rnn 对单词的索引使用 one-hot 编码, 所以每个 feature 变成一个大小为 N (N
+为单词的个数) 的 vector. 这种做法有两个问题:
+</p>
+
+<ol class="org-ol">
+<li>vector 太大且没有必要, 因为这个 vector 绝大部分都是 0</li>
+
+<li>这个 vector 无法反映不同单词之间的相似性, 例如, apple 和 orange
+很相似 (都是水果, 都可以吃,&#x2026;), 相似表示两者可以互相替代,
+机器学习时学习到的参数 (权重) 可以共享等</li>
+</ol>
+
+<p>
+因此, 我们会使用一种称为 word2vec 或者叫 word embedding 的技术代替
+one-hot 编码
+</p>
+
+<p>
+word2vec 其实就是一个反映各个单词特征的 matrix, 例如:
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">&#xa0;</th>
+<th scope="col" class="org-right">king</th>
+<th scope="col" class="org-right">queen</th>
+<th scope="col" class="org-right">apple</th>
+<th scope="col" class="org-right">orange</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">human?</td>
+<td class="org-right">0.99</td>
+<td class="org-right">0.98</td>
+<td class="org-right">0.01</td>
+<td class="org-right">0.01</td>
+</tr>
+
+<tr>
+<td class="org-left">fruit?</td>
+<td class="org-right">0.01</td>
+<td class="org-right">0.02</td>
+<td class="org-right">0.99</td>
+<td class="org-right">0.98</td>
+</tr>
+
+<tr>
+<td class="org-left">food?</td>
+<td class="org-right">0.01</td>
+<td class="org-right">0.01</td>
+<td class="org-right">0.99</td>
+<td class="org-right">0.99</td>
+</tr>
+
+<tr>
+<td class="org-left">size</td>
+<td class="org-right">&#xa0;</td>
+<td class="org-right">&#xa0;</td>
+<td class="org-right">&#xa0;</td>
+<td class="org-right">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-left">&#x2026;</td>
+<td class="org-right">&#xa0;</td>
+<td class="org-right">&#xa0;</td>
+<td class="org-right">&#xa0;</td>
+<td class="org-right">&#xa0;</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+以上面特征 (human?, fruit?&#x2026;) 是我们事先选定的, 但这个 matrix
+实际上可以通过训练让机器自己学习到.
+</p>
+
+<p>
+word embedding 和 CNN 中的卷积很像: 都是反映了数据的特征,
+都可以通过训练学习到
+</p>
+</div>
+
+<div id="outline-container-orgb9f0626" class="outline-3">
+<h3 id="orgb9f0626"><span class="section-number-3">1.1</span> 训练过程</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+word2vec 获得的 embedding 是通过训练得到的, 它是一个简单的使用非监督学习的网络:
+</p>
+
+<p>
+从训练样本中选取一些词做为输入, 让它去预测另一个词, hidden layer 的输出即为
+embedding
+</p>
+
+<p>
+以 `the quick brown fox jumps over the lazy dog` 为例
+</p>
+</div>
+
+<div id="outline-container-org41335ab" class="outline-4">
+<h4 id="org41335ab"><span class="section-number-4">1.1.1</span> n-gram</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+输入为连续 n 个词, 预测标签是第 n+1 个词:
+</p>
+
+<p>
+当 n=3 时:
+</p>
+
+<pre class="example" id="org5f815b3">
+the quick brown -&gt; fox
+quick brown fox -&gt; jumps
+brown fox jumps -&gt; over
+...
+</pre>
+
+<p>
+由于训练时使用 3 个词做为输入, 但用来获得 embedding 时只使用 1 个词做为输入, 所以网络的设计也许可以这样:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">get_training_model</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">input_1</span> = Input<span style="color: #757575;">(</span>N<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">input_2</span> = Input<span style="color: #757575;">(</span>N<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">input_3</span> = Input<span style="color: #757575;">(</span>N<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">embedding</span> = Dense<span style="color: #757575;">(</span>EMBEDDING_SIZE<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">output_1</span> = embedding<span style="color: #757575;">(</span>input_1<span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"output"</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">output_2</span> = embedding<span style="color: #757575;">(</span>input_2<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">output_3</span> = embedding<span style="color: #757575;">(</span>input_3<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">output</span> = Concatenate<span style="color: #757575;">()</span>[output_1<span style="color: #757575;">,</span> output_2<span style="color: #757575;">,</span> output_3]
+    <span style="color: #268bd2;">output</span> = Dense<span style="color: #757575;">(</span>N<span style="color: #757575;">)(</span>output<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">output</span> = Softmax<span style="color: #757575;">()(</span>output<span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> Model<span style="color: #757575;">(</span><span style="color: #839496;">input</span>=[input_1<span style="color: #757575;">,</span> input_2<span style="color: #757575;">,</span> input_3]<span style="color: #757575;">,</span> output=output<span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">get_eval_model</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">model</span> = get_training_model<span style="color: #757575;">()</span>
+    model.load_weights<span style="color: #757575;">(</span><span style="color: #2aa198;">"save.h5"</span><span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> Model<span style="color: #757575;">(</span><span style="color: #839496;">input</span>=model.inputs[0]<span style="color: #757575;">,</span> output=model.get_layer<span style="color: #757575;">(</span><span style="color: #2aa198;">"output"</span><span style="color: #757575;">)</span>.output<span style="color: #757575;">)</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org3293d93" class="outline-4">
+<h4 id="org3293d93"><span class="section-number-4">1.1.2</span> cbow</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+用两边的词预测中间的词
+</p>
+
+<pre class="example" id="org387a5c1">
+the brown -&gt; quick
+quick fox -&gt; brown
+brown jumps -&gt; fox
+...
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orgaa54ff9" class="outline-4">
+<h4 id="orgaa54ff9"><span class="section-number-4">1.1.3</span> skip-gram</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<p>
+使用中的词预测两边的词   
+</p>
+
+<pre class="example" id="org42cb5a2">
+quick -&gt; the brown
+brown -&gt; quick fox
+fox -&gt; brown jumps
+...
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgdb11fdb" class="outline-3">
+<h3 id="orgdb11fdb"><span class="section-number-3">1.2</span> gensim</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+gensim 工具可以帮助我们进行上面的训练过程
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">from</span> gensim.models <span style="color: #859900;">import</span> word2vec
+<span style="color: #268bd2;">sentences</span> = word2vec.Text8Corpus<span style="color: #757575;">(</span><span style="color: #2aa198;">"../extra/xwz.txt"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">vec</span> = word2vec.Word2Vec<span style="color: #757575;">(</span>sentences<span style="color: #757575;">,</span> size=50<span style="color: #757575;">,</span> <span style="color: #839496;">iter</span>=5<span style="color: #757575;">,</span> min_count=0<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>vec[<span style="color: #2aa198;">"&#25105;"</span>]<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>vec[<span style="color: #2aa198;">"&#25105;"</span>].shape<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>vec.wv.vocab[<span style="color: #2aa198;">"&#25105;"</span>].index<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>vec.wv.vectors[5]<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">vocabulary</span> = vec.wv.vocab.keys<span style="color: #757575;">()</span>
+<span style="color: #586e75;">#</span><span style="color: #586e75;">print(vocabulary)</span>
+</pre>
+</div>
+
+<pre class="example" id="orgd661b76">
+[ 2.5379989e-01 -7.9855943e-01  2.1004373e-01  1.4060766e-01
+  1.5365046e+00 -1.2147485e-02 -1.1567525e+00  1.4223902e-01
+ -1.1346768e+00  6.0506749e-01 -8.8734490e-01 -5.5807270e-02
+  7.3605202e-02 -5.1732904e-01  8.1780031e-02  4.4866718e-02
+ -3.8633597e-01 -5.1058096e-01 -5.1415718e-01 -8.0242729e-01
+ -7.0677415e-02  2.1593498e-01  9.4420961e-05  1.5452372e-01
+ -4.0667549e-01  2.0172779e-01 -3.7259430e-01 -8.9318126e-01
+  1.7669131e-01 -6.7675710e-01  3.1780142e-01 -1.6200885e+00
+  6.8548656e-01 -2.7231857e-01  7.0585549e-01  3.9321697e-01
+ -8.2931936e-01  9.1785020e-01 -4.0526435e-01  1.2794651e-01
+  3.5713235e-01  6.9550622e-01 -3.1667909e-01 -4.8001361e-01
+  4.3599684e-02 -1.1073679e+00  9.8762310e-01 -4.1203447e-02
+  7.0740056e-01  5.6313020e-01]
+(50,)
+5
+[ 2.5379989e-01 -7.9855943e-01  2.1004373e-01  1.4060766e-01
+  1.5365046e+00 -1.2147485e-02 -1.1567525e+00  1.4223902e-01
+ -1.1346768e+00  6.0506749e-01 -8.8734490e-01 -5.5807270e-02
+  7.3605202e-02 -5.1732904e-01  8.1780031e-02  4.4866718e-02
+ -3.8633597e-01 -5.1058096e-01 -5.1415718e-01 -8.0242729e-01
+ -7.0677415e-02  2.1593498e-01  9.4420961e-05  1.5452372e-01
+ -4.0667549e-01  2.0172779e-01 -3.7259430e-01 -8.9318126e-01
+  1.7669131e-01 -6.7675710e-01  3.1780142e-01 -1.6200885e+00
+  6.8548656e-01 -2.7231857e-01  7.0585549e-01  3.9321697e-01
+ -8.2931936e-01  9.1785020e-01 -4.0526435e-01  1.2794651e-01
+  3.5713235e-01  6.9550622e-01 -3.1667909e-01 -4.8001361e-01
+  4.3599684e-02 -1.1073679e+00  9.8762310e-01 -4.1203447e-02
+  7.0740056e-01  5.6313020e-01]
+
+
+/usr/lib/python3.6/site-packages/ipykernel_launcher.py:4: DeprecationWarning: Call to deprecated `__getitem__` (Method will be removed in 4.0.0, use self.wv.__getitem__() instead).
+  after removing the cwd from sys.path.
+/usr/lib/python3.6/site-packages/ipykernel_launcher.py:5: DeprecationWarning: Call to deprecated `__getitem__` (Method will be removed in 4.0.0, use self.wv.__getitem__() instead).
+  """
+</pre>
+
+<p>
+more example about gensim and word2vec:
+</p>
+
+<p>
+<a href="https://textminingonline.com/training-a-chinese-wikipedia-word2vec-model-by-gensim-and-jieba">https://textminingonline.com/training-a-chinese-wikipedia-word2vec-model-by-gensim-and-jieba</a>
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgc448673" class="outline-3">
+<h3 id="orgc448673"><span class="section-number-3">1.3</span> pytorch.nn.Embedding</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+pytorch 的 nn.Embedding 是一个简单的 word2vec 的查找表, 可以支持 load
+训练好的 word2vec weight:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">self</span>.encoder = torch.nn.Embedding<span style="color: #757575;">(</span>VOCABULARY_SIZE<span style="color: #757575;">,</span> FEATURE_SIZE<span style="color: #757575;">)</span>
+<span style="color: #859900;">self</span>.encoder.weight.data.copy_<span style="color: #757575;">(</span>torch.from_numpy<span style="color: #757575;">(</span>vec.wv.vectors<span style="color: #757575;">))</span>
+<span style="color: #859900;">self</span>.encoder.requires_grad = <span style="color: #268bd2; font-weight: bold;">False</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org5885ca5" class="outline-3">
+<h3 id="org5885ca5"><span class="section-number-3">1.4</span> 使用 word2vec 的例子</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+<a href="file:///home/sunway/Gitbox/code/machine_learning/pytorch/random_chinese/random_chinese.py">file:~/Gitbox/code/machine_learning/pytorch/random_chinese/random_chinese.py</a>
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

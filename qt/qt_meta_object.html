@@ -1,0 +1,446 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Qt Meta Object</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Qt Meta Object</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org208b921">1. Qt Meta Object</a>
+<ul>
+<li><a href="#org8dda9e0">1.1. Overview</a></li>
+<li><a href="#orgd245d24">1.2. moc_xxx 的结构</a>
+<ul>
+<li><a href="#org5b490d6">1.2.1. stringdata</a></li>
+<li><a href="#org6b5d572">1.2.2. metadata</a></li>
+<li><a href="#orged0672a">1.2.3. metacall</a></li>
+<li><a href="#orga2e16c8">1.2.4. metacast</a></li>
+<li><a href="#org6bde97a">1.2.5. signal 的实现</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org208b921" class="outline-2">
+<h2 id="org208b921"><span class="section-number-2">1</span> Qt Meta Object</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org8dda9e0" class="outline-3">
+<h3 id="org8dda9e0"><span class="section-number-3">1.1</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+对于声明了 Q_OBJECT 的 class xxx, moc 会负责生成一个
+moc_xxx.cpp, 包含 xxx 对应的 meta object 的定义.
+</p>
+
+<p>
+meta object 的主要功能是:
+</p>
+
+<ol class="org-ol">
+<li>metadata, 包括关于 class 的 introspection 信息, property 的 introspection 信息, method(metacal) 信息等</li>
+
+<li>metacast, 实现 qobject_cast</li>
+
+<li>metacall
+
+<ol class="org-ol">
+<li>property 的 READ, WRITE 等功能</li>
+
+<li>invokeable method, signal, slot 的调用</li>
+</ol></li>
+</ol>
+
+<p>
+signal/slot 的具体实现(如何 connect 及调用) 并不包含在 meta object 本身中.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgd245d24" class="outline-3">
+<h3 id="orgd245d24"><span class="section-number-3">1.2</span> moc_xxx 的结构</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-org5b490d6" class="outline-4">
+<h4 id="org5b490d6"><span class="section-number-4">1.2.1</span> stringdata</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+meta object 所有功能都依赖于对 class, property, signal, slot 等的 introspection,
+所以需要记下所有相关的字符串, 以便后面查找和匹配
+</p>
+
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #859900;">static</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">qt_meta_stringdata_MessageBox_t</span> <span style="color: #268bd2;">qt_meta_stringdata_MessageBox</span> = <span style="color: #757575;">{</span>
+    <span style="color: #757575;">{</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">&#31867;&#21517;</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">(0,0,10) &#20998;&#21035;&#34920;&#31034; (idx, offset, len)</span>
+        QT_MOC_LITERAL<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> 10<span style="color: #757575;">),</span> <span style="color: #586e75;">// </span><span style="color: #586e75;">"MessageBox"</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">signal</span>
+        QT_MOC_LITERAL<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 11<span style="color: #757575;">,</span> 13<span style="color: #757575;">),</span> <span style="color: #586e75;">// </span><span style="color: #586e75;">"heightChanged"</span>
+        QT_MOC_LITERAL<span style="color: #757575;">(</span>2<span style="color: #757575;">,</span> 25<span style="color: #757575;">,</span> 0<span style="color: #757575;">),</span> <span style="color: #586e75;">// </span><span style="color: #586e75;">""</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">signal</span>
+        QT_MOC_LITERAL<span style="color: #757575;">(</span>3<span style="color: #757575;">,</span> 26<span style="color: #757575;">,</span> 15<span style="color: #757575;">),</span> <span style="color: #586e75;">// </span><span style="color: #586e75;">"changedTwoTimes"</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">signal</span>
+        QT_MOC_LITERAL<span style="color: #757575;">(</span>4<span style="color: #757575;">,</span> 42<span style="color: #757575;">,</span> 16<span style="color: #757575;">),</span> <span style="color: #586e75;">// </span><span style="color: #586e75;">"oopsWidthChanged"</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">slot</span>
+        QT_MOC_LITERAL<span style="color: #757575;">(</span>5<span style="color: #757575;">,</span> 59<span style="color: #757575;">,</span> 13<span style="color: #757575;">),</span> <span style="color: #586e75;">// </span><span style="color: #586e75;">"onTextChanged"</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">Q_INVOKABLE method</span>
+        QT_MOC_LITERAL<span style="color: #757575;">(</span>6<span style="color: #757575;">,</span> 73<span style="color: #757575;">,</span> 3<span style="color: #757575;">),</span> <span style="color: #586e75;">// </span><span style="color: #586e75;">"foo"</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">property</span>
+        QT_MOC_LITERAL<span style="color: #757575;">(</span>7<span style="color: #757575;">,</span> 77<span style="color: #757575;">,</span> 6<span style="color: #757575;">),</span> <span style="color: #586e75;">// </span><span style="color: #586e75;">"height"</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">property</span>
+        QT_MOC_LITERAL<span style="color: #757575;">(</span>8<span style="color: #757575;">,</span> 84<span style="color: #757575;">,</span> 5<span style="color: #757575;">)</span> <span style="color: #586e75;">// </span><span style="color: #586e75;">"width"</span>
+
+    <span style="color: #757575;">},</span>
+    <span style="color: #2aa198;">"MessageBox\0heightChanged\0\0changedTwoTimes\0"</span>
+    <span style="color: #2aa198;">"oopsWidthChanged\0onTextChanged\0foo\0"</span>
+    <span style="color: #2aa198;">"height\0width"</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org6b5d572" class="outline-4">
+<h4 id="org6b5d572"><span class="section-number-4">1.2.2</span> metadata</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #859900;">static</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">uint</span> <span style="color: #268bd2;">qt_meta_data_MessageBox</span>[] = <span style="color: #757575;">{</span>
+
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">content:</span>
+    8<span style="color: #757575;">,</span>       <span style="color: #586e75;">// </span><span style="color: #586e75;">revision</span>
+
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">className &#30340; idx &#20026; 0, &#21363; MessageBox</span>
+    0<span style="color: #757575;">,</span>       <span style="color: #586e75;">// </span><span style="color: #586e75;">classname</span>
+    0<span style="color: #757575;">,</span>    0<span style="color: #757575;">,</span> <span style="color: #586e75;">// </span><span style="color: #586e75;">classinfo</span>
+
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#26377; 5 &#20010; methods, &#30456;&#20851;&#20449;&#24687;&#25152;&#22312;&#20559;&#31227;&#37327;&#20026; 14, &#21363;&#19979;&#38754;&#30340; // signals:... &#22788;</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">5 &#20010; method &#20998;&#21035;&#26159;: 3 &#20010; signal, 1 &#20010; slot, 1 &#20010; invokeable method</span>
+    5<span style="color: #757575;">,</span>   14<span style="color: #757575;">,</span> <span style="color: #586e75;">// </span><span style="color: #586e75;">methods</span>
+
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">2 &#20010; property, &#30456;&#20851;&#20449;&#24687;&#30340;&#25152;&#22312;&#30340;&#20559;&#31227;&#37327;&#20026; 46</span>
+    2<span style="color: #757575;">,</span>   46<span style="color: #757575;">,</span> <span style="color: #586e75;">// </span><span style="color: #586e75;">properties</span>
+
+    0<span style="color: #757575;">,</span>    0<span style="color: #757575;">,</span> <span style="color: #586e75;">// </span><span style="color: #586e75;">enums/sets</span>
+    0<span style="color: #757575;">,</span>    0<span style="color: #757575;">,</span> <span style="color: #586e75;">// </span><span style="color: #586e75;">constructors</span>
+    0<span style="color: #757575;">,</span>       <span style="color: #586e75;">// </span><span style="color: #586e75;">flags</span>
+    3<span style="color: #757575;">,</span>       <span style="color: #586e75;">// </span><span style="color: #586e75;">signalCount</span>
+
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">signals: name, argc, parameters, tag, flags</span>
+    1<span style="color: #757575;">,</span>    0<span style="color: #757575;">,</span>   39<span style="color: #757575;">,</span>    2<span style="color: #757575;">,</span> 0x06 <span style="color: #586e75;">/* </span><span style="color: #586e75;">Public</span><span style="color: #586e75;"> */</span><span style="color: #757575;">,</span>
+    3<span style="color: #757575;">,</span>    0<span style="color: #757575;">,</span>   40<span style="color: #757575;">,</span>    2<span style="color: #757575;">,</span> 0x06 <span style="color: #586e75;">/* </span><span style="color: #586e75;">Public</span><span style="color: #586e75;"> */</span><span style="color: #757575;">,</span>
+    4<span style="color: #757575;">,</span>    0<span style="color: #757575;">,</span>   41<span style="color: #757575;">,</span>    2<span style="color: #757575;">,</span> 0x06 <span style="color: #586e75;">/* </span><span style="color: #586e75;">Public</span><span style="color: #586e75;"> */</span><span style="color: #757575;">,</span>
+
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">slots: name, argc, parameters, tag, flags</span>
+    5<span style="color: #757575;">,</span>    1<span style="color: #757575;">,</span>   42<span style="color: #757575;">,</span>    2<span style="color: #757575;">,</span> 0x0a <span style="color: #586e75;">/* </span><span style="color: #586e75;">Public</span><span style="color: #586e75;"> */</span><span style="color: #757575;">,</span>
+
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">methods: name, argc, parameters, tag, flags</span>
+    6<span style="color: #757575;">,</span>    0<span style="color: #757575;">,</span>   45<span style="color: #757575;">,</span>    2<span style="color: #757575;">,</span> 0x02 <span style="color: #586e75;">/* </span><span style="color: #586e75;">Public</span><span style="color: #586e75;"> */</span><span style="color: #757575;">,</span>
+
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">signals: parameters</span>
+    <span style="color: #268bd2; font-weight: bold;">QMetaType</span>::Void<span style="color: #757575;">,</span>
+    <span style="color: #268bd2; font-weight: bold;">QMetaType</span>::Void<span style="color: #757575;">,</span>
+    <span style="color: #268bd2; font-weight: bold;">QMetaType</span>::Void<span style="color: #757575;">,</span>
+
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">slots: parameters</span>
+    <span style="color: #268bd2; font-weight: bold;">QMetaType</span>::Void<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">QMetaType</span>::QString<span style="color: #757575;">,</span>    2<span style="color: #757575;">,</span>
+
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">methods: parameters</span>
+    <span style="color: #268bd2; font-weight: bold;">QMetaType</span>::Void<span style="color: #757575;">,</span>
+
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">properties: name, type, flags</span>
+    7<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">QMetaType</span>::Int<span style="color: #757575;">,</span> 0x00495003<span style="color: #757575;">,</span>
+    8<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">QMetaType</span>::Int<span style="color: #757575;">,</span> 0x00095103<span style="color: #757575;">,</span>
+
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">properties: notify_signal_id</span>
+    0<span style="color: #757575;">,</span>
+    0<span style="color: #757575;">,</span>
+
+    0        <span style="color: #586e75;">// </span><span style="color: #586e75;">eod</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+该结构体与 QMetaObjectPrivate 对应:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #859900;">struct</span> <span style="color: #b58900;">QMetaObjectPrivate</span>
+<span style="color: #757575;">{</span>
+    <span style="color: #859900;">enum</span> <span style="color: #757575;">{</span> <span style="color: #268bd2;">OutputRevision</span> = 8 <span style="color: #757575;">}</span>; <span style="color: #586e75;">// </span><span style="color: #586e75;">Used by moc, qmetaobjectbuilder and qdbus</span>
+
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">revision</span>;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">className</span>;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">classInfoCount</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">classInfoData</span>;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">methodCount</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">methodData</span>;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">propertyCount</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">propertyData</span>;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">enumeratorCount</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">enumeratorData</span>;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">constructorCount</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">constructorData</span>;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">flags</span>;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">signalCount</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orged0672a" class="outline-4">
+<h4 id="orged0672a"><span class="section-number-4">1.2.3</span> metacall</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<p>
+metacall 是 meta object 最重要的部分, 它实现三种不同的 Call:
+</p>
+
+<ol class="org-ol">
+<li>InvokeMetaMethod</li>
+<li>IndexOfMethod</li>
+<li>Property 相关: READ, WRITE, RESET, &#x2026;</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #b58900;">int</span> <span style="color: #268bd2; font-weight: bold;">MessageBox</span>::<span style="color: #268bd2;">qt_metacall</span><span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::<span style="color: #b58900;">Call</span> <span style="color: #268bd2;">_c</span><span style="color: #757575;">,</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">_id</span><span style="color: #757575;">,</span> <span style="color: #b58900;">void</span> **<span style="color: #268bd2;">_a</span><span style="color: #757575;">)</span>
+<span style="color: #757575;">{</span>
+    _id = <span style="color: #268bd2; font-weight: bold;">QObject</span>::qt_metacall<span style="color: #757575;">(</span>_c<span style="color: #757575;">,</span> _id<span style="color: #757575;">,</span> _a<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>_id &lt; 0<span style="color: #757575;">)</span>
+        <span style="color: #859900;">return</span> _id;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>_c == <span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::InvokeMetaMethod<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>_id &lt; 5<span style="color: #757575;">)</span>
+            qt_static_metacall<span style="color: #757575;">(</span><span style="color: #859900;">this</span><span style="color: #757575;">,</span> _c<span style="color: #757575;">,</span> _id<span style="color: #757575;">,</span> _a<span style="color: #757575;">)</span>;
+        _id -= 5;
+    <span style="color: #757575;">}</span> 
+    <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>_c == <span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::ReadProperty || _c == <span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::WriteProperty
+             || _c == <span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::ResetProperty || _c == <span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::RegisterPropertyMetaType<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        qt_static_metacall<span style="color: #757575;">(</span><span style="color: #859900;">this</span><span style="color: #757575;">,</span> _c<span style="color: #757575;">,</span> _id<span style="color: #757575;">,</span> _a<span style="color: #757575;">)</span>;
+        _id -= 2;
+    <span style="color: #757575;">}</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">else ...</span>
+    <span style="color: #859900;">return</span> _id;
+<span style="color: #757575;">}</span>
+
+<span style="color: #b58900;">void</span> <span style="color: #268bd2; font-weight: bold;">MessageBox</span>::<span style="color: #268bd2;">qt_static_metacall</span><span style="color: #757575;">(</span><span style="color: #b58900;">QObject</span> *<span style="color: #268bd2;">_o</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::<span style="color: #b58900;">Call</span> <span style="color: #268bd2;">_c</span><span style="color: #757575;">,</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">_id</span><span style="color: #757575;">,</span> <span style="color: #b58900;">void</span> **<span style="color: #268bd2;">_a</span><span style="color: #757575;">)</span>
+<span style="color: #757575;">{</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>_c == <span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::InvokeMetaMethod<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">auto</span> *<span style="color: #268bd2;">_t</span> = <span style="color: #859900;">static_cast</span>&lt;<span style="color: #b58900;">MessageBox</span> *&gt;<span style="color: #757575;">(</span>_o<span style="color: #757575;">)</span>;
+        Q_UNUSED<span style="color: #757575;">(</span>_t<span style="color: #757575;">)</span>
+                <span style="color: #859900;">switch</span> <span style="color: #757575;">(</span>_id<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+                    <span style="color: #859900;">case</span> 0: _t-&gt;heightChanged<span style="color: #757575;">()</span>; <span style="color: #859900;">break</span>;
+                    <span style="color: #859900;">case</span> 1: _t-&gt;changedTwoTimes<span style="color: #757575;">()</span>; <span style="color: #859900;">break</span>;
+                    <span style="color: #859900;">case</span> 2: _t-&gt;oopsWidthChanged<span style="color: #757575;">()</span>; <span style="color: #859900;">break</span>;
+                    <span style="color: #859900;">case</span> 3: _t-&gt;onTextChanged<span style="color: #757575;">((</span>*<span style="color: #859900;">reinterpret_cast</span>&lt; <span style="color: #b58900;">QString</span><span style="color: #757575;">(</span>*<span style="color: #757575;">)</span>&gt;<span style="color: #757575;">(</span>_a[1]<span style="color: #757575;">)))</span>; <span style="color: #859900;">break</span>;
+                    <span style="color: #859900;">case</span> 4: _t-&gt;foo<span style="color: #757575;">()</span>; <span style="color: #859900;">break</span>;
+                    <span style="color: #859900;">default</span>: ;
+                <span style="color: #757575;">}</span>
+    <span style="color: #757575;">}</span> <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>_c == <span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::IndexOfMethod<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #b58900;">int</span> *<span style="color: #268bd2;">result</span> = <span style="color: #859900;">reinterpret_cast</span>&lt;<span style="color: #b58900;">int</span> *&gt;<span style="color: #757575;">(</span>_a[0]<span style="color: #757575;">)</span>;
+        <span style="color: #757575;">{</span>
+            <span style="color: #859900;">using</span> <span style="color: #b58900;">_t</span> = <span style="color: #b58900;">void</span> <span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">MessageBox</span>::*<span style="color: #757575;">)()</span>;
+            <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>*<span style="color: #859900;">reinterpret_cast</span>&lt;<span style="color: #b58900;">_t</span> *&gt;<span style="color: #757575;">(</span>_a[1]<span style="color: #757575;">)</span> == <span style="color: #859900;">static_cast</span>&lt;<span style="color: #b58900;">_t</span>&gt;<span style="color: #757575;">(</span>&amp;<span style="color: #268bd2; font-weight: bold;">MessageBox</span>::heightChanged<span style="color: #757575;">))</span> <span style="color: #757575;">{</span>
+                *result = 0;
+                <span style="color: #859900;">return</span>;
+            <span style="color: #757575;">}</span>
+        <span style="color: #757575;">}</span>
+        <span style="color: #757575;">{</span>
+            <span style="color: #859900;">using</span> <span style="color: #b58900;">_t</span> = <span style="color: #b58900;">void</span> <span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">MessageBox</span>::*<span style="color: #757575;">)()</span>;
+            <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>*<span style="color: #859900;">reinterpret_cast</span>&lt;<span style="color: #b58900;">_t</span> *&gt;<span style="color: #757575;">(</span>_a[1]<span style="color: #757575;">)</span> == <span style="color: #859900;">static_cast</span>&lt;<span style="color: #b58900;">_t</span>&gt;<span style="color: #757575;">(</span>&amp;<span style="color: #268bd2; font-weight: bold;">MessageBox</span>::changedTwoTimes<span style="color: #757575;">))</span> <span style="color: #757575;">{</span>
+                *result = 1;
+                <span style="color: #859900;">return</span>;
+            <span style="color: #757575;">}</span>
+        <span style="color: #757575;">}</span>
+        <span style="color: #757575;">{</span>
+            <span style="color: #859900;">using</span> <span style="color: #b58900;">_t</span> = <span style="color: #b58900;">void</span> <span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">MessageBox</span>::*<span style="color: #757575;">)()</span>;
+            <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>*<span style="color: #859900;">reinterpret_cast</span>&lt;<span style="color: #b58900;">_t</span> *&gt;<span style="color: #757575;">(</span>_a[1]<span style="color: #757575;">)</span> == <span style="color: #859900;">static_cast</span>&lt;<span style="color: #b58900;">_t</span>&gt;<span style="color: #757575;">(</span>&amp;<span style="color: #268bd2; font-weight: bold;">MessageBox</span>::oopsWidthChanged<span style="color: #757575;">))</span> <span style="color: #757575;">{</span>
+                *result = 2;
+                <span style="color: #859900;">return</span>;
+            <span style="color: #757575;">}</span>
+        <span style="color: #757575;">}</span>
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>_c == <span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::ReadProperty<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">auto</span> *<span style="color: #268bd2;">_t</span> = <span style="color: #859900;">static_cast</span>&lt;<span style="color: #b58900;">MessageBox</span> *&gt;<span style="color: #757575;">(</span>_o<span style="color: #757575;">)</span>;
+        Q_UNUSED<span style="color: #757575;">(</span>_t<span style="color: #757575;">)</span>
+                <span style="color: #b58900;">void</span> *<span style="color: #268bd2;">_v</span> = _a[0];
+        <span style="color: #859900;">switch</span> <span style="color: #757575;">(</span>_id<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            <span style="color: #859900;">case</span> 0: *<span style="color: #859900;">reinterpret_cast</span>&lt; <span style="color: #b58900;">int</span>*&gt;<span style="color: #757575;">(</span>_v<span style="color: #757575;">)</span> = _t-&gt;mHeight; <span style="color: #859900;">break</span>;
+            <span style="color: #859900;">case</span> 1: *<span style="color: #859900;">reinterpret_cast</span>&lt; <span style="color: #b58900;">int</span>*&gt;<span style="color: #757575;">(</span>_v<span style="color: #757575;">)</span> = _t-&gt;width<span style="color: #757575;">()</span>; <span style="color: #859900;">break</span>;
+            <span style="color: #859900;">default</span>: <span style="color: #859900;">break</span>;
+        <span style="color: #757575;">}</span>
+    <span style="color: #757575;">}</span> <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>_c == <span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::WriteProperty<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">auto</span> *<span style="color: #268bd2;">_t</span> = <span style="color: #859900;">static_cast</span>&lt;<span style="color: #b58900;">MessageBox</span> *&gt;<span style="color: #757575;">(</span>_o<span style="color: #757575;">)</span>;
+        Q_UNUSED<span style="color: #757575;">(</span>_t<span style="color: #757575;">)</span>
+                <span style="color: #b58900;">void</span> *<span style="color: #268bd2;">_v</span> = _a[0];
+        <span style="color: #859900;">switch</span> <span style="color: #757575;">(</span>_id<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            <span style="color: #859900;">case</span> 0:
+                <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>_t-&gt;mHeight != *<span style="color: #859900;">reinterpret_cast</span>&lt; <span style="color: #b58900;">int</span>*&gt;<span style="color: #757575;">(</span>_v<span style="color: #757575;">))</span> <span style="color: #757575;">{</span>
+                    _t-&gt;mHeight = *<span style="color: #859900;">reinterpret_cast</span>&lt; <span style="color: #b58900;">int</span>*&gt;<span style="color: #757575;">(</span>_v<span style="color: #757575;">)</span>;
+                    <span style="color: #b58900;">Q_EMIT</span> <span style="color: #268bd2;">_t</span>-&gt;heightChanged<span style="color: #757575;">()</span>;
+                <span style="color: #757575;">}</span>
+                <span style="color: #859900;">break</span>;
+            <span style="color: #859900;">case</span> 1: _t-&gt;setWidth<span style="color: #757575;">(</span>*<span style="color: #859900;">reinterpret_cast</span>&lt; <span style="color: #b58900;">int</span>*&gt;<span style="color: #757575;">(</span>_v<span style="color: #757575;">))</span>; <span style="color: #859900;">break</span>;
+            <span style="color: #859900;">default</span>: <span style="color: #859900;">break</span>;
+        <span style="color: #757575;">}</span>
+    <span style="color: #757575;">}</span> <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>_c == <span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::ResetProperty<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org9db1b0e" class="outline-5">
+<h5 id="org9db1b0e"><span class="section-number-5">1.2.3.1</span> InvokeMetaMethod</h5>
+<div class="outline-text-5" id="text-1-2-3-1">
+<p>
+signal, slot, invokeable method 都可以通过 meta object 的方式被调用, 例如 QML 中可以直接调用这三种函数, 通过 signal 可以间接调用到 slot 等.
+</p>
+
+<p>
+调用这些函数最终都要通过 InvokeMetaMethod 进行, 每个方法在编译时确定一个 id, 后面通过 id 来区分不同的方法.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org17d6217" class="outline-5">
+<h5 id="org17d6217"><span class="section-number-5">1.2.3.2</span> IndexOfMethod</h5>
+<div class="outline-text-5" id="text-1-2-3-2">
+<p>
+connect 时会调用这个方法获得对应的 slot 的 id, 然后在调用 slot 时可以使用这个 id 调用 InvokeMetaMethod(id).
+</p>
+
+<p>
+由于这里使用的是 static_cast, 所以它实际是给新的 functor-based connect 使用的, 而非旧的 string-based connect
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf97bfda" class="outline-5">
+<h5 id="orgf97bfda"><span class="section-number-5">1.2.3.3</span> Property READ/WRITE</h5>
+<div class="outline-text-5" id="text-1-2-3-3">
+<p>
+对 property 的读写会翻译为对应的 metacall
+</p>
+</div>
+</div>
+
+<div id="outline-container-org1e457be" class="outline-5">
+<h5 id="org1e457be"><span class="section-number-5">1.2.3.4</span> 关于 metacall</h5>
+<div class="outline-text-5" id="text-1-2-3-4">
+<ol class="org-ol">
+<li>把 metacall 最终调用到的具体函数设置为 virtual 会导致 metacall 的行为受到多态的影响</li>
+
+<li>由于 qt_metacall 会先调用基类的 qt_metacall, 所以 property 也会表现出`继承`的行为</li>
+</ol>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orga2e16c8" class="outline-4">
+<h4 id="orga2e16c8"><span class="section-number-4">1.2.4</span> metacast</h4>
+<div class="outline-text-4" id="text-1-2-4">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #b58900;">void</span> *<span style="color: #268bd2; font-weight: bold;">MessageBox</span>::<span style="color: #268bd2;">qt_metacast</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">_clname</span><span style="color: #757575;">)</span>
+<span style="color: #757575;">{</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>_clname<span style="color: #757575;">)</span> <span style="color: #859900;">return</span> <span style="color: #268bd2; font-weight: bold;">nullptr</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>strcmp<span style="color: #757575;">(</span>_clname<span style="color: #757575;">,</span> qt_meta_stringdata_MessageBox.stringdata0<span style="color: #757575;">))</span>
+        <span style="color: #859900;">return</span> <span style="color: #859900;">static_cast</span>&lt;<span style="color: #b58900;">void</span>*&gt;<span style="color: #757575;">(</span><span style="color: #859900;">this</span><span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> <span style="color: #268bd2; font-weight: bold;">QObject</span>::qt_metacast<span style="color: #757575;">(</span>_clname<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+由于 meta object 包含了 class 相关的 introspection 信息, 所以它可以不依赖 c++
+RTTI 进行 dynamic_cast, 即 qobject_cast.
+</p>
+
+<p>
+qt_metacast 就是用来实现 qobject_cast 的: 能不能 cast 直接比较 classname 是否相同即可&#x2026;
+</p>
+</div>
+</div>
+
+<div id="outline-container-org6bde97a" class="outline-4">
+<h4 id="org6bde97a"><span class="section-number-4">1.2.5</span> signal 的实现</h4>
+<div class="outline-text-4" id="text-1-2-5">
+<p>
+xxx 只是声明了 signal 的函数原型, 并不包含具体的实现, moc 会生成一个具体的实现,
+用来根据 connection 信息调用到具体的 slot
+</p>
+
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #586e75;">// </span><span style="color: #586e75;">SIGNAL 0</span>
+<span style="color: #b58900;">void</span> <span style="color: #268bd2; font-weight: bold;">MessageBox</span>::<span style="color: #268bd2;">heightChanged</span><span style="color: #757575;">()</span>
+<span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::activate<span style="color: #757575;">(</span><span style="color: #859900;">this</span><span style="color: #757575;">,</span> &amp;staticMetaObject<span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">nullptr</span><span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">SIGNAL 1</span>
+<span style="color: #b58900;">void</span> <span style="color: #268bd2; font-weight: bold;">MessageBox</span>::<span style="color: #268bd2;">changedTwoTimes</span><span style="color: #757575;">()</span>
+<span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::activate<span style="color: #757575;">(</span><span style="color: #859900;">this</span><span style="color: #757575;">,</span> &amp;staticMetaObject<span style="color: #757575;">,</span> 1<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">nullptr</span><span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">SIGNAL 2</span>
+<span style="color: #b58900;">void</span> <span style="color: #268bd2; font-weight: bold;">MessageBox</span>::<span style="color: #268bd2;">oopsWidthChanged</span><span style="color: #757575;">()</span>
+<span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">QMetaObject</span>::activate<span style="color: #757575;">(</span><span style="color: #859900;">this</span><span style="color: #757575;">,</span> &amp;staticMetaObject<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">nullptr</span><span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

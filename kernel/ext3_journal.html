@@ -1,0 +1,430 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ext3 Journal</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Ext3 Journal</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org4fd84aa">1. Ext3 Journal</a>
+<ul>
+<li><a href="#org673e5fd">1.1. 三种模式</a>
+<ul>
+<li><a href="#org69450a7">1.1.1. Journal</a></li>
+<li><a href="#org0fe5a5d">1.1.2. Ordered</a></li>
+<li><a href="#org4bede04">1.1.3. Writeback</a></li>
+</ul>
+</li>
+<li><a href="#org2e2f6e1">1.2. Journal 如何工作</a>
+<ul>
+<li><a href="#orgdb5e758">1.2.1. commit_write</a></li>
+<li><a href="#org3f6bb96">1.2.2. journal_commit_transaction</a></li>
+</ul>
+</li>
+<li><a href="#org1d0fc17">1.3. The code</a>
+<ul>
+<li><a href="#org7a70cf5">1.3.1. dirty data</a></li>
+<li><a href="#orgff0af09">1.3.2. commit_write</a></li>
+<li><a href="#org56e2cb7">1.3.3. commit_transaction</a></li>
+<li><a href="#org9261b0f">1.3.4. checkpoint</a></li>
+</ul>
+</li>
+<li><a href="#orgc6d50b2">1.4. 实验</a>
+<ul>
+<li><a href="#orgf291952">1.4.1. writeback</a></li>
+<li><a href="#org6d6fffd">1.4.2. ordered</a></li>
+</ul>
+</li>
+<li><a href="#orgc08e650">1.5. 总结</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org4fd84aa" class="outline-2">
+<h2 id="org4fd84aa"><span class="section-number-2">1</span> Ext3 Journal</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org673e5fd" class="outline-3">
+<h3 id="org673e5fd"><span class="section-number-3">1.1</span> 三种模式</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-org69450a7" class="outline-4">
+<h4 id="org69450a7"><span class="section-number-4">1.1.1</span> Journal</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+All filesystem data and metadata changes are logged into the journal. This mode
+minimizes the chance of losing the updates made to each file, but it requires
+many additional disk accesses. For example, when a new file is created, all its
+data blocks must be duplicated as log records. This is the safest and slowest
+Ext3 journaling mode.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0fe5a5d" class="outline-4">
+<h4 id="org0fe5a5d"><span class="section-number-4">1.1.2</span> Ordered</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+Only changes to filesystem metadata are logged into the journal. However, the
+Ext3 filesystem groups metadata and relative data blocks so that data blocks are
+written to disk before the metadata. This way, the chance to have data
+corruption inside the files is reduced; for instance, each write access that
+enlarges a file is guaranteed to be fully protected by the journal. This is the
+default Ext3 journaling mode.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org4bede04" class="outline-4">
+<h4 id="org4bede04"><span class="section-number-4">1.1.3</span> Writeback</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<p>
+Only changes to filesystem metadata are logged; this is the method found on the
+other journaling filesystems and is the fastest mode. The journaling mode of the
+Ext3 filesystem is specified by an option of the mount system command. For
+instance, to mount an Ext3 filesystem stored in the /dev/sda2 partition on the
+/jdisk mount point with the "writeback" mode, the system administrator can type
+the command:
+</p>
+
+<pre class="example" id="org4a08a69">
+mount -t ext3 -o data=writeback /dev/sda2 /jdisk
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org2e2f6e1" class="outline-3">
+<h3 id="org2e2f6e1"><span class="section-number-3">1.2</span> Journal 如何工作</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-orgdb5e758" class="outline-4">
+<h4 id="orgdb5e758"><span class="section-number-4">1.2.1</span> commit_write</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<ol class="org-ol">
+<li>If the Ext3 filesystem has been mounted in "journal" mode, the commit_write
+method is implemented by the ext3_journalled_commit_write( ) function, which
+invokes journal_dirty_metadata( ) on every buffer of data (not metadata) in
+the page. This way, the buffer is included in the proper dirty list of the
+active transaction and not in the dirty list of the owner inode; moreover,
+the corresponding log records are written to the journal. Finally,
+ext3_journalled_commit_write( ) invokes journal_stop( ) to notify the JBD
+layer that the atomic operation handle is closed.</li>
+
+<li>If the Ext3 filesystem has been mounted in "ordered" mode, the
+commit_write method is implemented by the ext3_ordered_commit_write( )
+function, which invokes the journal_dirty_data( ) function on every buffer
+of data in the page to insert the buffer in a proper list of the active
+transactions. The JBD layer ensures that all buffers in this list are
+written to disk before the metadata buffers of the transaction. No log
+record is written onto the journal. Next, ext3_ordered_commit_write( )
+executes the normal generic_commit_write( ) function described in Chapter
+15, which inserts the data buffers in the list of the dirty buffers of the
+owner inode. Finally, ext3_ordered_commit_write( ) invokes journal_stop( )
+to notify the JBD layer that the atomic operation handle is closed.</li>
+
+<li>If the Ext3 filesystem has been mounted in "writeback" mode, the
+commit_write method is implemented by the ext3_writeback_commit_write( )
+function, which executes the normal generic_commit_write( ) function
+described in Chapter 15, which inserts the data buffers in the list of the
+dirty buffers of the owner inode. Then, ext3_writeback_commit_write( )
+invokes journal_stop( ) to notify the JBD layer that the atomic operation
+handle is closed.</li>
+
+<li>commit_write 之后, write 系统调用就结束了</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org3f6bb96" class="outline-4">
+<h4 id="org3f6bb96"><span class="section-number-4">1.2.2</span> journal_commit_transaction</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<ol class="org-ol">
+<li>kjournald 会定期 commit journal transaction</li>
+
+<li>If the Ext3 filesystem has been mounted in "ordered" mode, the
+journal_commit_transaction( ) function activates the I/O data transfers for
+all data buffers included in the list of the transaction and waits until all
+data transfers terminate.</li>
+
+<li>The journal_commit_transaction( ) function activates the I/O data transfers
+for all metadata buffers included in the transaction (and also for all data
+buffers, if Ext3 was mounted in "journal" mode).</li>
+
+<li>Periodically, the kernel activates a checkpoint activity for every complete
+transaction in the journal. The checkpoint basically involves verifying
+whether the I/O data transfers triggered by journal_commit_transaction( )
+have successfully terminated. If so, the transaction can be deleted from the
+journal.</li>
+</ol>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org1d0fc17" class="outline-3">
+<h3 id="org1d0fc17"><span class="section-number-3">1.3</span> The code</h3>
+<div class="outline-text-3" id="text-1-3">
+</div>
+<div id="outline-container-org7a70cf5" class="outline-4">
+<h4 id="org7a70cf5"><span class="section-number-4">1.3.1</span> dirty data</h4>
+<div class="outline-text-4" id="text-1-3-1">
+</div>
+<div id="outline-container-orgfb9f04c" class="outline-5">
+<h5 id="orgfb9f04c"><span class="section-number-5">1.3.1.1</span> ext3_journal_dirty_metadata</h5>
+<div class="outline-text-5" id="text-1-3-1-1">
+<p>
+ext3_journal_dirty_metadata 作用是把 buffer (作为 metadata) 提交给 JBD, 后续 JBD
+commit transaction 时会把这些 metadata commit 到 journal
+</p>
+
+<p>
+任何 mode 都需要 dirty metadata.
+</p>
+
+<p>
+对于 journaled mode, commit_write 时会把它的 data 也假装成 metadata 提交给 JBD,
+以便 data 也能被 commit 到 journal
+</p>
+</div>
+</div>
+
+<div id="outline-container-org011f940" class="outline-5">
+<h5 id="org011f940"><span class="section-number-5">1.3.1.2</span> ext3_journal_dirty_data</h5>
+<div class="outline-text-5" id="text-1-3-1-2">
+<p>
+ordered 模式下需要在 commit journal 前写数据,  ext3_journal_dirty_data 是把数据提交给 jbd (但不是作为 metadata, 因为数据不需要写入 journal)
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgff0af09" class="outline-4">
+<h4 id="orgff0af09"><span class="section-number-4">1.3.2</span> commit_write</h4>
+<div class="outline-text-4" id="text-1-3-2">
+</div>
+<div id="outline-container-org8cdda72" class="outline-5">
+<h5 id="org8cdda72"><span class="section-number-5">1.3.2.1</span> ext3_writeback_commit_write</h5>
+<div class="outline-text-5" id="text-1-3-2-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">ext3_writeback_commit_write</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25152;&#26377; mode &#19979;, &#22312; commit write &#20043;&#21069;, metadata &#23601;&#24050;&#32463;&#34987; commit &#21040; journal &#20102;,</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36825;&#37324;&#26080;&#38656;&#20877;&#35843;&#29992; journal_dirty_metadata</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">writeback &#30452;&#25509;&#36890;&#36807; generic_commit_write &#25226; page &#21644; inode &#26631;&#35760;&#20026; dirty</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21518;&#32493; pdflush &#26102;&#20250;&#25226;&#23427;&#20889;&#21040; inode &#30340; block</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21487;&#35265;, writeback &#27169;&#24335;&#19979;, data &#19982; journal (metadata) &#26159;&#23436;&#20840;&#27809;&#26377;&#20851;&#31995;&#30340;</span>
+  <span style="color: #268bd2;">generic_commit_write</span><span style="color: #757575;">(</span><span style="color: #b58900;">file</span><span style="color: #757575;">,</span> <span style="color: #b58900;">page</span><span style="color: #757575;">,</span> <span style="color: #b58900;">from</span><span style="color: #757575;">,</span> <span style="color: #b58900;">to</span><span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgd3a7c8d" class="outline-5">
+<h5 id="orgd3a7c8d"><span class="section-number-5">1.3.2.2</span> ext3_ordered_commit_write</h5>
+<div class="outline-text-5" id="text-1-3-2-2">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">ext3_ordered_commit_write</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">ext3_journal_dirty_data &#20250;&#25226; data &#25918;&#22312; jbd &#19968;&#20010;&#29305;&#23450;&#30340; data list</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">jbd commit transaction &#26102;&#20250;&#20808;&#25226;&#36825;&#20010; list &#37324;&#30340; data &#20889;&#21040; inode block (&#32780;&#38750;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">journal &#20013;)</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20294;&#19981;&#22952;&#30861;&#21518;&#38754;&#30340; generic_commit_write &#20063;&#20250;&#25226; data &#26631;&#35760;&#20026; inode dirty &#20197;&#20415; pdflush</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20889;&#30913;&#30424;</span>
+  ret = walk_page_buffers<span style="color: #757575;">(</span>handle<span style="color: #757575;">,</span> page_buffers<span style="color: #757575;">(</span>page<span style="color: #757575;">),</span>
+                        from<span style="color: #757575;">,</span> to<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">,</span> ext3_journal_dirty_data<span style="color: #757575;">)</span>;
+  <span style="color: #268bd2;">generic_commit_write</span><span style="color: #757575;">(</span><span style="color: #b58900;">file</span><span style="color: #757575;">,</span> <span style="color: #b58900;">page</span><span style="color: #757575;">,</span> <span style="color: #b58900;">from</span><span style="color: #757575;">,</span> <span style="color: #b58900;">to</span><span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org845f236" class="outline-5">
+<h5 id="org845f236"><span class="section-number-5">1.3.2.3</span> ext3_journalled_commit_write</h5>
+<div class="outline-text-5" id="text-1-3-2-3">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">ext3_journalled_commit_write</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25152;&#26377; data &#37117;&#34987;&#20316;&#20026; `metadata` &#25552;&#20132;&#32473; ext3_journal_dirty_metadata, &#20197;&#20415; data</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#34987; commit &#21040; journal</span>
+  ret = walk_page_buffers<span style="color: #757575;">(</span>handle<span style="color: #757575;">,</span> page_buffers<span style="color: #757575;">(</span>page<span style="color: #757575;">),</span> from<span style="color: #757575;">,</span>
+                        to<span style="color: #757575;">,</span> &amp;partial<span style="color: #757575;">,</span> ext3_journal_dirty_metadata<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21518;&#32493;&#24182;&#27809;&#26377; generic_commit_write, &#22240;&#20026; data &#22312; commit &#21040; journal &#20043;&#21069;,</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#19981;&#33021;&#34987;&#20889;&#21040; inode &#23545;&#24212;&#30340; block &#19978;</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org56e2cb7" class="outline-4">
+<h4 id="org56e2cb7"><span class="section-number-4">1.3.3</span> commit_transaction</h4>
+<div class="outline-text-4" id="text-1-3-3">
+<p>
+真正写磁盘发生在 journal_commit_transaction
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">journal_commit_transaction</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">phase 1: write out all data, data first, then metadata, control data</span>
+  <span style="color: #b58900;">write_out_data</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">start io</span>
+  <span style="color: #268bd2;">start_journal_io</span><span style="color: #757575;">()</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">phase 2: wait until metadata is written</span>
+  wait_for_iobuf
+  <span style="color: #b58900;">wait_for_ctlbuf</span>          
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">phase 3: write commit record</span>
+  <span style="color: #268bd2;">put_bh</span><span style="color: #757575;">(</span><span style="color: #b58900;">bh</span><span style="color: #757575;">)</span>;     
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">checkpoint</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org9261b0f" class="outline-4">
+<h4 id="org9261b0f"><span class="section-number-4">1.3.4</span> checkpoint</h4>
+<div class="outline-text-4" id="text-1-3-4">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">log_do_checkpoint</span>:
+  <span style="color: #268bd2;">__flush_buffer</span><span style="color: #757575;">(</span><span style="color: #b58900;">journal</span><span style="color: #757575;">,</span> <span style="color: #b58900;">jh</span><span style="color: #757575;">,</span> <span style="color: #b58900;">bhs</span><span style="color: #757575;">,</span> &amp;batch_count<span style="color: #757575;">,</span> &amp;drop_count<span style="color: #757575;">)</span>;
+    <span style="color: #268bd2;">ll_rw_block</span><span style="color: #757575;">(</span><span style="color: #b58900;">WRITE</span><span style="color: #757575;">,</span> *batch_count<span style="color: #757575;">,</span> <span style="color: #b58900;">bhs</span><span style="color: #757575;">)</span>;
+      <span style="color: #268bd2;">submit_bh</span><span style="color: #757575;">(</span><span style="color: #b58900;">rw</span><span style="color: #757575;">,</span> <span style="color: #b58900;">bh</span><span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgc6d50b2" class="outline-3">
+<h3 id="orgc6d50b2"><span class="section-number-3">1.4</span> 实验</h3>
+<div class="outline-text-3" id="text-1-4">
+</div>
+<div id="outline-container-orgf291952" class="outline-4">
+<h4 id="orgf291952"><span class="section-number-4">1.4.1</span> writeback</h4>
+<div class="outline-text-4" id="text-1-4-1">
+<pre class="example" id="orgdf651b7">
+// 生成一个 100 MB 的全 FF 的数据
+dd if=/dev/zero ibs=1k count=100000 | tr "\000" "\377" &gt; ~/ff.bin
+
+// 生成 img
+dd if=/dev/zero of=test.img bs=1024 count=300000
+mkfs.ext3 test.img
+mount -o loop test.img -o data=writeback /mnt
+sync
+
+// dd
+cd /mnt
+dd if=~/ff.bin of=./dump.bin
+
+// 等待 8s 后 reset 虚拟机, 因为 ext3 定时 commit journal 的时间默认为 5s,
+// 8s 可以保证 metadata 被 commit, 但数据部分可能还没有写入
+mount -o loop test.img -o data=writeback /mnt
+cd /mnt
+
+// dump.bin 大小与 ff.bin 相同
+du -b ./dump.bin
+
+// 但 dump.bin 的内容与 ff 并不一致, od 显示 dump.bin 的开头为 ff, 后面为 0
+od -x ./dump.bin
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org6d6fffd" class="outline-4">
+<h4 id="org6d6fffd"><span class="section-number-4">1.4.2</span> ordered</h4>
+<div class="outline-text-4" id="text-1-4-2">
+<p>
+所有步骤与 writeback 相同, 最后的观察结果是:
+</p>
+
+<p>
+dump.bin 文件并不存在, 因为 3s 之内数据还没有写完, 导致 metadata 没有 commit
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgc08e650" class="outline-3">
+<h3 id="orgc08e650"><span class="section-number-3">1.5</span> 总结</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+简单来说, journal 的工作过程是:
+</p>
+
+<ol class="org-ol">
+<li>commit_write 时 metadata 和 data 被提交给 jbd 和文件系统 (mark dirty):
+
+<ul class="org-ul">
+<li>metadata 只会提交给 jbd, 因为 metadata 是一定需要先写入 journal 的</li>
+
+<li>writeback 时, data 提交给文件系统</li>
+
+<li>ordered 时, data 提交给文件系统, 同时以 data (非 journal) 形式提交给 jbd</li>
+
+<li>journal 时, data 不提交给文件系统, 以 journal 形式提交给 jbd.</li>
+</ul></li>
+
+<li>commit_transaction 时 (kjournald 定时 commit, 默认为 5s 秒
+(JBD_DEFAULT_MAX_COMMIT_AGE)) JBD 负责把相应数据写入 journal
+
+<ul class="org-ul">
+<li>writeback 模式时, 把 metadata 写入 journal</li>
+
+<li>ordered 模式时, 先把 data 直接写入文件系统, 再把 metadata 写入 journal</li>
+
+<li>journal 模式时, 把 data 和 metadata 都写入 journal</li>
+</ul></li>
+
+<li>kjournald 周期性的 checkpoint 会负责清除 journal, 并把 journal 的数据写到文件系统中</li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Weak Symbol</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Weak Symbol</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org79319d1">1. Weak Symbol</a>
+<ul>
+<li><a href="#org13f6646">1.1. weak 有默认值</a></li>
+<li><a href="#orga0682a9">1.2. <span class="done DONE">DONE</span> weak symbol 与 rtld</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org79319d1" class="outline-2">
+<h2 id="org79319d1"><span class="section-number-2">1</span> Weak Symbol</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="https://docs.oracle.com/cd/E19683-01/816-1386/chapter2-11/index.html">https://docs.oracle.com/cd/E19683-01/816-1386/chapter2-11/index.html</a>
+</p>
+
+<p>
+<a href="android_linker.html#org36d56dc">linker_so.link_image</a>
+</p>
+</div>
+
+<div id="outline-container-org13f6646" class="outline-3">
+<h3 id="org13f6646"><span class="section-number-3">1.1</span> weak 有默认值</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+loader 在处理 weak_symbol 时, 即使没有找到任何非 UNDEF 的符号, 也不会报错, 由于 loader 对这个符号跳过了 reloate, 所以符号的值会使用 got 中默认的 0 值, 所以如下的代码可以用来判断是否有 strong symbol 定义.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">if</span> <span style="color: #757575;">(</span>weak_symbol == 0<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+  <span style="color: #586e75;">/* </span><span style="color: #586e75;">no strong version</span><span style="color: #586e75;"> */</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">extern</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">xxx</span> <span style="color: #859900;">__attribute__</span><span style="color: #757575;">((</span>weak<span style="color: #757575;">))</span>;
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+  printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%x\n"</span><span style="color: #757575;">,</span> &amp;xxx<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">return</span> 0;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org9abefd8">
+$&gt; arm-linux-androideabi-gcc test.c -O0 -g3
+$&gt; readelf -a ./a.out
+
+Relocation section '.rel.dyn' at offset 0x318 contains 1 entries:
+ Offset     Info    Type            Sym.Value  Sym. Name
+00009fe4  00000415 R_ARM_GLOB_DAT    00000000   xxx
+~~~~~~~~ &lt;-- got 位置
+
+Symbol table '.dynsym' contains 8 entries:
+   Num:    Value  Size Type    Bind   Vis      Ndx Name
+     0: 00000000     0 NOTYPE  LOCAL  DEFAULT  UND 
+     ...
+     4: 00000000     0 NOTYPE  WEAK   DEFAULT  UND xxx
+     ...
+
+$&gt; objdump -D ./a.out
+
+Disassembly of section .got:
+
+00009fd0 &lt;_GLOBAL_OFFSET_TABLE_-0x18&gt;:
+    9fd0:	00009ec8 	andeq	r9, r0, r8, asr #29
+    9fd4:	00009eb8 			; &lt;UNDEFINED&gt; instruction: 0x00009eb8
+    9fd8:	00009eb0 			; &lt;UNDEFINED&gt; instruction: 0x00009eb0
+    9fdc:	00009ec0 	andeq	r9, r0, r0, asr #29
+    9fe0:	00008418 	andeq	r8, r0, r8, lsl r4
+    9fe4:	00000000 	andeq	r0, r0, r0          &lt;--------- weak symbol 默认值为 0
+
+$&gt; ./a.out
+0
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orga0682a9" class="outline-3">
+<h3 id="orga0682a9"><span class="section-number-3">1.2</span> <span class="done DONE">DONE</span> weak symbol 与 rtld</h3>
+<div class="outline-text-3" id="text-1-2">
+<ul class="org-ul">
+<li>State "DONE"       from "TODO"       <span class="timestamp-wrapper"><span class="timestamp">[2021-03-04 四 12:21]</span></span></li>
+</ul>
+<p>
+<span class="timestamp-wrapper"><span class="timestamp">[2021-01-20 三]</span></span>
+</p>
+
+<p>
+看起来 linux 的 rtld 并不会考虑 weak symbol, 而 android 的 rtld 会考虑
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

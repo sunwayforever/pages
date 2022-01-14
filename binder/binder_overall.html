@@ -1,0 +1,679 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 11:55 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Binder Overall</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Binder Overall</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org126c183">1. Binder Overall</a>
+<ul>
+<li><a href="#org4a4490c">1.1. client 发起 transaction</a>
+<ul>
+<li><a href="#org734b07b">1.1.1. IPCThreadState::transact</a></li>
+<li><a href="#org3c5c772">1.1.2. IPCTheadState::writeTransactionData</a></li>
+<li><a href="#orgce698cf">1.1.3. IPCTheadState::waitForResponse</a></li>
+<li><a href="#orgc66ea71">1.1.4. IPCTheadState::talkWithDriver</a></li>
+<li><a href="#org1bb6c97">1.1.5. 总结</a></li>
+</ul>
+</li>
+<li><a href="#orgdf13bd5">1.2. binder driver 唤醒 server 端 binder_thread 并阻塞 client</a>
+<ul>
+<li><a href="#org2ef2266">1.2.1. binder_thread_write</a></li>
+<li><a href="#orgd221339">1.2.2. binder_transaction</a></li>
+<li><a href="#org4bb0037">1.2.3. client 阻塞在 binder_thread_read</a></li>
+</ul>
+</li>
+<li><a href="#org777ffd8">1.3. server 之前需要启动 looper binder_thread 并阻塞</a>
+<ul>
+<li><a href="#org2597894">1.3.1. 注册 looper: binder_thread_write</a></li>
+<li><a href="#orgb95141d">1.3.2. 阻塞在 binder_thread_read</a></li>
+</ul>
+</li>
+<li><a href="#org4bdd41b">1.4. server 的 looper binder_thread 被唤醒</a></li>
+<li><a href="#orge3a0fa3">1.5. server 执行 transact</a></li>
+<li><a href="#orge050580">1.6. server send reply</a></li>
+<li><a href="#org6a5949a">1.7. binder driver 唤醒阻塞的 client</a></li>
+<li><a href="#org94d3282">1.8. client 的 binder_thread 被唤醒</a></li>
+<li><a href="#org0060436">1.9. client 拿到返回结果</a></li>
+<li><a href="#org819ffbb">1.10. binder driver 之外的流程</a></li>
+<li><a href="#orgf07dc52">1.11. 总结</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org126c183" class="outline-2">
+<h2 id="org126c183"><span class="section-number-2">1</span> Binder Overall</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org4a4490c" class="outline-3">
+<h3 id="org4a4490c"><span class="section-number-3">1.1</span> client 发起 transaction</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-org734b07b" class="outline-4">
+<h4 id="org734b07b"><span class="section-number-4">1.1.1</span> IPCThreadState::transact</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<pre class="example" id="org39e1170">
+status_t IPCThreadState::transact(int32_t handle,
+                                  uint32_t code, const Parcel&amp; data,
+                                  Parcel* reply, uint32_t flags)
+  // - handle 对应 client 端 binder_ref 的 desc
+  // - code 为应用层的 transaction code
+  // - data 为 transact 的参数, 这个 parcel 的 mData 是 client 应用层通过 malloc 分配的, 和底层 binder buffer 无关
+  // - reply 用来容纳 transact 的返回值, 这个 parcel 现在还是 init 状态, 即它的 mData 实际为 null, 并未分配内存 
+  //   后续 transact 返回时会通过 ipcSetDataReference 让 reply 的 mData "引用" 底层 binder buffer.
+
+  writeTransactionData(BC_TRANSACTION, flags, handle, code, data, NULL);
+  waitForResponse(reply);
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org3c5c772" class="outline-4">
+<h4 id="org3c5c772"><span class="section-number-4">1.1.2</span> IPCTheadState::writeTransactionData</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<pre class="example" id="org5759866">
+IPCThreadState::writeTransactionData(int32_t cmd,
+                                     uint32_t binderFlags,
+                                     int32_t handle,
+                                     uint32_t code, const Parcel&amp; data, status_t* statusBuffer)
+
+  // - cmd 对应 binder driver command, 这里是 BC_TRANSACTION. BC_XXX 都是指 user -&gt; kernel 的命令, 而 BR_XXX 是指从 kernel -&gt; user 的命令
+  // - handle, 对应 binder_ref 的 desc
+  // - code, transction code
+  // - data, 应用层的参数
+  // 这个函数主要是将 data 中的数据写入一个 binder_transaction_data 中, binder_transaction_data 数据结构同时被 user space 和 kernel space 使用, 它
+  // 是两者交互的桥梁.
+  // binder_transaction_data 的结构大约是:
+  // 1. header, 包括 binder handle, transaction code, sender_pid, send_uid 等和 binder 相关的信息
+  // 2. 一个 buffer (data-&gt;ptr-&gt;buffer) 指针, 指向源 parcel (data) 的 mData buffer, 包含普通数据 (int, float, string ...) 和 flat_binder_object
+  // 3. 一个 offsets (data-&gt;ptr-&gt;offsets) 指针, 指向源 parcel 的 mObjects buffer, 是一个针对 flat_binder_object 的索引.
+
+  // 另外, 从 writeTransactionData 的实现也可以看到, 最终写到 mOut 中的是 binder_transaction_data, 而后者包含的只是源 parcel 中的 mData 和 mObjects 指针
+  // 最终对数据的复制发生在 kernel space.
+
+  // tr 的 head 部分
+  binder_transaction_data tr;
+  tr.target.handle = handle;
+  // tr.cookie 为 0, 这个值代表的是 server 端 BBinder 的地址, 而此时 client 并不知道是多少
+  // 后续 server 端从 binder_transaction 中重建 tr 时会给它正确的值
+  tr.cookie = 0;
+  tr.code = code;
+  tr.sender_pid = 0;
+
+  // tr 的 buffer, offsets 指针
+  tr.data_size = data.ipcDataSize();
+  tr.data.ptr.buffer = data.ipcData();
+  tr.offsets_size = data.ipcObjectsCount()*sizeof(binder_size_t);
+  tr.data.ptr.offsets = data.ipcObjects();
+
+  // 将 cmd (BC_TRANSACTION) 和 tr 写入 mOut
+  mOut.writeInt32(cmd);
+  mOut.write(&amp;tr, sizeof(tr));
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orgce698cf" class="outline-4">
+<h4 id="orgce698cf"><span class="section-number-4">1.1.3</span> IPCTheadState::waitForResponse</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<pre class="example" id="orge4289d7">
+
+IPCTheadState::waitForResponse(Parcel *reply)
+  talkWithDriver()
+  // ioctl 返回, 需要从 kernel 获得返回数据, 还是要通过 binder_transaction_data
+  cmd = (uint32_t)mIn.readInt32();
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orgc66ea71" class="outline-4">
+<h4 id="orgc66ea71"><span class="section-number-4">1.1.4</span> IPCTheadState::talkWithDriver</h4>
+<div class="outline-text-4" id="text-1-1-4">
+<pre class="example" id="org0dd08ad">
+IPCTheadState::talkWithDriver
+  // talkWithDriver 的主要作用是:
+  // 1. 将应用层提供的, 包含源 parcel 数据指针的 binder_transaction_data 通过 ioctl 交给 Kernel
+  // 2. 等待 ioctl 返回, 此时 mIn 已经包含了 kernel 返回的 binder_transaction_data
+
+  // 因为 talkWithDriver 时应用层需要将 mOut (包含要发送给 kernel 的 binder_transaction_data)
+  // 以及 mIn (用来接收 kernel 返回的 binder_transaction_data) 都传递给 driver,
+  // 所以封装了一个 binder_write_read 结构体做为 ioctl 参数
+  binder_write_read bwr;
+  bwr.write_buffer = (uintptr_t)mOut.data();
+  bwr.read_buffer = (uintptr_t)mIn.data();
+  ioctl(mProcess-&gt;mDriverFD, BINDER_WRITE_READ, &amp;bwr)
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org1bb6c97" class="outline-4">
+<h4 id="org1bb6c97"><span class="section-number-4">1.1.5</span> 总结</h4>
+<div class="outline-text-4" id="text-1-1-5">
+<ol class="org-ol">
+<li>将 parcel 中的 mData, mObjects 指针封装在 binder_transaction_data</li>
+
+<li>将这个 binder_transaction_data 写入 mIn 这个 parcel 中</li>
+
+<li>将 mIn 和 mOut 这两个 parcel 的 data 指针封装在 binder_write_read
+中,通过 ioctl 以 BINDER_WRITE_READ 命令传递给 binder driver.</li>
+</ol>
+
+<p>
+client 源 parcel 数据流向为:
+</p>
+
+<p>
+client parcel -&gt; binder_transaction_data -&gt; IPCTheadState::mOut -&gt; binder_write_read
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgdf13bd5" class="outline-3">
+<h3 id="orgdf13bd5"><span class="section-number-3">1.2</span> binder driver 唤醒 server 端 binder_thread 并阻塞 client</h3>
+<div class="outline-text-3" id="text-1-2">
+<pre class="example" id="orgfbbd503">
+binder_ioctl(filp, cmd, bwr)
+  // 此时 cmd 为 BINDER_WRITE_READ
+  copy_from_user(&amp;bwr, ubuf, sizeof(bwr))
+  binder_thread_write(proc, thread, bwr.write_buffer, bwr.write_size, &amp;bwr.write_consumed);
+  binder_thread_read(proc, thread, (void __user *)bwr.read_buffer, bwr.read_size, &amp;bwr.read_consumed, filp-&gt;f_flags &amp; O_NONBLOCK);
+</pre>
+</div>
+
+<div id="outline-container-org2ef2266" class="outline-4">
+<h4 id="org2ef2266"><span class="section-number-4">1.2.1</span> binder_thread_write</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<pre class="example" id="org1c37e1a">
+binder_thread_write(proc, thread, bwr.write_buffer, bwr.write_size, &amp;bwr.write_consumed)
+  // bwr.write_buffer 即 user space 的 mOut.data 指针, 更进一步, 这个 mOut.data 的数据是 cmd + binder_transaction_data
+  // 读取开头的 cmd, 即 BC_TRANSACTION
+  get_user(cmd, (uint32_t __user *)ptr)
+  struct binder_transaction_data tr;
+  // 读取紧接的 binder_transaction_data
+  copy_from_user(&amp;tr, ptr, sizeof(tr))
+  binder_transaction(proc, thread, &amp;tr, cmd == BC_REPLY);
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orgd221339" class="outline-4">
+<h4 id="orgd221339"><span class="section-number-4">1.2.2</span> binder_transaction</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<pre class="example" id="org35aaa73">
+binder_transaction(proc, thread, &amp;tr, cmd == BC_REPLY);
+  // binder_transaction 需要根据 tr.target.handle 在当前 proc 中找到对应的 binder_ref,
+  // 然后找到 target proc
+  if (tr-&gt;target.handle):
+    // binder_get_ref 会使用 binder_proc-&gt;refs_by_desc 这颗 rb-tree 查找 handle 对应的 binder_ref
+    struct binder_ref *ref = binder_get_ref(proc, tr-&gt;target.handle);
+    target_node = ref-&gt;node;
+    // 找到 target_proc
+    target_proc = target_node-&gt;proc;
+
+  target_list = &amp;target_proc-&gt;todo;
+
+  // 新的数据结构: binder_transaction
+  struct binder_transaction *t = kzalloc(sizeof(*t), GFP_KERNEL);
+  t-&gt;to_proc = target_proc;
+  t-&gt;code = tr-&gt;code;
+
+  // 从 target_proc 的 binder_buffer 上分配内存
+  t-&gt;buffer = binder_alloc_buf(target_proc, tr-&gt;data_size,tr-&gt;offsets_size)
+
+  // 把 binder_transaction_data 的 buffer 复制到 t-&gt;buffer-&gt;data, 这一步
+  // 的结果就是把 client 用户态的 parcel 的 mData 复制到 target proc 的 binder_buffer 中
+  copy_from_user(t-&gt;buffer-&gt;data, tr-&gt;data.ptr.buffer, tr-&gt;data_size)
+
+  // parcel 中的 mObjects 也被复制到 t-&gt;buffer
+  // 在原始的 parcel 中, mData 和 mObjects 是分别通过 malloc 分配的, 两个 buffer 并不连续, 
+  // 但复制到 binder_buffer 后, 两者变成连续的了.
+  offp = (size_t *)(t-&gt;buffer-&gt;data + ALIGN(tr-&gt;data_size, sizeof(void *)));
+  copy_from_user(offp, tr-&gt;data.ptr.offsets, tr-&gt;offsets_size)
+
+  // 这时相当于已经拿到 client 的 源 parcel 的内容, 下面会解析 parcel 中的各 flat_binder_object, 以便对它们特殊处理.
+  // 所谓的特殊处理, 主要有两方面内容:
+  // 1. 针对 fd, 需要在 target 进程新建 fd (还记得 proc-&gt;files 么)
+  // 2. 针对 binder, 需要在 target_proc 初始化对应的 binder_node 和 binder_ref. 具体参考 "binder node/ref 的初始化"
+  for (; offp &lt; off_end; offp++):
+    struct flat_binder_object *fp = (struct flat_binder_object *)(buffer-&gt;data + *offp);
+    switch (fp-&gt;type):
+      case BINDER_TYPE_BINDER:
+      // client 要传递 BBinder (binder node)
+      case BINDER_TYPE_HANDLE:
+      // client 要传递 BpBinder (binder ref)
+      // 若 binder_ref-&gt;node-&gt;proc == target_proc, 则将 flat_binder_object 中的原值替换为这个 binder_node
+      // 否则在 target proc 中新建一个指向 binder_ref-&gt;node 的新的 binder_ref, 并代替 flat_binder_object 中的 binder_ref
+      case BINDER_TYPE_FD:
+      // client 要传递 fd 到 server, 这时 driver 会在 target_proc 中创建新的 fd,
+      // 然后将 flat_binder_object 中的原始 fd 修改为新的 fd
+
+  // 当前 binder_thread (代表 client) 的 transaction_stack 栈顶设为 t
+  // 需要 transaction_stack 是因为后续这个 client thread 会阻塞, 需要 server 根据 transaction_stack 决定如果找到 client thread
+  // 并唤醒它以处理返回结果.
+  t-&gt;from_parent = thread-&gt;transaction_stack;
+  thread-&gt;transaction_stack = t;
+
+  // binder_transaction t 已经包含了足够的数据 (t-&gt;buffer 包含 parcel 的数据和修改过的 flat_binder_object)
+  // 将 t-&gt;work 加入到 target_list (target_proc-&gt;todo) 中
+  t-&gt;work.type = BINDER_WORK_TRANSACTION;
+  list_add_tail(&amp;t-&gt;work.entry, target_list);
+  // 通过 target_proc-&gt;wait 唤醒 server 中在 target_proc-&gt;wait 上阻塞的某个 binder thread #xxx (looper thread), 以便去处理这个 binder_transaction
+  wake_up_interruptible(target_wait);
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org4bb0037" class="outline-4">
+<h4 id="org4bb0037"><span class="section-number-4">1.2.3</span> client 阻塞在 binder_thread_read</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<p>
+因为上一步设置了 transaction_stack , 所以这里的 client 的
+binder_thread_read 会阻塞在 thread-&gt;wait 而不是 proc-&gt;wait, 后续
+server 会唤醒这个 thread-&gt;wait (server 通过 binder_transaction 可以知道这个 transaction 来自哪个 binder_thread)
+</p>
+
+<pre class="example" id="org400583f">
+binder_thread_read:
+  wait_event_freezable(thread-&gt;wait, binder_has_thread_work(thread));
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org777ffd8" class="outline-3">
+<h3 id="org777ffd8"><span class="section-number-3">1.3</span> server 之前需要启动 looper binder_thread 并阻塞</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+上面看以看到, client 需要唤醒在 target_proc-&gt;wait 上阻塞的某个
+binder_thread, 这个 binder_thread 是通过 IPCTheadState::joinThreadPool
+阻塞在 target_proc-&gt;wait 上的.
+</p>
+
+<pre class="example" id="org1ee367f">
+IPCThreadState::joinThreadPool
+  mOut.writeInt32(BC_ENTER_LOOPER)
+  // 这里是一个死循环, getAndExecuteCommand 返回后会再次 loop 导致又阻塞在 proc-&gt;wait 上
+  // 所以这类 binder_thread 称为 looper binder thread (与 client 那种只执行一次 binder_thread 区别开来)
+  do:
+    // now get the next command to be processed, waiting if necessary
+    getAndExecuteCommand();
+      talkWithDriver();
+      cmd = mIn.readInt32();
+      executeCommand(cmd);
+</pre>
+</div>
+
+<div id="outline-container-org2597894" class="outline-4">
+<h4 id="org2597894"><span class="section-number-4">1.3.1</span> 注册 looper: binder_thread_write</h4>
+</div>
+
+<div id="outline-container-orgb95141d" class="outline-4">
+<h4 id="orgb95141d"><span class="section-number-4">1.3.2</span> 阻塞在 binder_thread_read</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<pre class="example" id="org54d2fa9">
+binder_thread_read
+  // 若 thread-&gt;transaction_stack 不为 null, 表示该 thread 之前有未完成的 binder_transaction,
+  // 这时 thread 需要在 thread-&gt;wait 上 wait, 因为后续那个 binder_transaction 的 target_thread 会
+  // 唤醒 thread-&gt;wait.
+  // 若 thread-&gt;transaction_stack 为 null, 则该 thread 需要在 proc-&gt;wait 上 wait 以响应某个 binder_transaction 
+  // 这里 thread-&gt;transaction_stack 为 null 会成立, 即 wait_for_proc_work 为真.
+  wait_for_proc_work = thread-&gt;transaction_stack == NULL &amp;&amp; list_empty(&amp;thread-&gt;todo);
+  if (wait_for_proc_work):
+    // ready_threads 和 binder thread spawn 有关
+    proc-&gt;ready_threads++;
+  if (wait_for_proc_work):
+    // 在 proc-&gt;wait 上阻塞
+    wait_event_freezable_exclusive(proc-&gt;wait, binder_has_proc_work(proc, thread));
+  else:
+    // 有未完成的 transaction, 在 thread-&gt;wait 上阻塞
+    wait_event_freezable(thread-&gt;wait, binder_has_thread_work(thread));
+  if (wait_for_proc_work):
+    proc-&gt;ready_threads--;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org4bdd41b" class="outline-3">
+<h3 id="org4bdd41b"><span class="section-number-3">1.4</span> server 的 looper binder_thread 被唤醒</h3>
+<div class="outline-text-3" id="text-1-4">
+<pre class="example" id="org8c9db31">
+binder_thread_read
+  // 接上面的 wait_event_freezable
+  // 此时 binder_thread 已经通过 proc-&gt;wait 被唤醒
+  // 因为这个 binder_thread 是一个 transaction 的接受方, 所以它需要在 proc-&gt;todo 上取任务
+  // (若 binder_thread 是 transaction 的发起方, 则它需要从 thread-&gt;todo 上取任务, 表示之前发起的 transaction 返回)
+  struct binder_work *w = list_first_entry(&amp;proc-&gt;todo, struct binder_work, entry);
+  switch (w-&gt;type) {
+    case BINDER_WORK_TRANSACTION: {
+      // 此时 w-&gt;type 应该为 BINDER_WORK_TRANSACTION
+      t = container_of(w, struct binder_transaction, work);
+    ...
+  }
+  // 找到了 client 传来的 binder_transaction
+  if (t-&gt;buffer-&gt;target_node) {
+    // 此处条件为真
+
+    // 从 binder_transaction (t) 构造 binder_transaction_data (tr)
+    struct binder_node *target_node = t-&gt;buffer-&gt;target_node;
+    tr.target.ptr = target_node-&gt;ptr;
+    tr.cookie =  target_node-&gt;cookie;
+    // 后续 binder_transaction_data 发给 sever 使用的 binder protocol command 为 BR_TRANSACTION
+    cmd = BR_TRANSACTION;
+
+  tr.code = t-&gt;code;
+  tr.flags = t-&gt;flags;
+  tr.data_size = t-&gt;buffer-&gt;data_size;
+  tr.offsets_size = t-&gt;buffer-&gt;offsets_size;
+  // 这里的 buffer 指针已经指向 target_proc 的 binder_buffer
+  tr.data.ptr.buffer = (void *)t-&gt;buffer-&gt;data + proc-&gt;user_buffer_offset;
+  tr.data.ptr.offsets = tr.data.ptr.buffer + ALIGN(t-&gt;buffer-&gt;data_size, sizeof(void *));
+
+  // 将 cmd 和 binder_transacton_data 写到 server 的 mIn 中
+  put_user(cmd, (uint32_t __user *)ptr)
+  ptr += sizeof(uint32_t);
+  copy_to_user(ptr, &amp;tr, sizeof(tr))
+  ptr += sizeof(tr);
+
+  // 将 t push 到 target thread 的 transaction_stack
+  t-&gt;to_parent = thread-&gt;transaction_stack;
+  t-&gt;to_thread = thread;
+  thread-&gt;transaction_stack = t;
+  // 之后 server 会从阻塞中返回
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orge3a0fa3" class="outline-3">
+<h3 id="orge3a0fa3"><span class="section-number-3">1.5</span> server 执行 transact</h3>
+<div class="outline-text-3" id="text-1-5">
+<pre class="example" id="org5400f81">
+IPCThreadState::joinThreadPool
+  // cmd 此处应为 BR_BRANSACTION
+  cmd = mIn.readInt32();
+  executeCommand(cmd);
+    switch ((uint32_t)cmd):
+      case BR_TRANSACTION:
+        binder_transaction_data tr;
+        // 从 mIn 中读取 binder_transaction_data
+        result = mIn.read(&amp;tr, sizeof(tr));
+        Parcel buffer;
+        // 这里的 tr.data.ptr.buffer 实际上位于 server 的 binder_buffer,
+        // 所以这里的 buffer 的 payload 是指向 binder_buffer 的 (而不是它自己 malloc 获得),
+        // 所以需要通过 ipcSetDataReference 将 freeBuffer 这个函数注册为 buffer 的 owner, 后续
+        // 释放这个 buffer 时会通过 freeBuffer 调到 binder driver 以释放 binder_buffer
+        buffer.ipcSetDataReference(
+          reinterpret_cast&lt;const uint8_t*&gt;(tr.data.ptr.buffer),
+          tr.data_size,
+          reinterpret_cast&lt;const binder_size_t*&gt;(tr.data.ptr.offsets),
+          tr.offsets_size/sizeof(binder_size_t), freeBuffer, this);
+
+        // reply 做为 server 使用的临时变量, 后续 server 返回到 binder driver 时, 这个 reply 的数据会
+        // 被传递给 driver 
+        Parcel reply;
+        // tr.cookie 是 server 端 BBinder 的地址
+        sp&lt;BBinder&gt; b((BBinder*)tr.cookie);
+        // 终于, server 端的 transact 被调用
+        error = b-&gt;transact(tr.code, buffer, &amp;reply, tr.flags);      
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orge050580" class="outline-3">
+<h3 id="orge050580"><span class="section-number-3">1.6</span> server send reply</h3>
+<div class="outline-text-3" id="text-1-6">
+<pre class="example" id="orgd7b5e58">
+IPCThreadState::joinThreadPool
+  ...        
+  // 接上一步, b-&gt;transact 结束后, server 会执行 sendReply
+  // sendReply 的过程和 IPCTheadState::transact 基本是一样的.     
+  sendReply(reply)
+    writeTransactionData(BC_REPLY, flags, -1, 0, reply, &amp;statusBuffer);
+    waitForResponse(NULL, NULL);
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org6a5949a" class="outline-3">
+<h3 id="org6a5949a"><span class="section-number-3">1.7</span> binder driver 唤醒阻塞的 client</h3>
+<div class="outline-text-3" id="text-1-7">
+<p>
+binder driver 唤醒 client 的过程与 client 唤醒阻塞的 server 的过程基本一致, 不同的是, 唤醒 client 需要根据 server binder_thread 的
+transaction_stack 找到对应的 client 端的 binder_thread, 并唤醒它
+</p>
+
+<pre class="example" id="orgc738b16">
+binder_transaction
+  if (reply):
+    // thread-&gt;transaction_stack 在 server 的 binder_thread_read 时被 push
+    in_reply_to = thread-&gt;transaction_stack;
+    // to_parent 在 binder_thread_read 时被赋值为 server binder_thread 的 transaction_stack
+    thread-&gt;transaction_stack = in_reply_to-&gt;to_parent;
+    // from 在 binder_transaction 时被赋值为 client binder_thread
+    target_thread = in_reply_to-&gt;from;
+  // target_thread-&gt;wait (client binder_thread) 会被唤醒, 而不是 target_proc-&gt;wait
+  target_list = &amp;target_thread-&gt;todo;
+  target_wait = &amp;target_thread-&gt;wait;    
+  wake_up_interruptible(target_wait);
+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org94d3282" class="outline-3">
+<h3 id="org94d3282"><span class="section-number-3">1.8</span> client 的 binder_thread 被唤醒</h3>
+<div class="outline-text-3" id="text-1-8">
+<p>
+与 server 的 binder_thread 被唤醒类似, 但是其 tr.cookie 设为 NULL (因为 client 并不需要这个值), 且返回的 cmd = BR_REPLY
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0060436" class="outline-3">
+<h3 id="org0060436"><span class="section-number-3">1.9</span> client 拿到返回结果</h3>
+<div class="outline-text-3" id="text-1-9">
+<pre class="example" id="orgd2aa693">
+IPCTheadState::waitForResponse(reply)
+  talkWithDriver()
+  cmd = (uint32_t)mIn.readInt32();
+  switch (cmd):
+    // 这里会读到 BR_REPLY
+    case BR_REPLY:
+      binder_transaction_data tr;
+      mIn.read(&amp;tr, sizeof(tr));
+      reply-&gt;ipcSetDataReference(
+        reinterpret_cast&lt;const uint8_t*&gt;(tr.data.ptr.buffer),
+        tr.data_size,
+        reinterpret_cast&lt;const binder_size_t*&gt;(tr.data.ptr.offsets),
+        tr.offsets_size/sizeof(binder_size_t),
+        freeBuffer, this);
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org819ffbb" class="outline-3">
+<h3 id="org819ffbb"><span class="section-number-3">1.10</span> binder driver 之外的流程</h3>
+<div class="outline-text-3" id="text-1-10">
+<pre class="example" id="org13a22f8">
+// java
+BinderProxy.transact
+  // c++
+  BpBinder.transact
+    IPCTheadState.transact  
+      // driver
+      binder_ioctl
+        // c++
+        IPCTheadState.getAndExecuteCommand
+          BBinder.transact
+            JavaBBinder.onTransact
+              // java  
+              Binder.execTransact
+                Binder.onTransact
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orgf07dc52" class="outline-3">
+<h3 id="orgf07dc52"><span class="section-number-3">1.11</span> 总结</h3>
+<div class="outline-text-3" id="text-1-11">
+<ol class="org-ol">
+<li>parcel 数据的流向
+<ol class="org-ol">
+<li>client
+<ul class="org-ul">
+<li>parcel
+<ul class="org-ul">
+<li>binder_transaction_data
+<ul class="org-ul">
+<li>mOut
+<ul class="org-ul">
+<li>binder_write_read</li>
+</ul></li>
+</ul></li>
+</ul></li>
+</ul></li>
+<li>driver
+<ol class="org-ol">
+<li>client
+<ul class="org-ul">
+<li>binder_transaction_data
+<ul class="org-ul">
+<li>server binder_buffer
+<ul class="org-ul">
+<li>binder_transaction</li>
+</ul></li>
+</ul></li>
+</ul></li>
+<li>server
+<ul class="org-ul">
+<li>binder_transaction_data
+<ul class="org-ul">
+<li>mIn</li>
+</ul></li>
+</ul></li>
+</ol></li>
+<li>server
+<ul class="org-ul">
+<li>binder_transaction_data
+<ul class="org-ul">
+<li>parcel</li>
+</ul></li>
+</ul></li>
+</ol></li>
+
+<li>proc-&gt;wait/todo 与 thread-&gt;wait/todo 的区别
+
+<ol class="org-ol">
+<li>proc-&gt;wait/todo 代表的是 target_proc 中那些 "looper binder_thread"</li>
+
+<li>thread-&gt;wait/todo 代表的是 client_proc 中"等待 transaction 返回"
+的 binder_thread, 和 binder_transaction 有很大关系</li>
+
+<li>binder_thread 与 应用层的 binder thread #xxx 并非一一对应,
+binder thread #xxx 实际对应的是 (1) 中的 binder_thread, 还有一类
+binder_thread 是 (2) 中的 binder_thread</li>
+</ol></li>
+
+<li>binder_transaction</li>
+
+<li><p>
+调用序列
+</p>
+
+<pre class="example" id="org07a0b0a">
++-----------------------+--------------------------------------------------------+--------------------------------------------------+--------------+
+| client                | binder_thread_write                                    | binder_thread_read                               | server       |
+|-----------------------+--------------------------------------------------------+--------------------------------------------------+--------------|
+| 1. transact()         |                                                        |                                                  |              |
+|                       | 2. get binder_transaction_data from user mode          |                                                  |              |
+|                       | cmd=BC_TRANSACTION                                     |                                                  |              |
+|                       | construct binder_transaction and                       |                                                  |              |
+|                       | put it to target's transaction_stack                   |                                                  |              |
+|                       | add binder_work to target_proc-&gt;todo                   |                                                  |              |
+|                       | wakup one of the server binder thread                  |                                                  |              |
+|                       |                                                        | 3. get binder_work from proc-&gt;todo               |              |
+|                       |                                                        | get binder_transaction from                      |              |
+|                       |                                                        | binder_work                                      |              |
+|                       |                                                        | construct binder_transaction_data for user mode  |              |
+|                       |                                                        | reset binder_transaction_data (reset binder,fd.. |              |
+|                       |                                                        | and set cmd=BR_TRANSACTION                       |              |
+|                       |                                                        |                                                  |4. transact ()|
+|                       | 5. get binder_transaction_data from user mode          |                                                  |              |
+|                       | cmd=BC_REPLY                                           |                                                  |              |
+|                       | get binder_transaction from it's own transaction_stack |                                                  |              |
+|                       | so as to get target_thread                             |                                                  |              |
+|                       | construct binder_transaction and add binder_work to    |                                                  |              |
+|                       | target_thread-&gt;todo, then wake up target thread        |                                                  |              |
+|                       |                                                        | 6. get binder_work from thread-&gt;todo             |              |
+|                       |                                                        | get binder_transaction                           |              |
+|                       |                                                        | construct binder_transaction_data for user mode  |              |
+|                       |                                                        | reset binder_transaction_data                    |              |
+|                       |                                                        | and set cmd=BR_REPLY                             |              |
+| 7. transact() returns |                                                        |                                                  |              |
++-----------------------+--------------------------------------------------------+--------------------------------------------------+--------------+
+</pre></li>
+</ol>
+
+<p>
+另外, 需要注意的是, 上面的描述中忽略了和
+BINDER_WORK_TRANSACTION_COMPLETE 相关的部分, 实际上 binder_thread_read
+在阻塞在 thread-&gt;wait 时需要先返回上层然后重新调用 binder_thread_read
+才能阻塞, 而不是直接阻塞. 具体参考 TF_ONE_WAY.
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

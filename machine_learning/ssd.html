@@ -1,0 +1,346 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SSD</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">SSD</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org9708474">1. SSD</a>
+<ul>
+<li><a href="#orgf081706">1.1. anchor</a></li>
+<li><a href="#orgf211849">1.2. label</a></li>
+<li><a href="#orgcfb6b1b">1.3. network</a></li>
+<li><a href="#orgc957199">1.4. inference</a></li>
+<li><a href="#orgb4c33bd">1.5. loss</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org9708474" class="outline-2">
+<h2 id="org9708474"><span class="section-number-2">1</span> SSD</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="https://arxiv.org/pdf/1512.02325.pdf">SSD: Single Shot MultiBox Detector</a> 2016/12
+</p>
+</div>
+
+<div id="outline-container-orgf081706" class="outline-3">
+<h3 id="orgf081706"><span class="section-number-3">1.1</span> anchor</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+ssd 的 anchor 参考了 RPN<sup><a id="fnr.1" class="footref" href="#fn.1">1</a></sup> , 但不包含 objectness confidence.
+</p>
+
+<p>
+与 yolo 的 cell 类似, ssd 会分配 2268 个 anchor (以 mobilenet backbone 为例), 但这些 anchor 并不是像 yolo 那样在原始图片上均匀分配的:
+</p>
+
+<p>
+ssd 网络由许多层 conv 组成, 它选择了其中 6 层, 其 feature map 尺寸分别为 [19x19,
+10x10, 5x5, 3x3, 2x2, 1x1], 然后在这些不同 level 的 feature map 上分别分配了不同数量的
+anchor.
+</p>
+
+<p>
+例如:
+</p>
+
+<p>
+ssd 使用的 mobilenet 的 `out_relu` 层的 feature map 大小为 [1, 19, 19, 576], 接一个 conv2d (4*4, kernel=3,strides=1,padding=same), 输出为 19*19*4*4, 对应
+19*19*4 个 anchor
+</p>
+
+<p>
+每个 level 的 feature map 上的点对应多个大小和形状不同的 anchor:
+</p>
+
+<p>
+lvl_0 每个点对应 2 个正方形的 anchor 和 2 个长方形的 anchor
+lvl_1 每个点对应 2 个正方形的 anchor 和 4 个长方形的 anchor
+&#x2026;
+</p>
+
+<p>
+各个 level 的 anchor 个数分别为:
+</p>
+
+<p>
+19*19*(2+2) = 1444
+100*(2+4) = 600
+25*(2+4) = 150
+9*(2+4) = 54
+4*(2+2) = 16
+1*(2+2) = 4
+</p>
+
+<p>
+一共 2268 个 anchor
+</p>
+
+<p>
+通过这个基于 level 的分配方式, ssd 可以用来检测大小不同的物体: lvl_0 对应较小的物体, lvl_5 对应较大的物体
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf211849" class="outline-3">
+<h3 id="orgf211849"><span class="section-number-3">1.2</span> label</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+VOC2007 dataset 的 label 只有 box 的坐标和分类, ssd 需要先经过预处理, 针对所有
+anchor 生成 label 数据, 以便和网络的输出能对应起来计算 loss.
+</p>
+
+<p>
+假设标签数据中有两个 box:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-xml">&lt;<span style="color: #268bd2;">object</span>&gt;
+  &lt;<span style="color: #268bd2;">name</span>&gt;boat&lt;/<span style="color: #268bd2;">name</span>&gt;
+  &lt;<span style="color: #268bd2;">bndbox</span>&gt;
+    &lt;<span style="color: #268bd2;">xmin</span>&gt;89&lt;/<span style="color: #268bd2;">xmin</span>&gt;
+    &lt;<span style="color: #268bd2;">ymin</span>&gt;213&lt;/<span style="color: #268bd2;">ymin</span>&gt;
+    &lt;<span style="color: #268bd2;">xmax</span>&gt;432&lt;/<span style="color: #268bd2;">xmax</span>&gt;
+    &lt;<span style="color: #268bd2;">ymax</span>&gt;301&lt;/<span style="color: #268bd2;">ymax</span>&gt;
+  &lt;/<span style="color: #268bd2;">bndbox</span>&gt;
+&lt;/<span style="color: #268bd2;">object</span>&gt;
+&lt;<span style="color: #268bd2;">object</span>&gt;
+  &lt;<span style="color: #268bd2;">name</span>&gt;boat&lt;/<span style="color: #268bd2;">name</span>&gt;
+  &lt;<span style="color: #268bd2;">bndbox</span>&gt;
+    &lt;<span style="color: #268bd2;">xmin</span>&gt;235&lt;/<span style="color: #268bd2;">xmin</span>&gt;
+    &lt;<span style="color: #268bd2;">ymin</span>&gt;280&lt;/<span style="color: #268bd2;">ymin</span>&gt;
+    &lt;<span style="color: #268bd2;">xmax</span>&gt;384&lt;/<span style="color: #268bd2;">xmax</span>&gt;
+    &lt;<span style="color: #268bd2;">ymax</span>&gt;313&lt;/<span style="color: #268bd2;">ymax</span>&gt;
+  &lt;/<span style="color: #268bd2;">bndbox</span>&gt;
+&lt;/<span style="color: #268bd2;">object</span>&gt;
+</pre>
+</div>
+
+
+<p>
+先定义几个名词:
+</p>
+
+<ol class="org-ol">
+<li>anchor, 表示 gen_anchors 生成的 anchor, 每个 anchor 有它的坐标</li>
+
+<li>box, 表示 box 的原始坐标</li>
+
+<li>rel_box, 表示 anchor 对应的 box 相对于 anchor 中心的坐标</li>
+</ol>
+
+<p>
+预处理也可以称为 encode, 是根据 (box, anchor) 获得 rel_box 做为 label, 具体步骤为:
+</p>
+
+<ol class="org-ol">
+<li>针对所有 [anchor, box] 需要计算 <a href="yolo.html#org06559d0">IOU</a> 值, 例如 iou[2266]=[0.54030361,0.58199],
+表示 anchors[2266] 和 boxes[0] 的 iou 为 0.54030361, 和 boxes[1] 的 iou 为
+0.58199</li>
+
+<li>针对每一个 anchor (A), 计算它和哪个 box (B) 重合最大</li>
+
+<li>把 B 的坐标转换为相对于 A 的坐标, 作为其 rel_box, 并且记下 B 的 class</li>
+
+<li>对于 iou 小于一定 threshold 的 anchor, 标记它的 class 为 `unknown`</li>
+</ol>
+
+<p>
+例如:
+</p>
+
+<p>
+假充 box 为 [0.05333333333333334, 0.306, 0.8466666666666667, 0.964], 则有 6 个
+anchor 和它的 iou 足够大:
+</p>
+
+
+<div id="org0e7b566" class="figure">
+<p><img src="../extra/ssd_anchor.png" alt="ssd_anchor.png" />
+</p>
+</div>
+
+<p>
+另外一个基于真实图片的例子: iou threshold 分别为 0.5 和 0.4
+</p>
+
+<p>
+<img src="../extra/ssd_anchor_2.png" alt="ssd_anchor_2.png" /> <img src="../extra/ssd_anchor_3.png" alt="ssd_anchor_3.png" />
+</p>
+
+<p>
+ssd 查找 box 对应的 anchor 的过程和 yolo 查找 box 由哪个 cell 负责有些类似, 只不过 yolo 是根据 box 的中心落在哪个 cell 内, 而 ssd 是根据 iou.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgcfb6b1b" class="outline-3">
+<h3 id="orgcfb6b1b"><span class="section-number-3">1.3</span> network</h3>
+<div class="outline-text-3" id="text-1-3">
+
+<div id="org9d92871" class="figure">
+<p><img src="../extra/ssd.png" alt="ssd.png" />
+</p>
+</div>
+
+<p>
+这个图片是 ssd 使用 vgg16 做 backbone 时的模型 (前面描述尺寸的都是基于
+mobienet), 6 个 level 的 feature map 为 [38, 19, 10, 5, 3, 1], 共 8732 个 anchor
+</p>
+
+<p>
+每个 feature map 通过 Classifier 生成对应数量的 anchor, 最后通过 concat 拼成
+8732 个 anchor 的预测值.
+</p>
+
+<p>
+在 Classifier: Conv: 3x3x(4x(Classes+4)) 为例:
+</p>
+
+<p>
+kernel=(3,3), output_channel=(4x(Classes+4)), stride=1, padding=same
+</p>
+
+<p>
+其中 output_channel=(4x(Classes+4)) 表示一个点有 4 个 rel_box, 每个 box 有
+Classes (21) 个 class confidence 以及 4 个坐标
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgc957199" class="outline-3">
+<h3 id="orgc957199"><span class="section-number-3">1.4</span> inference</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+以 mobilenet 为例, ssd 模型的输出有两个:
+</p>
+
+<ol class="org-ol">
+<li>confs: [2268, 21], 表示每个 rel_box 所属的 class</li>
+<li>locs: [2268, 4], 表示每个 rel_box 的坐标</li>
+</ol>
+
+<p>
+后处理时需要:
+</p>
+
+<ol class="org-ol">
+<li>decode, 根据 locs (rel_box) 和 anchor 获得 box, 这个操作与 encode 相反.</li>
+
+<li>通过 argsmax(confs) 找到每个 rel_box 是哪个 class, 并把 max(confs) 做为
+NMS score</li>
+
+<li><a href="yolo.html#org3d566b9">NMS</a></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgb4c33bd" class="outline-3">
+<h3 id="orgb4c33bd"><span class="section-number-3">1.5</span> loss</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+ssd 的 loss 分为两部分:
+</p>
+
+<ol class="org-ol">
+<li><p>
+locs loss
+</p>
+
+<p>
+针对 2268 个 rel_box 的 loc (rel_box 坐标) 计算 l1 loss.
+</p>
+
+<p>
+locs loss 只考虑正样本, 即如果 rel_box 的 class 是 `unknown`, 则不需要计算
+locs loss, 因为并没有对应的标签数据
+</p></li>
+
+<li><p>
+confs loss
+</p>
+
+<p>
+针对 2268 个 rel_box 的 conf (confidence) 计算 cross entropy.
+</p>
+
+<p>
+由于 2268 个 rel_box 里有大量的负样本 (class 为 `unknown`), 为了平衡数据,
+使用 hard negative mining 的方式选择误差最大的 N 个负样本参与 confs loss 计算
+</p></li>
+</ol>
+</div>
+</div>
+</div>
+<div id="footnotes">
+<h2 class="footnotes">Footnotes: </h2>
+<div id="text-footnotes">
+
+<div class="footdef"><sup><a id="fn.1" class="footnum" href="#fnr.1">1</a></sup> <div class="footpara"><p class="footpara">
+Our SSD is very similar to the region proposal network (RPN) in Faster
+R-CNN in that we also use a fixed set of (default) boxes for prediction, similar
+to the anchor boxes in the RPN
+</p></div></div>
+
+
+</div>
+</div></div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

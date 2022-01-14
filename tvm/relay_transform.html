@@ -1,0 +1,1327 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Relay Transform</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Relay Transform</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org38918f2">1. Relay Transform</a>
+<ul>
+<li><a href="#org483eea4">1.1. relay::qnn::transform::Legalize</a></li>
+<li><a href="#org17693ce">1.2. RemoveUnusedFunctions</a></li>
+<li><a href="#orga7f5597">1.3. SimplifyInference</a></li>
+<li><a href="#orgc414023">1.4. Inline</a></li>
+<li><a href="#org54d4e7f">1.5. RunDeviceAnnotationPass</a>
+<ul>
+<li><a href="#orgd0dab5b">1.5.1. device_copy</a></li>
+</ul>
+</li>
+<li><a href="#org9af1da9">1.6. <span class="done DONE">DONE</span> FuseOps</a>
+<ul>
+<li><a href="#org4774d0d">1.6.1. Example</a></li>
+<li><a href="#org0fb2649">1.6.2. 为什么需要 FuseOps</a></li>
+</ul>
+</li>
+<li><a href="#orgd667ca7">1.7. <span class="done DONE">DONE</span> FoldScaleAxis</a>
+<ul>
+<li><a href="#orgad2f2f4">1.7.1. Example</a></li>
+<li><a href="#org0dfb8ae">1.7.2. Impl</a></li>
+</ul>
+</li>
+<li><a href="#org156dd8d">1.8. CombineParallelDense</a>
+<ul>
+<li><a href="#org40fc46e">1.8.1. Example</a></li>
+</ul>
+</li>
+<li><a href="#org50c84cd">1.9. <span class="done DONE">DONE</span> CombineParallelConv2D</a>
+<ul>
+<li><a href="#org83a080a">1.9.1. Example</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org38918f2" class="outline-2">
+<h2 id="org38918f2"><span class="section-number-2">1</span> Relay Transform</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="file:///home/sunway/source/tvm/tests/python/relay">file:~/source/tvm/tests/python/relay</a>
+</p>
+</div>
+
+<div id="outline-container-org483eea4" class="outline-3">
+<h3 id="org483eea4"><span class="section-number-3">1.1</span> relay::qnn::transform::Legalize</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+这个 transform 用来把 qnn.xxx 转换成 relay IR <a href="tvm_quantization.html#org085623a">relay.qnn</a>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org17693ce" class="outline-3">
+<h3 id="org17693ce"><span class="section-number-3">1.2</span> RemoveUnusedFunctions</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+从 entry_functions 开始, 递归的标记所有 GlobalVarNode (函数引用), 然后删除没有标记到的函数
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-08-03 11:11</span>
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+
+<span style="color: #268bd2;">mod</span> = tvm.IRModule<span style="color: #757575;">()</span>
+
+<span style="color: #268bd2;">x</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"x"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 1000<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">mod</span>[<span style="color: #2aa198;">"fn1"</span>] = relay.Function<span style="color: #757575;">(</span>[x]<span style="color: #757575;">,</span> x<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">y</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"y"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 1000<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">mod</span>[<span style="color: #2aa198;">"fn2"</span>] = relay.Function<span style="color: #757575;">(</span>[y]<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">z</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"z"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 1000<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">mod</span>[<span style="color: #2aa198;">"main"</span>] = relay.Function<span style="color: #757575;">(</span>[z]<span style="color: #757575;">,</span> relay.add<span style="color: #757575;">(</span>z<span style="color: #757575;">,</span> relay.GlobalVar<span style="color: #757575;">(</span><span style="color: #2aa198;">"fn1"</span><span style="color: #757575;">)(</span>z<span style="color: #757575;">)))</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"----------before----------"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod.get_global_vars<span style="color: #757575;">())</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"----------after----------"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span> = relay.transform.RemoveUnusedFunctions<span style="color: #757575;">()(</span>mod<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+-----&#x2013;&#x2014;before-----&#x2013;&#x2014;
+[GlobalVar(fn1), GlobalVar(fn2), GlobalVar(main)]
+def @fn1(%x: Tensor[(1, 1000), float32]) {
+  %x
+}
+</p>
+
+<p>
+def @fn2(%y: Tensor[(1, 1000), float32]) {
+  %y
+}
+</p>
+
+<p>
+def @main(%z: Tensor[(1, 1000), float32]) {
+  %0 = @fn1(%z);
+  add(%z, %0)
+}
+</p>
+
+<p>
+-----&#x2013;&#x2014;after-----&#x2013;&#x2014;
+def @fn1(%x: Tensor[(1, 1000), float32]) {
+  %x
+}
+</p>
+
+<p>
+def @main(%z: Tensor[(1, 1000), float32]) {
+  %0 = @fn1(%z);
+  add(%z, %0)
+}
+</p>
+</div>
+</div>
+
+<div id="outline-container-orga7f5597" class="outline-3">
+<h3 id="orga7f5597"><span class="section-number-3">1.3</span> SimplifyInference</h3>
+<div class="outline-text-3" id="text-1-3">
+<ol class="org-ol">
+<li>把 batchnorm 转换为 multiply/add</li>
+<li>去掉 dropout</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-08-03 11:11</span>
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+
+<span style="color: #268bd2;">mod</span> = tvm.IRModule<span style="color: #757575;">()</span>
+
+<span style="color: #268bd2;">x</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"x"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">alpha</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">gamma</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">mean</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">var</span> = <span style="color: #757575;">(</span>
+    relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"x"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>10<span style="color: #757575;">,)),</span>
+    relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"y"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>10<span style="color: #757575;">,)),</span>
+    relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"a"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>10<span style="color: #757575;">,)),</span>
+    relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"b"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>10<span style="color: #757575;">,)),</span>
+<span style="color: #757575;">)</span>
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">fmt:off</span>
+bn<span style="color: #757575;">,</span>_<span style="color: #757575;">,</span>_<span style="color: #757575;">,</span> = relay.nn.batch_norm<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> alpha<span style="color: #757575;">,</span> gamma<span style="color: #757575;">,</span> mean<span style="color: #757575;">,</span> var<span style="color: #757575;">)</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">fmt:on</span>
+
+<span style="color: #268bd2;">mod</span>[<span style="color: #2aa198;">"main"</span>] = relay.Function<span style="color: #757575;">(</span>
+    [x<span style="color: #757575;">,</span> alpha<span style="color: #757575;">,</span> gamma<span style="color: #757575;">,</span> mean<span style="color: #757575;">,</span> var]<span style="color: #757575;">,</span>
+    relay.nn.dropout<span style="color: #757575;">(</span>bn<span style="color: #757575;">),</span>
+<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"----------before----------"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"----------after----------"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span> = relay.transform.InferType<span style="color: #757575;">()(</span>mod<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span> = relay.transform.SimplifyInference<span style="color: #757575;">()(</span>mod<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+-----&#x2013;&#x2014;before-----&#x2013;&#x2014;
+def @main(%x: Tensor[(1, 10), float32], %x1: Tensor[(10), float32], %y: Tensor[(10), float32], %a: Tensor[(10), float32], %b: Tensor[(10), float32]) {
+  %0 = nn.batch_norm(%x, %x1, %y, %a, %b);
+  %1 = %0.0;
+  %2 = nn.dropout(%1);
+  %2.0
+}
+</p>
+
+<p>
+-----&#x2013;&#x2014;after-----&#x2013;&#x2014;
+def @main(%x: Tensor[(1, 10), float32], %x1: Tensor[(10), float32], %y: Tensor[(10), float32], %a: Tensor[(10), float32], %b: Tensor[(10), float32]) -&gt; Tensor[(1, 10), float32] {
+  %0 = add(%b, 1e-05f <i>* ty=float32 *</i>) <i>* ty=Tensor[(10), float32] *</i>;
+  %1 = sqrt(%0) <i>* ty=Tensor[(10), float32] *</i>;
+  %2 = divide(1f <i>* ty=float32 *</i>, %1) <i>* ty=Tensor[(10), float32] *</i>;
+  %3 = multiply(%2, %x1) <i>* ty=Tensor[(10), float32] *</i>;
+  %4 = negative(%a) <i>* ty=Tensor[(10), float32] *</i>;
+  %5 = multiply(%4, %3) <i>* ty=Tensor[(10), float32] *</i>;
+  %6 = multiply(%x, %3) <i>* ty=Tensor[(1, 10), float32] *</i>;
+  %7 = add(%5, %y) <i>* ty=Tensor[(10), float32] *</i>;
+  add(%6, %7) <i>* ty=Tensor[(1, 10), float32] *</i>
+}
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #859900;">auto</span>* <span style="color: #268bd2;">call</span> = new_n-&gt;tuple.as&lt;CallNode&gt;<span style="color: #757575;">())</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>call-&gt;op == batch_norm_op_<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">return</span> BatchNormToInferUnpack<span style="color: #757575;">(</span>
+            call-&gt;attrs<span style="color: #757575;">,</span> call-&gt;args[0]<span style="color: #757575;">,</span> call-&gt;args[1]<span style="color: #757575;">,</span> call-&gt;args[2]<span style="color: #757575;">,</span>
+            call-&gt;args[3]<span style="color: #757575;">,</span> call-&gt;args[4]<span style="color: #757575;">,</span> ty_map_.at<span style="color: #757575;">(</span>call-&gt;args[0]<span style="color: #757575;">))</span>;
+    <span style="color: #757575;">}</span> <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>call-&gt;op == dropout_op_<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">return</span> call-&gt;args[0];
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #b58900;">Expr</span> <span style="color: #268bd2;">BatchNormToInferUnpack</span><span style="color: #757575;">(</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">Attrs</span> <span style="color: #268bd2;">attrs</span><span style="color: #757575;">,</span> <span style="color: #b58900;">Expr</span> <span style="color: #268bd2;">data</span><span style="color: #757575;">,</span> <span style="color: #b58900;">Expr</span> <span style="color: #268bd2;">gamma</span><span style="color: #757575;">,</span> <span style="color: #b58900;">Expr</span> <span style="color: #268bd2;">beta</span><span style="color: #757575;">,</span> <span style="color: #b58900;">Expr</span> <span style="color: #268bd2;">moving_mean</span><span style="color: #757575;">,</span>
+    <span style="color: #b58900;">Expr</span> <span style="color: #268bd2;">moving_var</span><span style="color: #757575;">,</span> <span style="color: #b58900;">Type</span> <span style="color: #268bd2;">tdata</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>param-&gt;scale<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        scale = Multiply<span style="color: #757575;">(</span>scale<span style="color: #757575;">,</span> gamma<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #b58900;">Expr</span> <span style="color: #268bd2;">neg_mean</span> = Negative<span style="color: #757575;">(</span>moving_mean<span style="color: #757575;">)</span>;
+    <span style="color: #b58900;">Expr</span> <span style="color: #268bd2;">shift</span> = Multiply<span style="color: #757575;">(</span>neg_mean<span style="color: #757575;">,</span> scale<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>param-&gt;center<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        shift = Add<span style="color: #757575;">(</span>shift<span style="color: #757575;">,</span> beta<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+
+    <span style="color: #b58900;">Expr</span> <span style="color: #268bd2;">out</span> = Multiply<span style="color: #757575;">(</span>data<span style="color: #757575;">,</span> scale<span style="color: #757575;">)</span>;
+    out = Add<span style="color: #757575;">(</span>out<span style="color: #757575;">,</span> shift<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> out;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgc414023" class="outline-3">
+<h3 id="orgc414023"><span class="section-number-3">1.4</span> Inline</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+函数可以被 inline 的条件:
+</p>
+
+<ol class="org-ol">
+<li>有 `Inline` 属性</li>
+<li>不是递归函数</li>
+<li>调用的其它函数也是可以 inline 的</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-08-03 11:11</span>
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+
+<span style="color: #268bd2;">mod</span> = tvm.IRModule<span style="color: #757575;">()</span>
+
+<span style="color: #268bd2;">x1</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"x1"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">fn1</span> = relay.Function<span style="color: #757575;">(</span>[x1]<span style="color: #757575;">,</span> x1<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">fn1</span> = fn1.with_attr<span style="color: #757575;">(</span><span style="color: #2aa198;">"Inline"</span><span style="color: #757575;">,</span> tvm.tir.IntImm<span style="color: #757575;">(</span><span style="color: #2aa198;">"int32"</span><span style="color: #757575;">,</span> 1<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">g1</span> = relay.GlobalVar<span style="color: #757575;">(</span><span style="color: #2aa198;">"g1"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span>[g1] = fn1
+
+<span style="color: #268bd2;">x2</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"x2"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">fn2</span> = relay.Function<span style="color: #757575;">(</span>[x2]<span style="color: #757575;">,</span> x2<span style="color: #757575;">)</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">fn2 = fn1.with_attr("Inline", tvm.tir.IntImm("int32", 1))</span>
+<span style="color: #268bd2;">g2</span> = relay.GlobalVar<span style="color: #757575;">(</span><span style="color: #2aa198;">"g2"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span>[g2] = fn2
+
+<span style="color: #268bd2;">p0</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"p0"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">mod</span>[<span style="color: #2aa198;">"main"</span>] = relay.Function<span style="color: #757575;">(</span>[p0]<span style="color: #757575;">,</span> relay.add<span style="color: #757575;">(</span>g1<span style="color: #757575;">(</span>p0<span style="color: #757575;">),</span> g2<span style="color: #757575;">(</span>p0<span style="color: #757575;">)))</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"----------before----------"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span> = relay.transform.Inline<span style="color: #757575;">()(</span>mod<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"----------after----------"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+
+</pre>
+</div>
+
+<p>
+-----&#x2013;&#x2014;before-----&#x2013;&#x2014;
+def @g1(%x1: Tensor[(1, 10), float32], Inline=1) {
+  %x1
+}
+</p>
+
+<p>
+def @g2(%x2: Tensor[(1, 10), float32]) {
+  %x2
+}
+</p>
+
+<p>
+def @main(%p0: Tensor[(1, 10), float32]) {
+  %0 = @g1(%p0);
+  %1 = @g2(%p0);
+  add(%0, %1)
+}
+</p>
+
+<p>
+-----&#x2013;&#x2014;after-----&#x2013;&#x2014;
+def @main(%p0: Tensor[(1, 10), float32]) {
+  %0 = @g2(%p0);
+  add(%p0, %0)
+}
+</p>
+
+<p>
+def @g2(%x2: Tensor[(1, 10), float32]) {
+  %x2
+}
+</p>
+</div>
+</div>
+
+<div id="outline-container-org54d4e7f" class="outline-3">
+<h3 id="org54d4e7f"><span class="section-number-3">1.5</span> RunDeviceAnnotationPass</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+RunDeviceAnnotationPass 是为了处理 on_device annotation, vta build 时的
+<a href="tvm_vta.html#orgd180520">graph_pack</a> 依赖 build 时的 RunDeviceAnnotationPass 才能工作
+</p>
+
+<p>
+NOTE: 新的代码里相关功能放在了 PlanDevices 里了
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-08-03 11:11</span>
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+
+<span style="color: #268bd2;">x</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"x"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">y</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"y"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">add</span> = relay.add<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">sqrt</span> = relay.sqrt<span style="color: #757575;">(</span>add<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">_sqrt</span> = relay.annotation.on_device<span style="color: #757575;">(</span>sqrt<span style="color: #757575;">,</span> <span style="color: #2aa198;">"cuda"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">log</span> = relay.log<span style="color: #757575;">(</span>add<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">subtract</span> = relay.subtract<span style="color: #757575;">(</span>_sqrt<span style="color: #757575;">,</span> log<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">exp</span> = relay.exp<span style="color: #757575;">(</span>subtract<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">_exp</span> = relay.annotation.on_device<span style="color: #757575;">(</span>exp<span style="color: #757575;">,</span> <span style="color: #2aa198;">"cuda"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">func</span> = relay.Function<span style="color: #757575;">(</span>[x<span style="color: #757575;">,</span> y]<span style="color: #757575;">,</span> _exp<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span> = tvm.IRModule.from_expr<span style="color: #757575;">(</span>func<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"----------before----------"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"----------after----------"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span> = relay.transform.RewriteAnnotatedOps<span style="color: #757575;">(</span>1<span style="color: #757575;">)(</span>mod<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod[<span style="color: #2aa198;">"main"</span>]<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+-----&#x2013;&#x2014;before-----&#x2013;&#x2014;
+def @main(%x: Tensor[(1, 10), float32], %y: Tensor[(1, 10), float32]) {
+  %0 = add(%x, %y);
+  %1 = sqrt(%0);
+  %2 = on_device(%1, meta[relay.attrs.OnDeviceAttrs][0]);
+  %3 = log(%0);
+  %4 = subtract(%2, %3);
+  %5 = exp(%4);
+  on_device(%5, meta[relay.attrs.OnDeviceAttrs][1])
+}
+</p>
+
+
+<p>
+-----&#x2013;&#x2014;after-----&#x2013;&#x2014;
+fn (%x: Tensor[(1, 10), float32], %y: Tensor[(1, 10), float32]) -&gt; Tensor[(1, 10), float32] {
+  %0 = add(%x, %y) <i>* ty=Tensor[(1, 10), float32] *</i>;
+  %1 = device_copy(%0, meta[relay.attrs.DeviceCopyAttrs][0]) <i>* ty=Tensor[(1, 10), float32] *</i>;
+  %2 = sqrt(%1) <i>* ty=Tensor[(1, 10), float32] *</i>;
+  %3 = device_copy(%2, meta[relay.attrs.DeviceCopyAttrs][1]) <i>* ty=Tensor[(1, 10), float32] *</i>;
+  %4 = log(%0) <i>* ty=Tensor[(1, 10), float32] *</i>;
+  %5 = subtract(%3, %4) <i>* ty=Tensor[(1, 10), float32] *</i>;
+  %6 = device_copy(%5, meta[relay.attrs.DeviceCopyAttrs][2]) <i>* ty=Tensor[(1, 10), float32] *</i>;
+  exp(%6) <i>* ty=Tensor[(1, 10), float32] *</i>
+}
+</p>
+</div>
+
+<div id="outline-container-orgd0dab5b" class="outline-4">
+<h4 id="orgd0dab5b"><span class="section-number-4">1.5.1</span> device_copy</h4>
+<div class="outline-text-4" id="text-1-5-1">
+<p>
+device_copy 是由 在 LowerTE 时处理的:
+</p>
+
+<ol class="org-ol">
+<li>一方面它被用来确定 expr 所在的 target, 以确定 topi strategy</li>
+<li>另一方面运行时 graph_executor 会根据这个标记做真正的数据拷贝.</li>
+</ol>
+
+<p>
+
+</p>
+
+<p>
+例如, graph_executor 在执行时碰到 `__copy` 时会调用设备相关的 CopyDataFromTo 等函数, 对于 opencl 来说就是 clEnqueueCopyBuffer:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #b58900;">void</span> <span style="color: #268bd2; font-weight: bold;">OpenCLWorkspace</span>::<span style="color: #268bd2;">CopyDataFromTo</span><span style="color: #757575;">(</span>
+    <span style="color: #b58900;">DLTensor</span>* <span style="color: #268bd2;">from</span><span style="color: #757575;">,</span> <span style="color: #b58900;">DLTensor</span>* <span style="color: #268bd2;">to</span><span style="color: #757575;">,</span> <span style="color: #b58900;">TVMStreamHandle</span> <span style="color: #268bd2;">stream</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>IsOpenCLDevice<span style="color: #757575;">(</span>from-&gt;device<span style="color: #757575;">)</span> &amp;&amp; IsOpenCLDevice<span style="color: #757575;">(</span>to-&gt;device<span style="color: #757575;">))</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">const</span> <span style="color: #859900;">auto</span>* <span style="color: #268bd2;">from_desc</span> =
+            <span style="color: #859900;">static_cast</span>&lt;<span style="color: #859900;">const</span> <span style="color: #268bd2; font-weight: bold;">cl</span>::<span style="color: #b58900;">BufferDescriptor</span>*&gt;<span style="color: #757575;">(</span>from-&gt;data<span style="color: #757575;">)</span>;
+        <span style="color: #859900;">auto</span>* <span style="color: #268bd2;">to_desc</span> = <span style="color: #859900;">static_cast</span>&lt;<span style="color: #268bd2; font-weight: bold;">cl</span>::<span style="color: #b58900;">BufferDescriptor</span>*&gt;<span style="color: #757575;">(</span>to-&gt;data<span style="color: #757575;">)</span>;
+        clEnqueueCopyBuffer<span style="color: #757575;">(</span>
+            <span style="color: #859900;">this</span>-&gt;GetQueue<span style="color: #757575;">(</span>to-&gt;device<span style="color: #757575;">),</span> from_desc-&gt;buffer<span style="color: #757575;">,</span> to_desc-&gt;buffer<span style="color: #757575;">,</span>
+            from-&gt;byte_offset<span style="color: #757575;">,</span> to-&gt;byte_offset<span style="color: #757575;">,</span> nbytes<span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">nullptr</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">nullptr</span><span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+除了上面 __copy, 使用 opencl 等 target 在 set_input/get_output 时也会通过
+CopyDataFromTo 与设备交换数据.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org9af1da9" class="outline-3">
+<h3 id="org9af1da9"><span class="section-number-3">1.6</span> <span class="done DONE">DONE</span> FuseOps</h3>
+<div class="outline-text-3" id="text-1-6">
+<ul class="org-ul">
+<li>State "DONE"       from "TODO"       <span class="timestamp-wrapper"><span class="timestamp">[2021-10-22 五 11:12]</span></span></li>
+</ul>
+</div>
+
+<div id="outline-container-org4774d0d" class="outline-4">
+<h4 id="org4774d0d"><span class="section-number-4">1.6.1</span> Example</h4>
+<div class="outline-text-4" id="text-1-6-1">
+</div>
+<div id="outline-container-org9461a5b" class="outline-5">
+<h5 id="org9461a5b"><span class="section-number-5">1.6.1.1</span> 不使用 FuseOps:</h5>
+<div class="outline-text-5" id="text-1-6-1-1">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-09-08 18:19</span>
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+<span style="color: #859900;">from</span> tvm.relay <span style="color: #859900;">import</span> transform
+<span style="color: #859900;">from</span> tvm.relay.testing <span style="color: #859900;">import</span> run_opt_pass
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">test_fuse_simple</span><span style="color: #757575;">()</span>:
+    <span style="color: #2aa198;">"""Simple testcase."""</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">before</span><span style="color: #757575;">()</span>:
+        <span style="color: #268bd2;">x</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"x"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>10<span style="color: #757575;">,</span> 20<span style="color: #757575;">))</span>
+        <span style="color: #268bd2;">y</span> = relay.add<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> x<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">y</span> = relay.add<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">y</span> = relay.add<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">y</span> = relay.add<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">y</span> = relay.add<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">z</span> = relay.exp<span style="color: #757575;">(</span>y<span style="color: #757575;">)</span>
+        <span style="color: #859900;">return</span> relay.Function<span style="color: #757575;">(</span>[x]<span style="color: #757575;">,</span> z<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">z</span> = before<span style="color: #757575;">()</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>z<span style="color: #757575;">)</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">z = run_opt_pass(z, transform.FuseOps())</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">print(z)</span>
+    <span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>opt_level=0<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>z<span style="color: #757575;">,</span> target=<span style="color: #2aa198;">"llvm"</span><span style="color: #757575;">,</span> params=<span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>graph<span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">if</span> <span style="color: #839496;">__name__</span> == <span style="color: #2aa198;">"__main__"</span>:
+    test_fuse_simple<span style="color: #757575;">()</span>
+
+</pre>
+</div>
+
+<p>
+fn (%x: Tensor[(10, 20), float32]) {
+  %0 = add(%x, %x);
+  %1 = add(%0, %0);
+  %2 = add(%1, %1);
+  %3 = add(%2, %2);
+  %4 = add(%3, %3);
+  exp(%4)
+}
+{
+  "nodes": [
+    {
+      "op": "null", 
+      "name": "x", 
+      "inputs": []
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "tvmgen_default_fused_add", 
+      "attrs": {
+        "num_outputs": "1", 
+        "num_inputs": "1", 
+        "flatten_data": "0", 
+        "func_name": "tvmgen_default_fused_add", 
+        "hash": "aadf70b47b6beaf4"
+      }, 
+      "inputs": [
+        [
+          0, 
+          0, 
+          0
+        ]
+      ]
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "tvmgen_default_fused_add1", 
+      "attrs": {
+        "num_outputs": "1", 
+        "num_inputs": "1", 
+        "flatten_data": "0", 
+        "func_name": "tvmgen_default_fused_add", 
+        "hash": "aadf70b47b6beaf4"
+      }, 
+      "inputs": [
+        [
+          1, 
+          0, 
+          0
+        ]
+      ]
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "tvmgen_default_fused_add2", 
+      "attrs": {
+        "num_outputs": "1", 
+        "num_inputs": "1", 
+        "flatten_data": "0", 
+        "func_name": "tvmgen_default_fused_add", 
+        "hash": "aadf70b47b6beaf4"
+      }, 
+      "inputs": [
+        [
+          2, 
+          0, 
+          0
+        ]
+      ]
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "tvmgen_default_fused_add3", 
+      "attrs": {
+        "num_outputs": "1", 
+        "num_inputs": "1", 
+        "flatten_data": "0", 
+        "func_name": "tvmgen_default_fused_add", 
+        "hash": "aadf70b47b6beaf4"
+      }, 
+      "inputs": [
+        [
+          3, 
+          0, 
+          0
+        ]
+      ]
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "tvmgen_default_fused_add4", 
+      "attrs": {
+        "num_outputs": "1", 
+        "num_inputs": "1", 
+        "flatten_data": "0", 
+        "func_name": "tvmgen_default_fused_add", 
+        "hash": "aadf70b47b6beaf4"
+      }, 
+      "inputs": [
+        [
+          4, 
+          0, 
+          0
+        ]
+      ]
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "tvmgen_default_fused_exp", 
+      "attrs": {
+        "num_outputs": "1", 
+        "num_inputs": "1", 
+        "flatten_data": "0", 
+        "func_name": "tvmgen_default_fused_exp", 
+        "hash": "de3b50c71256954a"
+      }, 
+      "inputs": [
+        [
+          5, 
+          0, 
+          0
+        ]
+      ]
+    }
+  ], 
+  "arg_nodes": [0], 
+  "heads": [
+    [
+      6, 
+      0, 
+      0
+    ]
+  ], 
+  "attrs": {
+    "dltype": [
+      "list_str", 
+      [
+        "float32", 
+        "float32", 
+        "float32", 
+        "float32", 
+        "float32", 
+        "float32", 
+        "float32"
+      ]
+    ], 
+    "device_index": [
+      "list_int", 
+      [1, 1, 1, 1, 1, 1, 1]
+    ], 
+    "storage_id": [
+      "list_int", 
+      [0, 1, 2, 1, 2, 1, 2]
+    ], 
+    "shape": [
+      "list_shape", 
+      [
+        [10, 20], 
+        [10, 20], 
+        [10, 20], 
+        [10, 20], 
+        [10, 20], 
+        [10, 20], 
+        [10, 20]
+      ]
+    ]
+  }, 
+  "node_row_ptr": [0, 1, 2, 3, 4, 5, 6, 7]
+}
+</p>
+
+<p>
+可以看过每个 add 操作都会对应一个 graph 中的 node
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgb399773" class="outline-5">
+<h5 id="orgb399773"><span class="section-number-5">1.6.1.2</span> 使用 FuseOps</h5>
+<div class="outline-text-5" id="text-1-6-1-2">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-09-08 18:19</span>
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+<span style="color: #859900;">from</span> tvm.relay <span style="color: #859900;">import</span> transform
+<span style="color: #859900;">from</span> tvm.relay.testing <span style="color: #859900;">import</span> run_opt_pass
+
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">test_fuse_simple</span><span style="color: #757575;">()</span>:
+    <span style="color: #2aa198;">"""Simple testcase."""</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">before</span><span style="color: #757575;">()</span>:
+        <span style="color: #268bd2;">x</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"x"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>10<span style="color: #757575;">,</span> 20<span style="color: #757575;">))</span>
+        <span style="color: #268bd2;">y</span> = relay.add<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> x<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">y</span> = relay.add<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">y</span> = relay.add<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">y</span> = relay.add<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">y</span> = relay.add<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">z</span> = relay.exp<span style="color: #757575;">(</span>y<span style="color: #757575;">)</span>
+        <span style="color: #859900;">return</span> relay.Function<span style="color: #757575;">(</span>[x]<span style="color: #757575;">,</span> z<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">z</span> = before<span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">z</span> = run_opt_pass<span style="color: #757575;">(</span>z<span style="color: #757575;">,</span> transform.FuseOps<span style="color: #757575;">())</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>z<span style="color: #757575;">)</span>
+    <span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>opt_level=0<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>z<span style="color: #757575;">,</span> target=<span style="color: #2aa198;">"llvm"</span><span style="color: #757575;">,</span> params=<span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>graph<span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">if</span> <span style="color: #839496;">__name__</span> == <span style="color: #2aa198;">"__main__"</span>:
+    test_fuse_simple<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<p>
+fn (%x: Tensor[(10, 20), float32]) -&gt; Tensor[(10, 20), float32] {
+  %5 = fn (%p0: Tensor[(10, 20), float32], Primitive=1) -&gt; Tensor[(10, 20), float32] {
+    %0 = add(%p0, %p0) <i>* ty=Tensor[(10, 20), float32] *</i>;
+    %1 = add(%0, %0) <i>* ty=Tensor[(10, 20), float32] *</i>;
+    %2 = add(%1, %1) <i>* ty=Tensor[(10, 20), float32] *</i>;
+    %3 = add(%2, %2) <i>* ty=Tensor[(10, 20), float32] *</i>;
+    %4 = add(%3, %3) <i>* ty=Tensor[(10, 20), float32] *</i>;
+    exp(%4) <i>* ty=Tensor[(10, 20), float32] *</i>
+  };
+  %5(%x) <i>* ty=Tensor[(10, 20), float32] *</i>
+}
+{
+  "nodes": [
+    {
+      "op": "null", 
+      "name": "x", 
+      "inputs": []
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "tvmgen_default_fused_add_add_add_add_add_exp", 
+      "attrs": {
+        "num_outputs": "1", 
+        "num_inputs": "1", 
+        "flatten_data": "0", 
+        "func_name": "tvmgen_default_fused_add_add_add_add_add_exp", 
+        "hash": "bcd04c940b541895"
+      }, 
+      "inputs": [
+        [
+          0, 
+          0, 
+          0
+        ]
+      ]
+    }
+  ], 
+  "arg_nodes": [0], 
+  "heads": [
+    [
+      1, 
+      0, 
+      0
+    ]
+  ], 
+  "attrs": {
+    "dltype": [
+      "list_str", 
+      [
+        "float32", 
+        "float32"
+      ]
+    ], 
+    "device_index": [
+      "list_int", 
+      [1, 1]
+    ], 
+    "storage_id": [
+      "list_int", 
+      [0, 1]
+    ], 
+    "shape": [
+      "list_shape", 
+      [
+        [10, 20], 
+        [10, 20]
+      ]
+    ]
+  }, 
+  "node_row_ptr": [0, 1, 2]
+}
+</p>
+
+<p>
+所有的 op 都被合并到同一个函数 tvmgen_default_fused_add_add_add_add_add_exp
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0fb2649" class="outline-4">
+<h4 id="org0fb2649"><span class="section-number-4">1.6.2</span> 为什么需要 FuseOps</h4>
+<div class="outline-text-4" id="text-1-6-2">
+<p>
+通过 FuseOps 显然可以减少函数调用的开销. 那么, 每次都把所有的 op 都合并到一个函数中不就可以了么?
+</p>
+
+<p>
+每个 op 都有一个 schedule, 如果 schedule 不是 `相容` 的, 则它们是无法合并在一起的, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+<span style="color: #859900;">from</span> tvm.relay <span style="color: #859900;">import</span> transform
+<span style="color: #859900;">from</span> tvm.relay.testing <span style="color: #859900;">import</span> run_opt_pass
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">test_fuse_simple</span><span style="color: #757575;">()</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">before</span><span style="color: #757575;">()</span>:
+        <span style="color: #268bd2;">x</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"x"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>20<span style="color: #757575;">,</span> 20<span style="color: #757575;">))</span>
+        <span style="color: #268bd2;">y1</span> = relay.add<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> x<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">y2</span> = relay.add<span style="color: #757575;">(</span>y1<span style="color: #757575;">,</span> y1<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">y3</span> = relay.<span style="color: #839496;">sum</span><span style="color: #757575;">(</span>y2<span style="color: #757575;">,</span> axis=-1<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">y</span> = relay.add<span style="color: #757575;">(</span>y3<span style="color: #757575;">,</span> y3<span style="color: #757575;">)</span>
+
+        <span style="color: #859900;">return</span> relay.Function<span style="color: #757575;">(</span>[x]<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">z</span> = before<span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">z</span> = run_opt_pass<span style="color: #757575;">(</span>z<span style="color: #757575;">,</span> transform.FuseOps<span style="color: #757575;">())</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>z<span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>opt_level=0<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>z<span style="color: #757575;">,</span> target=<span style="color: #2aa198;">"c"</span><span style="color: #757575;">,</span> params=<span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>lib.get_source<span style="color: #757575;">())</span>
+
+
+<span style="color: #859900;">if</span> <span style="color: #839496;">__name__</span> == <span style="color: #2aa198;">"__main__"</span>:
+    test_fuse_simple<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<p>
+fn (%x: Tensor[(20, 20), float32]) -&gt; Tensor[(20), float32] {
+  %2 = fn (%p01: Tensor[(20, 20), float32], Primitive=1) -&gt; Tensor[(20), float32] {
+    %0 = add(%p01, %p01) <i>* ty=Tensor[(20, 20), float32] *</i>;
+    %1 = add(%0, %0) <i>* ty=Tensor[(20, 20), float32] *</i>;
+    sum(%1, axis=[-1]) <i>* ty=Tensor[(20), float32] *</i>
+  };
+  %3 = %2(%x) <i>* ty=Tensor[(20), float32] *</i>;
+  %4 = fn (%p0: Tensor[(20), float32], Primitive=1) -&gt; Tensor[(20), float32] {
+    add(%p0, %p0) <i>* ty=Tensor[(20), float32] *</i>
+  };
+  %4(%3) <i>* ty=Tensor[(20), float32] *</i>
+}
+// tvm target: c -keys=cpu -link-params=0
+#define TVM_EXPORTS
+#include "tvm/runtime/c_runtime_api.h"
+#include "tvm/runtime/c_backend_api.h"
+#include &lt;math.h&gt;
+#ifdef __cplusplus
+extern "C"
+#endif
+TVM_DLL int32_t tvmgen_default_fused_add_add_sum(void* args, void* arg_type_ids, int32_t num_args, void* out_ret_value, void* out_ret_tcode, void* resource_handle) {
+  void* arg0 = (((TVMValue*)args)[0].v_handle);
+  int32_t arg0_code = ((int32_t*)arg_type_ids)[(0)];
+  void* arg1 = (((TVMValue*)args)[1].v_handle);
+  int32_t arg1_code = ((int32_t*)arg_type_ids)[(1)];
+  void* placeholder = (((DLTensor*)arg0)[0].data);
+  void* arg0_shape = (((DLTensor*)arg0)[0].shape);
+  void* arg0_strides = (((DLTensor*)arg0)[0].strides);
+  int32_t dev_id = (((DLTensor*)arg0)[0].device.device_id);
+  void* T_add_red = (((DLTensor*)arg1)[0].data);
+  void* arg1_shape = (((DLTensor*)arg1)[0].shape);
+  void* arg1_strides = (((DLTensor*)arg1)[0].strides);
+  if (!(arg0_strides == NULL)) {
+  }
+  if (!(arg1_strides == NULL)) {
+  }
+  for (int32_t ax0 = 0; ax0 &lt; 20; ++ax0) {
+    ((float*)T_add_red)[(ax0)] = 0.000000e+00f;
+    for (int32_t k1 = 0; k1 &lt; 20; ++k1) {
+      ((float*)T_add_red)[(ax0)] = (((float*)T_add_red)[(ax0)] + ((((float*)placeholder)[(((ax0 * 20) + k1))] + ((float*)placeholder)[(((ax0 * 20) + k1))]) + (((float*)placeholder)[(((ax0 * 20) + k1))] + ((float*)placeholder)[(((ax0 * 20) + k1))])));
+    }
+  }
+  return 0;
+}
+</p>
+
+<p>
+#ifdef __cplusplus
+extern "C"
+#endif
+TVM_DLL int32_t tvmgen_default_fused_add(void* args, void* arg_type_ids, int32_t num_args, void* out_ret_value, void* out_ret_tcode, void* resource_handle) {
+  void* arg0 = (((TVMValue*)args)[0].v_handle);
+  int32_t arg0_code = ((int32_t*)arg_type_ids)[(0)];
+  void* arg1 = (((TVMValue*)args)[1].v_handle);
+  int32_t arg1_code = ((int32_t*)arg_type_ids)[(1)];
+  void* placeholder = (((DLTensor*)arg0)[0].data);
+  void* arg0_shape = (((DLTensor*)arg0)[0].shape);
+  void* arg0_strides = (((DLTensor*)arg0)[0].strides);
+  int32_t dev_id = (((DLTensor*)arg0)[0].device.device_id);
+  void* T_add = (((DLTensor*)arg1)[0].data);
+  void* arg1_shape = (((DLTensor*)arg1)[0].shape);
+  void* arg1_strides = (((DLTensor*)arg1)[0].strides);
+  if (!(arg0_strides == NULL)) {
+  }
+  if (!(arg1_strides == NULL)) {
+  }
+  for (int32_t ax0_outer = 0; ax0_outer &lt; 2; ++ax0_outer) {
+    for (int32_t ax0_inner_s = 0; ax0_inner_s &lt; 16; ++ax0_inner_s) {
+      if (((ax0_outer * 16) + ax0_inner_s) &lt; 20) {
+        ((float*)T_add)[(((ax0_outer * 16) + ax0_inner_s))] = (((float*)placeholder)[(((ax0_outer * 16) + ax0_inner_s))] + ((float*)placeholder)[(((ax0_outer * 16) + ax0_inner_s))]);
+      }
+    }
+  }
+  return 0;
+}
+</p>
+
+<p>
+y1, y2, y3 三个操作使用的 schedule 都是要处理一个 20x20 的循环, 但 y 的 schdule
+处理的是 20x1 的循环, 所以它们无法合并成一个 op. 
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgd667ca7" class="outline-3">
+<h3 id="orgd667ca7"><span class="section-number-3">1.7</span> <span class="done DONE">DONE</span> FoldScaleAxis</h3>
+<div class="outline-text-3" id="text-1-7">
+<ul class="org-ul">
+<li>State "DONE"       from "TODO"       <span class="timestamp-wrapper"><span class="timestamp">[2021-10-19 二 15:06]</span></span></li>
+</ul>
+
+<p>
+FoldScaleAxis 可以把 Conv2D 和 BatchNorm 融合在一起.
+</p>
+
+<p>
+算子融合的好处:
+</p>
+
+<ol class="org-ol">
+<li>减少算子间的中间内存分配</li>
+<li>两个算子的 loop 可以做成同一个 loop</li>
+</ol>
+
+<p>
+FoldScaleAxis 除了上面的好处, 还有一个原因是许多加速器并不支持 scalar
+multiplication, 例如 BatchNorm
+</p>
+
+<p>
+TVM 的 FoldScaleAxis 实际上包含三个 transform:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span style="color: #b58900;">Pass</span> <span style="color: #268bd2;">FoldScaleAxis</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">Pass</span> <span style="color: #268bd2;">pass</span> = Sequential<span style="color: #757575;">(</span>
+        <span style="color: #757575;">{</span>BackwardFoldScaleAxis<span style="color: #757575;">(),</span> ForwardFoldScaleAxis<span style="color: #757575;">(),</span> FoldConstant<span style="color: #757575;">()},</span>
+        <span style="color: #2aa198;">"FoldScaleAxis"</span><span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> pass;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+其中:
+</p>
+
+<ul class="org-ul">
+<li>BackwardFoldScaleAxis 是把某个 Op (例如 Conv2D) 后面的 scale 与 Op fold 在一起</li>
+<li>ForwardFoldScaleAxis 是把 Op 前面的 scale 与 Op fold</li>
+<li>ForwardFoldScaleAxis 或 BackwardFoldScaleAxis 只是负责把 x*scale 或 y*scale 变成 w*scale, 最终还需要 FoldConstant 把 w*scale fold 成一个 constant (前提是 w,
+scale 都是常量)</li>
+</ul>
+</div>
+
+
+<div id="outline-container-orgad2f2f4" class="outline-4">
+<h4 id="orgad2f2f4"><span class="section-number-4">1.7.1</span> Example</h4>
+<div class="outline-text-4" id="text-1-7-1">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-10-14 22:36</span>
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> te
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+<span style="color: #859900;">from</span> tvm.relay <span style="color: #859900;">import</span> transform
+
+<span style="color: #268bd2;">I</span> = <span style="color: #268bd2;">N</span> = 1
+<span style="color: #268bd2;">O</span> = <span style="color: #268bd2;">C</span> = 2
+<span style="color: #268bd2;">H</span> = <span style="color: #268bd2;">W</span> = 3
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">run_opt_pass</span><span style="color: #757575;">(</span>expr<span style="color: #757575;">,</span> opt_pass<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">assert</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>opt_pass<span style="color: #757575;">,</span> tvm.transform.Pass<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">mod</span> = tvm.IRModule.from_expr<span style="color: #757575;">(</span>expr<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">mod</span> = opt_pass<span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">entry</span> = mod[<span style="color: #2aa198;">"main"</span>]
+    <span style="color: #859900;">return</span> entry <span style="color: #859900;">if</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>expr<span style="color: #757575;">,</span> relay.Function<span style="color: #757575;">)</span> <span style="color: #859900;">else</span> entry.body
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">test_fold</span><span style="color: #757575;">()</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">get_model</span><span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> weight<span style="color: #757575;">,</span> scale<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">args</span> = [x]
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">x = relay.multiply(x, scale)</span>
+        <span style="color: #268bd2;">y</span> = relay.nn.conv2d<span style="color: #757575;">(</span>
+            x<span style="color: #757575;">,</span>
+            weight<span style="color: #757575;">,</span>
+            channels=C<span style="color: #757575;">,</span>
+            kernel_size=<span style="color: #757575;">(</span>3<span style="color: #757575;">,</span> 3<span style="color: #757575;">),</span>
+            padding=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 1<span style="color: #757575;">),</span>
+        <span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">y</span> = relay.multiply<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> scale<span style="color: #757575;">)</span>
+
+        <span style="color: #859900;">return</span> relay.Function<span style="color: #757575;">(</span>args<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">check</span><span style="color: #757575;">(</span>shape<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">x</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"x"</span><span style="color: #757575;">,</span> shape=shape<span style="color: #757575;">)</span>
+
+        <span style="color: #268bd2;">weight</span> = relay.const<span style="color: #757575;">(</span>np.random.randn<span style="color: #757575;">(</span>O<span style="color: #757575;">,</span> I<span style="color: #757575;">,</span> H<span style="color: #757575;">,</span> W<span style="color: #757575;">)</span>.astype<span style="color: #757575;">(</span><span style="color: #2aa198;">"float32"</span><span style="color: #757575;">))</span>
+        <span style="color: #268bd2;">scale</span> = relay.const<span style="color: #757575;">(</span>np.random.randn<span style="color: #757575;">(</span>C<span style="color: #757575;">,</span> 1<span style="color: #757575;">,</span> 1<span style="color: #757575;">)</span>.astype<span style="color: #757575;">(</span><span style="color: #2aa198;">"float32"</span><span style="color: #757575;">))</span>
+
+        <span style="color: #268bd2;">y</span> = get_model<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> weight<span style="color: #757575;">,</span> scale<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">y</span> = run_opt_pass<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> transform.InferType<span style="color: #757575;">())</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span>y<span style="color: #757575;">)</span>
+
+        <span style="color: #268bd2;">y_folded</span> = run_opt_pass<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> transform.BackwardFoldScaleAxis<span style="color: #757575;">())</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span>y_folded<span style="color: #757575;">)</span>
+
+        <span style="color: #268bd2;">y_folded</span> = run_opt_pass<span style="color: #757575;">(</span>y_folded<span style="color: #757575;">,</span> transform.FoldConstant<span style="color: #757575;">())</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span>y_folded<span style="color: #757575;">)</span>
+
+    check<span style="color: #757575;">((</span>1<span style="color: #757575;">,</span> N<span style="color: #757575;">,</span> 10<span style="color: #757575;">,</span> 10<span style="color: #757575;">))</span>
+
+
+<span style="color: #859900;">if</span> <span style="color: #839496;">__name__</span> == <span style="color: #2aa198;">"__main__"</span>:
+    test_fold<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<p>
+fn (%x: Tensor[(1, 1, 10, 10), float32]) -&gt; Tensor[(1, 2, 10, 10), float32] {
+  %0 = nn.conv2d(%x, meta[relay.Constant][0] <i>* ty=Tensor[(2, 1, 3, 3), float32] *</i>, padding=[1, 1, 1, 1], channels=2, kernel_size=[3, 3]) <i>* ty=Tensor[(1, 2, 10, 10), float32] *</i>;
+  multiply(%0, meta[relay.Constant][1] <i>* ty=Tensor[(2, 1, 1), float32] *</i>) <i>* ty=Tensor[(1, 2, 10, 10), float32] *</i>
+}
+</p>
+
+<p>
+fn (%x: Tensor[(1, 1, 10, 10), float32]) -&gt; Tensor[(1, 2, 10, 10), float32] {
+  %0 = squeeze(meta[relay.Constant][1] <i>* ty=Tensor[(2, 1, 1), float32] *</i>, axis=[1, 2]) <i>* ty=Tensor[(2), float32] *</i>;
+  %1 = expand_dims(%0, axis=1, num_newaxis=3) <i>* ty=Tensor[(2, 1, 1, 1), float32] *</i>;
+  %2 = multiply(meta[relay.Constant][0] <i>* ty=Tensor[(2, 1, 3, 3), float32] *</i>, %1) <i>* ty=Tensor[(2, 1, 3, 3), float32] *</i>;
+  nn.conv2d(%x, %2, padding=[1, 1, 1, 1], channels=2, kernel_size=[3, 3]) <i>* ty=Tensor[(1, 2, 10, 10), float32] *</i>
+}
+</p>
+
+<p>
+fn (%x: Tensor[(1, 1, 10, 10), float32]) -&gt; Tensor[(1, 2, 10, 10), float32] {
+  nn.conv2d(%x, meta[relay.Constant][0] <i>* ty=Tensor[(2, 1, 3, 3), float32] *</i>, padding=[1, 1, 1, 1], channels=2, kernel_size=[3, 3]) <i>* ty=Tensor[(1, 2, 10, 10), float32] *</i>
+}
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0dfb8ae" class="outline-4">
+<h4 id="org0dfb8ae"><span class="section-number-4">1.7.2</span> Impl</h4>
+<div class="outline-text-4" id="text-1-7-2">
+<div class="org-src-container">
+<pre class="src src-C++"><span style="color: #586e75;">// </span><span style="color: #586e75;">multiply &#20250;&#20808;&#20110; conv2d &#34987;&#36941;&#21382;&#21040;, &#35760;&#19979; scale</span>
+<span style="color: #b58900;">Expr</span> <span style="color: #268bd2;">MultiplyBackwardTransform</span><span style="color: #757575;">(</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">Call</span>&amp; <span style="color: #268bd2;">call</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">Message</span>&amp; <span style="color: #268bd2;">message</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">Expr</span>&amp; <span style="color: #268bd2;">scale</span><span style="color: #757575;">,</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">BackwardTransformer</span>&amp; <span style="color: #268bd2;">transformer</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    ICHECK<span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>message.defined<span style="color: #757575;">())</span> &lt;&lt; <span style="color: #2aa198;">"outstanding scale"</span>;
+    <span style="color: #859900;">const</span> <span style="color: #859900;">auto</span>* <span style="color: #268bd2;">tlhs</span> = call-&gt;args[0]-&gt;type_as&lt;TensorTypeNode&gt;<span style="color: #757575;">()</span>;
+    <span style="color: #859900;">const</span> <span style="color: #859900;">auto</span>* <span style="color: #268bd2;">trhs</span> = call-&gt;args[1]-&gt;type_as&lt;TensorTypeNode&gt;<span style="color: #757575;">()</span>;
+    <span style="color: #b58900;">Message</span> <span style="color: #268bd2;">lhs_message</span> = transformer-&gt;GetMessage<span style="color: #757575;">(</span>call-&gt;args[0]<span style="color: #757575;">)</span>;
+    <span style="color: #b58900;">Message</span> <span style="color: #268bd2;">rhs_message</span> = transformer-&gt;GetMessage<span style="color: #757575;">(</span>call-&gt;args[1]<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>lhs_message.defined<span style="color: #757575;">())</span> <span style="color: #757575;">{</span>
+        <span style="color: #b58900;">Expr</span> <span style="color: #268bd2;">rhs</span> = call-&gt;args[1];
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>MatchBroadcastToLeftAxes<span style="color: #757575;">(</span>tlhs<span style="color: #757575;">,</span> trhs<span style="color: #757575;">,</span> lhs_message-&gt;axes<span style="color: #757575;">,</span> &amp;rhs<span style="color: #757575;">)</span> &amp;&amp;
+            <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>lhs_message-&gt;require_positive || IsAllPositiveConstant<span style="color: #757575;">(</span>rhs<span style="color: #757575;">)))</span> <span style="color: #757575;">{</span>
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20363;&#22914;, mul(conv2d, scale), call-&gt;args[0] &#21363; conv2d, rhs &#21363; scale</span>
+            <span style="color: #859900;">return</span> transformer-&gt;Transform<span style="color: #757575;">(</span>call-&gt;args[0]<span style="color: #757575;">,</span> lhs_message<span style="color: #757575;">,</span> rhs<span style="color: #757575;">)</span>;
+        <span style="color: #757575;">}</span>
+    <span style="color: #757575;">}</span> <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>rhs_message.defined<span style="color: #757575;">())</span> <span style="color: #757575;">{</span>
+        <span style="color: #b58900;">Expr</span> <span style="color: #268bd2;">lhs</span> = call-&gt;args[0];
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>MatchBroadcastToLeftAxes<span style="color: #757575;">(</span>trhs<span style="color: #757575;">,</span> tlhs<span style="color: #757575;">,</span> rhs_message-&gt;axes<span style="color: #757575;">,</span> &amp;lhs<span style="color: #757575;">)</span> &amp;&amp;
+            <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>rhs_message-&gt;require_positive || IsAllPositiveConstant<span style="color: #757575;">(</span>lhs<span style="color: #757575;">)))</span> <span style="color: #757575;">{</span>
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">mul(scale,conv2d), call-&gt;args[1] &#21363; conv2d, lhs &#21363; scale</span>
+            <span style="color: #859900;">return</span> transformer-&gt;Transform<span style="color: #757575;">(</span>call-&gt;args[1]<span style="color: #757575;">,</span> rhs_message<span style="color: #757575;">,</span> lhs<span style="color: #757575;">)</span>;
+        <span style="color: #757575;">}</span>
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">return</span> transformer-&gt;NormalCallTransform<span style="color: #757575;">(</span>call.<span style="color: #859900;">operator</span>-&gt;<span style="color: #757575;">())</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #b58900;">Expr</span> <span style="color: #268bd2;">Conv2DBackwardTransform</span><span style="color: #757575;">(</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">Call</span>&amp; <span style="color: #268bd2;">call</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">Message</span>&amp; <span style="color: #268bd2;">message</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">Expr</span>&amp; <span style="color: #268bd2;">scale</span><span style="color: #757575;">,</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">BackwardTransformer</span>&amp; <span style="color: #268bd2;">transformer</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+    <span style="color: #b58900;">Expr</span> <span style="color: #268bd2;">data</span> = transformer-&gt;Transform<span style="color: #757575;">(</span>
+        call-&gt;args[0]<span style="color: #757575;">,</span> NullValue&lt;<span style="color: #b58900;">Message</span>&gt;<span style="color: #757575;">(),</span> NullValue&lt;<span style="color: #b58900;">Expr</span>&gt;<span style="color: #757575;">())</span>;
+    <span style="color: #b58900;">Expr</span> <span style="color: #268bd2;">weight</span> = transformer-&gt;Transform<span style="color: #757575;">(</span>
+        call-&gt;args[1]<span style="color: #757575;">,</span> NullValue&lt;<span style="color: #b58900;">Message</span>&gt;<span style="color: #757575;">(),</span> NullValue&lt;<span style="color: #b58900;">Expr</span>&gt;<span style="color: #757575;">())</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">scale on input for deptwise.</span>
+    <span style="color: #b58900;">Expr</span> <span style="color: #268bd2;">wscale</span> =
+        ExpandBiasToMatchAxis<span style="color: #757575;">(</span>scale<span style="color: #757575;">,</span> kernel_layout.ndim<span style="color: #757575;">(),</span> <span style="color: #757575;">{</span>big_ko_axis<span style="color: #757575;">})</span>;
+    weight = Multiply<span style="color: #757575;">(</span>weight<span style="color: #757575;">,</span> wscale<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> Call<span style="color: #757575;">(</span>call-&gt;op<span style="color: #757575;">,</span> <span style="color: #757575;">{</span>data<span style="color: #757575;">,</span> weight<span style="color: #757575;">},</span> call-&gt;attrs<span style="color: #757575;">,</span> call-&gt;type_args<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org156dd8d" class="outline-3">
+<h3 id="org156dd8d"><span class="section-number-3">1.8</span> CombineParallelDense</h3>
+<div class="outline-text-3" id="text-1-8">
+<p>
+FuseOps, FoldScaleAxis 等 transform 属于纵向的融合, 而 CombineXXX 属于横向的融合
+</p>
+</div>
+
+<div id="outline-container-org40fc46e" class="outline-4">
+<h4 id="org40fc46e"><span class="section-number-4">1.8.1</span> Example</h4>
+<div class="outline-text-4" id="text-1-8-1">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-10-14 22:36</span>
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> te
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+<span style="color: #859900;">from</span> tvm.relay <span style="color: #859900;">import</span> transform
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">run_opt_pass</span><span style="color: #757575;">(</span>expr<span style="color: #757575;">,</span> opt_pass<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">assert</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>opt_pass<span style="color: #757575;">,</span> tvm.transform.Pass<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">mod</span> = tvm.IRModule.from_expr<span style="color: #757575;">(</span>expr<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">mod</span> = tvm.relay.transform.InferType<span style="color: #757575;">()(</span>mod<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">mod</span> = opt_pass<span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> mod[<span style="color: #2aa198;">"main"</span>]
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">test_combine_parallel_dense</span><span style="color: #757575;">()</span>:
+    <span style="color: #2aa198;">"""Simple testcase. One dense cannot be combined due to shape mismatch"""</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">before</span><span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> w1<span style="color: #757575;">,</span> w2<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">args</span> = [x<span style="color: #757575;">,</span> w1<span style="color: #757575;">,</span> w2]
+        <span style="color: #268bd2;">y1</span> = relay.nn.dense<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> w1<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">y2</span> = relay.nn.dense<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> w2<span style="color: #757575;">)</span>
+
+        <span style="color: #268bd2;">y</span> = relay.Tuple<span style="color: #757575;">((</span>y1<span style="color: #757575;">,</span> y2<span style="color: #757575;">))</span>
+        <span style="color: #859900;">return</span> relay.Function<span style="color: #757575;">(</span>args<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">check</span><span style="color: #757575;">(</span>i<span style="color: #757575;">,</span> j<span style="color: #757575;">,</span> k<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">x</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"x"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>i<span style="color: #757575;">,</span> k<span style="color: #757575;">))</span>
+        <span style="color: #268bd2;">w1</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"w1"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>j<span style="color: #757575;">,</span> k<span style="color: #757575;">))</span>
+        <span style="color: #268bd2;">w2</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"w2"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>j<span style="color: #757575;">,</span> k<span style="color: #757575;">))</span>
+
+        <span style="color: #268bd2;">y_before</span> = before<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> w1<span style="color: #757575;">,</span> w2<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span>y_before<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">y</span> = run_opt_pass<span style="color: #757575;">(</span>y_before<span style="color: #757575;">,</span> transform.CombineParallelDense<span style="color: #757575;">(</span>min_num_branches=2<span style="color: #757575;">))</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span>y<span style="color: #757575;">)</span>
+
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">3x4 &#20998;&#21035;&#21644;&#20004;&#20010; 4x5 &#30456;&#20056;, &#24471;&#21040;&#20004;&#20010; 3x5</span>
+    check<span style="color: #757575;">(</span>3<span style="color: #757575;">,</span> 5<span style="color: #757575;">,</span> 4<span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">if</span> <span style="color: #839496;">__name__</span> == <span style="color: #2aa198;">"__main__"</span>:
+    test_combine_parallel_dense<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<p>
+fn (%x: Tensor[(3, 4), float32], %w1: Tensor[(5, 4), float32], %w2: Tensor[(5, 4), float32]) {
+  %0 = nn.dense(%x, %w1, units=None);
+  %1 = nn.dense(%x, %w2, units=None);
+  (%0, %1)
+}
+fn (%x: Tensor[(3, 4), float32], %w1: Tensor[(5, 4), float32], %w2: Tensor[(5, 4), float32]) -&gt; (Tensor[(3, 5), float32], Tensor[(3, 5), float32]) {
+  %0 = (%x, %x);
+  %1 = (%w1, %w2);
+  %2 = stack(%0) <i>* ty=Tensor[(2, 3, 4), float32] *</i>;
+  %3 = stack(%1) <i>* ty=Tensor[(2, 5, 4), float32] *</i>;
+  %4 = nn.batch_matmul(%2, %3, transpose_b=True) <i>* ty=Tensor[(2, 3, 5), float32] *</i>;
+  %5 = split(%4, indices_or_sections=2) <i>* ty=(Tensor[(1, 3, 5), float32], Tensor[(1, 3, 5), float32]) *</i>;
+  %6 = %5.0;
+  %7 = %5.1;
+  %8 = squeeze(%6, axis=[0]) <i>* ty=Tensor[(3, 5), float32] *</i>;
+  %9 = squeeze(%7, axis=[0]) <i>* ty=Tensor[(3, 5), float32] *</i>;
+  (%8, %9)
+}
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org50c84cd" class="outline-3">
+<h3 id="org50c84cd"><span class="section-number-3">1.9</span> <span class="done DONE">DONE</span> CombineParallelConv2D</h3>
+<div class="outline-text-3" id="text-1-9">
+<ul class="org-ul">
+<li>State "DONE"       from "WAIT"       <span class="timestamp-wrapper"><span class="timestamp">[2021-10-22 五 17:10]</span></span></li>
+</ul>
+</div>
+
+<div id="outline-container-org83a080a" class="outline-4">
+<h4 id="org83a080a"><span class="section-number-4">1.9.1</span> Example</h4>
+<div class="outline-text-4" id="text-1-9-1">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-10-22 16:46</span>
+
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+<span style="color: #859900;">from</span> tvm.relay <span style="color: #859900;">import</span> transform
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">test_combine_parallel_conv2d</span><span style="color: #757575;">()</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">before</span><span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> w1<span style="color: #757575;">,</span> w2<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">args</span> = [x<span style="color: #757575;">,</span> w1<span style="color: #757575;">,</span> w2]
+        <span style="color: #268bd2;">y1</span> = relay.nn.conv2d<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> w1<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">y2</span> = relay.nn.conv2d<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> w2<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">y3</span> = relay.nn.max_pool2d<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">y</span> = relay.Tuple<span style="color: #757575;">((</span>y1<span style="color: #757575;">,</span> y2<span style="color: #757575;">,</span> y3<span style="color: #757575;">))</span>
+        <span style="color: #268bd2;">func</span> = relay.Function<span style="color: #757575;">(</span>args<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">mod</span> = tvm.IRModule.from_expr<span style="color: #757575;">(</span>func<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">mod</span> = tvm.relay.transform.InferType<span style="color: #757575;">()(</span>mod<span style="color: #757575;">)</span>
+        <span style="color: #859900;">return</span> mod
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">check</span><span style="color: #757575;">(</span>x_shape<span style="color: #757575;">,</span> channels1<span style="color: #757575;">,</span> channels2<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">x</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"x"</span><span style="color: #757575;">,</span> shape=x_shape<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">in_c</span> = x_shape[1]
+        <span style="color: #268bd2;">w1</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"w1"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>channels1<span style="color: #757575;">,</span> in_c<span style="color: #757575;">,</span> 1<span style="color: #757575;">,</span> 1<span style="color: #757575;">))</span>
+        <span style="color: #268bd2;">w2</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"w2"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>channels2<span style="color: #757575;">,</span> in_c<span style="color: #757575;">,</span> 1<span style="color: #757575;">,</span> 1<span style="color: #757575;">))</span>
+
+        <span style="color: #268bd2;">mod</span> = before<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> w1<span style="color: #757575;">,</span> w2<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"------before------"</span><span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">mod</span> = transform.CombineParallelConv2D<span style="color: #757575;">(</span>min_num_branches=2<span style="color: #757575;">)(</span>mod<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"------after------"</span><span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+
+    check<span style="color: #757575;">((</span>1<span style="color: #757575;">,</span> 4<span style="color: #757575;">,</span> 16<span style="color: #757575;">,</span> 16<span style="color: #757575;">),</span> 4<span style="color: #757575;">,</span> 4<span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">if</span> <span style="color: #839496;">__name__</span> == <span style="color: #2aa198;">"__main__"</span>:
+    test_combine_parallel_conv2d<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<p>
+-&#x2013;&#x2014;before-&#x2013;&#x2014;
+def @main(%x: Tensor[(1, 4, 16, 16), float32], %w1: Tensor[(4, 4, 1, 1), float32], %w2: Tensor[(4, 4, 1, 1), float32]) -&gt; (Tensor[(1, 4, 16, 16), float32], Tensor[(1, 4, 16, 16), float32], Tensor[(1, 4, 16, 16), float32]) {
+  %0 = nn.conv2d(%x, %w1, padding=[0, 0, 0, 0]) <i>* ty=Tensor[(1, 4, 16, 16), float32] *</i>;
+  %1 = nn.conv2d(%x, %w2, padding=[0, 0, 0, 0]) <i>* ty=Tensor[(1, 4, 16, 16), float32] *</i>;
+  %2 = nn.max_pool2d(%x, pool_size=[1, 1], padding=[0, 0, 0, 0]) <i>* ty=Tensor[(1, 4, 16, 16), float32] *</i>;
+  (%0, %1, %2)
+}
+</p>
+
+<p>
+-&#x2013;&#x2014;after-&#x2013;&#x2014;
+def @main(%x: Tensor[(1, 4, 16, 16), float32], %w1: Tensor[(4, 4, 1, 1), float32], %w2: Tensor[(4, 4, 1, 1), float32]) -&gt; (Tensor[(1, 4, 16, 16), float32], Tensor[(1, 4, 16, 16), float32], Tensor[(1, 4, 16, 16), float32]) {
+  %0 = (%w1, %w2);
+  %1 = concatenate(%0) <i>* ty=Tensor[(8, 4, 1, 1), float32] *</i>;
+  %2 = nn.conv2d(%x, %1, padding=[0, 0, 0, 0], channels=8) <i>* ty=Tensor[(1, 8, 16, 16), float32] *</i>;
+  %3 = strided_slice(%2, begin=[0, 0], end=[-1, 4], strides=[1, 1], slice_mode="size", axes=None) <i>* ty=Tensor[(1, 4, 16, 16), float32] *</i>;
+  %4 = strided_slice(%2, begin=[0, 4], end=[-1, 4], strides=[1, 1], slice_mode="size", axes=None) <i>* ty=Tensor[(1, 4, 16, 16), float32] *</i>;
+  %5 = nn.max_pool2d(%x, pool_size=[1, 1], padding=[0, 0, 0, 0]) <i>* ty=Tensor[(1, 4, 16, 16), float32] *</i>;
+  (%3, %4, %5)
+}
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

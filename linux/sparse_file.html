@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 11:55 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Linux: Sparse File</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Linux: Sparse File</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org2a48103">1. Linux: Sparse File</a>
+<ul>
+<li><a href="#orgc71f503">1.1. 操作 sparse file</a></li>
+<li><a href="#orgdea2929">1.2. 参考</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+<div id="outline-container-org2a48103" class="outline-2">
+<h2 id="org2a48103"><span class="section-number-2">1</span> Linux: Sparse File</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+linux 本身就是 sparse file 的概念: 它指的实际上就是通过 seek 导致的中间有空洞的文件. 
+</p>
+
+<p>
+文件系统一般通过多级索引的方式保存文件, 所以对于 seek, 文件系统会很聪明的通过操作索引来"表示"这个空洞而不需要真正的将一串的 "0" 保存到磁盘.
+(参考 &lt;unix 操作系统设计&gt;)
+</p>
+
+<p>
+所以, linux 的 sparse file 指的是 "使用 seek 来表示连续的 0" 这样的文件.
+</p>
+</div>
+
+<div id="outline-container-orgc71f503" class="outline-3">
+<h3 id="orgc71f503"><span class="section-number-3">1.1</span> 操作 sparse file</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+创建 sparse file 本质都是通过 lseek, 有许多 linux 工具已经支持这种功能, 例如:
+</p>
+
+<ol class="org-ol">
+<li><p>
+du 
+</p>
+
+<p>
+默认的 du 是显示实际占用的磁盘大小 (不包括空洞), 通过&#x2013;apparent-size
+可以显示包括空洞的大小 (看起来的大小), 例如:
+</p>
+
+<pre class="example" id="org1b85b6f">
+$&gt; dd if=/dev/urandom bs=4096 seek=100 count=2 of=file_with_holes
+2+0 records in
+2+0 records out
+8192 bytes (8.2 kB) copied, 0.000890926 s, 9.2 MB/s
+$&gt; du --apparent-size -h  file_with_holes
+408K    file_with_holes
+$&gt; du -h  file_with_holes
+8.0K    file_with_holes
+</pre></li>
+
+<li><p>
+dd
+</p>
+
+<pre class="example" id="org3943b46">
+dd if=/dev/urandom bs=4096 seek=100 count=2 of=file_with_holes
+</pre>
+
+<p>
+该命令会创建一个开头有 400K 个 0 的空洞.
+</p></li>
+
+<li><p>
+cp
+</p>
+
+<p>
+cp 的 &#x2013;sparse 可以控制在复制文件时是否先推测被复制的文件是否可以用
+sparse 文件来表示, 例如:
+</p>
+
+<pre class="example" id="org37c9465">
+$&gt; cp --sparse=never file_with_holes file_with_holes_2
+$&gt; du -h file_with_holes_2 
+408K    file_with_holes_2
+$&gt; cp --sparse=always file_with_holes file_with_holes_2
+$&gt; du -h file_with_holes_2 
+8.0K    file_with_holes_2
+</pre>
+
+<p>
+另外, cp 在判断目标文件是否可以通过 sparse 方式表示 (lseek) 时是使用了一种启发式的算法 (cp 无法知道源文件是否是 sparse 格式, 它能看到的只是字节流)
+</p>
+
+<pre class="example" id="orgc4c17d1">
+By default, sparse SOURCE files are detected by a crude heuristic and the corresponding DEST file is made sparse as well. 
+That is the behavior selected by --sparse=auto. Specify --sparse=always to create a sparse DEST file
+whenever the SOURCE file contains a long enough sequence of zero bytes. Use --sparse=never to inhibit creation of sparse files.
+</pre>
+
+<p>
+通过这段 man cp 的注释, 可以猜过 cp 是通过判断源文件中是否有连续的
+0 来决定目标文件是否用 sparse 格式. 
+</p>
+
+<p>
+所以下一步尝试使用 cp 来复制一个正常的但全是 0 的文件(非 sparse 文件),
+看看它的行为:
+</p>
+
+<pre class="example" id="org1ad1188">
+$&gt; for i in `seq 10000`; do echo -e -n "\0"&gt;&gt;all_zero; done
+$&gt; du -h all_zero
+12K     all_zero
+$&gt; du -h --apparent-size all_zero
+9.8K    all_zero
+$&gt; cp --sparse=always all_zero all_zero_2
+$&gt; du -h all_zero_2 
+0       all_zero_2
+$&gt; du -h --apparent-size all_zero_2
+9.8K    all_zero_2
+</pre></li>
+
+<li><p>
+tar
+</p>
+
+<pre class="example" id="org998df99">
+tar -S
+</pre></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgdea2929" class="outline-3">
+<h3 id="orgdea2929"><span class="section-number-3">1.2</span> 参考</h3>
+<div class="outline-text-3" id="text-1-2">
+<ol class="org-ol">
+<li><a href="https://wiki.archlinux.org/index.php/Sparse_file">https://wiki.archlinux.org/index.php/Sparse_file</a></li>
+
+<li><a href="http://linux.die.net/man/1/cp">http://linux.die.net/man/1/cp</a></li>
+
+<li><a href="http://stackoverflow.com/questions/5315428/how-to-create-a-file-with-file-holes">http://stackoverflow.com/questions/5315428/how-to-create-a-file-with-file-holes</a></li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

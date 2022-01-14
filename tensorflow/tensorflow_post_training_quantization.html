@@ -1,0 +1,416 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tensorflow Post Training Quantization</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Tensorflow Post Training Quantization</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org40d4b34">1. Tensorflow Post Training Quantization</a>
+<ul>
+<li><a href="#orga25dd1a">1.1. 测试模型</a></li>
+<li><a href="#org7bf8520">1.2. 动态范围量化</a></li>
+<li><a href="#org799d2d2">1.3. 全整数量化</a></li>
+<li><a href="#org4f8dfc8">1.4. 量化误差过大</a></li>
+<li><a href="#orgf42ee04">1.5. 无法量化的操作</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org40d4b34" class="outline-2">
+<h2 id="org40d4b34"><span class="section-number-2">1</span> Tensorflow Post Training Quantization</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="https://www.tensorflow.org/lite/performance/post_training_quantization">https://www.tensorflow.org/lite/performance/post_training_quantization</a>
+</p>
+</div>
+
+<div id="outline-container-orga25dd1a" class="outline-3">
+<h3 id="orga25dd1a"><span class="section-number-3">1.1</span> 测试模型</h3>
+<div class="outline-text-3" id="text-1-1">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> tensorflow <span style="color: #859900;">as</span> tf
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">from</span> tensorflow.keras <span style="color: #859900;">import</span> layers<span style="color: #757575;">,</span> losses<span style="color: #757575;">,</span> metrics<span style="color: #757575;">,</span> optimizers<span style="color: #757575;">,</span> models
+
+<span style="color: #268bd2;">X</span> = tf.random.uniform<span style="color: #757575;">(</span>[100<span style="color: #757575;">,</span> 1]<span style="color: #757575;">,</span> minval=1<span style="color: #757575;">,</span> maxval=10.0<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">Y</span> = tf.<span style="color: #839496;">pow</span><span style="color: #757575;">(</span>X<span style="color: #757575;">,</span> 2<span style="color: #757575;">)</span>
+
+tf.keras.backend.clear_session<span style="color: #757575;">()</span>
+
+<span style="color: #268bd2;">model</span> = models.Sequential<span style="color: #757575;">()</span>
+model.add<span style="color: #757575;">(</span>layers.Dense<span style="color: #757575;">(</span>100<span style="color: #757575;">,</span> input_shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,),</span> activation=<span style="color: #2aa198;">"relu"</span><span style="color: #757575;">))</span>
+model.add<span style="color: #757575;">(</span>layers.Dense<span style="color: #757575;">(</span>100<span style="color: #757575;">,</span> activation=<span style="color: #2aa198;">"relu"</span><span style="color: #757575;">))</span>
+model.add<span style="color: #757575;">(</span>layers.Dense<span style="color: #757575;">(</span>100<span style="color: #757575;">,</span> activation=<span style="color: #2aa198;">"relu"</span><span style="color: #757575;">))</span>
+model.add<span style="color: #757575;">(</span>layers.Dense<span style="color: #757575;">(</span>100<span style="color: #757575;">,</span> activation=<span style="color: #2aa198;">"relu"</span><span style="color: #757575;">))</span>
+model.add<span style="color: #757575;">(</span>layers.Dense<span style="color: #757575;">(</span>100<span style="color: #757575;">,</span> activation=<span style="color: #2aa198;">"relu"</span><span style="color: #757575;">))</span>
+model.add<span style="color: #757575;">(</span>layers.Dense<span style="color: #757575;">(</span>1<span style="color: #757575;">))</span>
+
+model.summary<span style="color: #757575;">()</span>
+
+model.<span style="color: #839496;">compile</span><span style="color: #757575;">(</span>optimizer=<span style="color: #2aa198;">"adam"</span><span style="color: #757575;">,</span> loss=<span style="color: #2aa198;">"mse"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">history</span> = model.fit<span style="color: #757575;">(</span>X<span style="color: #757575;">,</span> Y<span style="color: #757575;">,</span> batch_size=20<span style="color: #757575;">,</span> epochs=2000<span style="color: #757575;">,</span> verbose=0<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>model.predict<span style="color: #757575;">(</span>[2.0<span style="color: #757575;">,</span> 10.0<span style="color: #757575;">,</span> 20]<span style="color: #757575;">))</span>
+
+model.save<span style="color: #757575;">(</span><span style="color: #2aa198;">"/tmp/pow"</span><span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+Model: "sequential"
+<span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline">_</span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span>
+Layer (type)                 Output Shape              Param #   
+<code>===============================================================</code>
+dense (Dense)                (None, 100)               200       
+<span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline">_</span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span>
+dense_1 (Dense)              (None, 100)               10100     
+<span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline">_</span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span>
+dense_2 (Dense)              (None, 100)               10100     
+<span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline">_</span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span>
+dense_3 (Dense)              (None, 100)               10100     
+<span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline">_</span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span>
+dense_4 (Dense)              (None, 100)               10100     
+<span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline">_</span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span>
+dense_5 (Dense)              (None, 1)                 101       
+<code>===============================================================</code>
+Total params: 40,701
+Trainable params: 40,701
+Non-trainable params: 0
+<span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline"><span class="underline">_</span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span>
+[[  3.9891944]
+ [ 98.814255 ]
+ [251.58577  ]]
+</p>
+</div>
+</div>
+
+<div id="outline-container-org7bf8520" class="outline-3">
+<h3 id="org7bf8520"><span class="section-number-3">1.2</span> 动态范围量化</h3>
+<div class="outline-text-3" id="text-1-2">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> tensorflow <span style="color: #859900;">as</span> tf
+
+<span style="color: #268bd2;">converter</span> = tf.lite.TFLiteConverter.from_saved_model<span style="color: #757575;">(</span><span style="color: #2aa198;">"/tmp/pow"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">converter.optimizations</span> = [tf.lite.Optimize.DEFAULT]
+<span style="color: #586e75;"># </span><span style="color: #586e75;">converter.optimizations = [tf.lite.Optimize.OPTIMIZE_FOR_SIZE]</span>
+
+<span style="color: #268bd2;">tflite</span> = converter.convert<span style="color: #757575;">()</span>
+<span style="color: #859900;">with</span> <span style="color: #839496;">open</span> <span style="color: #757575;">(</span><span style="color: #2aa198;">"/tmp/pow-q.tflite"</span><span style="color: #757575;">,</span><span style="color: #2aa198;">"wb"</span><span style="color: #757575;">)</span> <span style="color: #859900;">as</span> f:
+    f.write<span style="color: #757575;">(</span>tflite<span style="color: #757575;">)</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"size of tflite-q:"</span><span style="color: #757575;">,</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span>tflite<span style="color: #757575;">))</span>
+
+</pre>
+</div>
+
+<p>
+size of tflite-q: 46496
+</p>
+
+<ol class="org-ol">
+<li><p>
+node 的权重会进行量化, 但 node 的输入输出还是 float32, 但 node 在 eval 时实际上会把 input 量化后再用整型来计算, 提高计算速度, 而不是把 weight 还原成
+float32 后用 float32 来计算
+</p>
+
+<p>
+把 input 按照本次运行时的范围进行量化后再计算, 即是所谓的 "dynamic range
+quantization"
+</p></li>
+
+<li>bias 不会进行量化 (可能因为它的范围过大)</li>
+
+<li>不支持量化的 node 会跳过, 继续用 float32</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #b58900;">TfLiteStatus</span> <span style="color: #268bd2;">Eval</span><span style="color: #757575;">(</span><span style="color: #b58900;">TfLiteContext</span>* <span style="color: #268bd2;">context</span><span style="color: #757575;">,</span> <span style="color: #b58900;">TfLiteNode</span>* <span style="color: #268bd2;">node</span><span style="color: #757575;">)</span>
+  <span style="color: #859900;">const</span> <span style="color: #b58900;">TfLiteTensor</span>* <span style="color: #268bd2;">filter</span> = GetInput<span style="color: #757575;">(</span>context<span style="color: #757575;">,</span> node<span style="color: #757575;">,</span> kWeightsTensor<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">switch</span> <span style="color: #757575;">(</span>filter-&gt;type<span style="color: #757575;">)</span>
+    <span style="color: #859900;">case</span> kTfLiteFloat32:
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#27491;&#24120;&#30340;&#20840; float32 &#30340;&#36816;&#31639;</span>
+    <span style="color: #859900;">case</span> kTfLiteInt8:
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">wegiht &#20026; int8</span>
+      EvalQuantized&lt;kernel_type&gt;<span style="color: #757575;">(</span>context<span style="color: #757575;">,</span> node<span style="color: #757575;">,</span> params<span style="color: #757575;">,</span> data<span style="color: #757575;">,</span> input<span style="color: #757575;">,</span>
+                                 filter<span style="color: #757575;">,</span> bias<span style="color: #757575;">,</span> output<span style="color: #757575;">)</span>;
+
+<span style="color: #b58900;">TfLiteStatus</span> <span style="color: #268bd2;">EvalQuantized</span><span style="color: #757575;">(</span><span style="color: #b58900;">TfLiteContext</span>* <span style="color: #268bd2;">context</span><span style="color: #757575;">,</span> <span style="color: #b58900;">TfLiteNode</span>* <span style="color: #268bd2;">node</span><span style="color: #757575;">,</span>
+                           <span style="color: #b58900;">TfLiteFullyConnectedParams</span>* <span style="color: #268bd2;">params</span><span style="color: #757575;">,</span> <span style="color: #b58900;">OpData</span>* <span style="color: #268bd2;">data</span><span style="color: #757575;">,</span>
+                           <span style="color: #859900;">const</span> <span style="color: #b58900;">TfLiteTensor</span>* <span style="color: #268bd2;">input</span><span style="color: #757575;">,</span>
+                           <span style="color: #859900;">const</span> <span style="color: #b58900;">TfLiteTensor</span>* <span style="color: #268bd2;">filter</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">TfLiteTensor</span>* <span style="color: #268bd2;">bias</span><span style="color: #757575;">,</span>
+                           <span style="color: #b58900;">TfLiteTensor</span>* <span style="color: #268bd2;">output</span><span style="color: #757575;">)</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21160;&#24577;&#33539;&#22260;&#37327;&#21270;</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>input-&gt;type == kTfLiteFloat32<span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> EvalHybrid<span style="color: #757575;">(</span>context<span style="color: #757575;">,</span> node<span style="color: #757575;">,</span> params<span style="color: #757575;">,</span> data<span style="color: #757575;">,</span> input<span style="color: #757575;">,</span> filter<span style="color: #757575;">,</span> bias<span style="color: #757575;">,</span>
+                      input_quantized<span style="color: #757575;">,</span> scaling_factors<span style="color: #757575;">,</span> accum_scratch<span style="color: #757575;">,</span> row_sums<span style="color: #757575;">,</span>
+                      input_offsets<span style="color: #757575;">,</span> output<span style="color: #757575;">)</span>;      
+  <span style="color: #859900;">else</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20840;&#25972;&#25968;</span>
+    <span style="color: #268bd2; font-weight: bold;">reference_ops</span>::FullyConnected<span style="color: #757575;">(</span>
+        op_params<span style="color: #757575;">,</span> GetTensorShape<span style="color: #757575;">(</span>input<span style="color: #757575;">),</span> GetTensorData&lt;<span style="color: #b58900;">uint8_t</span>&gt;<span style="color: #757575;">(</span>input<span style="color: #757575;">),</span>
+        GetTensorShape<span style="color: #757575;">(</span>filter<span style="color: #757575;">),</span> GetTensorData&lt;<span style="color: #b58900;">uint8_t</span>&gt;<span style="color: #757575;">(</span>filter<span style="color: #757575;">),</span>
+        GetTensorShape<span style="color: #757575;">(</span>bias<span style="color: #757575;">),</span> GetTensorData&lt;<span style="color: #b58900;">int32_t</span>&gt;<span style="color: #757575;">(</span>bias<span style="color: #757575;">),</span>
+        GetTensorShape<span style="color: #757575;">(</span>output<span style="color: #757575;">),</span> GetTensorData&lt;<span style="color: #b58900;">uint8_t</span>&gt;<span style="color: #757575;">(</span>output<span style="color: #757575;">))</span>;
+
+
+<span style="color: #b58900;">TfLiteStatus</span> <span style="color: #268bd2;">EvalHybrid</span><span style="color: #757575;">(</span><span style="color: #b58900;">TfLiteContext</span>* <span style="color: #268bd2;">context</span><span style="color: #757575;">,</span> <span style="color: #b58900;">TfLiteNode</span>* <span style="color: #268bd2;">node</span><span style="color: #757575;">,</span>
+                        <span style="color: #b58900;">TfLiteFullyConnectedParams</span>* <span style="color: #268bd2;">params</span><span style="color: #757575;">,</span> <span style="color: #b58900;">OpData</span>* <span style="color: #268bd2;">data</span><span style="color: #757575;">,</span>
+                        <span style="color: #859900;">const</span> <span style="color: #b58900;">TfLiteTensor</span>* <span style="color: #268bd2;">input</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">TfLiteTensor</span>* <span style="color: #268bd2;">filter</span><span style="color: #757575;">,</span>
+                        <span style="color: #859900;">const</span> <span style="color: #b58900;">TfLiteTensor</span>* <span style="color: #268bd2;">bias</span><span style="color: #757575;">,</span> <span style="color: #b58900;">TfLiteTensor</span>* <span style="color: #268bd2;">input_quantized</span><span style="color: #757575;">,</span>
+                        <span style="color: #b58900;">TfLiteTensor</span>* <span style="color: #268bd2;">scaling_factors</span><span style="color: #757575;">,</span>
+                        <span style="color: #b58900;">TfLiteTensor</span>* <span style="color: #268bd2;">accum_scratch</span><span style="color: #757575;">,</span> <span style="color: #b58900;">TfLiteTensor</span>* <span style="color: #268bd2;">row_sums</span><span style="color: #757575;">,</span>
+                        <span style="color: #b58900;">TfLiteTensor</span>* <span style="color: #268bd2;">input_offsets</span><span style="color: #757575;">,</span> <span style="color: #b58900;">TfLiteTensor</span>* <span style="color: #268bd2;">output</span><span style="color: #757575;">)</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">Quantize input from float to uint8 + quantization params (scaling factor).</span>
+  <span style="color: #b58900;">float</span>* <span style="color: #268bd2;">scaling_factors_ptr</span> = GetTensorData&lt;<span style="color: #b58900;">float</span>&gt;<span style="color: #757575;">(</span>scaling_factors<span style="color: #757575;">)</span>;
+  <span style="color: #b58900;">int8_t</span>* <span style="color: #268bd2;">quant_data</span> = GetTensorData&lt;<span style="color: #b58900;">int8_t</span>&gt;<span style="color: #757575;">(</span>input_quantized<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">const</span> <span style="color: #b58900;">int8_t</span>* <span style="color: #268bd2;">filter_data</span> = GetTensorData&lt;<span style="color: #b58900;">int8_t</span>&gt;<span style="color: #757575;">(</span>filter<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">const</span> <span style="color: #b58900;">float</span>* <span style="color: #268bd2;">input_ptr</span> = GetTensorData&lt;<span style="color: #b58900;">float</span>&gt;<span style="color: #757575;">(</span>input<span style="color: #757575;">)</span>;
+  <span style="color: #268bd2; font-weight: bold;">tensor_utils</span>::BatchQuantizeFloats<span style="color: #757575;">(</span>
+    input_ptr<span style="color: #757575;">,</span> batch_size<span style="color: #757575;">,</span> input_size<span style="color: #757575;">,</span> quant_data<span style="color: #757575;">,</span> scaling_factors_ptr<span style="color: #757575;">,</span>
+    input_offset_ptr<span style="color: #757575;">,</span> params-&gt;asymmetric_quantize_inputs<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">b</span> = 0; b &lt; batch_size; ++b<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">Incorporate scaling of the filter.</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">!!! &#26368;&#32456;&#20351;&#29992;&#30340; scale &#26159; input_scale * filter_scale</span>
+    scaling_factors_ptr[b] *= filter-&gt;params.scale;
+  <span style="color: #757575;">}</span>
+
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">Compute output += weight * quantized_input</span>
+  <span style="color: #b58900;">int32_t</span>* <span style="color: #268bd2;">scratch</span> = GetTensorData&lt;<span style="color: #b58900;">int32_t</span>&gt;<span style="color: #757575;">(</span>accum_scratch<span style="color: #757575;">)</span>;
+  <span style="color: #268bd2; font-weight: bold;">tensor_utils</span>::MatrixBatchVectorMultiplyAccumulate<span style="color: #757575;">(</span>
+    filter_data<span style="color: #757575;">,</span> num_units<span style="color: #757575;">,</span> input_size<span style="color: #757575;">,</span> quant_data<span style="color: #757575;">,</span> scaling_factors_ptr<span style="color: #757575;">,</span>
+    batch_size<span style="color: #757575;">,</span> GetTensorData&lt;<span style="color: #b58900;">float</span>&gt;<span style="color: #757575;">(</span>output<span style="color: #757575;">),</span> <span style="color: #586e75;">/*</span><span style="color: #586e75;">per_channel_scale=</span><span style="color: #586e75;">*/</span><span style="color: #268bd2; font-weight: bold;">nullptr</span><span style="color: #757575;">,</span>
+    input_offset_ptr<span style="color: #757575;">,</span> scratch<span style="color: #757575;">,</span> row_sums_ptr<span style="color: #757575;">,</span> &amp;data-&gt;compute_row_sums<span style="color: #757575;">,</span>
+    <span style="color: #268bd2; font-weight: bold;">CpuBackendContext</span>::GetFromContext<span style="color: #757575;">(</span>context<span style="color: #757575;">))</span>;
+
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#26368;&#32456;&#30340; output &#26159; float</span>
+  <span style="color: #268bd2; font-weight: bold;">tensor_utils</span>::ApplyActivationToVector<span style="color: #757575;">(</span>
+    GetTensorData&lt;<span style="color: #b58900;">float</span>&gt;<span style="color: #757575;">(</span>output<span style="color: #757575;">),</span> batch_size * num_units<span style="color: #757575;">,</span> params-&gt;activation<span style="color: #757575;">,</span>
+    GetTensorData&lt;<span style="color: #b58900;">float</span>&gt;<span style="color: #757575;">(</span>output<span style="color: #757575;">))</span>;
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">&#30697;&#38453;&#36816;&#31639;&#26102;&#36755;&#20837;&#26159;&#20004;&#20010; int8 &#30340;&#30697;&#38453;, &#20294;&#36755;&#20986;&#30340;&#32467;&#26524;&#26159; float</span>
+<span style="color: #b58900;">void</span> <span style="color: #268bd2;">PortableMatrixBatchVectorMultiplyAccumulate</span><span style="color: #757575;">(</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">int8_t</span>* <span style="color: #268bd2;">__restrict__</span> matrix<span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">m_rows</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">m_cols</span><span style="color: #757575;">,</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">int8_t</span>* <span style="color: #268bd2;">__restrict__</span> vectors<span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">float</span>* <span style="color: #268bd2;">scaling_factors</span><span style="color: #757575;">,</span>
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">n_batch</span><span style="color: #757575;">,</span> <span style="color: #b58900;">float</span>* <span style="color: #268bd2;">__restrict__</span> result<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">batch</span> = 0; batch &lt; n_batch; ++batch<span style="color: #757575;">,</span> vectors += m_cols<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">const</span> <span style="color: #b58900;">float</span> <span style="color: #268bd2;">batch_scaling_factor</span> = scaling_factors[batch];
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">Get the address of the first row.</span>
+        <span style="color: #859900;">const</span> <span style="color: #b58900;">int8_t</span>* <span style="color: #268bd2;">row_ptr</span> = matrix;
+        <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">row</span> = 0; row &lt; m_rows; ++row<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">Initialize the dot product sum for the row to 0.</span>
+            <span style="color: #b58900;">int32_t</span> <span style="color: #268bd2;">dotprod</span> = 0;
+            <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">col</span> = 0; col &lt; m_cols; ++col<span style="color: #757575;">,</span> ++row_ptr<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+                dotprod += <span style="color: #757575;">(</span>*row_ptr<span style="color: #757575;">)</span> * <span style="color: #757575;">(</span>vectors[col]<span style="color: #757575;">)</span>;
+            <span style="color: #757575;">}</span>  <span style="color: #586e75;">// </span><span style="color: #586e75;">for col</span>
+            *result += dotprod * batch_scaling_factor;
+            ++result;
+        <span style="color: #757575;">}</span>  <span style="color: #586e75;">// </span><span style="color: #586e75;">for row</span>
+    <span style="color: #757575;">}</span>    <span style="color: #586e75;">// </span><span style="color: #586e75;">for batch</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org799d2d2" class="outline-3">
+<h3 id="org799d2d2"><span class="section-number-3">1.3</span> 全整数量化</h3>
+<div class="outline-text-3" id="text-1-3">
+<ul class="org-ul">
+<li>weight 的对称量化, 即 zero_point 为 0</li>
+<li>activation 是非对称量化</li>
+<li>zero_point 为整数</li>
+<li>tflite 的量化规范来自 <a href="gemmlowp_quantization.html#org3f4e311">Gemmlowp Quantization</a></li>
+</ul>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> tensorflow <span style="color: #859900;">as</span> tf
+
+<span style="color: #268bd2;">converter</span> = tf.lite.TFLiteConverter.from_saved_model<span style="color: #757575;">(</span><span style="color: #2aa198;">"/tmp/pow"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">X</span> = tf.random.uniform<span style="color: #757575;">(</span>[100<span style="color: #757575;">,</span> 1]<span style="color: #757575;">,</span> minval=1<span style="color: #757575;">,</span> maxval=10.0<span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">representative_dataset_gen</span><span style="color: #757575;">()</span>:
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>10<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">yield</span> [[X[i]]]
+
+
+<span style="color: #268bd2;">converter.representative_dataset</span> = representative_dataset_gen
+
+<span style="color: #268bd2;">converter.optimizations</span> = [tf.lite.Optimize.DEFAULT]
+<span style="color: #268bd2;">converter.target_spec.supported_ops</span> = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+
+<span style="color: #268bd2;">tflite</span> = converter.convert<span style="color: #757575;">()</span>
+<span style="color: #859900;">with</span> <span style="color: #839496;">open</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"/tmp/pow-q.tflite"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"wb"</span><span style="color: #757575;">)</span> <span style="color: #859900;">as</span> f:
+    f.write<span style="color: #757575;">(</span>tflite<span style="color: #757575;">)</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"size of tflite-q:"</span><span style="color: #757575;">,</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span>tflite<span style="color: #757575;">))</span>
+</pre>
+</div>
+
+<p>
+size of tflite-q: 46944
+</p>
+
+<ol class="org-ol">
+<li>所有数据, 包含模型的输入, 都会量化, 且所有 node 的输入输出都是 int8. 由于量化需要依据 (min, max), 针对模型输入, 需要提供一个 representative_dataset_gen,
+用来提供这一数据, 才能完成对 input 的量化</li>
+
+<li>全整数的量化需要 node 本身支持全整数运算, 否则量化过程会失败</li>
+</ol>
+
+
+<p>
+Q: 全量化时, 权重变为 int8 后结果会不会变得很大?
+</p>
+
+<p>
+A: 不会. 全量化时, 虽然 input 和 权重都是 int8 可以直接运算, 但运算后还是会根据
+   提前获得的量化参数 (scale, zero 或 multiplier, shift) 处理一下计算结果, 类似
+   于 dynamic range 量化时使用的 batch_scaling_factor
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #b58900;">void</span> <span style="color: #268bd2; font-weight: bold;">reference_integer_ops</span>::<span style="color: #268bd2;">FullyConnected</span><span style="color: #757575;">(</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">FullyConnectedParams</span>&amp; <span style="color: #268bd2;">params</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">RuntimeShape</span>&amp; <span style="color: #268bd2;">input_shape</span><span style="color: #757575;">,</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">int8_t</span>* <span style="color: #268bd2;">input_data</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">RuntimeShape</span>&amp; <span style="color: #268bd2;">filter_shape</span><span style="color: #757575;">,</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">int8_t</span>* <span style="color: #268bd2;">filter_data</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">RuntimeShape</span>&amp; <span style="color: #268bd2;">bias_shape</span><span style="color: #757575;">,</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">int32_t</span>* <span style="color: #268bd2;">bias_data</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">RuntimeShape</span>&amp; <span style="color: #268bd2;">output_shape</span><span style="color: #757575;">,</span>
+    <span style="color: #b58900;">int8_t</span>* <span style="color: #268bd2;">output_data</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">int32_t</span> <span style="color: #268bd2;">output_multiplier</span> = params.output_multiplier;
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">output_shift</span> = params.output_shift;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">b</span> = 0; b &lt; batches; ++b<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">out_c</span> = 0; out_c &lt; output_depth; ++out_c<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            <span style="color: #b58900;">int32_t</span> <span style="color: #268bd2;">acc</span> = 0;
+            <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">d</span> = 0; d &lt; accum_depth; ++d<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+                <span style="color: #b58900;">int32_t</span> <span style="color: #268bd2;">input_val</span> = input_data[b * accum_depth + d];
+                <span style="color: #b58900;">int32_t</span> <span style="color: #268bd2;">filter_val</span> = filter_data[out_c * accum_depth + d];
+                acc +=
+                    <span style="color: #757575;">(</span>filter_val + filter_offset<span style="color: #757575;">)</span> * <span style="color: #757575;">(</span>input_val + input_offset<span style="color: #757575;">)</span>;
+            <span style="color: #757575;">}</span>
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">!!! output_shift &#21644; output_multiplier &#21363;&#37327;&#21270;&#21442;&#25968;</span>
+            acc = MultiplyByQuantizedMultiplier<span style="color: #757575;">(</span>acc<span style="color: #757575;">,</span> output_multiplier<span style="color: #757575;">,</span>
+                                                output_shift<span style="color: #757575;">)</span>;
+            acc += output_offset;
+            output_data[out_c + output_depth * b] = <span style="color: #859900;">static_cast</span>&lt;<span style="color: #b58900;">int8_t</span>&gt;<span style="color: #757575;">(</span>acc<span style="color: #757575;">)</span>;
+        <span style="color: #757575;">}</span>
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org4f8dfc8" class="outline-3">
+<h3 id="org4f8dfc8"><span class="section-number-3">1.4</span> 量化误差过大</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+若权重或 activation 的范围特别不均匀, 可能会导致量化误差过大, 通过 batchnorm 看起来能缓解这一问题
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf42ee04" class="outline-3">
+<h3 id="orgf42ee04"><span class="section-number-3">1.5</span> 无法量化的操作</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+floor 是无法量化的 op, 所以下面的模型使用全整数量化时会失败
+</p>
+
+<pre class="example" id="org13e53fc">
+RuntimeError: Quantization not yet supported for op: FLOOR
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> tensorflow <span style="color: #859900;">as</span> tf
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">from</span> tensorflow <span style="color: #859900;">import</span> keras
+<span style="color: #859900;">from</span> tensorflow.keras <span style="color: #859900;">import</span> layers
+
+<span style="color: #268bd2;">n</span> = 100
+
+<span style="color: #268bd2;">X</span> = tf.random.uniform<span style="color: #757575;">(</span>[n<span style="color: #757575;">,</span> 1]<span style="color: #757575;">,</span> minval = 1<span style="color: #757575;">,</span> maxval = 10.<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">Y</span> = tf.<span style="color: #839496;">pow</span><span style="color: #757575;">(</span>X<span style="color: #757575;">,</span>2<span style="color: #757575;">)</span>
+
+tf.keras.backend.clear_session<span style="color: #757575;">()</span>
+
+<span style="color: #268bd2;">inputs</span> = keras.Input<span style="color: #757575;">(</span>shape = <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> <span style="color: #757575;">))</span>
+<span style="color: #268bd2;">dense</span> = layers.Dense<span style="color: #757575;">(</span>50<span style="color: #757575;">,</span> activation = <span style="color: #2aa198;">"relu"</span><span style="color: #757575;">)(</span>inputs<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">floor</span> = tf.floor<span style="color: #757575;">(</span>dense<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">outputs</span> = layers.Dense<span style="color: #757575;">(</span>1<span style="color: #757575;">)(</span>floor<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">model</span> = keras.Model<span style="color: #757575;">(</span>inputs<span style="color: #757575;">,</span> outputs<span style="color: #757575;">)</span>
+model.<span style="color: #839496;">compile</span><span style="color: #757575;">(</span>optimizer=<span style="color: #2aa198;">"adam"</span><span style="color: #757575;">,</span>loss=<span style="color: #2aa198;">"mse"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">history</span> = model.fit<span style="color: #757575;">(</span>X<span style="color: #757575;">,</span>Y<span style="color: #757575;">,</span>batch_size = 20<span style="color: #757575;">,</span>epochs = 50<span style="color: #757575;">,</span> verbose = 0<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">converter</span> = tf.lite.TFLiteConverter.from_keras_model<span style="color: #757575;">(</span>model<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">X</span> = tf.random.uniform<span style="color: #757575;">(</span>[100<span style="color: #757575;">,</span> 1]<span style="color: #757575;">,</span> minval=1<span style="color: #757575;">,</span> maxval=10.0<span style="color: #757575;">)</span>
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">representative_dataset_gen</span><span style="color: #757575;">()</span>:
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>10<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">yield</span> [[X[i]]]
+
+<span style="color: #268bd2;">converter.representative_dataset</span> = representative_dataset_gen
+<span style="color: #268bd2;">converter.optimizations</span> = [tf.lite.Optimize.DEFAULT]
+<span style="color: #268bd2;">converter.target_spec.supported_ops</span> = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+
+<span style="color: #268bd2;">tflite</span> = converter.convert<span style="color: #757575;">()</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

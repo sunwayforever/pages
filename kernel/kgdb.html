@@ -1,0 +1,458 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kgdb</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Kgdb</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgd01e52a">1. Kgdb</a>
+<ul>
+<li><a href="#orge565ff8">1.1. Kgdb On Bullhead</a>
+<ul>
+<li><a href="#orge8c4808">1.1.1. 制作 usb-uart debug cable</a></li>
+<li><a href="#orgdc2e9aa">1.1.2. patch kernel</a></li>
+<li><a href="#orgbb603f6">1.1.3. 修改 boot.img 中的 kernel cmdline</a></li>
+<li><a href="#org4921b07">1.1.4. patch gdb 以避免 `packet reply is too long` 的问题</a></li>
+<li><a href="#org9d8b2b8">1.1.5. 测试</a></li>
+<li><a href="#org276833b">1.1.6. notes</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+<div id="outline-container-orgd01e52a" class="outline-2">
+<h2 id="orgd01e52a"><span class="section-number-2">1</span> Kgdb</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-orge565ff8" class="outline-3">
+<h3 id="orge565ff8"><span class="section-number-3">1.1</span> Kgdb On Bullhead</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-orge8c4808" class="outline-4">
+<h4 id="orge8c4808"><span class="section-number-4">1.1.1</span> 制作 usb-uart debug cable</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+<a href="https://web.archive.org/web/20170418093647/https://pondof.fish/d/30">https://pondof.fish/d/30</a>
+主要的几点:
+</p>
+<ol class="org-ol">
+<li>需要 usb-ttl 的转换芯片</li>
+<li>需要一个 4节(TRRS) 的 3.5mm 耳机接口, TRRS 依次对应于 usb-ttl 的
+RX, TX, GND, VCC</li>
+</ol>
+</div>
+</div>
+<div id="outline-container-orgdc2e9aa" class="outline-4">
+<h4 id="orgdc2e9aa"><span class="section-number-4">1.1.2</span> patch kernel</h4>
+<div class="outline-text-4" id="text-1-1-2">
+</div>
+<div id="outline-container-orge7f9224" class="outline-5">
+<h5 id="orge7f9224"><span class="section-number-5">1.1.2.1</span> patch 串口驱动以支持 poll_get and poll_put</h5>
+<div class="outline-text-5" id="text-1-1-2-1">
+<ul class="org-ul">
+<li><p>
+msm_serial_hs_lite.c
+</p>
+<pre class="example" id="org9bd5d3c">
+diff --git a/drivers/tty/serial/msm_serial_hs_lite.c b/drivers/tty/serial/msm_serial_hs_lite.c
+index 87feac4ddc43..ae3a707e1ce2 100644
+--- a/drivers/tty/serial/msm_serial_hs_lite.c
++++ b/drivers/tty/serial/msm_serial_hs_lite.c
+@@ -821,6 +821,8 @@ static void msm_hsl_reset(struct uart_port *port)
+  msm_hsl_write(port, RESET_BREAK_INT, regmap[vid][UARTDM_CR]);
+  msm_hsl_write(port, RESET_CTS, regmap[vid][UARTDM_CR]);
+  msm_hsl_write(port, RFR_LOW, regmap[vid][UARTDM_CR]);
++	/* Disable DM modes */
++	msm_hsl_write(port, 0, regmap[vid][UARTDM_DMEN]);
+ }
+
+ static unsigned int msm_hsl_get_mctrl(struct uart_port *port)
+@@ -1355,6 +1357,136 @@ static void msm_hsl_power(struct uart_port *port, unsigned int state,
+  }
+ }
+
++#ifdef CONFIG_CONSOLE_POLL
++
++/* defines from msm_serial.h */
++#define UARTDM_DMEN_RX_SC_ENABLE BIT(5)
++#define UARTDM_DMEN_TX_SC_ENABLE BIT(4)
++
++#define UARTDM_RXFS_BUF_SHIFT	0x7
++#define UARTDM_RXFS_BUF_MASK	0x7
++
++static int msm_poll_init(struct uart_port *port)
++{
++	unsigned int vid;
++
++	vid = UART_TO_MSM(port)-&gt;ver_id;
++
++	/* Enable single character mode on RX FIFO */
++	/* A later patch from David Boyd suggests this causes problems... */
++	/*msm_hsl_write(port, UARTDM_DMEN_RX_SC_ENABLE, regmap[vid][UARTDM_DMEN]);*/
++
++	return 0;
++}
++
++static int msm_poll_get_char_dm(struct uart_port *port)
++{
++	int c;
++	static u32 slop;
++	static int count;
++	unsigned char *sp = (unsigned char *)&amp;slop;
++	unsigned int vid;
++
++	vid = UART_TO_MSM(port)-&gt;ver_id;
++
++	/* Check if a previous read had more than one char */
++	if (count) {
++		c = sp[sizeof(slop) - count];
++		count--;
++		/* Or if FIFO is empty */
++	} else if (!(msm_hsl_read(port, regmap[vid][UARTDM_SR]) &amp; UARTDM_SR_RXRDY_BMSK)) { /* bit 0  */
++		/*
++		 * If RX packing buffer has less than a word, force stale to
++		 * push contents into RX FIFO
++		 */
++		count = msm_hsl_read(port, regmap[vid][UARTDM_RXFS]);
++
++		count = (count &gt;&gt; UARTDM_RXFS_BUF_SHIFT) &amp; UARTDM_RXFS_BUF_MASK;
++		if (count) {
++			msm_hsl_write(port, FORCE_STALE_EVENT, regmap[vid][UARTDM_CR]);
++			slop = msm_hsl_read(port, regmap[vid][UARTDM_RF]);
++			c = sp[0];
++			count--;
++
++			msm_hsl_write(port, RESET_STALE_INT, regmap[vid][UARTDM_CR]);
++			msm_hsl_write(port, 0xFF, regmap[vid][UARTDM_DMRX]);
++			msm_hsl_write(port, STALE_EVENT_ENABLE, regmap[vid][UARTDM_CR]);
++
++		} else {
++			c = NO_POLL_CHAR;
++		}
++		/* FIFO has a word */
++	} else {
++		slop = msm_hsl_read(port, regmap[vid][UARTDM_RF]);
++		c = sp[0];
++		count = sizeof(slop) - 1;
++	}
++	return c;
++}
++
++
++static int msm_poll_get_char(struct uart_port *port)
++{
++	u32 imr;
++	int c;
++	unsigned int vid;
++
++	vid = UART_TO_MSM(port)-&gt;ver_id;
++
++	/* Disable all interrupts */
++	imr = msm_hsl_read(port, regmap[vid][UARTDM_IMR]);
++	msm_hsl_write(port, 0, regmap[vid][UARTDM_IMR]);
++
++
++	c = msm_poll_get_char_dm(port);
++
++
++	/* Enable interrupts */
++	msm_hsl_write(port, imr, regmap[vid][UARTDM_IMR]);
++	return c;
++}
++
++static void reset_dm_count(struct uart_port *port, int count)
++{
++	unsigned int vid;
++
++	vid = UART_TO_MSM(port)-&gt;ver_id;
++
++	wait_for_xmitr(port);
++	msm_hsl_write(port, count, regmap[vid][UARTDM_NCF_TX]);
++	msm_hsl_read(port, regmap[vid][UARTDM_NCF_TX]);
++}
++
++static void msm_poll_put_char(struct uart_port *port, unsigned char c)
++{
++	u32 imr;
++	unsigned int vid;
++
++	vid = UART_TO_MSM(port)-&gt;ver_id;
++
++	/* Disable all interrupts */
++	imr = msm_hsl_read(port, regmap[vid][UARTDM_IMR]);
++	msm_hsl_write(port, 0, regmap[vid][UARTDM_IMR]);
++
++	/*if (msm_port-&gt;is_uartdm)*/
++	reset_dm_count(port, 1);
++
++	/* Wait until FIFO is empty */
++	while (!(msm_hsl_read(port, regmap[vid][UARTDM_SR]) &amp; UARTDM_SR_TXRDY_BMSK))
++		cpu_relax();
++
++	/* Write a character */
++	msm_hsl_write(port, c, regmap[vid][UARTDM_TF]);
++
++	/* Wait until FIFO is empty */
++	while (!(msm_hsl_read(port, regmap[vid][UARTDM_SR]) &amp; UARTDM_SR_TXRDY_BMSK))
++		cpu_relax();
++
++	/* Enable interrupts */
++	msm_hsl_write(port, imr, regmap[vid][UARTDM_IMR]);
++	return;
++}
++#endif
+ static struct uart_ops msm_hsl_uart_pops = {
+  .tx_empty = msm_hsl_tx_empty,
+  .set_mctrl = msm_hsl_set_mctrl,
+@@ -1373,6 +1505,11 @@ static struct uart_ops msm_hsl_uart_pops = {
+  .config_port = msm_hsl_config_port,
+  .verify_port = msm_hsl_verify_port,
+  .pm = msm_hsl_power,
++	#ifdef CONFIG_CONSOLE_POLL
++	.poll_init = msm_poll_init,
++	.poll_get_char	= msm_poll_get_char,
++	.poll_put_char	= msm_poll_put_char,
++	#endif
+ };
+
+ static struct msm_hsl_port msm_hsl_uart_ports[] = {
+</pre></li>
+<li><p>
+kdboc.c
+</p>
+<pre class="example" id="org69cb548">
+diff --git a/drivers/tty/serial/kgdboc.c b/drivers/tty/serial/kgdboc.c
+index 10020547c60b..338c1ef7a9e8 100644
+--- a/drivers/tty/serial/kgdboc.c
++++ b/drivers/tty/serial/kgdboc.c
+@@ -29,6 +29,7 @@ static struct kgdb_io		kgdboc_io_ops;
+ static int configured		= -1;
+
+ static char config[MAX_CONFIG_LEN];
++static int config_retry_time = 0;
+ static struct kparam_string kps = {
+  .string			= config,
+  .maxlen			= MAX_CONFIG_LEN,
+@@ -152,7 +153,26 @@ static void cleanup_kgdboc(void)
+  if (configured == 1)
+   	  kgdb_unregister_io_module(&amp;kgdboc_io_ops);
+ }
++static int kgdbretry_option_setup(char *opt)
++{
++	if (strlen(opt) &gt; MAX_CONFIG_LEN) {
++		printk(KERN_ERR "kgdbretry: config string too long\n");
++		return -ENOSPC;
++	}
++	config_retry_time = simple_strtoul(opt, NULL, 10);
++	return 0;
++}
++
++__setup("kgdbretry=", kgdbretry_option_setup);
+
++static int configure_kgdboc(void);
++static void ttycheck_func(struct work_struct *work)
++{
++	config_retry_time = 0;
++	configure_kgdboc();
++}
++
++static DECLARE_DELAYED_WORK(ttycheck_work, ttycheck_func);
+ static int configure_kgdboc(void)
+ {
+  struct tty_driver *p;
+@@ -179,9 +199,16 @@ static int configure_kgdboc(void)
+   	  goto do_register;
+
+  p = tty_find_polling_driver(cptr, &amp;tty_line);
+-	if (!p)
++	if (!p) {
++		printk(KERN_INFO "kgdb will retry in %d secs\n", config_retry_time);
++		if (config_retry_time &gt; 0) {
++			INIT_DELAYED_WORK(&amp;ttycheck_work, ttycheck_func);
++			schedule_delayed_work(&amp;ttycheck_work, config_retry_time * HZ);
++			return -ENODEV;
++		}
+   	  goto noconfig;
+-
++	}
++                
+  cons = console_drivers;
+  while (cons) {
+   	  int idx;
+@@ -335,5 +362,6 @@ module_init(init_kgdboc);
+ module_exit(cleanup_kgdboc);
+ module_param_call(kgdboc, param_set_kgdboc_var, param_get_string, &amp;kps, 0644);
+ MODULE_PARM_DESC(kgdboc, "&lt;serial_device&gt;[,baud]");
++MODULE_PARM_DESC(kgdbretry, "&lt;delay in seconds&gt; before retrying tty");
+ MODULE_DESCRIPTION("KGDB Console TTY Driver");
+ MODULE_LICENSE("GPL");
+
+</pre></li>
+</ul>
+</div>
+</div>
+<div id="outline-container-org7a9d8a7" class="outline-5">
+<h5 id="org7a9d8a7"><span class="section-number-5">1.1.2.2</span> 修改 bullead_defconfig</h5>
+<div class="outline-text-5" id="text-1-1-2-2">
+<pre class="example" id="orgc9e873c">
+CONFIG_CMDLINE=" kgdboc=ttyHSL0,115200"
+CONFIG_CMDLINE_EXTEND=y
+# CONFIG_STRICT_MEMORY_RWX 需要关掉, 否则无法设置 soft breakpoint
+CONFIG_STRICT_MEMORY_RWX=n
+CONFIG_DEBUG_RODATA=n
+CONFIG_FRAME_POINTER=y
+CONFIG_DEBUG_KERNEL=y
+CONFIG_DEBUG_INFO=y
+CONFIG_HAVE_ARCH_KGDB=y
+CONFIG_KGDB=y
+CONFIG_KGDB_SERIAL_CONSOLE=y
+CONFIG_KALLSYMS=y
+# CONFIG_MSM_WATCHDOG_V2 需要关掉避免 watchdog 重启
+CONFIG_MSM_WATCHDOG_V2=n
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-orgbb603f6" class="outline-4">
+<h4 id="orgbb603f6"><span class="section-number-4">1.1.3</span> 修改 boot.img 中的 kernel cmdline</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<pre class="example" id="org0433c40">
+#&gt; abootimg -i out/target/product/bullhead/boot.img
+...
+* cmdline = console=ttyHSL0,115200,n8 androidboot.hardware=bullhead boot_cpus=0-5 lpm_levels.sleep_disabled=1 msm_poweroff.download_mode=0 buildvariant=userdebug
+...
+; 给 cmdline 加上一条: kgdboc=ttyHSL0,115200 kgdbretry=2
+#&gt; abootimg -u out/target/product/bullhead/boot.img -c 'cmdline=console=ttyHSL0,115200,n8 kgdboc=ttyHSL0,115200 kgdbretry=2 androidboot.hardware=bullhead boot_cpus=0-5 lpm_levels.sleep_disabled=1 msm_poweroff.download_mode=0 buildvariant=userdebug'
+</pre>
+</div>
+</div>
+<div id="outline-container-org4921b07" class="outline-4">
+<h4 id="org4921b07"><span class="section-number-4">1.1.4</span> patch gdb 以避免 `packet reply is too long` 的问题</h4>
+<div class="outline-text-4" id="text-1-1-4">
+<pre class="example" id="org86296bc">
+--- gdb-7.3.1-orign/gdb/remote.c    2011-07-15 10:04:29.000000000 +0800
++++ gdb-7.3.1/gdb/remote.c  2011-12-27 18:37:34.319902796 +0800
+@@ -5702,9 +5702,21 @@
+   buf_len = strlen (rs-&gt;buf);
+
+   /* Further sanity checks, with knowledge of the architecture.  */
++#if 0
+   if (buf_len &gt; 2 * rsa-&gt;sizeof_g_packet)
+     error (_("Remote 'g' packet reply is too long: %s"), rs-&gt;buf);
+-
++#endif
++  if (buf_len &gt; 2 * rsa-&gt;sizeof_g_packet) {
++     rsa-&gt;sizeof_g_packet = buf_len ;
++     for (i = 0; i &lt; gdbarch_num_regs (gdbarch); i++) {
++         if (rsa-&gt;regs[i].pnum == -1)
++             continue;
++         if (rsa-&gt;regs[i].offset &gt;= rsa-&gt;sizeof_g_packet)
++             rsa-&gt;regs[i].in_g_packet = 0;
++         else
++             rsa-&gt;regs[i].in_g_packet = 1;
++     }    
++  }
+   /* Save the size of the packet sent to us by the target.  It is used
+      as a heuristic when determining the max size of packets that the
+      target can safely receive.  */
+</pre>
+<p>
+patch 后使用 `./configure &#x2013;target=aarch64-linux-gnu` 来编译 gdb
+</p>
+</div>
+</div>
+<div id="outline-container-org9d8b2b8" class="outline-4">
+<h4 id="org9d8b2b8"><span class="section-number-4">1.1.5</span> 测试</h4>
+<div class="outline-text-4" id="text-1-1-5">
+<pre class="example" id="org8d5f076">
+#&gt; adb root
+#&gt; adb shell 'echo -n g &gt; /proc/sysrq-trigger'
+// sysrq 会阻塞, 需要在新的 shell 中执行 gdb
+#&gt; sudo /usr/local/bin/aarch64-linux-gnu-gdb kernel/vmlinux
+(gdb) target remote /dev/ttyUSB0
+Remote debugging using /dev/ttyUSB0
+arch_kgdb_breakpoint () at /home/wei.sun/source/aosp-7.1/kernel/arch/arm64/include/asm/kgdb.h:32
+32              asm ("brk %0" : : "I" (KDBG_COMPILED_DBG_BRK_IMM));
+(gdb) b vfs_read
+Breakpoint 1 at 0xffffffc00018ba94: file fs/read_write.c, line 374.
+(gdb) c
+Continuing.
+[Switching to Thread 333]
+
+Thread 261 hit Breakpoint 1, vfs_read (file=0xffffffc06c225d00, buf=0x709f3be204 "&lt;3&gt;[   34.003496] pn548_dev_read: no more interrupt after 2000ms (0)!", count=4067, pos=0xffffffc06a143ec0)
+    at fs/read_write.c:374
+374     {
+(gdb)
+</pre>
+</div>
+</div>
+<div id="outline-container-org276833b" class="outline-4">
+<h4 id="org276833b"><span class="section-number-4">1.1.6</span> notes</h4>
+<div class="outline-text-4" id="text-1-1-6">
+<ol class="org-ol">
+<li>不要同时使用 minicom 和 kgdb 操作串口, 除非使用 agent-proxy</li>
+<li>相关链接
+<a href="https://web.archive.org/web/20170418093724/https://gist.github.com/jduck/caf1eddcd4c9ac27d818">https://gist.github.com/jduck/caf1eddcd4c9ac27d818</a>
+<a href="https://web.archive.org/web/20170418094158/http://tinylab.org/kgdb-debugging-kernel/">http://tinylab.org/kgdb-debugging-kernel/</a>
+<a href="https://web.archive.org/web/20170418094344/http://stackoverflow.com/questions/6697754/android-kernel-debugging">http://stackoverflow.com/questions/6697754/android-kernel-debugging</a>
+<a href="https://github.com/ctxis/kgdb-android/tree/master/drivers/tty">https://github.com/ctxis/kgdb-android/tree/master/drivers/tty</a>
+<a href="https://web.archive.org/web/20170418094451/http://mathslinux.org/?p=130">http://mathslinux.org/?p=130</a>
+<a href="https://web.archive.org/web/20170418094533/https://sourceware.org/bugzilla/show_bug.cgi?id=13984">https://sourceware.org/bugzilla/show_bug.cgi?id=13984</a></li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

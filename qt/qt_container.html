@@ -1,0 +1,538 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Qt Container</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Qt Container</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org79f00b1">1. Qt Container</a>
+<ul>
+<li><a href="#org3c6a055">1.1. Overview</a>
+<ul>
+<li><a href="#org48596ed">1.1.1. shadow copy</a></li>
+<li><a href="#org2f79ef5">1.1.2. copy on write</a></li>
+</ul>
+</li>
+<li><a href="#org9c7460d">1.2. shadow copy</a>
+<ul>
+<li><a href="#org298b7bc">1.2.1. setSharable</a></li>
+</ul>
+</li>
+<li><a href="#orgf039314">1.3. copy on write</a>
+<ul>
+<li><a href="#org72d817f">1.3.1. removeLast</a></li>
+<li><a href="#org9f3a748">1.3.2. operatror []</a></li>
+</ul>
+</li>
+<li><a href="#org2b93096">1.4. detach 导致的问题</a>
+<ul>
+<li><a href="#orga243f14">1.4.1. 隐含的 detach</a></li>
+<li><a href="#orga0f55a1">1.4.2. 修改的不一致</a></li>
+</ul>
+</li>
+<li><a href="#orgb2abfd5">1.5. foreach</a>
+<ul>
+<li><a href="#org4095bc0">1.5.1. foreach 宏会隐式的在 data 的 copy 上迭代:</a></li>
+<li><a href="#org0a50eb3">1.5.2. foreach 在 data 的 const copy 上迭代</a></li>
+</ul>
+</li>
+<li><a href="#orge15b135">1.6. c++ range-based for loop</a></li>
+<li><a href="#org91aa57e">1.7. foreach 与 for(;) 的比较</a></li>
+<li><a href="#org6c12fff">1.8. Recap</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org79f00b1" class="outline-2">
+<h2 id="org79f00b1"><span class="section-number-2">1</span> Qt Container</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org3c6a055" class="outline-3">
+<h3 id="org3c6a055"><span class="section-number-3">1.1</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+Qt 的 container 与 Rust Box 类似, 它们本身只是一个 wrapper, 真正的数据是在堆上分配的.
+</p>
+
+<p>
+这种 wrapper 有两个好处:
+</p>
+
+<ol class="org-ol">
+<li>shadow copy, 复制一个 container 的开销很小</li>
+<li>copy on write, 只在需要的时候才 copy 堆上的数据</li>
+</ol>
+
+<p>
+每种 container 底层都有一个 XxxData 代表堆上数据, 同时包含引用计数负责堆上数据的释放, 另外, 对于所有可能修改堆上数据的操作, 都会通过 detach 触发 copy on write
+</p>
+</div>
+
+<div id="outline-container-org48596ed" class="outline-4">
+<h4 id="org48596ed"><span class="section-number-4">1.1.1</span> shadow copy</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #586e75;">// </span><span style="color: #586e75;">case 1:</span>
+<span style="color: #b58900;">QVector</span>&lt;<span style="color: #b58900;">int</span>&gt; <span style="color: #268bd2;">data</span> <span style="color: #757575;">{</span>1<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 3<span style="color: #757575;">}</span>;
+<span style="color: #859900;">auto</span> <span style="color: #268bd2;">data2</span> = data;
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">case 2:</span>
+<span style="color: #b58900;">QVector</span>&lt;<span style="color: #b58900;">int</span>&gt; <span style="color: #268bd2;">getData</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">return</span> <span style="color: #b58900;">QVector</span>&lt;<span style="color: #b58900;">int</span>&gt; <span style="color: #757575;">{</span>1<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 3<span style="color: #757575;">}</span>;
+<span style="color: #757575;">}</span>
+<span style="color: #859900;">auto</span> <span style="color: #268bd2;">data</span> = getData<span style="color: #757575;">()</span>;
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">case 3:</span>
+<span style="color: #b58900;">void</span> <span style="color: #268bd2;">check</span><span style="color: #757575;">(</span><span style="color: #b58900;">QVector</span>&lt;<span style="color: #b58900;">int</span>&gt; <span style="color: #268bd2;">data</span><span style="color: #757575;">)</span> <span style="color: #757575;">{}</span>
+check<span style="color: #757575;">(</span><span style="color: #b58900;">QVector</span>&lt;<span style="color: #b58900;">int</span>&gt; <span style="color: #757575;">{</span>1<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 3<span style="color: #757575;">})</span>
+</pre>
+</div>
+
+<p>
+上面三种情况下, data 都是 shadow copy, 其底层的 QTypedArrayData 会指向相同的堆上数据 
+</p>
+
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #b58900;">QVector</span>&lt;<span style="color: #b58900;">int</span>&gt; <span style="color: #268bd2;">data</span> <span style="color: #757575;">{</span>1<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 3<span style="color: #757575;">}</span>;
+printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%p\n"</span><span style="color: #757575;">,</span> &amp;data[0]<span style="color: #757575;">)</span>;
+
+<span style="color: #859900;">const</span> <span style="color: #859900;">auto</span> <span style="color: #268bd2;">data2</span> = data;
+printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%p\n"</span><span style="color: #757575;">,</span> &amp;data2[0]<span style="color: #757575;">)</span>;
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">&#36755;&#20986;&#20026;:</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x1191e68</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x1191e68</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org2f79ef5" class="outline-4">
+<h4 id="org2f79ef5"><span class="section-number-4">1.1.2</span> copy on write</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">QVector</span>&lt;<span style="color: #b58900;">int</span>&gt; <span style="color: #268bd2;">data</span> <span style="color: #757575;">{</span>1<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 3<span style="color: #757575;">}</span>;
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%p\n"</span><span style="color: #757575;">,</span> &amp;data[0]<span style="color: #757575;">)</span>;
+
+    <span style="color: #859900;">auto</span> <span style="color: #268bd2;">data2</span> = data;
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%p\n"</span><span style="color: #757575;">,</span> &amp;data2[0]<span style="color: #757575;">)</span>;
+
+    <span style="color: #859900;">return</span> 0;
+<span style="color: #757575;">}</span>
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">&#36755;&#20986;&#20026;:</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x1219e68</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x1219e98</span>
+</pre>
+</div>
+
+<p>
+虽然 data2 并没有显式的修改数据, 但从 qt 看来, 还是有可能发生潜在的 write:
+因为 data2 通过 operator[] 返回了堆上数据的引用, 为了防止代码在别处修改这个引用的数据导致的 write, qt 会针对非 const 的 operator[] 进行 copy
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org9c7460d" class="outline-3">
+<h3 id="org9c7460d"><span class="section-number-3">1.2</span> shadow copy</h3>
+<div class="outline-text-3" id="text-1-2">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #859900;">template</span> &lt;<span style="color: #859900;">typename</span> <span style="color: #b58900;">T</span>&gt;
+<span style="color: #859900;">inline</span> <span style="color: #268bd2; font-weight: bold;">QVector</span>&lt;<span style="color: #b58900;">T</span>&gt;::<span style="color: #268bd2;">QVector</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">QVector</span>&lt;<span style="color: #b58900;">T</span>&gt; &amp;<span style="color: #268bd2;">v</span><span style="color: #757575;">)</span>
+<span style="color: #757575;">{</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509; ref() &#20026; true, &#34920;&#31034; v &#26159; shareable &#30340;, &#21017;&#36890;&#36807;</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">ref() inc &#24341;&#29992;&#35745;&#25968;&#21518;, &#30452;&#25509;&#35753; this.d = v.d &#21363;&#21487;,</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20854;&#20013; d &#21363;&#22534;&#19978;&#30340; QTypedArrayData</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>v.d-&gt;ref.ref<span style="color: #757575;">())</span> <span style="color: #757575;">{</span>
+        d = v.d;
+    <span style="color: #757575;">}</span> <span style="color: #859900;">else</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>v.d-&gt;capacityReserved<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            d = <span style="color: #268bd2; font-weight: bold;">Data</span>::allocate<span style="color: #757575;">(</span>v.d-&gt;alloc<span style="color: #757575;">)</span>;
+            Q_CHECK_PTR<span style="color: #757575;">(</span>d<span style="color: #757575;">)</span>;
+            d-&gt;capacityReserved = <span style="color: #268bd2; font-weight: bold;">true</span>;
+        <span style="color: #757575;">}</span> <span style="color: #859900;">else</span> <span style="color: #757575;">{</span>
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">d &#26159;&#22312;&#22534;&#19978;&#20998;&#37197;&#30340;</span>
+            d = <span style="color: #268bd2; font-weight: bold;">Data</span>::allocate<span style="color: #757575;">(</span>v.d-&gt;size<span style="color: #757575;">)</span>;
+            Q_CHECK_PTR<span style="color: #757575;">(</span>d<span style="color: #757575;">)</span>;
+        <span style="color: #757575;">}</span>
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>d-&gt;alloc<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            copyConstruct<span style="color: #757575;">(</span>v.d-&gt;begin<span style="color: #757575;">(),</span> v.d-&gt;end<span style="color: #757575;">(),</span> d-&gt;begin<span style="color: #757575;">())</span>;
+            d-&gt;size = v.d-&gt;size;
+        <span style="color: #757575;">}</span>
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+shadow copy 是通过 RefCount 实现的, 和 c++ 的 shared_ptr 类似.
+</p>
+</div>
+
+<div id="outline-container-org298b7bc" class="outline-4">
+<h4 id="org298b7bc"><span class="section-number-4">1.2.1</span> setSharable</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+默认情况下 container 都是 shareable 的, 拷贝构造函数会是 shadow copy. 通过
+setSharable(false), 可以阻止这种行为.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgf039314" class="outline-3">
+<h3 id="orgf039314"><span class="section-number-3">1.3</span> copy on write</h3>
+<div class="outline-text-3" id="text-1-3">
+<ul class="org-ul">
+<li>根据 RefCount 决定是否需要通过 detach 进行 copy</li>
+
+<li>针对所有可能修改对象的方法进行 copy on write, 包括显式的 remove, insert 等操作,
+operator [] 也有可能导致 detach. 理论上, 所有非 const 方法都应该 detach</li>
+</ul>
+</div>
+
+<div id="outline-container-org72d817f" class="outline-4">
+<h4 id="org72d817f"><span class="section-number-4">1.3.1</span> removeLast</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #859900;">template</span> &lt;<span style="color: #859900;">typename</span> <span style="color: #b58900;">T</span>&gt;
+<span style="color: #b58900;">void</span> <span style="color: #268bd2; font-weight: bold;">QVector</span>&lt;<span style="color: #b58900;">T</span>&gt;::<span style="color: #268bd2;">removeLast</span><span style="color: #757575;">()</span>
+<span style="color: #757575;">{</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>d-&gt;ref.isShared<span style="color: #757575;">())</span>
+        detach<span style="color: #757575;">()</span>;
+    --d-&gt;size;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">QTypeInfo</span>&lt;<span style="color: #b58900;">T</span>&gt;::isComplex<span style="color: #757575;">)</span>
+        <span style="color: #757575;">(</span>d-&gt;data<span style="color: #757575;">()</span> + d-&gt;size<span style="color: #757575;">)</span>-&gt;~T<span style="color: #757575;">()</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+detach 会负责:
+</p>
+
+<ol class="org-ol">
+<li>将原始的 d deref, 即减小原来对象的引用计数</li>
+<li>通过 realloc 分配新的内存, 复制旧对象的所有数据(而非仅仅是修改的数据)</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org9f3a748" class="outline-4">
+<h4 id="org9f3a748"><span class="section-number-4">1.3.2</span> operatror []</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<p>
+operator [] 会导致 detach:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #859900;">inline</span> <span style="color: #b58900;">T</span> &amp;<span style="color: #268bd2; font-weight: bold;">QVector</span>&lt;<span style="color: #b58900;">T</span>&gt;::<span style="color: #859900;">operator</span><span style="color: #268bd2;">[]</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">i</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">return</span> data<span style="color: #757575;">()</span>[i];
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">inline</span> <span style="color: #b58900;">T</span> *<span style="color: #268bd2;">data</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span> detach<span style="color: #757575;">()</span>; <span style="color: #859900;">return</span> d-&gt;begin<span style="color: #757575;">()</span>; <span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+const operator [] 并不需要 detach:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #859900;">template</span> &lt;<span style="color: #859900;">typename</span> <span style="color: #b58900;">T</span>&gt;
+<span style="color: #859900;">inline</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">T</span> &amp;<span style="color: #268bd2; font-weight: bold;">QVector</span>&lt;<span style="color: #b58900;">T</span>&gt;::<span style="color: #859900;">operator</span><span style="color: #268bd2;">[]</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">i</span><span style="color: #757575;">)</span> <span style="color: #859900;">const</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">return</span> d-&gt;begin<span style="color: #757575;">()</span>[i];
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org2b93096" class="outline-3">
+<h3 id="org2b93096"><span class="section-number-3">1.4</span> detach 导致的问题</h3>
+<div class="outline-text-3" id="text-1-4">
+</div>
+<div id="outline-container-orga243f14" class="outline-4">
+<h4 id="orga243f14"><span class="section-number-4">1.4.1</span> 隐含的 detach</h4>
+<div class="outline-text-4" id="text-1-4-1">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">QVector</span>&lt;<span style="color: #b58900;">int</span>&gt; <span style="color: #268bd2;">data</span> <span style="color: #757575;">{</span>1<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 3<span style="color: #757575;">}</span>;
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%p\n"</span><span style="color: #757575;">,</span> &amp;data[0]<span style="color: #757575;">)</span>;
+
+    <span style="color: #859900;">auto</span> <span style="color: #268bd2;">dataCopy</span> = data;
+    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> &amp;<span style="color: #268bd2;">i</span> : dataCopy<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%p\n"</span><span style="color: #757575;">,</span> &amp;i<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">return</span> 0;
+<span style="color: #757575;">}</span>
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x14f3e68</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">-------</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x14f3e98</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x14f3e9c</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x14f3ea0</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">&#22240;&#20026; dataCopy &#36827;&#34892;&#36941;&#21382;&#26102;, &#38544;&#21547;&#30340;&#20351;&#29992;&#20102; dataCopy.begin() &#26041;&#27861;,</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">&#32780;&#38750; const &#30340; iterator &#20250;&#38544;&#21547;&#30528; detach</span>
+</pre>
+</div>
+
+<p>
+为避免隐含的 detach, 应尽量使用 const 对象
+</p>
+</div>
+</div>
+
+<div id="outline-container-orga0f55a1" class="outline-4">
+<h4 id="orga0f55a1"><span class="section-number-4">1.4.2</span> 修改的不一致</h4>
+<div class="outline-text-4" id="text-1-4-2">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #b58900;">QVector</span>&lt;<span style="color: #b58900;">int</span>&gt; <span style="color: #268bd2;">data</span><span style="color: #757575;">{</span>1<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 3<span style="color: #757575;">}</span>;
+<span style="color: #b58900;">int</span> &amp;<span style="color: #268bd2;">first</span> = data[0];
+
+<span style="color: #859900;">auto</span> <span style="color: #268bd2;">data2</span> = data;
+first = 2;
+
+<span style="color: #268bd2;">foreach</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">i</span><span style="color: #757575;">,</span> data2<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%d\n"</span><span style="color: #757575;">,</span> i<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">2</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">2</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">3</span>
+<span style="color: #586e75;">// </span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">&#34429;&#28982; data2 &#21487;&#20197;&#36879;&#26126;&#30340;&#30475;&#20316;&#26159; data &#30340; deep copy, &#20294;&#20854; data2[0] &#36824;&#26159;&#34987;&#20462;&#25913;&#20102;</span>
+</pre>
+</div>
+
+<p>
+之所以发生问题, 是因为 qt 无法针对 first = 2 这种操作自动 detach
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgb2abfd5" class="outline-3">
+<h3 id="orgb2abfd5"><span class="section-number-3">1.5</span> foreach</h3>
+<div class="outline-text-3" id="text-1-5">
+</div>
+<div id="outline-container-org4095bc0" class="outline-4">
+<h4 id="org4095bc0"><span class="section-number-4">1.5.1</span> foreach 宏会隐式的在 data 的 copy 上迭代:</h4>
+<div class="outline-text-4" id="text-1-5-1">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #b58900;">QVector</span>&lt;<span style="color: #b58900;">int</span>&gt; <span style="color: #268bd2;">data</span><span style="color: #757575;">{</span>1<span style="color: #757575;">,</span> 2<span style="color: #757575;">}</span>;
+data.reserve<span style="color: #757575;">(</span>100<span style="color: #757575;">)</span>;
+
+<span style="color: #859900;">for</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> &amp;<span style="color: #268bd2;">i</span> : data<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%p %d\n"</span><span style="color: #757575;">,</span> &amp;i<span style="color: #757575;">,</span> i<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"---\n"</span><span style="color: #757575;">)</span>;
+<span style="color: #586e75;">// </span><span style="color: #586e75;">foreach &#20250;&#38544;&#24335;&#22312; data &#30340; copy &#19978;&#36845;&#20195;</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">&#25152;&#20197; foreach &#37324;&#21487;&#20197;&#33258;&#30001;&#30340;&#20462;&#25913; data, &#32780;&#19988;&#20462;&#25913;&#20250;&#23548;&#33268; detach</span>
+<span style="color: #268bd2;">foreach</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">i</span><span style="color: #757575;">,</span> data<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    data.insert<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> i<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">for</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> &amp;<span style="color: #268bd2;">i</span> : data<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%p %d\n"</span><span style="color: #757575;">,</span> &amp;i<span style="color: #757575;">,</span> i<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+
+printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"---\n"</span><span style="color: #757575;">)</span>;
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">range-based loop &#24182;&#19981;&#20250;&#23545; data &#20570; copy, &#26412;&#36136;&#19978;&#23427;&#26159;&#22522;&#20110; iterator &#30340;, &#23427;&#23545; data &#20462;&#25913;&#26159;&#19981;&#21487;&#39044;&#27979;&#30340;</span>
+<span style="color: #859900;">for</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> &amp;<span style="color: #268bd2;">i</span> : data<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    data.insert<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> i<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">for</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> &amp;<span style="color: #268bd2;">i</span> : data<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%p %d\n"</span><span style="color: #757575;">,</span> &amp;i<span style="color: #757575;">,</span> i<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0xd90438 1</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0xd9043c 2</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">---</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0xd79e68 2</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0xd79e6c 1</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0xd79e70 1</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0xd79e74 2</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">---</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0xd79e68 2</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0xd79e6c 2</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0xd79e70 2</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0xd79e74 2</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0xd79e78 2</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0xd79e7c 1</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0xd79e80 1</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0xd79e84 2</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0a50eb3" class="outline-4">
+<h4 id="org0a50eb3"><span class="section-number-4">1.5.2</span> foreach 在 data 的 const copy 上迭代</h4>
+<div class="outline-text-4" id="text-1-5-2">
+<p>
+由于 foreach 操作的实际是原数据的 copy, 所以修改 iterator 是没有意义的, 因此, 这里的 copy 实际上是 const copy
+</p>
+
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #268bd2;">foreach</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> &amp;<span style="color: #268bd2;">i</span><span style="color: #757575;">,</span> data<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    i += 1;
+<span style="color: #757575;">}</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">/home/ANT.AMAZON.COM/waysun/program/qt/5.14.0/gcc_64/include/QtCore/qglobal.h:1110:34: error: binding &#8216;const int&#8217; to reference of type &#8216;int&amp;&#8217; discards qualifiers</span>
+<span style="color: #586e75;">//      </span><span style="color: #586e75;">for (variable = *_container_.i; _container_.control; _container_.control = 0)</span>
+</pre>
+</div>
+
+<p>
+这里的 i 是 const int, 无法被修改
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orge15b135" class="outline-3">
+<h3 id="orge15b135"><span class="section-number-3">1.6</span> c++ range-based for loop</h3>
+<div class="outline-text-3" id="text-1-6">
+<p>
+range-based for 是通过 iterator 直接操作数据:
+</p>
+
+<ol class="org-ol">
+<li>不需要 copy</li>
+<li>可以修改 iterator</li>
+<li>不可以修改 container</li>
+<li>begin() 会隐含一个 detach</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #b58900;">QVector</span>&lt;<span style="color: #b58900;">int</span>&gt; <span style="color: #268bd2;">data</span><span style="color: #757575;">{</span>1<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 3<span style="color: #757575;">}</span>;
+<span style="color: #859900;">for</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> &amp;<span style="color: #268bd2;">i</span> : data<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%p %d\n"</span><span style="color: #757575;">,</span> &amp;i<span style="color: #757575;">,</span> i<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"---\n"</span><span style="color: #757575;">)</span>;
+<span style="color: #859900;">auto</span> <span style="color: #268bd2;">data2</span> = data;
+<span style="color: #859900;">for</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">int</span> &amp;<span style="color: #268bd2;">i</span> : qAsConst<span style="color: #757575;">(</span>data2<span style="color: #757575;">))</span> <span style="color: #757575;">{</span>
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%p %d\n"</span><span style="color: #757575;">,</span> &amp;i<span style="color: #757575;">,</span> i<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"---\n"</span><span style="color: #757575;">)</span>;
+<span style="color: #859900;">for</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> &amp;<span style="color: #268bd2;">i</span> : data2<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%p %d\n"</span><span style="color: #757575;">,</span> &amp;i<span style="color: #757575;">,</span> i<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"---\n"</span><span style="color: #757575;">)</span>;
+<span style="color: #859900;">for</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> &amp;<span style="color: #268bd2;">i</span> : data2<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    i += 1;
+<span style="color: #757575;">}</span>
+<span style="color: #859900;">for</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> &amp;<span style="color: #268bd2;">i</span> : data2<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%p %d\n"</span><span style="color: #757575;">,</span> &amp;i<span style="color: #757575;">,</span> i<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x65ee68 1</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x65ee6c 2</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x65ee70 3</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">---</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x65ee68 1</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x65ee6c 2</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x65ee70 3</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">---</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x65ee98 1</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x65ee9c 2</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x65eea0 3</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">---</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x65ee98 2</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x65ee9c 3</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">0x65eea0 4</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org91aa57e" class="outline-3">
+<h3 id="org91aa57e"><span class="section-number-3">1.7</span> foreach 与 for(;) 的比较</h3>
+<div class="outline-text-3" id="text-1-7">
+<ul class="org-ul">
+<li>foreach 会复制, 可以修改原 container, 由于使用了 const copy, 所以 iterator 不能修改, 但 iterator 也不会导致 detach</li>
+
+<li>ranged-based for 不复制, 不可以修改原 container, 由于使用了 iterator, 所以
+iterator 可以修改, 但 iterator 也会导致 detach</li>
+
+<li>foreach (QPair&lt;int,int&gt; p, list) 无法编译通过, 因为宏无法自理多余的 `,`</li>
+
+<li>foreach 隐含的复制行为, 可以会引起不注意的 bug</li>
+
+<li>for(;) 虽然会导致 detach, 但通过 qAsConst 可以避免</li>
+
+<li>foreach 已经 deprecated</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org6c12fff" class="outline-3">
+<h3 id="org6c12fff"><span class="section-number-3">1.8</span> Recap</h3>
+<div class="outline-text-3" id="text-1-8">
+<ul class="org-ul">
+<li>通过 setSharable 可以控制是否使用 implicit sharing</li>
+
+<li>由于 container 使用 RefCount 实现了 shadow copy 和 copy on write, 通常不再需要在堆上分配 Container, 直接在栈上分配即可. qt 保证了底层数据是在堆上分配的</li>
+
+<li>使用 const 对象或 qAsConst 避免隐含的 detach</li>
+
+<li>foreach 与 for(;) 的区别</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

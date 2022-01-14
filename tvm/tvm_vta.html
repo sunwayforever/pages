@@ -1,0 +1,1367 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TVM VTA</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">TVM VTA</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org9ac3d7e">1. <span class="done DONE">DONE</span> <span class="priority">[C]</span> TVM VTA</a>
+<ul>
+<li><a href="#org6a48d49">1.1. Overview</a></li>
+<li><a href="#org474518d">1.2. vta.build</a>
+<ul>
+<li><a href="#orgc0f4e7b">1.2.1. tir.add_lower_pass</a></li>
+<li><a href="#org7bc5e99">1.2.2. InjectALUIntrin</a></li>
+<li><a href="#orgab0f8af">1.2.3. Heterogeneous Execution</a></li>
+</ul>
+</li>
+<li><a href="#orga47796a">1.3. VTA Driver</a></li>
+<li><a href="#org79c1a08">1.4. MISC</a>
+<ul>
+<li><a href="#org8ceabcc">1.4.1. vta 与 opencl target 的区别</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org9ac3d7e" class="outline-2">
+<h2 id="org9ac3d7e"><span class="section-number-2">1</span> <span class="done DONE">DONE</span> <span class="priority">[C]</span> TVM VTA</h2>
+<div class="outline-text-2" id="text-1">
+<ul class="org-ul">
+<li>State "DONE"       from "TODO"       <span class="timestamp-wrapper"><span class="timestamp">[2021-09-13 一 16:06]</span></span></li>
+</ul>
+<p>
+<a href="https://arxiv.org/pdf/1807.04188.pdf">https://arxiv.org/pdf/1807.04188.pdf</a>
+</p>
+</div>
+
+<div id="outline-container-org6a48d49" class="outline-3">
+<h3 id="org6a48d49"><span class="section-number-3">1.1</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> os
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> te
+<span style="color: #859900;">import</span> vta
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+
+<span style="color: #268bd2;">env</span> = vta.get_env<span style="color: #757575;">()</span>
+
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> rpc
+<span style="color: #859900;">from</span> tvm.contrib <span style="color: #859900;">import</span> utils
+<span style="color: #859900;">from</span> vta.testing <span style="color: #859900;">import</span> simulator
+
+<span style="color: #268bd2;">remote</span> = rpc.LocalSession<span style="color: #757575;">()</span>
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">Output channel factor m - total 64 x 16 = 1024 output channels</span>
+<span style="color: #268bd2;">m</span> = 64
+<span style="color: #586e75;"># </span><span style="color: #586e75;">Batch factor o - total 1 x 1 = 1</span>
+<span style="color: #268bd2;">o</span> = 1
+<span style="color: #268bd2;">A</span> = te.placeholder<span style="color: #757575;">((</span>o<span style="color: #757575;">,</span> m<span style="color: #757575;">,</span> env.BATCH<span style="color: #757575;">,</span> env.BLOCK_OUT<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"A"</span><span style="color: #757575;">,</span> dtype=env.acc_dtype<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">B</span> = te.placeholder<span style="color: #757575;">((</span>o<span style="color: #757575;">,</span> m<span style="color: #757575;">,</span> env.BATCH<span style="color: #757575;">,</span> env.BLOCK_OUT<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"B"</span><span style="color: #757575;">,</span> dtype=env.acc_dtype<span style="color: #757575;">)</span>
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">A copy buffer</span>
+<span style="color: #268bd2;">A_buf</span> = te.compute<span style="color: #757575;">((</span>o<span style="color: #757575;">,</span> m<span style="color: #757575;">,</span> env.BATCH<span style="color: #757575;">,</span> env.BLOCK_OUT<span style="color: #757575;">),</span> <span style="color: #859900;">lambda</span> *i: A<span style="color: #757575;">(</span>*i<span style="color: #757575;">),</span> <span style="color: #2aa198;">"A_buf"</span><span style="color: #757575;">)</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">B copy buffer</span>
+<span style="color: #268bd2;">B_buf</span> = te.compute<span style="color: #757575;">((</span>o<span style="color: #757575;">,</span> m<span style="color: #757575;">,</span> env.BATCH<span style="color: #757575;">,</span> env.BLOCK_OUT<span style="color: #757575;">),</span> <span style="color: #859900;">lambda</span> *i: B<span style="color: #757575;">(</span>*i<span style="color: #757575;">),</span> <span style="color: #2aa198;">"B_buf"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">C_buf</span> = te.compute<span style="color: #757575;">(</span>
+    <span style="color: #757575;">(</span>o<span style="color: #757575;">,</span> m<span style="color: #757575;">,</span> env.BATCH<span style="color: #757575;">,</span> env.BLOCK_OUT<span style="color: #757575;">),</span>
+    <span style="color: #859900;">lambda</span> *i: A_buf<span style="color: #757575;">(</span>*i<span style="color: #757575;">)</span>.astype<span style="color: #757575;">(</span>env.acc_dtype<span style="color: #757575;">)</span> + B_buf<span style="color: #757575;">(</span>*i<span style="color: #757575;">)</span>.astype<span style="color: #757575;">(</span>env.acc_dtype<span style="color: #757575;">),</span>
+    name=<span style="color: #2aa198;">"C_buf"</span><span style="color: #757575;">,</span>
+<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">C</span> = te.compute<span style="color: #757575;">(</span>
+    <span style="color: #757575;">(</span>o<span style="color: #757575;">,</span> m<span style="color: #757575;">,</span> env.BATCH<span style="color: #757575;">,</span> env.BLOCK_OUT<span style="color: #757575;">),</span>
+    <span style="color: #859900;">lambda</span> *i: C_buf<span style="color: #757575;">(</span>*i<span style="color: #757575;">)</span>.astype<span style="color: #757575;">(</span>env.inp_dtype<span style="color: #757575;">),</span>
+    name=<span style="color: #2aa198;">"C"</span><span style="color: #757575;">,</span>
+<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">s</span> = te.create_schedule<span style="color: #757575;">(</span>C.op<span style="color: #757575;">)</span>
+
+s[A_buf].set_scope<span style="color: #757575;">(</span>env.acc_scope<span style="color: #757575;">)</span>
+s[B_buf].set_scope<span style="color: #757575;">(</span>env.acc_scope<span style="color: #757575;">)</span>
+s[C_buf].set_scope<span style="color: #757575;">(</span>env.acc_scope<span style="color: #757575;">)</span>
+
+s[A_buf].pragma<span style="color: #757575;">(</span>s[A_buf].op.axis[0]<span style="color: #757575;">,</span> env.dma_copy<span style="color: #757575;">)</span>
+s[B_buf].pragma<span style="color: #757575;">(</span>s[B_buf].op.axis[0]<span style="color: #757575;">,</span> env.dma_copy<span style="color: #757575;">)</span>
+s[C].pragma<span style="color: #757575;">(</span>s[C].op.axis[0]<span style="color: #757575;">,</span> env.dma_copy<span style="color: #757575;">)</span>
+
+s[C_buf].pragma<span style="color: #757575;">(</span>C_buf.op.axis[0]<span style="color: #757575;">,</span> env.alu<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>vta.lower<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B<span style="color: #757575;">,</span> C]<span style="color: #757575;">,</span> simple_mode=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">))</span>
+
+<span style="color: #268bd2;">my_vadd</span> = vta.build<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B<span style="color: #757575;">,</span> C]<span style="color: #757575;">,</span> <span style="color: #2aa198;">"ext_dev"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"llvm"</span><span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"my_vadd"</span><span style="color: #757575;">)</span>
+my_vadd.save<span style="color: #757575;">(</span><span style="color: #2aa198;">"/tmp/my_vadd.o"</span><span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+primfn(A_1: handle, B_1: handle, C_1: handle) -&gt; ()
+  attr = {"global_symbol": "main", "tir.noalias": True}
+  buffers = {C: Buffer(C_2: Pointer(int8), int8, [1, 64, 1, 16], []),
+             B: Buffer(B_2: Pointer(int32), int32, [1, 64, 1, 16], []),
+             A: Buffer(A_2: Pointer(int32), int32, [1, 64, 1, 16], [])}
+  buffer_map = {A_1: A, B_1: B, C_1: C} {
+  attr [IterVar(vta: int32, (nullptr), "ThreadIndex", "vta")] "coproc_scope" = 2 {
+    @tir.
+    @tir.
+    attr [IterVar(vta, (nullptr), "ThreadIndex", "vta")] "coproc_uop_scope" = "VTAPushALUOp" {
+      @tir.
+      @tir.vta.uop_push(1, 0, 0, 64, 0, 2, 0, 0, dtype=int32)
+      @tir.
+    }
+    @tir.vta.coproc_dep_push(2, 3, dtype=int32)
+  }
+  attr [IterVar(vta, (nullptr), "ThreadIndex", "vta")] "coproc_scope" = 3 {
+    @tir.vta.coproc_dep_pop(2, 3, dtype=int32)
+    @tir.
+  }
+  @tir.vta.coproc_sync(, dtype=int32)
+}
+</p>
+
+<div class="org-src-container">
+<pre class="src src-bash">objdump -dr /tmp/my_vadd.o |grep -A200 my_vadd_compute_<span style="color: #2aa198;">\&gt;</span>:
+</pre>
+</div>
+
+<p>
+0000000000000560 &lt;my_vadd_compute_&gt;:
+ 560:	41 57                	push   %r15
+ 562:	41 56                	push   %r14
+ 564:	53                   	push   %rbx
+ 565:	49 89 ce             	mov    %rcx,%r14
+ 568:	49 89 d7             	mov    %rdx,%r15
+ 56b:	48 89 fb             	mov    %rdi,%rbx
+ 56e:	ba 00 00 00 00       	mov    $0x0,%edx
+ 573:	b9 40 00 00 00       	mov    $0x40,%ecx
+ 578:	41 b8 01 00 00 00    	mov    $0x1,%r8d
+ 57e:	41 b9 40 00 00 00    	mov    $0x40,%r9d
+ 584:	6a 03                	pushq  $0x3
+ 586:	6a 00                	pushq  $0x0
+ 588:	6a 00                	pushq  $0x0
+ 58a:	6a 00                	pushq  $0x0
+ 58c:	6a 00                	pushq  $0x0
+ 58e:	6a 00                	pushq  $0x0
+ 590:	e8 00 00 00 00       	callq  595 &lt;my_vadd_compute_+0x35&gt;
+			591: R_X86_64_PLT32 VTALoadBuffer2D-0x4
+ 595:	48 83 c4 30          	add    $0x30,%rsp
+ 599:	48 89 df             	mov    %rbx,%rdi
+ 59c:	4c 89 fe             	mov    %r15,%rsi
+ 59f:	31 d2                	xor    %edx,%edx
+ 5a1:	b9 40 00 00 00       	mov    $0x40,%ecx
+ 5a6:	41 b8 01 00 00 00    	mov    $0x1,%r8d
+ 5ac:	41 b9 40 00 00 00    	mov    $0x40,%r9d
+ 5b2:	6a 03                	pushq  $0x3
+ 5b4:	6a 40                	pushq  $0x40
+ 5b6:	6a 00                	pushq  $0x0
+ 5b8:	6a 00                	pushq  $0x0
+ 5ba:	6a 00                	pushq  $0x0
+ 5bc:	6a 00                	pushq  $0x0
+ 5be:	e8 00 00 00 00       	callq  5c3 &lt;my_vadd_compute_+0x63&gt;
+			5bf: R_X86_64_PLT32 VTALoadBuffer2D-0x4
+ 5c3:	48 83 c4 30          	add    $0x30,%rsp
+ 5c7:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 5ce &lt;my_vadd_compute_+0x6e&gt;
+			5ca: R_X86_64_PC32 .bss+0x24
+ 5ce:	48 8d 35 6b 00 00 00 	lea    0x6b(%rip),%rsi        # 640 &lt;my_vadd_compute_+0xe0&gt;
+ 5d5:	31 d2                	xor    %edx,%edx
+ 5d7:	31 c9                	xor    %ecx,%ecx
+ 5d9:	e8 00 00 00 00       	callq  5de &lt;my_vadd_compute_+0x7e&gt;
+			5da: R_X86_64_PLT32 VTAPushALUOp-0x4
+ 5de:	85 c0                	test   %eax,%eax
+ 5e0:	75 56                	jne    638 &lt;my_vadd_compute_+0xd8&gt;
+ 5e2:	48 89 df             	mov    %rbx,%rdi
+ 5e5:	be 02 00 00 00       	mov    $0x2,%esi
+ 5ea:	ba 03 00 00 00       	mov    $0x3,%edx
+ 5ef:	e8 00 00 00 00       	callq  5f4 &lt;my_vadd_compute_+0x94&gt;
+			5f0: R_X86_64_PLT32 VTADepPush-0x4
+ 5f4:	48 89 df             	mov    %rbx,%rdi
+ 5f7:	be 02 00 00 00       	mov    $0x2,%esi
+ 5fc:	ba 03 00 00 00       	mov    $0x3,%edx
+ 601:	e8 00 00 00 00       	callq  606 &lt;my_vadd_compute_+0xa6&gt;
+			602: R_X86_64_PLT32 VTADepPop-0x4
+ 606:	48 89 df             	mov    %rbx,%rdi
+ 609:	31 f6                	xor    %esi,%esi
+ 60b:	ba 04 00 00 00       	mov    $0x4,%edx
+ 610:	4c 89 f1             	mov    %r14,%rcx
+ 613:	45 31 c0             	xor    %r8d,%r8d
+ 616:	41 b9 40 00 00 00    	mov    $0x40,%r9d
+ 61c:	6a 40                	pushq  $0x40
+ 61e:	6a 01                	pushq  $0x1
+ 620:	e8 00 00 00 00       	callq  625 &lt;my_vadd_compute_+0xc5&gt;
+			621: R_X86_64_PLT32 VTAStoreBuffer2D-0x4
+ 625:	48 83 c4 10          	add    $0x10,%rsp
+ 629:	48 89 df             	mov    %rbx,%rdi
+ 62c:	be 00 00 00 80       	mov    $0x80000000,%esi
+ 631:	e8 00 00 00 00       	callq  636 &lt;my_vadd_compute_+0xd6&gt;
+			632: R_X86_64_PLT32 VTASynchronize-0x4
+ 636:	31 c0                	xor    %eax,%eax
+ 638:	5b                   	pop    %rbx
+ 639:	41 5e                	pop    %r14
+ 63b:	41 5f                	pop    %r15
+ 63d:	c3                   	retq   
+ 63e:	90                   	nop
+ 63f:	90                   	nop
+ 640:	50                   	push   %rax
+ 641:	bf 40 00 00 00       	mov    $0x40,%edi
+ 646:	be 01 00 00 00       	mov    $0x1,%esi
+ 64b:	ba 01 00 00 00       	mov    $0x1,%edx
+ 650:	31 c9                	xor    %ecx,%ecx
+ 652:	e8 00 00 00 00       	callq  657 &lt;my_vadd_compute_+0xf7&gt;
+			653: R_X86_64_PLT32 VTAUopLoopBegin-0x4
+ 657:	bf 01 00 00 00       	mov    $0x1,%edi
+ 65c:	31 f6                	xor    %esi,%esi
+ 65e:	31 d2                	xor    %edx,%edx
+ 660:	b9 40 00 00 00       	mov    $0x40,%ecx
+ 665:	45 31 c0             	xor    %r8d,%r8d
+ 668:	41 b9 02 00 00 00    	mov    $0x2,%r9d
+ 66e:	6a 00                	pushq  $0x0
+ 670:	6a 00                	pushq  $0x0
+ 672:	e8 00 00 00 00       	callq  677 &lt;my_vadd_compute_+0x117&gt;
+			673: R_X86_64_PLT32 VTAUopPush-0x4
+ 677:	48 83 c4 10          	add    $0x10,%rsp
+ 67b:	e8 00 00 00 00       	callq  680 &lt;my_vadd_compute_+0x120&gt;
+			67c: R_X86_64_PLT32 VTAUopLoopEnd-0x4
+ 680:	31 c0                	xor    %eax,%eax
+ 682:	59                   	pop    %rcx
+ 683:	c3                   	retq   
+</p>
+</div>
+</div>
+
+<div id="outline-container-org474518d" class="outline-3">
+<h3 id="org474518d"><span class="section-number-3">1.2</span> vta.build</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-orgc0f4e7b" class="outline-4">
+<h4 id="orgc0f4e7b"><span class="section-number-4">1.2.1</span> tir.add_lower_pass</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+vta.build 是在 tvm.build 基础上通过 add_lower_pass 添加了一些自定义 pass, 根据
+tir stmt 的 pragma 可以生成新的对 tir 完成对 vta runtime 调用, vta.build 通过
+tir.add_lower_pass 添加的 pass 会在 <a href="tvm_build.html#orgf4ba107">LowerWithPassList</a> 时会被调用到
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">build</span><span style="color: #757575;">(</span>*args<span style="color: #757575;">,</span> **kwargs<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">pass_ctx</span> = tvm.transform.PassContext.current<span style="color: #757575;">()</span>
+    <span style="color: #859900;">with</span> build_config<span style="color: #757575;">()</span>:
+        <span style="color: #859900;">return</span> tvm.build<span style="color: #757575;">(</span>*args<span style="color: #757575;">,</span> **kwargs<span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">build_config</span><span style="color: #757575;">(</span>debug_flag=0<span style="color: #757575;">,</span> **kwargs<span style="color: #757575;">)</span>:
+    <span style="color: #2aa198;">"""Build a build config for VTA.</span>
+<span style="color: #2aa198;">    Example</span>
+<span style="color: #2aa198;">    --------</span>
+<span style="color: #2aa198;">    .. code-block:: python</span>
+
+<span style="color: #2aa198;">      # build a vta module.</span>
+<span style="color: #2aa198;">      with vta.build_config():</span>
+<span style="color: #2aa198;">          vta_module = tvm.build(s, ...)</span>
+<span style="color: #2aa198;">    """</span>
+    <span style="color: #268bd2;">env</span> = get_env<span style="color: #757575;">()</span>
+
+    <span style="color: #b58900;">@tvm.tir.transform.prim_func_pass</span><span style="color: #757575;">(</span>opt_level=0<span style="color: #757575;">)</span>
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">add_debug</span><span style="color: #757575;">(</span>f<span style="color: #757575;">,</span> *_<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">debug</span> = tvm.tir.call_extern<span style="color: #757575;">(</span>
+            <span style="color: #2aa198;">"int32"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"VTASetDebugMode"</span><span style="color: #757575;">,</span> env.dev.command_handle<span style="color: #757575;">,</span> debug_flag
+        <span style="color: #757575;">)</span>
+
+        <span style="color: #859900;">return</span> f.with_body<span style="color: #757575;">(</span>tvm.tir.stmt_seq<span style="color: #757575;">(</span>debug<span style="color: #757575;">,</span> f.body<span style="color: #757575;">))</span>
+
+    <span style="color: #268bd2;">pass_list</span> = [
+        <span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> transform.InjectConv2DTransposeSkip<span style="color: #757575;">()),</span>
+        <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> transform.InjectDMAIntrin<span style="color: #757575;">()),</span>
+        <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> transform.InjectSkipCopy<span style="color: #757575;">()),</span>
+        <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> transform.AnnotateALUCoProcScope<span style="color: #757575;">()),</span>
+        <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> tvm.tir.transform.LiftAttrScope<span style="color: #757575;">(</span><span style="color: #2aa198;">"coproc_uop_scope"</span><span style="color: #757575;">)),</span>
+        <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> transform.LiftAllocToScopeBegin<span style="color: #757575;">()),</span>
+        <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> tvm.tir.transform.LiftAttrScope<span style="color: #757575;">(</span><span style="color: #2aa198;">"coproc_scope"</span><span style="color: #757575;">)),</span>
+        <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> transform.InjectCoProcSync<span style="color: #757575;">()),</span>
+        <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> EarlyRewrite<span style="color: #757575;">()),</span>
+    ]
+    pass_list.append<span style="color: #757575;">((</span>2<span style="color: #757575;">,</span> transform.InjectALUIntrin<span style="color: #757575;">()))</span>
+    pass_list.append<span style="color: #757575;">((</span>3<span style="color: #757575;">,</span> tvm.tir.transform.LowerDeviceStorageAccessInfo<span style="color: #757575;">()))</span>
+    pass_list.append<span style="color: #757575;">((</span>3<span style="color: #757575;">,</span> transform.FoldUopLoop<span style="color: #757575;">()))</span>
+    pass_list.append<span style="color: #757575;">((</span>3<span style="color: #757575;">,</span> transform.CPUAccessRewrite<span style="color: #757575;">()))</span>
+    <span style="color: #268bd2;">config</span> = <span style="color: #757575;">{</span><span style="color: #2aa198;">"tir.add_lower_pass"</span>: pass_list<span style="color: #757575;">}</span>
+
+    <span style="color: #859900;">return</span> tvm.transform.PassContext<span style="color: #757575;">(</span>config=config<span style="color: #757575;">,</span> **kwargs<span style="color: #757575;">)</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org7bc5e99" class="outline-4">
+<h4 id="org7bc5e99"><span class="section-number-4">1.2.2</span> InjectALUIntrin</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<p>
+InjectALUIntrin 可以把 `alu` pragma 指示的 tir 替换成对 vta runtime 中
+VTAUopPush 等的调用
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">InjectALUIntrin</span><span style="color: #757575;">()</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">_ftransform</span><span style="color: #757575;">(</span>func<span style="color: #757575;">,</span> mod<span style="color: #757575;">,</span> ctx<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">env</span> = get_env<span style="color: #757575;">()</span>
+        <span style="color: #268bd2;">idxm</span> = tvm.tir.indexmod
+        <span style="color: #268bd2;">analyzer</span> = tvm.arith.Analyzer<span style="color: #757575;">()</span>
+
+        <span style="color: #859900;">def</span> <span style="color: #268bd2;">_do_fold</span><span style="color: #757575;">(</span>stmt<span style="color: #757575;">)</span>:
+            <span style="color: #586e75;"># </span><span style="color: #586e75;">...</span>
+            <span style="color: #586e75;"># </span><span style="color: #586e75;">the `alu` pragma</span>
+            <span style="color: #859900;">if</span> _match_pragma<span style="color: #757575;">(</span>stmt<span style="color: #757575;">,</span> <span style="color: #2aa198;">"alu"</span><span style="color: #757575;">)</span>:
+                <span style="color: #586e75;"># </span><span style="color: #586e75;">Get to the innermost loop body</span>
+                <span style="color: #268bd2;">loop_body</span> = stmt.body
+                <span style="color: #268bd2;">nest_size</span> = 0
+                <span style="color: #859900;">while</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>loop_body<span style="color: #757575;">,</span> tvm.tir.For<span style="color: #757575;">)</span>:
+                    <span style="color: #268bd2;">loop_body</span> = loop_body.body
+                    <span style="color: #268bd2;">nest_size</span> += 1
+                <span style="color: #586e75;"># </span><span style="color: #586e75;">...</span>
+                <span style="color: #859900;">if</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>loop_body.value<span style="color: #757575;">,</span> tvm.tir.Add<span style="color: #757575;">)</span>:
+                    <span style="color: #268bd2;">alu_opcode</span> = env.dev.ALU_OPCODE_ADD
+                    <span style="color: #268bd2;">lhs</span> = loop_body.value.a
+                    <span style="color: #268bd2;">rhs</span> = loop_body.value.b
+                <span style="color: #859900;">elif</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>loop_body.value<span style="color: #757575;">,</span> tvm.tir.Sub<span style="color: #757575;">)</span>:
+                    <span style="color: #268bd2;">alu_opcode</span> = env.dev.ALU_OPCODE_SUB
+                    <span style="color: #268bd2;">lhs</span> = loop_body.value.a
+                    <span style="color: #268bd2;">rhs</span> = loop_body.value.b
+                <span style="color: #859900;">elif</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>loop_body.value<span style="color: #757575;">,</span> tvm.tir.Mul<span style="color: #757575;">)</span>:
+                    <span style="color: #268bd2;">alu_opcode</span> = env.dev.ALU_OPCODE_MUL
+                    <span style="color: #268bd2;">lhs</span> = loop_body.value.a
+                    <span style="color: #268bd2;">rhs</span> = loop_body.value.b
+                <span style="color: #859900;">elif</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>loop_body.value<span style="color: #757575;">,</span> tvm.tir.Min<span style="color: #757575;">)</span>:
+                    <span style="color: #268bd2;">alu_opcode</span> = env.dev.ALU_OPCODE_MIN
+                    <span style="color: #268bd2;">lhs</span> = loop_body.value.a
+                    <span style="color: #268bd2;">rhs</span> = loop_body.value.b
+                <span style="color: #859900;">elif</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>loop_body.value<span style="color: #757575;">,</span> tvm.tir.Max<span style="color: #757575;">)</span>:
+                    <span style="color: #268bd2;">alu_opcode</span> = env.dev.ALU_OPCODE_MAX
+                    <span style="color: #268bd2;">lhs</span> = loop_body.value.a
+                    <span style="color: #268bd2;">rhs</span> = loop_body.value.b
+                <span style="color: #586e75;"># </span><span style="color: #586e75;">...</span>
+                <span style="color: #586e75;"># </span><span style="color: #586e75;">Insert ALU micro-ops</span>
+                <span style="color: #268bd2;">irb</span> = tvm.tir.ir_builder.create<span style="color: #757575;">()</span>
+                <span style="color: #859900;">for</span> idx<span style="color: #757575;">,</span> extent <span style="color: #859900;">in</span> <span style="color: #839496;">enumerate</span><span style="color: #757575;">(</span>extents<span style="color: #757575;">)</span>:
+                    irb.emit<span style="color: #757575;">(</span>
+                        tvm.tir.call_extern<span style="color: #757575;">(</span>
+                            <span style="color: #2aa198;">"int32"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"VTAUopLoopBegin"</span><span style="color: #757575;">,</span> extent<span style="color: #757575;">,</span> dst_coeff[idx]<span style="color: #757575;">,</span> src_coeff[idx]<span style="color: #757575;">,</span> 0
+                        <span style="color: #757575;">)</span>
+                    <span style="color: #757575;">)</span>
+                <span style="color: #268bd2;">use_imm</span> = <span style="color: #839496;">int</span><span style="color: #757575;">(</span>use_imm<span style="color: #757575;">)</span>
+                irb.emit<span style="color: #757575;">(</span>
+                    tvm.tir.call_intrin<span style="color: #757575;">(</span>
+                        <span style="color: #2aa198;">"int32"</span><span style="color: #757575;">,</span>
+                        <span style="color: #2aa198;">"tir.vta.uop_push"</span><span style="color: #757575;">,</span>
+                        1<span style="color: #757575;">,</span>
+                        0<span style="color: #757575;">,</span>
+                        dst_coeff[<span style="color: #839496;">len</span><span style="color: #757575;">(</span>dst_coeff<span style="color: #757575;">)</span> - 1]<span style="color: #757575;">,</span>
+                        src_coeff[<span style="color: #839496;">len</span><span style="color: #757575;">(</span>src_coeff<span style="color: #757575;">)</span> - 1]<span style="color: #757575;">,</span>
+                        0<span style="color: #757575;">,</span>
+                        alu_opcode<span style="color: #757575;">,</span>
+                        use_imm<span style="color: #757575;">,</span>
+                        imm_val<span style="color: #757575;">,</span>
+                    <span style="color: #757575;">)</span>
+                <span style="color: #757575;">)</span>
+                <span style="color: #859900;">for</span> extent <span style="color: #859900;">in</span> extents:
+                    irb.emit<span style="color: #757575;">(</span>tvm.tir.call_extern<span style="color: #757575;">(</span><span style="color: #2aa198;">"int32"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"VTAUopLoopEnd"</span><span style="color: #757575;">))</span>
+                <span style="color: #859900;">return</span> irb.get<span style="color: #757575;">()</span>
+            <span style="color: #859900;">return</span> stmt
+
+        <span style="color: #859900;">return</span> func.with_body<span style="color: #757575;">(</span>
+            tvm.tir.stmt_functor.ir_transform<span style="color: #757575;">(</span>func.body<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">,</span> _do_fold<span style="color: #757575;">,</span> [<span style="color: #2aa198;">"tir.AttrStmt"</span>]<span style="color: #757575;">)</span>
+        <span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">return</span> tvm.tir.transform.prim_func_pass<span style="color: #757575;">(</span>
+        _ftransform<span style="color: #757575;">,</span> opt_level=0<span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"tir.vta.InjectALUIntrin"</span>
+    <span style="color: #757575;">)</span>
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgab0f8af" class="outline-4">
+<h4 id="orgab0f8af"><span class="section-number-4">1.2.3</span> Heterogeneous Execution</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<p>
+通过把 relay 编译成 vta 和 cpu 混合的操作, 可以达到 cpu/vta 异构执行的目的
+</p>
+
+<p>
+relay.build 可以支持 vta:
+</p>
+
+<ol class="org-ol">
+<li><p>
+`tvm/vta/python/top` 中包含了针对 vta 的 topi 实现, 它会针对 `vta` 这个
+device 定义自己的 compute 和 schedule, 其中 schedule 里会向上面 te 的例子一样使用 pragma 标记 vta 支持的操作 (alu, copy_dma, GEMM 等)
+</p>
+
+<p>
+<a href="file:///home/sunway/source/tvm/vta/python/vta/top/op.py#org857a618">file:///home/sunway/source/tvm/vta/python/vta/top/op.py#org857a618</a>
+</p></li>
+
+<li><p>
+用户调用 relay.build 时需要通过 vta.build_config 引入 vta 自己的
+tir.add_lower_pass 来处理那些 pragma
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;"># </span><span style="color: #586e75;">env.target_host &#20026; llvm</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">env.target &#20026; ext_dev -keys=vta,cpu -device=vta -model=sim_1x16_i8w8a32_15_15_18_17</span>
+<span style="color: #859900;">with</span> vta.build_config<span style="color: #757575;">(</span>opt_level=3<span style="color: #757575;">,</span> disabled_pass=<span style="color: #757575;">{</span><span style="color: #2aa198;">"AlterOpLayout"</span><span style="color: #757575;">})</span>:
+    <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>
+        relay_prog<span style="color: #757575;">,</span> target=env.target<span style="color: #757575;">,</span> params=params<span style="color: #757575;">,</span> target_host=env.target_host
+    <span style="color: #757575;">)</span>
+</pre>
+</div></li>
+</ol>
+</div>
+
+<div id="outline-container-orgd180520" class="outline-5">
+<h5 id="orgd180520"><span class="section-number-5">1.2.3.1</span> graph_pack</h5>
+<div class="outline-text-5" id="text-1-2-3-1">
+<p>
+由于 vta 支持的操作非常少 (只支持整型的 mul,add,&#x2026;, 以及 dense 和 conv2d), 所以
+relay.build 时需要确定哪些 relay IR 需要由 vta 执行, vta 不支持的需要跑在 cpu 上.
+</p>
+
+<p>
+graph_pack 函数提供了两个功能:
+</p>
+
+<ol class="org-ol">
+<li>annotation, 通过 relay.annotation.on_device 修改 relay IR, 标记上哪些 relay
+IR 需要由 vta 执行 (on_device annotation 最终在 relay.build 由处理)</li>
+
+<li>graph_pack, 根据 vta 的配置对数据进行 reshape, 以便后续 schedule 时能应用
+tensorize</li>
+</ol>
+
+<p>
+但现在 graph_pack 的功能还有些问题:
+</p>
+
+<ol class="org-ol">
+<li>graph_pack 要求 shape[1] 必须为 cfactor 的倍数, shape[1] 对 conv2d 来说是
+NCHW 中的 C, 对 dense 来说是 output size, 这个限制非常大, 直接限制了网络的参数</li>
+
+<li>它认为 conv2d 一定是 NCHW 格式, 所以 tflite 的 conv2d <b>无法</b> 用 vta 来执行</li>
+
+<li>通过 (start_name, stop_name), (annot_start_name, annot_end_name) 参数来决定哪些 ir 需要处理, 但不太好用</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgf3e830b" class="outline-5">
+<h5 id="orgf3e830b"><span class="section-number-5">1.2.3.2</span> Example</h5>
+<div class="outline-text-5" id="text-1-2-3-2">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-09-08 18:19</span>
+<span style="color: #859900;">from</span> mxnet.gluon.model_zoo <span style="color: #859900;">import</span> vision
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> te
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> rpc<span style="color: #757575;">,</span> autotvm<span style="color: #757575;">,</span> relay
+<span style="color: #859900;">from</span> tvm.contrib <span style="color: #859900;">import</span> graph_executor<span style="color: #757575;">,</span> utils<span style="color: #757575;">,</span> download<span style="color: #757575;">,</span> graph_runtime
+<span style="color: #859900;">from</span> tvm.contrib.debugger <span style="color: #859900;">import</span> debug_executor
+<span style="color: #859900;">from</span> tvm.relay <span style="color: #859900;">import</span> transform
+
+<span style="color: #859900;">import</span> vta
+<span style="color: #859900;">from</span> vta.top <span style="color: #859900;">import</span> graph_pack
+
+<span style="color: #268bd2;">env</span> = vta.get_env<span style="color: #757575;">()</span>
+<span style="color: #268bd2;">target</span> = env.target
+
+<span style="color: #268bd2;">dtype_dict</span> = <span style="color: #757575;">{</span><span style="color: #2aa198;">"data"</span>: <span style="color: #2aa198;">"float32"</span><span style="color: #757575;">}</span>
+<span style="color: #268bd2;">shape_dict</span> = <span style="color: #757575;">{</span><span style="color: #2aa198;">"data"</span>: <span style="color: #757575;">(</span>env.BATCH<span style="color: #757575;">,</span> 3<span style="color: #757575;">,</span> 224<span style="color: #757575;">,</span> 224<span style="color: #757575;">)}</span>
+
+<span style="color: #268bd2;">gluon_model</span> = vision.get_model<span style="color: #757575;">(</span><span style="color: #2aa198;">"resnet18_v1"</span><span style="color: #757575;">,</span> pretrained=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.frontend.from_mxnet<span style="color: #757575;">(</span>gluon_model<span style="color: #757575;">,</span> shape_dict<span style="color: #757575;">)</span>
+
+shape_dict.update<span style="color: #757575;">({</span>k: v.shape <span style="color: #859900;">for</span> k<span style="color: #757575;">,</span> v <span style="color: #859900;">in</span> params.items<span style="color: #757575;">()})</span>
+dtype_dict.update<span style="color: #757575;">({</span>k: <span style="color: #839496;">str</span><span style="color: #757575;">(</span>v.dtype<span style="color: #757575;">)</span> <span style="color: #859900;">for</span> k<span style="color: #757575;">,</span> v <span style="color: #859900;">in</span> params.items<span style="color: #757575;">()})</span>
+
+<span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>opt_level=3<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">with</span> relay.quantize.qconfig<span style="color: #757575;">(</span>global_scale=8.0<span style="color: #757575;">,</span> skip_conv_layers=[0]<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">mod</span> = relay.quantize.quantize<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> params=params<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">relay_prog</span> = graph_pack<span style="color: #757575;">(</span>
+        mod[<span style="color: #2aa198;">"main"</span>]<span style="color: #757575;">,</span>
+        env.BATCH<span style="color: #757575;">,</span>
+        env.BLOCK_OUT<span style="color: #757575;">,</span>
+        env.WGT_WIDTH<span style="color: #757575;">,</span>
+        start_name=<span style="color: #2aa198;">"nn.max_pool2d"</span><span style="color: #757575;">,</span>
+        stop_name=<span style="color: #2aa198;">"nn.global_avg_pool2d"</span><span style="color: #757575;">,</span>
+        annot_start_name=<span style="color: #2aa198;">"nn.conv2d"</span><span style="color: #757575;">,</span>
+        annot_end_name=<span style="color: #2aa198;">"annotation.stop_fusion"</span><span style="color: #757575;">,</span>        
+        device_annot=<span style="color: #757575;">(</span>env.TARGET == <span style="color: #2aa198;">"intelfocl"</span> <span style="color: #859900;">or</span> env.TARGET == <span style="color: #2aa198;">"sim"</span><span style="color: #757575;">),</span>
+    <span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>relay_prog<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">with</span> vta.build_config<span style="color: #757575;">(</span>opt_level=3<span style="color: #757575;">,</span> disabled_pass=<span style="color: #757575;">{</span><span style="color: #2aa198;">"AlterOpLayout"</span><span style="color: #757575;">})</span>:
+    <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>
+        relay_prog<span style="color: #757575;">,</span>
+        target=<span style="color: #757575;">{</span><span style="color: #2aa198;">"cpu"</span>: env.target_vta_cpu<span style="color: #757575;">,</span> <span style="color: #2aa198;">"ext_dev"</span>: target<span style="color: #757575;">},</span>
+        params=params<span style="color: #757575;">,</span>
+        target_host=env.target_host<span style="color: #757575;">,</span>
+    <span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+fn (%data: Tensor[(1, 3, 224, 224), float32]) -&gt; Tensor[(1, 1000), float32] {
+  %0 = nn.conv2d(%data, meta[relay.Constant][0] <i>* ty=Tensor[(64, 3, 7, 7), float32] *</i>, strides=[2, 2], padding=[3, 3, 3, 3], channels=64, kernel_size=[7, 7]) <i>* ty=Tensor[(1, 64, 112, 112), float32] *</i>;
+  %1 = add(%0, meta[relay.Constant][1] <i>* ty=Tensor[(64, 1, 1), float32] *</i>) <i>* ty=Tensor[(1, 64, 112, 112), float32] *</i>;
+  %2 = nn.relu(%1) <i>* ty=Tensor[(1, 64, 112, 112), float32] *</i>;
+  %3 = nn.max_pool2d(%2, pool_size=[3, 3], strides=[2, 2], padding=[1, 1, 1, 1]) <i>* ty=Tensor[(1, 64, 56, 56), float32] *</i>;
+  %4 = reshape(%3, newshape=[1, 1, 4, 16, 56, 56]) <i>* ty=Tensor[(1, 1, 4, 16, 56, 56), float32] *</i>;
+  %5 = transpose(%4, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), float32] *</i>;
+  %6 = annotation.stop_fusion(%5) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), float32] *</i>;
+  %7 = multiply(%6, 16f <i>* ty=float32 *</i>) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), float32] *</i>;
+  %8 = round(%7) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), float32] *</i>;
+  %9 = clip(%8, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), float32] *</i>;
+  %10 = cast(%9, dtype="int32") <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %11 = annotation.stop_fusion(%5) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), float32] *</i>;
+  %12 = multiply(%11, 16f <i>* ty=float32 *</i>) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), float32] *</i>;
+  %13 = round(%12) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), float32] *</i>;
+  %14 = clip(%13, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), float32] *</i>;
+  %15 = reshape(meta[relay.Constant][2] <i>* ty=Tensor[(64, 64, 3, 3), int8] *</i>, newshape=[4, 16, 4, 16, 3, 3]) <i>* ty=Tensor[(4, 16, 4, 16, 3, 3), int8] *</i>;
+  %16 = cast(%14, dtype="int8") <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %17 = transpose(%15, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(4, 4, 3, 3, 16, 16), int8] *</i>;
+  %18 = nn.conv2d(%16, %17, padding=[1, 1, 1, 1], channels=64, kernel_size=[3, 3], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %19 = reshape(meta[relay.Constant][3] <i>* ty=Tensor[(64, 1, 1), int32] *</i>, newshape=[4, 16, 1, 1, 1]) <i>* ty=Tensor[(4, 16, 1, 1, 1), int32] *</i>;
+  %20 = on_device(%19, meta[relay.attrs.OnDeviceAttrs][1]) <i>* ty=Tensor[(4, 16, 1, 1, 1), int32] *</i>;
+  %21 = transpose(%20, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(4, 1, 1, 1, 16), int32] *</i>;
+  %22 = on_device(%21, meta[relay.attrs.OnDeviceAttrs][2]) <i>* ty=Tensor[(4, 1, 1, 1, 16), int32] *</i>;
+  %23 = broadcast_to(%22, meta[relay.attrs.InitOpAttrs][0]) <i>* ty=Tensor[(4, 1, 1, 1, 16), int32] *</i>;
+  %24 = on_device(%18, meta[relay.attrs.OnDeviceAttrs][0]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %25 = on_device(%23, meta[relay.attrs.OnDeviceAttrs][3]) <i>* ty=Tensor[(4, 1, 1, 1, 16), int32] *</i>;
+  %26 = add(%24, %25) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %27 = on_device(%26, meta[relay.attrs.OnDeviceAttrs][4]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %28 = nn.relu(%27) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %29 = on_device(%28, meta[relay.attrs.OnDeviceAttrs][5]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %30 = add(%29, 64 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %31 = on_device(%30, meta[relay.attrs.OnDeviceAttrs][6]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %32 = right_shift(%31, 7 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %33 = on_device(%32, meta[relay.attrs.OnDeviceAttrs][7]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %34 = clip(%33, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %35 = on_device(%34, meta[relay.attrs.OnDeviceAttrs][8]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %36 = cast(%35, dtype="int8") <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %37 = on_device(%36, meta[relay.attrs.OnDeviceAttrs][9]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %38 = annotation.stop_fusion(%37) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %39 = reshape(meta[relay.Constant][4] <i>* ty=Tensor[(64, 64, 3, 3), int8] *</i>, newshape=[4, 16, 4, 16, 3, 3]) <i>* ty=Tensor[(4, 16, 4, 16, 3, 3), int8] *</i>;
+  %40 = on_device(%39, meta[relay.attrs.OnDeviceAttrs][11]) <i>* ty=Tensor[(4, 16, 4, 16, 3, 3), int8] *</i>;
+  %41 = transpose(%40, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(4, 4, 3, 3, 16, 16), int8] *</i>;
+  %42 = on_device(%38, meta[relay.attrs.OnDeviceAttrs][10]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %43 = on_device(%41, meta[relay.attrs.OnDeviceAttrs][12]) <i>* ty=Tensor[(4, 4, 3, 3, 16, 16), int8] *</i>;
+  %44 = nn.conv2d(%42, %43, padding=[1, 1, 1, 1], channels=64, kernel_size=[3, 3], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %45 = reshape(meta[relay.Constant][5] <i>* ty=Tensor[(64, 1, 1), int32] *</i>, newshape=[4, 16, 1, 1, 1]) <i>* ty=Tensor[(4, 16, 1, 1, 1), int32] *</i>;
+  %46 = on_device(%45, meta[relay.attrs.OnDeviceAttrs][14]) <i>* ty=Tensor[(4, 16, 1, 1, 1), int32] *</i>;
+  %47 = transpose(%46, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(4, 1, 1, 1, 16), int32] *</i>;
+  %48 = on_device(%47, meta[relay.attrs.OnDeviceAttrs][15]) <i>* ty=Tensor[(4, 1, 1, 1, 16), int32] *</i>;
+  %49 = broadcast_to(%48, meta[relay.attrs.InitOpAttrs][1]) <i>* ty=Tensor[(4, 1, 1, 1, 16), int32] *</i>;
+  %50 = on_device(%44, meta[relay.attrs.OnDeviceAttrs][13]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %51 = on_device(%49, meta[relay.attrs.OnDeviceAttrs][16]) <i>* ty=Tensor[(4, 1, 1, 1, 16), int32] *</i>;
+  %52 = add(%50, %51) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %53 = on_device(%52, meta[relay.attrs.OnDeviceAttrs][17]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %54 = add(%53, 32 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %55 = on_device(%54, meta[relay.attrs.OnDeviceAttrs][18]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %56 = right_shift(%55, 6 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %57 = on_device(%56, meta[relay.attrs.OnDeviceAttrs][19]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %58 = clip(%57, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %59 = on_device(%58, meta[relay.attrs.OnDeviceAttrs][20]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %60 = cast(%59, dtype="int8") <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %61 = on_device(%60, meta[relay.attrs.OnDeviceAttrs][21]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %62 = annotation.stop_fusion(%61) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %63 = on_device(%62, meta[relay.attrs.OnDeviceAttrs][22]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %64 = cast(%63, dtype="int32") <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %65 = annotation.stop_fusion(%10) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %66 = on_device(%64, meta[relay.attrs.OnDeviceAttrs][23]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %67 = add(%65, %66) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %68 = on_device(%67, meta[relay.attrs.OnDeviceAttrs][24]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %69 = nn.relu(%68) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %70 = on_device(%69, meta[relay.attrs.OnDeviceAttrs][25]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %71 = clip(%70, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %72 = on_device(%71, meta[relay.attrs.OnDeviceAttrs][26]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %73 = cast(%72, dtype="int8") <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %74 = on_device(%73, meta[relay.attrs.OnDeviceAttrs][27]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %75 = annotation.stop_fusion(%74) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %76 = on_device(%75, meta[relay.attrs.OnDeviceAttrs][28]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %77 = cast(%76, dtype="int32") <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %78 = cast(%72, dtype="int8") <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %79 = on_device(%78, meta[relay.attrs.OnDeviceAttrs][30]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %80 = annotation.stop_fusion(%79) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %81 = reshape(meta[relay.Constant][6] <i>* ty=Tensor[(64, 64, 3, 3), int8] *</i>, newshape=[4, 16, 4, 16, 3, 3]) <i>* ty=Tensor[(4, 16, 4, 16, 3, 3), int8] *</i>;
+  %82 = on_device(%81, meta[relay.attrs.OnDeviceAttrs][32]) <i>* ty=Tensor[(4, 16, 4, 16, 3, 3), int8] *</i>;
+  %83 = transpose(%82, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(4, 4, 3, 3, 16, 16), int8] *</i>;
+  %84 = on_device(%80, meta[relay.attrs.OnDeviceAttrs][31]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %85 = on_device(%83, meta[relay.attrs.OnDeviceAttrs][33]) <i>* ty=Tensor[(4, 4, 3, 3, 16, 16), int8] *</i>;
+  %86 = nn.conv2d(%84, %85, padding=[1, 1, 1, 1], channels=64, kernel_size=[3, 3], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %87 = reshape(meta[relay.Constant][7] <i>* ty=Tensor[(64, 1, 1), int32] *</i>, newshape=[4, 16, 1, 1, 1]) <i>* ty=Tensor[(4, 16, 1, 1, 1), int32] *</i>;
+  %88 = on_device(%87, meta[relay.attrs.OnDeviceAttrs][35]) <i>* ty=Tensor[(4, 16, 1, 1, 1), int32] *</i>;
+  %89 = transpose(%88, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(4, 1, 1, 1, 16), int32] *</i>;
+  %90 = on_device(%89, meta[relay.attrs.OnDeviceAttrs][36]) <i>* ty=Tensor[(4, 1, 1, 1, 16), int32] *</i>;
+  %91 = broadcast_to(%90, meta[relay.attrs.InitOpAttrs][2]) <i>* ty=Tensor[(4, 1, 1, 1, 16), int32] *</i>;
+  %92 = on_device(%86, meta[relay.attrs.OnDeviceAttrs][34]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %93 = on_device(%91, meta[relay.attrs.OnDeviceAttrs][37]) <i>* ty=Tensor[(4, 1, 1, 1, 16), int32] *</i>;
+  %94 = add(%92, %93) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %95 = on_device(%94, meta[relay.attrs.OnDeviceAttrs][38]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %96 = nn.relu(%95) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %97 = on_device(%96, meta[relay.attrs.OnDeviceAttrs][39]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %98 = add(%97, 256 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %99 = on_device(%98, meta[relay.attrs.OnDeviceAttrs][40]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %100 = right_shift(%99, 9 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %101 = on_device(%100, meta[relay.attrs.OnDeviceAttrs][41]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %102 = clip(%101, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %103 = on_device(%102, meta[relay.attrs.OnDeviceAttrs][42]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %104 = cast(%103, dtype="int8") <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %105 = on_device(%104, meta[relay.attrs.OnDeviceAttrs][43]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %106 = annotation.stop_fusion(%105) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %107 = reshape(meta[relay.Constant][8] <i>* ty=Tensor[(64, 64, 3, 3), int8] *</i>, newshape=[4, 16, 4, 16, 3, 3]) <i>* ty=Tensor[(4, 16, 4, 16, 3, 3), int8] *</i>;
+  %108 = on_device(%107, meta[relay.attrs.OnDeviceAttrs][45]) <i>* ty=Tensor[(4, 16, 4, 16, 3, 3), int8] *</i>;
+  %109 = transpose(%108, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(4, 4, 3, 3, 16, 16), int8] *</i>;
+  %110 = on_device(%106, meta[relay.attrs.OnDeviceAttrs][44]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %111 = on_device(%109, meta[relay.attrs.OnDeviceAttrs][46]) <i>* ty=Tensor[(4, 4, 3, 3, 16, 16), int8] *</i>;
+  %112 = nn.conv2d(%110, %111, padding=[1, 1, 1, 1], channels=64, kernel_size=[3, 3], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %113 = reshape(meta[relay.Constant][9] <i>* ty=Tensor[(64, 1, 1), int32] *</i>, newshape=[4, 16, 1, 1, 1]) <i>* ty=Tensor[(4, 16, 1, 1, 1), int32] *</i>;
+  %114 = on_device(%113, meta[relay.attrs.OnDeviceAttrs][48]) <i>* ty=Tensor[(4, 16, 1, 1, 1), int32] *</i>;
+  %115 = transpose(%114, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(4, 1, 1, 1, 16), int32] *</i>;
+  %116 = on_device(%115, meta[relay.attrs.OnDeviceAttrs][49]) <i>* ty=Tensor[(4, 1, 1, 1, 16), int32] *</i>;
+  %117 = broadcast_to(%116, meta[relay.attrs.InitOpAttrs][3]) <i>* ty=Tensor[(4, 1, 1, 1, 16), int32] *</i>;
+  %118 = on_device(%112, meta[relay.attrs.OnDeviceAttrs][47]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %119 = on_device(%117, meta[relay.attrs.OnDeviceAttrs][50]) <i>* ty=Tensor[(4, 1, 1, 1, 16), int32] *</i>;
+  %120 = add(%118, %119) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %121 = on_device(%120, meta[relay.attrs.OnDeviceAttrs][51]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %122 = add(%121, 32 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %123 = on_device(%122, meta[relay.attrs.OnDeviceAttrs][52]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %124 = right_shift(%123, 6 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %125 = on_device(%124, meta[relay.attrs.OnDeviceAttrs][53]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %126 = clip(%125, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %127 = on_device(%126, meta[relay.attrs.OnDeviceAttrs][54]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %128 = cast(%127, dtype="int8") <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %129 = on_device(%128, meta[relay.attrs.OnDeviceAttrs][55]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %130 = annotation.stop_fusion(%129) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %131 = on_device(%130, meta[relay.attrs.OnDeviceAttrs][56]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %132 = cast(%131, dtype="int32") <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %133 = on_device(%77, meta[relay.attrs.OnDeviceAttrs][29]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %134 = on_device(%132, meta[relay.attrs.OnDeviceAttrs][57]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %135 = add(%133, %134) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %136 = on_device(%135, meta[relay.attrs.OnDeviceAttrs][58]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %137 = nn.relu(%136) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %138 = on_device(%137, meta[relay.attrs.OnDeviceAttrs][59]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %139 = clip(%138, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %140 = on_device(%139, meta[relay.attrs.OnDeviceAttrs][60]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int32] *</i>;
+  %141 = cast(%140, dtype="int8") <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %142 = on_device(%141, meta[relay.attrs.OnDeviceAttrs][61]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %143 = annotation.stop_fusion(%142) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %144 = reshape(meta[relay.Constant][10] <i>* ty=Tensor[(128, 64, 1, 1), int8] *</i>, newshape=[8, 16, 4, 16, 1, 1]) <i>* ty=Tensor[(8, 16, 4, 16, 1, 1), int8] *</i>;
+  %145 = on_device(%144, meta[relay.attrs.OnDeviceAttrs][63]) <i>* ty=Tensor[(8, 16, 4, 16, 1, 1), int8] *</i>;
+  %146 = transpose(%145, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(8, 4, 1, 1, 16, 16), int8] *</i>;
+  %147 = on_device(%143, meta[relay.attrs.OnDeviceAttrs][62]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %148 = on_device(%146, meta[relay.attrs.OnDeviceAttrs][64]) <i>* ty=Tensor[(8, 4, 1, 1, 16, 16), int8] *</i>;
+  %149 = nn.conv2d(%147, %148, strides=[2, 2], padding=[0, 0, 0, 0], channels=128, kernel_size=[1, 1], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %150 = reshape(meta[relay.Constant][11] <i>* ty=Tensor[(128, 1, 1), int32] *</i>, newshape=[8, 16, 1, 1, 1]) <i>* ty=Tensor[(8, 16, 1, 1, 1), int32] *</i>;
+  %151 = on_device(%150, meta[relay.attrs.OnDeviceAttrs][66]) <i>* ty=Tensor[(8, 16, 1, 1, 1), int32] *</i>;
+  %152 = transpose(%151, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %153 = on_device(%152, meta[relay.attrs.OnDeviceAttrs][67]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %154 = broadcast_to(%153, meta[relay.attrs.InitOpAttrs][4]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %155 = on_device(%149, meta[relay.attrs.OnDeviceAttrs][65]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %156 = on_device(%154, meta[relay.attrs.OnDeviceAttrs][68]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %157 = add(%155, %156) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %158 = on_device(%157, meta[relay.attrs.OnDeviceAttrs][69]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %159 = add(%158, 64 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %160 = on_device(%159, meta[relay.attrs.OnDeviceAttrs][70]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %161 = right_shift(%160, 7 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %162 = on_device(%161, meta[relay.attrs.OnDeviceAttrs][71]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %163 = clip(%162, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %164 = on_device(%163, meta[relay.attrs.OnDeviceAttrs][72]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %165 = cast(%164, dtype="int8") <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %166 = on_device(%165, meta[relay.attrs.OnDeviceAttrs][73]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %167 = annotation.stop_fusion(%166) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %168 = on_device(%167, meta[relay.attrs.OnDeviceAttrs][74]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %169 = cast(%168, dtype="int32") <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %170 = cast(%140, dtype="int8") <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %171 = on_device(%170, meta[relay.attrs.OnDeviceAttrs][76]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %172 = annotation.stop_fusion(%171) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %173 = reshape(meta[relay.Constant][12] <i>* ty=Tensor[(128, 64, 3, 3), int8] *</i>, newshape=[8, 16, 4, 16, 3, 3]) <i>* ty=Tensor[(8, 16, 4, 16, 3, 3), int8] *</i>;
+  %174 = on_device(%173, meta[relay.attrs.OnDeviceAttrs][78]) <i>* ty=Tensor[(8, 16, 4, 16, 3, 3), int8] *</i>;
+  %175 = transpose(%174, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(8, 4, 3, 3, 16, 16), int8] *</i>;
+  %176 = on_device(%172, meta[relay.attrs.OnDeviceAttrs][77]) <i>* ty=Tensor[(1, 4, 56, 56, 1, 16), int8] *</i>;
+  %177 = on_device(%175, meta[relay.attrs.OnDeviceAttrs][79]) <i>* ty=Tensor[(8, 4, 3, 3, 16, 16), int8] *</i>;
+  %178 = nn.conv2d(%176, %177, strides=[2, 2], padding=[1, 1, 1, 1], channels=128, kernel_size=[3, 3], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %179 = reshape(meta[relay.Constant][13] <i>* ty=Tensor[(128, 1, 1), int32] *</i>, newshape=[8, 16, 1, 1, 1]) <i>* ty=Tensor[(8, 16, 1, 1, 1), int32] *</i>;
+  %180 = on_device(%179, meta[relay.attrs.OnDeviceAttrs][81]) <i>* ty=Tensor[(8, 16, 1, 1, 1), int32] *</i>;
+  %181 = transpose(%180, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %182 = on_device(%181, meta[relay.attrs.OnDeviceAttrs][82]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %183 = broadcast_to(%182, meta[relay.attrs.InitOpAttrs][5]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %184 = on_device(%178, meta[relay.attrs.OnDeviceAttrs][80]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %185 = on_device(%183, meta[relay.attrs.OnDeviceAttrs][83]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %186 = add(%184, %185) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %187 = on_device(%186, meta[relay.attrs.OnDeviceAttrs][84]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %188 = nn.relu(%187) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %189 = on_device(%188, meta[relay.attrs.OnDeviceAttrs][85]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %190 = add(%189, 256 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %191 = on_device(%190, meta[relay.attrs.OnDeviceAttrs][86]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %192 = right_shift(%191, 9 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %193 = on_device(%192, meta[relay.attrs.OnDeviceAttrs][87]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %194 = clip(%193, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %195 = on_device(%194, meta[relay.attrs.OnDeviceAttrs][88]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %196 = cast(%195, dtype="int8") <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %197 = on_device(%196, meta[relay.attrs.OnDeviceAttrs][89]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %198 = annotation.stop_fusion(%197) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %199 = reshape(meta[relay.Constant][14] <i>* ty=Tensor[(128, 128, 3, 3), int8] *</i>, newshape=[8, 16, 8, 16, 3, 3]) <i>* ty=Tensor[(8, 16, 8, 16, 3, 3), int8] *</i>;
+  %200 = on_device(%199, meta[relay.attrs.OnDeviceAttrs][91]) <i>* ty=Tensor[(8, 16, 8, 16, 3, 3), int8] *</i>;
+  %201 = transpose(%200, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(8, 8, 3, 3, 16, 16), int8] *</i>;
+  %202 = on_device(%198, meta[relay.attrs.OnDeviceAttrs][90]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %203 = on_device(%201, meta[relay.attrs.OnDeviceAttrs][92]) <i>* ty=Tensor[(8, 8, 3, 3, 16, 16), int8] *</i>;
+  %204 = nn.conv2d(%202, %203, padding=[1, 1, 1, 1], channels=128, kernel_size=[3, 3], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %205 = reshape(meta[relay.Constant][15] <i>* ty=Tensor[(128, 1, 1), int32] *</i>, newshape=[8, 16, 1, 1, 1]) <i>* ty=Tensor[(8, 16, 1, 1, 1), int32] *</i>;
+  %206 = on_device(%205, meta[relay.attrs.OnDeviceAttrs][94]) <i>* ty=Tensor[(8, 16, 1, 1, 1), int32] *</i>;
+  %207 = transpose(%206, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %208 = on_device(%207, meta[relay.attrs.OnDeviceAttrs][95]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %209 = broadcast_to(%208, meta[relay.attrs.InitOpAttrs][6]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %210 = on_device(%204, meta[relay.attrs.OnDeviceAttrs][93]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %211 = on_device(%209, meta[relay.attrs.OnDeviceAttrs][96]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %212 = add(%210, %211) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %213 = on_device(%212, meta[relay.attrs.OnDeviceAttrs][97]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %214 = add(%213, 64 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %215 = on_device(%214, meta[relay.attrs.OnDeviceAttrs][98]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %216 = right_shift(%215, 7 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %217 = on_device(%216, meta[relay.attrs.OnDeviceAttrs][99]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %218 = clip(%217, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %219 = on_device(%218, meta[relay.attrs.OnDeviceAttrs][100]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %220 = cast(%219, dtype="int8") <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %221 = on_device(%220, meta[relay.attrs.OnDeviceAttrs][101]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %222 = annotation.stop_fusion(%221) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %223 = on_device(%222, meta[relay.attrs.OnDeviceAttrs][102]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %224 = cast(%223, dtype="int32") <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %225 = on_device(%169, meta[relay.attrs.OnDeviceAttrs][75]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %226 = on_device(%224, meta[relay.attrs.OnDeviceAttrs][103]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %227 = add(%225, %226) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %228 = on_device(%227, meta[relay.attrs.OnDeviceAttrs][104]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %229 = nn.relu(%228) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %230 = on_device(%229, meta[relay.attrs.OnDeviceAttrs][105]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %231 = clip(%230, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %232 = on_device(%231, meta[relay.attrs.OnDeviceAttrs][106]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %233 = cast(%232, dtype="int8") <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %234 = on_device(%233, meta[relay.attrs.OnDeviceAttrs][107]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %235 = annotation.stop_fusion(%234) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %236 = on_device(%235, meta[relay.attrs.OnDeviceAttrs][108]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %237 = cast(%236, dtype="int32") <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %238 = cast(%232, dtype="int8") <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %239 = on_device(%238, meta[relay.attrs.OnDeviceAttrs][110]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %240 = annotation.stop_fusion(%239) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %241 = reshape(meta[relay.Constant][16] <i>* ty=Tensor[(128, 128, 3, 3), int8] *</i>, newshape=[8, 16, 8, 16, 3, 3]) <i>* ty=Tensor[(8, 16, 8, 16, 3, 3), int8] *</i>;
+  %242 = on_device(%241, meta[relay.attrs.OnDeviceAttrs][112]) <i>* ty=Tensor[(8, 16, 8, 16, 3, 3), int8] *</i>;
+  %243 = transpose(%242, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(8, 8, 3, 3, 16, 16), int8] *</i>;
+  %244 = on_device(%240, meta[relay.attrs.OnDeviceAttrs][111]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %245 = on_device(%243, meta[relay.attrs.OnDeviceAttrs][113]) <i>* ty=Tensor[(8, 8, 3, 3, 16, 16), int8] *</i>;
+  %246 = nn.conv2d(%244, %245, padding=[1, 1, 1, 1], channels=128, kernel_size=[3, 3], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %247 = reshape(meta[relay.Constant][17] <i>* ty=Tensor[(128, 1, 1), int32] *</i>, newshape=[8, 16, 1, 1, 1]) <i>* ty=Tensor[(8, 16, 1, 1, 1), int32] *</i>;
+  %248 = on_device(%247, meta[relay.attrs.OnDeviceAttrs][115]) <i>* ty=Tensor[(8, 16, 1, 1, 1), int32] *</i>;
+  %249 = transpose(%248, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %250 = on_device(%249, meta[relay.attrs.OnDeviceAttrs][116]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %251 = broadcast_to(%250, meta[relay.attrs.InitOpAttrs][7]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %252 = on_device(%246, meta[relay.attrs.OnDeviceAttrs][114]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %253 = on_device(%251, meta[relay.attrs.OnDeviceAttrs][117]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %254 = add(%252, %253) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %255 = on_device(%254, meta[relay.attrs.OnDeviceAttrs][118]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %256 = nn.relu(%255) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %257 = on_device(%256, meta[relay.attrs.OnDeviceAttrs][119]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %258 = add(%257, 128 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %259 = on_device(%258, meta[relay.attrs.OnDeviceAttrs][120]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %260 = right_shift(%259, 8 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %261 = on_device(%260, meta[relay.attrs.OnDeviceAttrs][121]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %262 = clip(%261, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %263 = on_device(%262, meta[relay.attrs.OnDeviceAttrs][122]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %264 = cast(%263, dtype="int8") <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %265 = on_device(%264, meta[relay.attrs.OnDeviceAttrs][123]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %266 = annotation.stop_fusion(%265) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %267 = reshape(meta[relay.Constant][18] <i>* ty=Tensor[(128, 128, 3, 3), int8] *</i>, newshape=[8, 16, 8, 16, 3, 3]) <i>* ty=Tensor[(8, 16, 8, 16, 3, 3), int8] *</i>;
+  %268 = on_device(%267, meta[relay.attrs.OnDeviceAttrs][125]) <i>* ty=Tensor[(8, 16, 8, 16, 3, 3), int8] *</i>;
+  %269 = transpose(%268, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(8, 8, 3, 3, 16, 16), int8] *</i>;
+  %270 = on_device(%266, meta[relay.attrs.OnDeviceAttrs][124]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %271 = on_device(%269, meta[relay.attrs.OnDeviceAttrs][126]) <i>* ty=Tensor[(8, 8, 3, 3, 16, 16), int8] *</i>;
+  %272 = nn.conv2d(%270, %271, padding=[1, 1, 1, 1], channels=128, kernel_size=[3, 3], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %273 = reshape(meta[relay.Constant][19] <i>* ty=Tensor[(128, 1, 1), int32] *</i>, newshape=[8, 16, 1, 1, 1]) <i>* ty=Tensor[(8, 16, 1, 1, 1), int32] *</i>;
+  %274 = on_device(%273, meta[relay.attrs.OnDeviceAttrs][128]) <i>* ty=Tensor[(8, 16, 1, 1, 1), int32] *</i>;
+  %275 = transpose(%274, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %276 = on_device(%275, meta[relay.attrs.OnDeviceAttrs][129]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %277 = broadcast_to(%276, meta[relay.attrs.InitOpAttrs][8]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %278 = on_device(%272, meta[relay.attrs.OnDeviceAttrs][127]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %279 = on_device(%277, meta[relay.attrs.OnDeviceAttrs][130]) <i>* ty=Tensor[(8, 1, 1, 1, 16), int32] *</i>;
+  %280 = add(%278, %279) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %281 = on_device(%280, meta[relay.attrs.OnDeviceAttrs][131]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %282 = add(%281, 64 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %283 = on_device(%282, meta[relay.attrs.OnDeviceAttrs][132]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %284 = right_shift(%283, 7 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %285 = on_device(%284, meta[relay.attrs.OnDeviceAttrs][133]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %286 = clip(%285, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %287 = on_device(%286, meta[relay.attrs.OnDeviceAttrs][134]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %288 = cast(%287, dtype="int8") <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %289 = on_device(%288, meta[relay.attrs.OnDeviceAttrs][135]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %290 = annotation.stop_fusion(%289) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %291 = on_device(%290, meta[relay.attrs.OnDeviceAttrs][136]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %292 = cast(%291, dtype="int32") <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %293 = on_device(%237, meta[relay.attrs.OnDeviceAttrs][109]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %294 = on_device(%292, meta[relay.attrs.OnDeviceAttrs][137]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %295 = add(%293, %294) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %296 = on_device(%295, meta[relay.attrs.OnDeviceAttrs][138]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %297 = nn.relu(%296) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %298 = on_device(%297, meta[relay.attrs.OnDeviceAttrs][139]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %299 = clip(%298, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %300 = on_device(%299, meta[relay.attrs.OnDeviceAttrs][140]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int32] *</i>;
+  %301 = cast(%300, dtype="int8") <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %302 = on_device(%301, meta[relay.attrs.OnDeviceAttrs][141]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %303 = annotation.stop_fusion(%302) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %304 = reshape(meta[relay.Constant][20] <i>* ty=Tensor[(256, 128, 1, 1), int8] *</i>, newshape=[16, 16, 8, 16, 1, 1]) <i>* ty=Tensor[(16, 16, 8, 16, 1, 1), int8] *</i>;
+  %305 = on_device(%304, meta[relay.attrs.OnDeviceAttrs][143]) <i>* ty=Tensor[(16, 16, 8, 16, 1, 1), int8] *</i>;
+  %306 = transpose(%305, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(16, 8, 1, 1, 16, 16), int8] *</i>;
+  %307 = on_device(%303, meta[relay.attrs.OnDeviceAttrs][142]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %308 = on_device(%306, meta[relay.attrs.OnDeviceAttrs][144]) <i>* ty=Tensor[(16, 8, 1, 1, 16, 16), int8] *</i>;
+  %309 = nn.conv2d(%307, %308, strides=[2, 2], padding=[0, 0, 0, 0], channels=256, kernel_size=[1, 1], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %310 = reshape(meta[relay.Constant][21] <i>* ty=Tensor[(256, 1, 1), int32] *</i>, newshape=[16, 16, 1, 1, 1]) <i>* ty=Tensor[(16, 16, 1, 1, 1), int32] *</i>;
+  %311 = on_device(%310, meta[relay.attrs.OnDeviceAttrs][146]) <i>* ty=Tensor[(16, 16, 1, 1, 1), int32] *</i>;
+  %312 = transpose(%311, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %313 = on_device(%312, meta[relay.attrs.OnDeviceAttrs][147]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %314 = broadcast_to(%313, meta[relay.attrs.InitOpAttrs][9]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %315 = on_device(%309, meta[relay.attrs.OnDeviceAttrs][145]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %316 = on_device(%314, meta[relay.attrs.OnDeviceAttrs][148]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %317 = add(%315, %316) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %318 = on_device(%317, meta[relay.attrs.OnDeviceAttrs][149]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %319 = add(%318, 128 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %320 = on_device(%319, meta[relay.attrs.OnDeviceAttrs][150]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %321 = right_shift(%320, 8 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %322 = on_device(%321, meta[relay.attrs.OnDeviceAttrs][151]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %323 = clip(%322, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %324 = on_device(%323, meta[relay.attrs.OnDeviceAttrs][152]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %325 = cast(%324, dtype="int8") <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %326 = on_device(%325, meta[relay.attrs.OnDeviceAttrs][153]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %327 = annotation.stop_fusion(%326) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %328 = on_device(%327, meta[relay.attrs.OnDeviceAttrs][154]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %329 = cast(%328, dtype="int32") <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %330 = cast(%300, dtype="int8") <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %331 = on_device(%330, meta[relay.attrs.OnDeviceAttrs][156]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %332 = annotation.stop_fusion(%331) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %333 = reshape(meta[relay.Constant][22] <i>* ty=Tensor[(256, 128, 3, 3), int8] *</i>, newshape=[16, 16, 8, 16, 3, 3]) <i>* ty=Tensor[(16, 16, 8, 16, 3, 3), int8] *</i>;
+  %334 = on_device(%333, meta[relay.attrs.OnDeviceAttrs][158]) <i>* ty=Tensor[(16, 16, 8, 16, 3, 3), int8] *</i>;
+  %335 = transpose(%334, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(16, 8, 3, 3, 16, 16), int8] *</i>;
+  %336 = on_device(%332, meta[relay.attrs.OnDeviceAttrs][157]) <i>* ty=Tensor[(1, 8, 28, 28, 1, 16), int8] *</i>;
+  %337 = on_device(%335, meta[relay.attrs.OnDeviceAttrs][159]) <i>* ty=Tensor[(16, 8, 3, 3, 16, 16), int8] *</i>;
+  %338 = nn.conv2d(%336, %337, strides=[2, 2], padding=[1, 1, 1, 1], channels=256, kernel_size=[3, 3], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %339 = reshape(meta[relay.Constant][23] <i>* ty=Tensor[(256, 1, 1), int32] *</i>, newshape=[16, 16, 1, 1, 1]) <i>* ty=Tensor[(16, 16, 1, 1, 1), int32] *</i>;
+  %340 = on_device(%339, meta[relay.attrs.OnDeviceAttrs][161]) <i>* ty=Tensor[(16, 16, 1, 1, 1), int32] *</i>;
+  %341 = transpose(%340, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %342 = on_device(%341, meta[relay.attrs.OnDeviceAttrs][162]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %343 = broadcast_to(%342, meta[relay.attrs.InitOpAttrs][10]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %344 = on_device(%338, meta[relay.attrs.OnDeviceAttrs][160]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %345 = on_device(%343, meta[relay.attrs.OnDeviceAttrs][163]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %346 = add(%344, %345) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %347 = on_device(%346, meta[relay.attrs.OnDeviceAttrs][164]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %348 = nn.relu(%347) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %349 = on_device(%348, meta[relay.attrs.OnDeviceAttrs][165]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %350 = add(%349, 256 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %351 = on_device(%350, meta[relay.attrs.OnDeviceAttrs][166]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %352 = right_shift(%351, 9 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %353 = on_device(%352, meta[relay.attrs.OnDeviceAttrs][167]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %354 = clip(%353, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %355 = on_device(%354, meta[relay.attrs.OnDeviceAttrs][168]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %356 = cast(%355, dtype="int8") <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %357 = on_device(%356, meta[relay.attrs.OnDeviceAttrs][169]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %358 = annotation.stop_fusion(%357) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %359 = reshape(meta[relay.Constant][24] <i>* ty=Tensor[(256, 256, 3, 3), int8] *</i>, newshape=[16, 16, 16, 16, 3, 3]) <i>* ty=Tensor[(16, 16, 16, 16, 3, 3), int8] *</i>;
+  %360 = on_device(%359, meta[relay.attrs.OnDeviceAttrs][171]) <i>* ty=Tensor[(16, 16, 16, 16, 3, 3), int8] *</i>;
+  %361 = transpose(%360, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(16, 16, 3, 3, 16, 16), int8] *</i>;
+  %362 = on_device(%358, meta[relay.attrs.OnDeviceAttrs][170]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %363 = on_device(%361, meta[relay.attrs.OnDeviceAttrs][172]) <i>* ty=Tensor[(16, 16, 3, 3, 16, 16), int8] *</i>;
+  %364 = nn.conv2d(%362, %363, padding=[1, 1, 1, 1], channels=256, kernel_size=[3, 3], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %365 = reshape(meta[relay.Constant][25] <i>* ty=Tensor[(256, 1, 1), int32] *</i>, newshape=[16, 16, 1, 1, 1]) <i>* ty=Tensor[(16, 16, 1, 1, 1), int32] *</i>;
+  %366 = on_device(%365, meta[relay.attrs.OnDeviceAttrs][174]) <i>* ty=Tensor[(16, 16, 1, 1, 1), int32] *</i>;
+  %367 = transpose(%366, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %368 = on_device(%367, meta[relay.attrs.OnDeviceAttrs][175]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %369 = broadcast_to(%368, meta[relay.attrs.InitOpAttrs][11]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %370 = on_device(%364, meta[relay.attrs.OnDeviceAttrs][173]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %371 = on_device(%369, meta[relay.attrs.OnDeviceAttrs][176]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %372 = add(%370, %371) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %373 = on_device(%372, meta[relay.attrs.OnDeviceAttrs][177]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %374 = add(%373, 64 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %375 = on_device(%374, meta[relay.attrs.OnDeviceAttrs][178]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %376 = right_shift(%375, 7 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %377 = on_device(%376, meta[relay.attrs.OnDeviceAttrs][179]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %378 = clip(%377, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %379 = on_device(%378, meta[relay.attrs.OnDeviceAttrs][180]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %380 = cast(%379, dtype="int8") <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %381 = on_device(%380, meta[relay.attrs.OnDeviceAttrs][181]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %382 = annotation.stop_fusion(%381) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %383 = on_device(%382, meta[relay.attrs.OnDeviceAttrs][182]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %384 = cast(%383, dtype="int32") <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %385 = on_device(%329, meta[relay.attrs.OnDeviceAttrs][155]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %386 = on_device(%384, meta[relay.attrs.OnDeviceAttrs][183]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %387 = add(%385, %386) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %388 = on_device(%387, meta[relay.attrs.OnDeviceAttrs][184]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %389 = nn.relu(%388) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %390 = on_device(%389, meta[relay.attrs.OnDeviceAttrs][185]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %391 = clip(%390, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %392 = on_device(%391, meta[relay.attrs.OnDeviceAttrs][186]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %393 = cast(%392, dtype="int8") <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %394 = on_device(%393, meta[relay.attrs.OnDeviceAttrs][187]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %395 = annotation.stop_fusion(%394) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %396 = on_device(%395, meta[relay.attrs.OnDeviceAttrs][188]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %397 = cast(%396, dtype="int32") <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %398 = cast(%392, dtype="int8") <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %399 = on_device(%398, meta[relay.attrs.OnDeviceAttrs][190]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %400 = annotation.stop_fusion(%399) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %401 = reshape(meta[relay.Constant][26] <i>* ty=Tensor[(256, 256, 3, 3), int8] *</i>, newshape=[16, 16, 16, 16, 3, 3]) <i>* ty=Tensor[(16, 16, 16, 16, 3, 3), int8] *</i>;
+  %402 = on_device(%401, meta[relay.attrs.OnDeviceAttrs][192]) <i>* ty=Tensor[(16, 16, 16, 16, 3, 3), int8] *</i>;
+  %403 = transpose(%402, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(16, 16, 3, 3, 16, 16), int8] *</i>;
+  %404 = on_device(%400, meta[relay.attrs.OnDeviceAttrs][191]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %405 = on_device(%403, meta[relay.attrs.OnDeviceAttrs][193]) <i>* ty=Tensor[(16, 16, 3, 3, 16, 16), int8] *</i>;
+  %406 = nn.conv2d(%404, %405, padding=[1, 1, 1, 1], channels=256, kernel_size=[3, 3], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %407 = reshape(meta[relay.Constant][27] <i>* ty=Tensor[(256, 1, 1), int32] *</i>, newshape=[16, 16, 1, 1, 1]) <i>* ty=Tensor[(16, 16, 1, 1, 1), int32] *</i>;
+  %408 = on_device(%407, meta[relay.attrs.OnDeviceAttrs][195]) <i>* ty=Tensor[(16, 16, 1, 1, 1), int32] *</i>;
+  %409 = transpose(%408, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %410 = on_device(%409, meta[relay.attrs.OnDeviceAttrs][196]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %411 = broadcast_to(%410, meta[relay.attrs.InitOpAttrs][12]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %412 = on_device(%406, meta[relay.attrs.OnDeviceAttrs][194]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %413 = on_device(%411, meta[relay.attrs.OnDeviceAttrs][197]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %414 = add(%412, %413) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %415 = on_device(%414, meta[relay.attrs.OnDeviceAttrs][198]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %416 = nn.relu(%415) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %417 = on_device(%416, meta[relay.attrs.OnDeviceAttrs][199]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %418 = add(%417, 128 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %419 = on_device(%418, meta[relay.attrs.OnDeviceAttrs][200]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %420 = right_shift(%419, 8 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %421 = on_device(%420, meta[relay.attrs.OnDeviceAttrs][201]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %422 = clip(%421, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %423 = on_device(%422, meta[relay.attrs.OnDeviceAttrs][202]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %424 = cast(%423, dtype="int8") <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %425 = on_device(%424, meta[relay.attrs.OnDeviceAttrs][203]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %426 = annotation.stop_fusion(%425) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %427 = reshape(meta[relay.Constant][28] <i>* ty=Tensor[(256, 256, 3, 3), int8] *</i>, newshape=[16, 16, 16, 16, 3, 3]) <i>* ty=Tensor[(16, 16, 16, 16, 3, 3), int8] *</i>;
+  %428 = on_device(%427, meta[relay.attrs.OnDeviceAttrs][205]) <i>* ty=Tensor[(16, 16, 16, 16, 3, 3), int8] *</i>;
+  %429 = transpose(%428, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(16, 16, 3, 3, 16, 16), int8] *</i>;
+  %430 = on_device(%426, meta[relay.attrs.OnDeviceAttrs][204]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %431 = on_device(%429, meta[relay.attrs.OnDeviceAttrs][206]) <i>* ty=Tensor[(16, 16, 3, 3, 16, 16), int8] *</i>;
+  %432 = nn.conv2d(%430, %431, padding=[1, 1, 1, 1], channels=256, kernel_size=[3, 3], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %433 = reshape(meta[relay.Constant][29] <i>* ty=Tensor[(256, 1, 1), int32] *</i>, newshape=[16, 16, 1, 1, 1]) <i>* ty=Tensor[(16, 16, 1, 1, 1), int32] *</i>;
+  %434 = on_device(%433, meta[relay.attrs.OnDeviceAttrs][208]) <i>* ty=Tensor[(16, 16, 1, 1, 1), int32] *</i>;
+  %435 = transpose(%434, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %436 = on_device(%435, meta[relay.attrs.OnDeviceAttrs][209]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %437 = broadcast_to(%436, meta[relay.attrs.InitOpAttrs][13]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %438 = on_device(%432, meta[relay.attrs.OnDeviceAttrs][207]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %439 = on_device(%437, meta[relay.attrs.OnDeviceAttrs][210]) <i>* ty=Tensor[(16, 1, 1, 1, 16), int32] *</i>;
+  %440 = add(%438, %439) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %441 = on_device(%440, meta[relay.attrs.OnDeviceAttrs][211]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %442 = add(%441, 64 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %443 = on_device(%442, meta[relay.attrs.OnDeviceAttrs][212]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %444 = right_shift(%443, 7 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %445 = on_device(%444, meta[relay.attrs.OnDeviceAttrs][213]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %446 = clip(%445, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %447 = on_device(%446, meta[relay.attrs.OnDeviceAttrs][214]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %448 = cast(%447, dtype="int8") <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %449 = on_device(%448, meta[relay.attrs.OnDeviceAttrs][215]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %450 = annotation.stop_fusion(%449) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %451 = on_device(%450, meta[relay.attrs.OnDeviceAttrs][216]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %452 = cast(%451, dtype="int32") <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %453 = on_device(%397, meta[relay.attrs.OnDeviceAttrs][189]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %454 = on_device(%452, meta[relay.attrs.OnDeviceAttrs][217]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %455 = add(%453, %454) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %456 = on_device(%455, meta[relay.attrs.OnDeviceAttrs][218]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %457 = nn.relu(%456) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %458 = on_device(%457, meta[relay.attrs.OnDeviceAttrs][219]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %459 = clip(%458, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %460 = on_device(%459, meta[relay.attrs.OnDeviceAttrs][220]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int32] *</i>;
+  %461 = cast(%460, dtype="int8") <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %462 = on_device(%461, meta[relay.attrs.OnDeviceAttrs][221]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %463 = annotation.stop_fusion(%462) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %464 = reshape(meta[relay.Constant][30] <i>* ty=Tensor[(512, 256, 1, 1), int8] *</i>, newshape=[32, 16, 16, 16, 1, 1]) <i>* ty=Tensor[(32, 16, 16, 16, 1, 1), int8] *</i>;
+  %465 = on_device(%464, meta[relay.attrs.OnDeviceAttrs][223]) <i>* ty=Tensor[(32, 16, 16, 16, 1, 1), int8] *</i>;
+  %466 = transpose(%465, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(32, 16, 1, 1, 16, 16), int8] *</i>;
+  %467 = on_device(%463, meta[relay.attrs.OnDeviceAttrs][222]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %468 = on_device(%466, meta[relay.attrs.OnDeviceAttrs][224]) <i>* ty=Tensor[(32, 16, 1, 1, 16, 16), int8] *</i>;
+  %469 = nn.conv2d(%467, %468, strides=[2, 2], padding=[0, 0, 0, 0], channels=512, kernel_size=[1, 1], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %470 = reshape(meta[relay.Constant][31] <i>* ty=Tensor[(512, 1, 1), int32] *</i>, newshape=[32, 16, 1, 1, 1]) <i>* ty=Tensor[(32, 16, 1, 1, 1), int32] *</i>;
+  %471 = on_device(%470, meta[relay.attrs.OnDeviceAttrs][226]) <i>* ty=Tensor[(32, 16, 1, 1, 1), int32] *</i>;
+  %472 = transpose(%471, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %473 = on_device(%472, meta[relay.attrs.OnDeviceAttrs][227]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %474 = broadcast_to(%473, meta[relay.attrs.InitOpAttrs][14]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %475 = on_device(%469, meta[relay.attrs.OnDeviceAttrs][225]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %476 = on_device(%474, meta[relay.attrs.OnDeviceAttrs][228]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %477 = add(%475, %476) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %478 = on_device(%477, meta[relay.attrs.OnDeviceAttrs][229]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %479 = add(%478, 32 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %480 = on_device(%479, meta[relay.attrs.OnDeviceAttrs][230]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %481 = right_shift(%480, 6 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %482 = on_device(%481, meta[relay.attrs.OnDeviceAttrs][231]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %483 = clip(%482, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %484 = on_device(%483, meta[relay.attrs.OnDeviceAttrs][232]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %485 = cast(%484, dtype="int8") <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %486 = on_device(%485, meta[relay.attrs.OnDeviceAttrs][233]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %487 = annotation.stop_fusion(%486) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %488 = on_device(%487, meta[relay.attrs.OnDeviceAttrs][234]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %489 = cast(%488, dtype="int32") <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %490 = cast(%460, dtype="int8") <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %491 = on_device(%490, meta[relay.attrs.OnDeviceAttrs][236]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %492 = annotation.stop_fusion(%491) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %493 = reshape(meta[relay.Constant][32] <i>* ty=Tensor[(512, 256, 3, 3), int8] *</i>, newshape=[32, 16, 16, 16, 3, 3]) <i>* ty=Tensor[(32, 16, 16, 16, 3, 3), int8] *</i>;
+  %494 = on_device(%493, meta[relay.attrs.OnDeviceAttrs][238]) <i>* ty=Tensor[(32, 16, 16, 16, 3, 3), int8] *</i>;
+  %495 = transpose(%494, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(32, 16, 3, 3, 16, 16), int8] *</i>;
+  %496 = on_device(%492, meta[relay.attrs.OnDeviceAttrs][237]) <i>* ty=Tensor[(1, 16, 14, 14, 1, 16), int8] *</i>;
+  %497 = on_device(%495, meta[relay.attrs.OnDeviceAttrs][239]) <i>* ty=Tensor[(32, 16, 3, 3, 16, 16), int8] *</i>;
+  %498 = nn.conv2d(%496, %497, strides=[2, 2], padding=[1, 1, 1, 1], channels=512, kernel_size=[3, 3], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %499 = reshape(meta[relay.Constant][33] <i>* ty=Tensor[(512, 1, 1), int32] *</i>, newshape=[32, 16, 1, 1, 1]) <i>* ty=Tensor[(32, 16, 1, 1, 1), int32] *</i>;
+  %500 = on_device(%499, meta[relay.attrs.OnDeviceAttrs][241]) <i>* ty=Tensor[(32, 16, 1, 1, 1), int32] *</i>;
+  %501 = transpose(%500, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %502 = on_device(%501, meta[relay.attrs.OnDeviceAttrs][242]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %503 = broadcast_to(%502, meta[relay.attrs.InitOpAttrs][15]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %504 = on_device(%498, meta[relay.attrs.OnDeviceAttrs][240]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %505 = on_device(%503, meta[relay.attrs.OnDeviceAttrs][243]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %506 = add(%504, %505) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %507 = on_device(%506, meta[relay.attrs.OnDeviceAttrs][244]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %508 = nn.relu(%507) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %509 = on_device(%508, meta[relay.attrs.OnDeviceAttrs][245]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %510 = add(%509, 128 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %511 = on_device(%510, meta[relay.attrs.OnDeviceAttrs][246]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %512 = right_shift(%511, 8 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %513 = on_device(%512, meta[relay.attrs.OnDeviceAttrs][247]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %514 = clip(%513, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %515 = on_device(%514, meta[relay.attrs.OnDeviceAttrs][248]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %516 = cast(%515, dtype="int8") <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %517 = on_device(%516, meta[relay.attrs.OnDeviceAttrs][249]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %518 = annotation.stop_fusion(%517) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %519 = reshape(meta[relay.Constant][34] <i>* ty=Tensor[(512, 512, 3, 3), int8] *</i>, newshape=[32, 16, 32, 16, 3, 3]) <i>* ty=Tensor[(32, 16, 32, 16, 3, 3), int8] *</i>;
+  %520 = on_device(%519, meta[relay.attrs.OnDeviceAttrs][251]) <i>* ty=Tensor[(32, 16, 32, 16, 3, 3), int8] *</i>;
+  %521 = transpose(%520, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(32, 32, 3, 3, 16, 16), int8] *</i>;
+  %522 = on_device(%518, meta[relay.attrs.OnDeviceAttrs][250]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %523 = on_device(%521, meta[relay.attrs.OnDeviceAttrs][252]) <i>* ty=Tensor[(32, 32, 3, 3, 16, 16), int8] *</i>;
+  %524 = nn.conv2d(%522, %523, padding=[1, 1, 1, 1], channels=512, kernel_size=[3, 3], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %525 = reshape(meta[relay.Constant][35] <i>* ty=Tensor[(512, 1, 1), int32] *</i>, newshape=[32, 16, 1, 1, 1]) <i>* ty=Tensor[(32, 16, 1, 1, 1), int32] *</i>;
+  %526 = on_device(%525, meta[relay.attrs.OnDeviceAttrs][254]) <i>* ty=Tensor[(32, 16, 1, 1, 1), int32] *</i>;
+  %527 = transpose(%526, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %528 = on_device(%527, meta[relay.attrs.OnDeviceAttrs][255]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %529 = broadcast_to(%528, meta[relay.attrs.InitOpAttrs][16]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %530 = on_device(%524, meta[relay.attrs.OnDeviceAttrs][253]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %531 = on_device(%529, meta[relay.attrs.OnDeviceAttrs][256]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %532 = add(%530, %531) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %533 = on_device(%532, meta[relay.attrs.OnDeviceAttrs][257]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %534 = add(%533, 32 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %535 = on_device(%534, meta[relay.attrs.OnDeviceAttrs][258]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %536 = right_shift(%535, 6 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %537 = on_device(%536, meta[relay.attrs.OnDeviceAttrs][259]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %538 = clip(%537, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %539 = on_device(%538, meta[relay.attrs.OnDeviceAttrs][260]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %540 = cast(%539, dtype="int8") <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %541 = on_device(%540, meta[relay.attrs.OnDeviceAttrs][261]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %542 = annotation.stop_fusion(%541) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %543 = on_device(%542, meta[relay.attrs.OnDeviceAttrs][262]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %544 = cast(%543, dtype="int32") <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %545 = on_device(%489, meta[relay.attrs.OnDeviceAttrs][235]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %546 = on_device(%544, meta[relay.attrs.OnDeviceAttrs][263]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %547 = add(%545, %546) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %548 = on_device(%547, meta[relay.attrs.OnDeviceAttrs][264]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %549 = nn.relu(%548) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %550 = on_device(%549, meta[relay.attrs.OnDeviceAttrs][265]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %551 = clip(%550, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %552 = on_device(%551, meta[relay.attrs.OnDeviceAttrs][266]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %553 = cast(%552, dtype="int8") <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %554 = on_device(%553, meta[relay.attrs.OnDeviceAttrs][267]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %555 = annotation.stop_fusion(%554) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %556 = on_device(%555, meta[relay.attrs.OnDeviceAttrs][268]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %557 = cast(%556, dtype="int32") <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %558 = cast(%552, dtype="int8") <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %559 = on_device(%558, meta[relay.attrs.OnDeviceAttrs][270]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %560 = annotation.stop_fusion(%559) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %561 = reshape(meta[relay.Constant][36] <i>* ty=Tensor[(512, 512, 3, 3), int8] *</i>, newshape=[32, 16, 32, 16, 3, 3]) <i>* ty=Tensor[(32, 16, 32, 16, 3, 3), int8] *</i>;
+  %562 = on_device(%561, meta[relay.attrs.OnDeviceAttrs][272]) <i>* ty=Tensor[(32, 16, 32, 16, 3, 3), int8] *</i>;
+  %563 = transpose(%562, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(32, 32, 3, 3, 16, 16), int8] *</i>;
+  %564 = on_device(%560, meta[relay.attrs.OnDeviceAttrs][271]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %565 = on_device(%563, meta[relay.attrs.OnDeviceAttrs][273]) <i>* ty=Tensor[(32, 32, 3, 3, 16, 16), int8] *</i>;
+  %566 = nn.conv2d(%564, %565, padding=[1, 1, 1, 1], channels=512, kernel_size=[3, 3], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %567 = reshape(meta[relay.Constant][37] <i>* ty=Tensor[(512, 1, 1), int32] *</i>, newshape=[32, 16, 1, 1, 1]) <i>* ty=Tensor[(32, 16, 1, 1, 1), int32] *</i>;
+  %568 = on_device(%567, meta[relay.attrs.OnDeviceAttrs][275]) <i>* ty=Tensor[(32, 16, 1, 1, 1), int32] *</i>;
+  %569 = transpose(%568, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %570 = on_device(%569, meta[relay.attrs.OnDeviceAttrs][276]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %571 = broadcast_to(%570, meta[relay.attrs.InitOpAttrs][17]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %572 = on_device(%566, meta[relay.attrs.OnDeviceAttrs][274]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %573 = on_device(%571, meta[relay.attrs.OnDeviceAttrs][277]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %574 = add(%572, %573) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %575 = on_device(%574, meta[relay.attrs.OnDeviceAttrs][278]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %576 = nn.relu(%575) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %577 = on_device(%576, meta[relay.attrs.OnDeviceAttrs][279]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %578 = add(%577, 128 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %579 = on_device(%578, meta[relay.attrs.OnDeviceAttrs][280]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %580 = right_shift(%579, 8 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %581 = on_device(%580, meta[relay.attrs.OnDeviceAttrs][281]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %582 = clip(%581, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %583 = on_device(%582, meta[relay.attrs.OnDeviceAttrs][282]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %584 = cast(%583, dtype="int8") <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %585 = on_device(%584, meta[relay.attrs.OnDeviceAttrs][283]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %586 = annotation.stop_fusion(%585) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %587 = reshape(meta[relay.Constant][38] <i>* ty=Tensor[(512, 512, 3, 3), int8] *</i>, newshape=[32, 16, 32, 16, 3, 3]) <i>* ty=Tensor[(32, 16, 32, 16, 3, 3), int8] *</i>;
+  %588 = on_device(%587, meta[relay.attrs.OnDeviceAttrs][285]) <i>* ty=Tensor[(32, 16, 32, 16, 3, 3), int8] *</i>;
+  %589 = transpose(%588, axes=[0, 2, 4, 5, 1, 3]) <i>* ty=Tensor[(32, 32, 3, 3, 16, 16), int8] *</i>;
+  %590 = on_device(%586, meta[relay.attrs.OnDeviceAttrs][284]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %591 = on_device(%589, meta[relay.attrs.OnDeviceAttrs][286]) <i>* ty=Tensor[(32, 32, 3, 3, 16, 16), int8] *</i>;
+  %592 = nn.conv2d(%590, %591, padding=[1, 1, 1, 1], channels=512, kernel_size=[3, 3], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %593 = reshape(meta[relay.Constant][39] <i>* ty=Tensor[(512, 1, 1), int32] *</i>, newshape=[32, 16, 1, 1, 1]) <i>* ty=Tensor[(32, 16, 1, 1, 1), int32] *</i>;
+  %594 = on_device(%593, meta[relay.attrs.OnDeviceAttrs][288]) <i>* ty=Tensor[(32, 16, 1, 1, 1), int32] *</i>;
+  %595 = transpose(%594, axes=[0, 2, 3, 4, 1]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %596 = on_device(%595, meta[relay.attrs.OnDeviceAttrs][289]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %597 = broadcast_to(%596, meta[relay.attrs.InitOpAttrs][18]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %598 = on_device(%592, meta[relay.attrs.OnDeviceAttrs][287]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %599 = on_device(%597, meta[relay.attrs.OnDeviceAttrs][290]) <i>* ty=Tensor[(32, 1, 1, 1, 16), int32] *</i>;
+  %600 = add(%598, %599) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %601 = on_device(%600, meta[relay.attrs.OnDeviceAttrs][291]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %602 = add(%601, 8 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %603 = on_device(%602, meta[relay.attrs.OnDeviceAttrs][292]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %604 = right_shift(%603, 4 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %605 = on_device(%604, meta[relay.attrs.OnDeviceAttrs][293]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %606 = clip(%605, a_min=-127f, a_max=127f) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %607 = on_device(%606, meta[relay.attrs.OnDeviceAttrs][294]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %608 = cast(%607, dtype="int8") <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %609 = on_device(%608, meta[relay.attrs.OnDeviceAttrs][295]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %610 = annotation.stop_fusion(%609) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %611 = on_device(%610, meta[relay.attrs.OnDeviceAttrs][296]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %612 = cast(%611, dtype="int32") <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %613 = on_device(%557, meta[relay.attrs.OnDeviceAttrs][269]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %614 = on_device(%612, meta[relay.attrs.OnDeviceAttrs][297]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %615 = add(%613, %614) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %616 = on_device(%615, meta[relay.attrs.OnDeviceAttrs][298]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %617 = nn.relu(%616) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %618 = on_device(%617, meta[relay.attrs.OnDeviceAttrs][299]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %619 = cast(%618, dtype="int8") <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %620 = on_device(%619, meta[relay.attrs.OnDeviceAttrs][300]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %621 = annotation.stop_fusion(%620) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %622 = on_device(%621, meta[relay.attrs.OnDeviceAttrs][301]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int8] *</i>;
+  %623 = cast(%622, dtype="int32") <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %624 = on_device(%623, meta[relay.attrs.OnDeviceAttrs][302]) <i>* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] *</i>;
+  %625 = transpose(%624, axes=[0, 4, 1, 5, 2, 3]) <i>* ty=Tensor[(1, 1, 32, 16, 7, 7), int32] *</i>;
+  %626 = reshape(%625, newshape=[1, 512, 7, 7]) <i>* ty=Tensor[(1, 512, 7, 7), int32] *</i>;
+  %627 = nn.global_avg_pool2d(%626) <i>* ty=Tensor[(1, 512, 1, 1), int32] *</i>;
+  %628 = nn.batch_flatten(%627) <i>* ty=Tensor[(1, 512), int32] *</i>;
+  %629 = cast(%628, dtype="float32") <i>* ty=Tensor[(1, 512), float32] *</i>;
+  %630 = multiply(%629, 0.0625f <i>* ty=float32 *</i>) <i>* ty=Tensor[(1, 512), float32] *</i>;
+  %631 = nn.dense(%630, meta[relay.Constant][40] <i>* ty=Tensor[(1000, 512), float32] *</i>, units=1000) <i>* ty=Tensor[(1, 1000), float32] *</i>;
+  add(%631, meta[relay.Constant][41] <i>* ty=Tensor[(1000), float32] *</i>) <i>* ty=Tensor[(1, 1000), float32] *</i>
+}
+</p>
+
+<p>
+在上面的输出的 relay_prog 中,
+</p>
+
+<ul class="org-ul">
+<li><p>
+nn.conv2d pack 的结果
+</p>
+
+<p>
+data_layout 变成为 NCHW1n16c, 其中 16c 表示 512 的 channels 变成为 16x(512/16)
+</p>
+
+<pre class="example" id="orgdb72fe9">
+%566 = nn.conv2d(%564, %565, padding=[1, 1, 1, 1], channels=512, kernel_size=[3, 3], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") /* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] */;
+</pre></li>
+
+<li><p>
+annotation 的结果
+</p>
+
+<p>
+nn.relu 添加了一个 on_device 的属性, 表示 relay build 时对这个 nn.relu 使用 vta 做为 device.
+</p>
+
+<p>
+实际上 vta 的 env.target 的值为 ext_dev -keys=vta,cpu -device=vta -model=sim_1x16_i8w8a32_15_15_18_17
+</p>
+
+<p>
+因为指定了 `keys=vta,cpu`,relay.build 查找 strategy 时会把 cpu 做为 fallback,
+所以即使前面 annotate 时把 vta 不支持的 relay IR 比如 nn.relu 标记为
+on_device(env.target), 但编译时最终还是会用 cpu 的 strategy 去编译
+(<a href="file:///home/sunway/source/tvm/python/tvm/target/generic_func.py#org188e1db">file:///home/sunway/source/tvm/python/tvm/target/generic_func.py#org188e1db</a>)
+</p>
+
+<pre class="example" id="orgb932240">
+%617 = nn.relu(%616) /* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] */;
+%618 = on_device(%617, meta[relay.attrs.OnDeviceAttrs][299]) /* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] */;
+</pre></li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orga47796a" class="outline-3">
+<h3 id="orga47796a"><span class="section-number-3">1.3</span> VTA Driver</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+vta.build 时通过 add_lower_pass 添加自定义 pass, 根据 tir 的 pragma 信息把 tir
+修改成对 vta runtime 相关函数的调用, 以 Overview 中的代码为例, 会依次调用以下函数:
+</p>
+
+<ul class="org-ul">
+<li>VTALoadBuffer2D</li>
+<li>VTALoadBuffer2D</li>
+<li>VTAUopLoopBegin</li>
+<li>VTAUopPush</li>
+<li>VTAUopLoopEnd</li>
+<li>VTAPushALUOp</li>
+<li>VTADepPush</li>
+<li>VTADepPop</li>
+<li>VTAStoreBuffer2D</li>
+<li>VTASynchronize</li>
+</ul>
+
+<p>
+上面的函数会再转换成 vta instruction 及对 vta driver 的调用, 以 VTAPushALUOp 为例:
+</p>
+
+<ol class="org-ol">
+<li><p>
+VTAPushALUOp 先生成 instruction 放在 insn_queue_ 中
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #b58900;">void</span> <span style="color: #268bd2;">PushALUUop</span><span style="color: #757575;">(</span><span style="color: #b58900;">UopKernel</span>* <span style="color: #268bd2;">kernel</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">VTAAluInsn</span>* <span style="color: #268bd2;">insn</span> = insn_queue_.CreateAluInsn<span style="color: #757575;">()</span>;
+    insn-&gt;opcode = VTA_OPCODE_ALU;
+    insn-&gt;reset_reg = kernel-&gt;reset_out_;
+    insn-&gt;uop_bgn = kernel-&gt;sram_begin_;
+    insn-&gt;uop_end = kernel-&gt;sram_end_;
+    insn-&gt;alu_opcode = kernel-&gt;opcode_;
+    insn-&gt;use_imm = kernel-&gt;use_imm_;
+    insn-&gt;imm = kernel-&gt;imm_val_;
+    <span style="color: #859900;">const</span> <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">vector</span>&lt;<span style="color: #268bd2; font-weight: bold;">UopKernel</span>::LoopEntry&gt;&amp; <span style="color: #268bd2;">loop</span> = kernel-&gt;loop<span style="color: #757575;">()</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+    insn-&gt;iter_out = loop[0].extent;
+    insn-&gt;dst_factor_out = loop[0].dst_factor;
+    insn-&gt;src_factor_out = loop[0].src_factor;
+    insn-&gt;iter_in = loop[1].extent;
+    insn-&gt;dst_factor_in = loop[1].dst_factor;
+    insn-&gt;src_factor_in = loop[1].src_factor;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div></li>
+
+<li><p>
+VTASynchronize 会把 insn_queue_ 从本地复制到 fpga, 然后再让 fpga 执行
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #b58900;">void</span> <span style="color: #268bd2;">Synchronize</span><span style="color: #757575;">(</span><span style="color: #b58900;">uint32_t</span> <span style="color: #268bd2;">wait_cycles</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    insn_queue_.AutoReadBarrier<span style="color: #757575;">()</span>;
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">dram_buffer_ &#26159;&#26412;&#22320;&#30340;&#19968;&#20010; std::vector</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">fpga_buff_ &#26159;&#36890;&#36807; VTAMemAlloc &#20998;&#37197;&#30340; fpga &#19978;&#30340;&#20869;&#23384;</span>
+        VTAMemCopyFromHost<span style="color: #757575;">(</span>fpga_buff_<span style="color: #757575;">,</span> dram_buffer_.data<span style="color: #757575;">(),</span> buff_size<span style="color: #757575;">)</span>;
+
+    VTADeviceRun<span style="color: #757575;">(</span>
+        device_<span style="color: #757575;">,</span> insn_queue_.dram_phy_addr<span style="color: #757575;">(),</span> insn_queue_.count<span style="color: #757575;">(),</span> wait_cycles<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div></li>
+</ol>
+
+<p>
+VTA driver 提供的功能主要有:
+</p>
+
+<ol class="org-ol">
+<li>VTADeviceAlloc</li>
+<li>VTAMemAlloc / VTAMemFree</li>
+<li>VTAMemCopyFromHost / VTAMemCopyToHost</li>
+<li>VTADeviceRun</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org79c1a08" class="outline-3">
+<h3 id="org79c1a08"><span class="section-number-3">1.4</span> MISC</h3>
+<div class="outline-text-3" id="text-1-4">
+</div>
+<div id="outline-container-org8ceabcc" class="outline-4">
+<h4 id="org8ceabcc"><span class="section-number-4">1.4.1</span> vta 与 opencl target 的区别</h4>
+<div class="outline-text-4" id="text-1-4-1">
+<p>
+vta 无法像 opencl 一样支持所有的操作, 它的方式称为 heterogeneous execution:
+</p>
+
+<ol class="org-ol">
+<li><p>
+<del>编译时需要通过 on_device 修改各个 IR 的 target, 而对于 opencl, 所有 IR 都使</del>
+<del>用 opencl target, 且运行时需要通过 on_device 生成的 device_copy 频繁的在 cpu</del>
+<del>与 vta 之拷贝数据, opencl 只需要针对 input/output 进行 copy</del>
+</p>
+
+<p>
+opencl 也支持 heterogeneous execution: <a href="tvm_graph_executor.html#org607986a">GraphExecutorCodegen</a>
+</p></li>
+
+<li>vta build 是在 target.build.llvm 基础上通过 tir.add_lower_pass 加入几个自定义
+pass 实现的针对 alu, gemm 等的 offload, 而 opencl 有它自己的
+target.build.opencl</li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

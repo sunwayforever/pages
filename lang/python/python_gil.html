@@ -1,0 +1,431 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Python GIL</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Python GIL</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgeb3889d">1. <span class="done DONE">DONE</span> Python GIL</a>
+<ul>
+<li><a href="#orge635380">1.1. python 多线程并没有利用多核?</a>
+<ul>
+<li><a href="#orga419fce">1.1.1. python threading</a></li>
+<li><a href="#orged0893c">1.1.2. c pthread</a></li>
+</ul>
+</li>
+<li><a href="#org96d244f">1.2. GIL</a></li>
+<li><a href="#org0d946d1">1.3. 结论</a></li>
+<li><a href="#orgd553b39">1.4. case study</a>
+<ul>
+<li><a href="#org7e6e9b7">1.4.1. 问题</a></li>
+<li><a href="#org56e9eae">1.4.2. 解决步骤</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgeb3889d" class="outline-2">
+<h2 id="orgeb3889d"><span class="section-number-2">1</span> <span class="done DONE">DONE</span> Python GIL</h2>
+<div class="outline-text-2" id="text-1">
+<ul class="org-ul">
+<li>State "DONE"       from "TODO"       <span class="timestamp-wrapper"><span class="timestamp">[2021-03-11 四 18:41]</span></span></li>
+</ul>
+<p>
+<span class="timestamp-wrapper"><span class="timestamp">[2021-03-11 四]</span></span>
+</p>
+</div>
+
+<div id="outline-container-orge635380" class="outline-3">
+<h3 id="orge635380"><span class="section-number-3">1.1</span> python 多线程并没有利用多核?</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-orga419fce" class="outline-4">
+<h4 id="orga419fce"><span class="section-number-4">1.1.1</span> python threading</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">import</span> threading
+<span style="color: #859900;">import</span> time
+
+<span style="color: #268bd2;">start</span> = time.time<span style="color: #757575;">()</span>
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">thread_demo</span><span style="color: #757575;">(</span>n<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>n<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">i</span> += 1
+
+<span style="color: #268bd2;">N</span> = 10000000
+thread_demo<span style="color: #757575;">(</span>N<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>f<span style="color: #2aa198;">"time: {time.time()-start}"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">start</span> = time.time<span style="color: #757575;">()</span>
+<span style="color: #268bd2;">t1</span> = threading.Thread<span style="color: #757575;">(</span>target=thread_demo<span style="color: #757575;">,</span> args=<span style="color: #757575;">(</span>N // 2<span style="color: #757575;">,))</span>
+<span style="color: #268bd2;">t2</span> = threading.Thread<span style="color: #757575;">(</span>target=thread_demo<span style="color: #757575;">,</span> args=<span style="color: #757575;">(</span>N // 2<span style="color: #757575;">,))</span>
+t1.start<span style="color: #757575;">()</span>
+t2.start<span style="color: #757575;">()</span>
+t1.join<span style="color: #757575;">()</span>
+t2.join<span style="color: #757575;">()</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>f<span style="color: #2aa198;">"time: {time.time()-start}"</span><span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+time: 0.9939150810241699
+time: 0.9706227779388428
+</p>
+
+<p>
+使用两个线程在多核的机器上并没有缩短运行时间
+</p>
+</div>
+</div>
+
+<div id="outline-container-orged0893c" class="outline-4">
+<h4 id="orged0893c"><span class="section-number-4">1.1.2</span> c pthread</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #586e75;">// </span><span style="color: #586e75;">2021-03-11 14:27</span>
+<span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;pthread.h&gt;</span>
+<span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;stdio.h&gt;</span>
+<span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;stdlib.h&gt;</span>
+<span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;string.h&gt;</span>
+<span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;unistd.h&gt;</span>
+<span style="color: #b58900;">void</span> <span style="color: #268bd2;">thread_demo</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">total</span> = 0;
+    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">i</span> = 0; i &lt; 10000000; i++<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        total += i;
+    <span style="color: #757575;">}</span>
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%d\n"</span><span style="color: #757575;">,</span> total<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">pthread_t</span> <span style="color: #268bd2;">tid</span>;
+    <span style="color: #b58900;">pthread_t</span> <span style="color: #268bd2;">tid2</span>;
+    <span style="color: #b58900;">pthread_t</span> <span style="color: #268bd2;">tid3</span>;
+    <span style="color: #b58900;">void</span> *<span style="color: #268bd2;">res</span>;
+    pthread_create<span style="color: #757575;">(</span>&amp;tid<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">,</span> thread_demo<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>;
+    pthread_create<span style="color: #757575;">(</span>&amp;tid2<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">,</span> thread_demo<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>;
+    pthread_join<span style="color: #757575;">(</span>tid<span style="color: #757575;">,</span> &amp;res<span style="color: #757575;">)</span>;
+    pthread_join<span style="color: #757575;">(</span>tid2<span style="color: #757575;">,</span> &amp;res<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> 0;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org7415c91">
+$&gt; gcc test.c -lpthread -O0
+$&gt; time ./a.out
+-2014260032
+-2014260032
+
+real    0m0.062s
+user    0m0.123s
+sys     0m0.000s
+</pre>
+
+<p>
+user 时间代表运行在 userspace 的总时间, real 代表 wall time, 由于利用了双核来运行, 所以 user 是 real 的两倍.
+</p>
+
+<p>
+所以使用多线程可以使代码在多核机器上运行时间 (real) 缩短一倍
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org96d244f" class="outline-3">
+<h3 id="org96d244f"><span class="section-number-3">1.2</span> GIL</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+python 的 multithreading 包使用的实际上是系统线程 (而不是 green thread), 但为了保护 python intepreter 自己的一些资源, 它使用 GIL (Global Interpreter Lock) 来阻止多线程在多核上同时通过解释器来执行 byte code
+</p>
+
+<p>
+GIL 只是保护 intepreter 内部实现的一些数据, 例如 python object 的引用计数. 用户自己的共享数据还是需要自己去保护: 虽然解释器无法多线程同时执行 byte code, 但对全局变量的访问并非原子操作, 多线程交替执行时还是会有问题
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">import</span> dis
+
+dis.dis<span style="color: #757575;">(</span><span style="color: #839496;">compile</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"x+=1"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">""</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"exec"</span><span style="color: #757575;">))</span>
+</pre>
+</div>
+
+<p>
+1           0 LOAD_NAME                0 (x)
+            2 LOAD_CONST               0 (1)
+            4 INPLACE_ADD
+            6 STORE_NAME               0 (x)
+            8 LOAD_CONST               1 (None)
+           10 RETURN_VALUE
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">import</span> threading
+<span style="color: #859900;">import</span> time
+
+<span style="color: #268bd2;">counter</span> = 0
+<span style="color: #268bd2;">start</span> = time.time<span style="color: #757575;">()</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">thread_demo</span><span style="color: #757575;">()</span>:
+    <span style="color: #859900;">global</span> counter
+    <span style="color: #859900;">for</span> _ <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>1000000<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">counter</span> += 1
+
+
+<span style="color: #268bd2;">t1</span> = threading.Thread<span style="color: #757575;">(</span>target=thread_demo<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">t2</span> = threading.Thread<span style="color: #757575;">(</span>target=thread_demo<span style="color: #757575;">)</span>
+t1.start<span style="color: #757575;">()</span>
+t2.start<span style="color: #757575;">()</span>
+t1.join<span style="color: #757575;">()</span>
+t2.join<span style="color: #757575;">()</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>counter<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+1334693
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0d946d1" class="outline-3">
+<h3 id="org0d946d1"><span class="section-number-3">1.3</span> 结论</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+GIL 导致 threading 无法利用多核执行 byte code 且并不保护用户数据, 如何解决这个问题:
+</p>
+
+<ol class="org-ol">
+<li>换其它的解释器, 比如 Jython</li>
+<li>换成 multiprocessing 包, 利用多进程去处理</li>
+<li>自己把多线程代码用 native 改写, 利用 native 的多线程去处理</li>
+<li>代码本身主要执行 IO, 图像处理, numpy 运算, native 操作等. 执行这些时不需要
+python 解释器, 也就不需要 GIL</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgd553b39" class="outline-3">
+<h3 id="orgd553b39"><span class="section-number-3">1.4</span> case study</h3>
+<div class="outline-text-3" id="text-1-4">
+</div>
+<div id="outline-container-org7e6e9b7" class="outline-4">
+<h4 id="org7e6e9b7"><span class="section-number-4">1.4.1</span> 问题</h4>
+<div class="outline-text-4" id="text-1-4-1">
+<p>
+线程 A 用 swig 封装了一个 video capture 功能, 不断的读取 image 并通过 zmq
+publish 出去, 线程 B 通过 sub 来读取 image 并处理.
+</p>
+
+<p>
+测试时发现, 线程 A 不断的 pub, 但线程 B 读取到 image 的速度却很慢. 但线程 A 使用另一个 opencv 自带的 video capture 时, 则没有问题: 线程 B 会很快的读到 image
+</p>
+</div>
+</div>
+
+<div id="outline-container-org56e9eae" class="outline-4">
+<h4 id="org56e9eae"><span class="section-number-4">1.4.2</span> 解决步骤</h4>
+<div class="outline-text-4" id="text-1-4-2">
+</div>
+<div id="outline-container-org92f0681" class="outline-5">
+<h5 id="org92f0681"><span class="section-number-5">1.4.2.1</span> 用 py-spy 进行 profiling</h5>
+<div class="outline-text-5" id="text-1-4-2-1">
+<ol class="org-ol">
+<li><p>
+使用 opencv 进行 capture
+</p>
+
+<pre class="example" id="org8116941">
+sudo py-spy record --pid 348301 -t -o /tmp/test.svg
+</pre>
+
+
+<div id="orgf8fe445" class="figure">
+<p><img src="../extra/gil_webcam.png" alt="gil_webcam.png" />
+</p>
+</div></li>
+</ol>
+
+<p>
+看可以看 thread 317 调用 video_capture 占用了一部分 CPU
+</p>
+
+<ol class="org-ol">
+<li><p>
+使用 opencv, profile 时只显示占用 GIL 的线程
+</p>
+
+<pre class="example" id="orgfc16ad3">
+sudo py-spy record --pid 355982 -t -o /tmp/test.svg --gil
+</pre>
+
+
+<div id="org900f8e5" class="figure">
+<p><img src="../extra/gil_webcam_2.png" alt="gil_webcam_2.png" />
+</p>
+</div></li>
+</ol>
+
+<p>
+可以看到 video_capture 线程没有显示了, 表示它并没有占用 GIL
+</p>
+
+<ol class="org-ol">
+<li><p>
+使用 swig, 只显示 GIL
+</p>
+
+
+<div id="org85f8764" class="figure">
+<p><img src="../extra/gil_swig.png" alt="gil_swig.png" />
+</p>
+</div>
+
+<p>
+video_capture 占用了很多的 GIL
+</p></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgd1f7cc5" class="outline-5">
+<h5 id="orgd1f7cc5"><span class="section-number-5">1.4.2.2</span> swig 为什么占用 GIL</h5>
+<div class="outline-text-5" id="text-1-4-2-2">
+<p>
+swig 生成的 pub 线程占用了大量的 GIL, 导致 sub 线程无法在另一个核上运行. swig 生成的代码为什么会占用 GIL?
+</p>
+
+<p>
+通过查看 swig 生成的 wrap.cxx 可以看到类似下面的代码:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #268bd2;">#if</span> <span style="color: #268bd2;">defined</span><span style="color: #757575;">(</span>SWIG_PYTHON_THREADS<span style="color: #757575;">)</span> <span style="color: #586e75;">/* </span><span style="color: #586e75;">Threading support is enabled</span><span style="color: #586e75;"> */</span>
+<span style="color: #268bd2;">#  define</span> <span style="color: #268bd2;">SWIG_PYTHON_THREAD_BEGIN_BLOCK</span>   <span style="color: #b58900;">PyGILState_STATE</span> <span style="color: #268bd2;">_swig_thread_block</span> = PyGILState_Ensure<span style="color: #757575;">()</span>
+<span style="color: #268bd2;">#  define</span> <span style="color: #268bd2;">SWIG_PYTHON_THREAD_END_BLOCK</span>     PyGILState_Release<span style="color: #757575;">(</span>_swig_thread_block<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">#  define</span> <span style="color: #268bd2;">SWIG_PYTHON_THREAD_BEGIN_ALLOW</span>   <span style="color: #b58900;">PyThreadState</span> *<span style="color: #268bd2;">_swig_thread_allow</span> = PyEval_SaveThread<span style="color: #757575;">()</span>
+<span style="color: #268bd2;">#  define</span> <span style="color: #268bd2;">SWIG_PYTHON_THREAD_END_ALLOW</span>     PyEval_RestoreThread<span style="color: #757575;">(</span>_swig_thread_allow<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">#else</span> <span style="color: #586e75;">/* </span><span style="color: #586e75;">No thread support</span><span style="color: #586e75;"> */</span>
+<span style="color: #268bd2;">#  define</span> <span style="color: #268bd2;">SWIG_PYTHON_INITIALIZE_THREADS</span>
+<span style="color: #268bd2;">#  define</span> <span style="color: #268bd2;">SWIG_PYTHON_THREAD_BEGIN_BLOCK</span>
+<span style="color: #268bd2;">#  define</span> <span style="color: #268bd2;">SWIG_PYTHON_THREAD_END_BLOCK</span>
+<span style="color: #268bd2;">#  define</span> <span style="color: #268bd2;">SWIG_PYTHON_THREAD_BEGIN_ALLOW</span>
+<span style="color: #268bd2;">#  define</span> <span style="color: #268bd2;">SWIG_PYTHON_THREAD_END_ALLOW</span>
+<span style="color: #268bd2;">#endif</span>
+
+<span style="color: #268bd2;">SwigPtr_PyObject</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">SwigPtr_PyObject</span>&amp; <span style="color: #268bd2;">item</span><span style="color: #757575;">)</span> : _obj<span style="color: #757575;">(</span>item._obj<span style="color: #757575;">)</span>
+<span style="color: #757575;">{</span>
+    SWIG_PYTHON_THREAD_BEGIN_BLOCK;
+    Py_XINCREF<span style="color: #757575;">(</span>_obj<span style="color: #757575;">)</span>;      
+    SWIG_PYTHON_THREAD_END_BLOCK;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+所以是否需要持有 GIL 是要通过 PYGIL&#x2026; 之类的函数显式的告诉 python intepreter
+的.
+</p>
+
+<p>
+当声明了 SWIG_PYTHON_THREADS 时, swig 会在调用 native 函数前后加上 GIL 相关的代码
+</p>
+</div>
+</div>
+
+<div id="outline-container-org820095b" class="outline-5">
+<h5 id="org820095b"><span class="section-number-5">1.4.2.3</span> 解决方案</h5>
+<div class="outline-text-5" id="text-1-4-2-3">
+<p>
+<a href="http://www.swig.org/Doc4.0/Python.html">http://www.swig.org/Doc4.0/Python.html</a>
+</p>
+
+<p>
+通过 swig 命令行上加上 `-threads` 参数就可以保证 swig 调用到 native 代码时不会持有 GIL 了.
+</p>
+
+<p>
+再测试一下:
+</p>
+
+
+<div id="org30a06df" class="figure">
+<p><img src="../extra/gil_swig_2.png" alt="gil_swig_2.png" />
+</p>
+</div>
+
+<p>
+可以看到 video_capture 已经不占用 GIL 了
+</p>
+
+<p>
+ps. 我是怎么找到可能和 GIL 相关的?
+</p>
+
+<p>
+一开始我想调整一下 python 线程的优先级看看有没有效果, 结果发现两个信息:
+</p>
+
+<ol class="org-ol">
+<li>python 的 threading 没有相应的 api</li>
+<li>由于 GIL 的存在, python 线程的性能和优先级关系不大</li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

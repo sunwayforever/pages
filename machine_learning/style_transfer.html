@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Style Transfer</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Style Transfer</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org68ee868">1. Style Transfer</a>
+<ul>
+<li><a href="#org7b4a068">1.1. 方差, 协方差, 协方差矩阵, gram 矩阵</a></li>
+<li><a href="#org141c629">1.2. style loss</a></li>
+<li><a href="#orgdc5b739">1.3. content loss</a></li>
+<li><a href="#orgb1ac6ec">1.4. 网络模型</a></li>
+<li><a href="#org8346600">1.5. 训练</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org68ee868" class="outline-2">
+<h2 id="org68ee868"><span class="section-number-2">1</span> Style Transfer</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org7b4a068" class="outline-3">
+<h3 id="org7b4a068"><span class="section-number-3">1.1</span> 方差, 协方差, 协方差矩阵, gram 矩阵</h3>
+<div class="outline-text-3" id="text-1-1">
+<ul class="org-ul">
+<li><p>
+方差是为了评价随机变量的离散程度
+</p>
+
+<p>
+\(V=\frac{\sum(X-\mu)^2}{N}\)
+</p></li>
+
+<li><p>
+协方差是为了衡量两个随机变量的离散程度, 或者相关性
+</p>
+
+<p>
+\(cov(X,Y)=\frac{\sum(X-\mu_x)*(Y-\mu_y)}{N}\)
+</p></li>
+
+<li>方差是随机变量与自身的协方差</li>
+
+<li><p>
+协方差矩阵是多个随机变量两两之间的协方差
+</p>
+
+<p>
+\(C_{ij}=\begin{bmatrix}c11&c12&c13&\ldots\\c21&c22&c23&\ldots\\\vdots&\vdots&\ddots\end{bmatrix}\)
+</p></li>
+
+<li><p>
+gram 矩阵是偏心协方差矩阵, 它在计算时没为减去均值
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #268bd2;">x</span> = np.array<span style="color: #757575;">(</span>[[1<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 3<span style="color: #757575;">,</span> 4<span style="color: #757575;">,</span> 5]<span style="color: #757575;">,</span> [1<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 3<span style="color: #757575;">,</span> 4<span style="color: #757575;">,</span> 5]<span style="color: #757575;">,</span> [-1<span style="color: #757575;">,</span> -2<span style="color: #757575;">,</span> -3<span style="color: #757575;">,</span> -4<span style="color: #757575;">,</span> -5]]<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">gram</span> = np.matmul<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> x.T<span style="color: #757575;">)</span>
+gram
+</pre>
+</div>
+
+<pre class="example" id="orgdc88bd3">
+array([[ 55,  55, -55],
+[ 55,  55, -55],
+[-55, -55,  55]])
+</pre>
+
+<p>
+gram 矩阵与协方差矩阵类似, 反映了不同随机变量的相关性. 上面的例子显示, x1 与
+x2 正关, x1 与 x3 负相关
+</p></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org141c629" class="outline-3">
+<h3 id="org141c629"><span class="section-number-3">1.2</span> style loss</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+style loss 用来衡量 target image 与 style image 的 style 的差别. 使得 target
+image 在训练时能趋向于 style image 的 style.
+</p>
+
+<p>
+CNN 中卷积层的输出可以看作某种 style. 所以 style transfer 时会把 target image 在某层卷积层的输出与 style image 在同一层卷积层的输出作比较.
+</p>
+
+<p>
+具体的方法是:
+</p>
+
+<ol class="org-ol">
+<li>分别计算 style image 和 target image 在某一层卷积层输出的 feature map, 例如
+[10, 16, 16] 大小的矩阵. 表示输出 10 个 feature map, 每个 feature map 是 [16,
+16] 大小的矩阵</li>
+
+<li>把 [10, 16, 16] 矩阵 reshape 成 [10, 16 * 16], 然后计算其 gram 矩阵</li>
+
+<li>对 target image 和 style image 的 gram 矩阵做 MSELoss</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgdc5b739" class="outline-3">
+<h3 id="orgdc5b739"><span class="section-number-3">1.3</span> content loss</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+content loss 用来衡量 target image 与 input image 的差别. 在训练开始时, target
+image的各个像素可以设定为随机值. 训练时通过最小化 content loss, 可以使 target
+image与 input image 越来越像.
+</p>
+
+<p>
+实现上, content loss 只是简单的把 target image 与 input image 做 MSELoss 即可.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgb1ac6ec" class="outline-3">
+<h3 id="orgb1ac6ec"><span class="section-number-3">1.4</span> 网络模型</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+style transfer 使用了训练好的 vgg19 网络:
+</p>
+
+
+<div id="org6cef92d" class="figure">
+<p><img src="../extra/vgg19.png" alt="vgg19.png" />
+</p>
+</div>
+
+<p>
+在 pytorch 中, vgg19 的 fc 层之前的部分为:
+</p>
+<pre class="example" id="org6c6fc6e">
+Sequential(
+  (0): Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (1): ReLU(inplace)
+  (2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (3): ReLU(inplace)
+  (4): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
+
+  (5): Conv2d(64, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (6): ReLU(inplace)
+  (7): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (8): ReLU(inplace)
+  (9): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
+
+  (10): Conv2d(128, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (11): ReLU(inplace)
+  (12): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (13): ReLU(inplace)
+  (14): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (15): ReLU(inplace)
+  (16): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (17): ReLU(inplace)
+  (18): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
+
+  (19): Conv2d(256, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (20): ReLU(inplace)
+  (21): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (22): ReLU(inplace)
+  (23): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (24): ReLU(inplace)
+  (25): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (26): ReLU(inplace)
+  (27): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
+
+  (28): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (29): ReLU(inplace)
+  (30): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (31): ReLU(inplace)
+  (32): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (33): ReLU(inplace)
+  (34): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (35): ReLU(inplace)
+  (36): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
+)
+</pre>
+
+<p>
+style transfer 使用了 transfer learning 的方法, 提取了上图中的卷积层(绿色)和
+maxpool 层 (蓝色) 部分. 然后前五个卷积层之后加入了一个 style loss 层, 在每四个卷积层后加一个 content loss, 然后删除了 content loss 之后的部分, 形成下面的结构:
+</p>
+
+<pre class="example" id="orge56b44e">
+Sequential(
+  (0): Normalization()
+  (conv_1): Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (style_loss_1): StyleLoss()
+
+  (relu_1): ReLU()
+  (conv_2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (style_loss_2): StyleLoss()
+
+  (relu_2): ReLU()
+  (pool_2): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
+  (conv_3): Conv2d(64, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (style_loss_3): StyleLoss()
+
+  (relu_3): ReLU()
+  (conv_4): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (content_loss_4): ContentLoss()
+  (style_loss_4): StyleLoss()
+
+  (relu_4): ReLU()
+  (pool_4): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
+  (conv_5): Conv2d(128, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (style_loss_5): StyleLoss()
+)
+</pre>
+
+<p>
+之所以插入多个 style loss 和 content loss 层, 是为了计算 loss 方便.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org8346600" class="outline-3">
+<h3 id="org8346600"><span class="section-number-3">1.5</span> 训练</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+style transfer 的训练与正常 CNN 有两点不同:
+</p>
+
+<ol class="org-ol">
+<li>style transfer 网络的优化的目标不是各层的权重(各层权重来自训练好的 vgg19, 是固定的), 而是网络的输入(即 target image). 在训练时, 网络会根据 contet loss 和
+style loss 的情况对 target image 进行更新,越它越来越好.</li>
+
+<li>正常的 cnn 训练时, 损失函数通常是用网络最后的输入与 label 计算一个 MSELoss 或
+BCELoss. style transfer 网络不同, 它的 loss 是取中多个中间层的结果, 分别计算了多个 style loss 或 content loss 后加权求和, 作为最终的 loss. 这里的加权是指在 `与 style image 更像` 和 `与 input image 更像` 之间折衷</li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

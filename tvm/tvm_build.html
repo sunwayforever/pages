@@ -1,0 +1,995 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TVM Build</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">TVM Build</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org5f51857">1. TVM Build</a>
+<ul>
+<li><a href="#orge814ca2">1.1. Relay Optimizations</a>
+<ul>
+<li><a href="#org44d659a">1.1.1. Overview</a></li>
+<li><a href="#orgbf5e20b">1.1.2. optimize</a></li>
+<li><a href="#org29d42b9">1.1.3. PassContext</a></li>
+<li><a href="#orgfd42cfe">1.1.4. Relay Transform</a></li>
+</ul>
+</li>
+<li><a href="#orge205891">1.2. Relay IR -&gt; TE -&gt; TIR</a>
+<ul>
+<li><a href="#org4079de9">1.2.1. Relay IR -&gt; OpRegistry</a></li>
+<li><a href="#org3237196">1.2.2. OpRegistry -&gt; TE</a></li>
+<li><a href="#orga93416f">1.2.3. TE -&gt; TIR</a></li>
+</ul>
+</li>
+<li><a href="#org937b94d">1.3. TIR -&gt; Codegen</a>
+<ul>
+<li><a href="#org361578a">1.3.1. Example</a></li>
+</ul>
+</li>
+<li><a href="#org4660dca">1.4. <span class="done DONE">DONE</span> Build Target</a>
+<ul>
+<li><a href="#org0df30cb">1.4.1. target 参数是如何被解析和使用的</a></li>
+<li><a href="#orgebae952">1.4.2. LLVMTargetToString</a></li>
+<li><a href="#org4ceb104">1.4.3. arm_cpu 针对 arm 的特殊处理</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org5f51857" class="outline-2">
+<h2 id="org5f51857"><span class="section-number-2">1</span> TVM Build</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-orge814ca2" class="outline-3">
+<h3 id="orge814ca2"><span class="section-number-3">1.1</span> Relay Optimizations</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-org44d659a" class="outline-4">
+<h4 id="org44d659a"><span class="section-number-4">1.1.1</span> Overview</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>
+    opt_level=3<span style="color: #757575;">,</span> disabled_pass=[]<span style="color: #757575;">,</span> required_pass=[]<span style="color: #757575;">,</span> config=<span style="color: #757575;">{}</span>
+<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> target=<span style="color: #2aa198;">"c"</span><span style="color: #757575;">,</span> params=<span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;"># </span><span style="color: #586e75;">build_module.py@relay:</span>
+relay.build<span style="color: #757575;">()</span>:
+  <span style="color: #268bd2;">bld_mod</span> = BuildModule<span style="color: #757575;">()</span>
+  bld_mod.build<span style="color: #757575;">(</span>mod=ir_mod<span style="color: #757575;">,</span> target=target<span style="color: #757575;">,</span> params=params<span style="color: #757575;">,</span> executor=executor<span style="color: #757575;">,</span>
+                mod_name=mod_name<span style="color: #757575;">)</span>
+    <span style="color: #859900;">self</span>._build<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> target<span style="color: #757575;">,</span> target_host<span style="color: #757575;">,</span> executor<span style="color: #757575;">,</span> mod_name<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-c++">
+<span style="color: #268bd2;"># build_module</span>.cc@relay.backend
+<span style="color: #b58900;">void</span> <span style="color: #268bd2;">Build</span><span style="color: #757575;">(</span><span style="color: #b58900;">IRModule</span> <span style="color: #268bd2;">mod</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">TargetsMap</span>&amp; <span style="color: #268bd2;">targets</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #268bd2; font-weight: bold;">tvm</span>::<span style="color: #b58900;">Target</span>&amp; <span style="color: #268bd2;">target_host</span><span style="color: #757575;">,</span>
+             <span style="color: #859900;">const</span> <span style="color: #b58900;">String</span> <span style="color: #268bd2;">executor</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">String</span> <span style="color: #268bd2;">mod_name</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+  targets_ = targets;
+  target_host_ = target_host;
+  executor_ = executor;
+  BuildRelay<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> params_<span style="color: #757575;">,</span> mod_name<span style="color: #757575;">)</span>;
+
+<span style="color: #268bd2; font-weight: bold;">BuildRelay</span>:
+  relay_module = Optimize<span style="color: #757575;">(</span>relay_module<span style="color: #757575;">,</span> targets_<span style="color: #757575;">,</span> params<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgbf5e20b" class="outline-4">
+<h4 id="orgbf5e20b"><span class="section-number-4">1.1.2</span> optimize</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+所有的针对 relay 的 optimizations pass 在 tvm::relay::transform 下.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #b58900;">IRModule</span> <span style="color: #268bd2;">Optimize</span><span style="color: #757575;">(</span>
+    <span style="color: #b58900;">IRModule</span> <span style="color: #268bd2;">relay_module</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">TargetsMap</span>&amp; <span style="color: #268bd2;">targets</span><span style="color: #757575;">,</span>
+    <span style="color: #859900;">const</span> <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">unordered_map</span>&lt;<span style="color: #268bd2; font-weight: bold;">std</span>::string<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">runtime</span>::NDArray&gt;&amp; <span style="color: #268bd2;">params</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">Array</span>&lt;Pass&gt; <span style="color: #268bd2;">pass_seqs</span> = GetPassPrefix<span style="color: #757575;">(</span>targets<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">false</span><span style="color: #757575;">)</span>;
+    <span style="color: #268bd2; font-weight: bold;">transform</span>::<span style="color: #b58900;">Pass</span> <span style="color: #268bd2;">seq</span> = <span style="color: #268bd2; font-weight: bold;">transform</span>::Sequential<span style="color: #757575;">(</span>pass_seqs<span style="color: #757575;">)</span>;
+    relay_module = seq<span style="color: #757575;">(</span>relay_module<span style="color: #757575;">)</span>;
+
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">Handle heterogeneous compilation.</span>
+    <span style="color: #586e75;">//</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21482;&#26377; targets &#25351;&#23450;&#20102;&#22810;&#20010;&#26102;&#25165;&#20250;&#25191;&#34892; RunDeviceAnnotationPass, &#21363;&#22788;&#29702;</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">on_device annotation, &#20363;&#22914; build vta &#26102;&#38656;&#35201;&#25351;&#23450;</span>
+    <span style="color: #586e75;">//   </span><span style="color: #586e75;">target={"cpu": env.target_vta_cpu, "ext_dev": env.target},</span>
+    <span style="color: #268bd2; font-weight: bold;">transform</span>::<span style="color: #b58900;">PassContext</span> <span style="color: #268bd2;">pass_ctx</span> = <span style="color: #268bd2; font-weight: bold;">PassContext</span>::Current<span style="color: #757575;">()</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>targets_.size<span style="color: #757575;">()</span> &gt; 1<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #b58900;">Optional</span>&lt;Integer&gt; <span style="color: #268bd2;">opt_fallback_dev</span> = pass_ctx-&gt;GetConfig<span style="color: #757575;">(</span>
+            <span style="color: #2aa198;">"relay.fallback_device_type"</span><span style="color: #757575;">,</span> Integer<span style="color: #757575;">(</span><span style="color: #859900;">static_cast</span>&lt;<span style="color: #b58900;">int</span>&gt;<span style="color: #757575;">(</span>kDLCPU<span style="color: #757575;">)))</span>;
+        <span style="color: #859900;">auto</span> <span style="color: #268bd2;">fallback_dev</span> = opt_fallback_dev.value<span style="color: #757575;">()</span>;
+        relay_module =
+            RunDeviceAnnotationPass<span style="color: #757575;">(</span>relay_module<span style="color: #757575;">,</span> fallback_dev-&gt;value<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+    relay_module = <span style="color: #268bd2; font-weight: bold;">transform</span>::FuseOps<span style="color: #757575;">()(</span>relay_module<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+    relay_module = <span style="color: #268bd2; font-weight: bold;">transform</span>::Inline<span style="color: #757575;">()(</span>relay_module<span style="color: #757575;">)</span>;
+    relay_module = <span style="color: #268bd2; font-weight: bold;">transform</span>::InferType<span style="color: #757575;">()(</span>relay_module<span style="color: #757575;">)</span>;
+    relay_module = <span style="color: #268bd2; font-weight: bold;">transform</span>::LabelOps<span style="color: #757575;">()(</span>relay_module<span style="color: #757575;">)</span>;
+
+    <span style="color: #859900;">return</span> relay_module;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #b58900;">Array</span>&lt;Pass&gt; <span style="color: #268bd2;">GetPassPrefix</span><span style="color: #757575;">(</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">Map</span>&lt;<span style="color: #268bd2; font-weight: bold;">tvm</span>::Integer<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">tvm</span>::Target&gt;&amp; <span style="color: #268bd2;">targets</span><span style="color: #757575;">,</span> <span style="color: #b58900;">bool</span> <span style="color: #268bd2;">is_vm</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">Array</span>&lt;Pass&gt; <span style="color: #268bd2;">pass_seqs</span>;
+    <span style="color: #b58900;">Array</span>&lt;<span style="color: #268bd2; font-weight: bold;">runtime</span>::String&gt; <span style="color: #268bd2;">entry_functions</span><span style="color: #757575;">{</span><span style="color: #2aa198;">"main"</span><span style="color: #757575;">}</span>;
+    pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">transform</span>::RemoveUnusedFunctions<span style="color: #757575;">(</span>entry_functions<span style="color: #757575;">))</span>;
+    pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">transform</span>::ToBasicBlockNormalForm<span style="color: #757575;">())</span>;
+    pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">relay</span>::<span style="color: #268bd2; font-weight: bold;">qnn</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::Legalize<span style="color: #757575;">())</span>;
+    pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">transform</span>::SimplifyInference<span style="color: #757575;">())</span>;
+    pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">transform</span>::DynamicToStatic<span style="color: #757575;">())</span>;
+    pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">transform</span>::EliminateCommonSubexpr<span style="color: #757575;">(</span>fskip<span style="color: #757575;">))</span>;
+    pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">transform</span>::SimplifyExpr<span style="color: #757575;">())</span>;
+    pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">transform</span>::CombineParallelConv2D<span style="color: #757575;">(</span>3<span style="color: #757575;">))</span>;
+    pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">transform</span>::CombineParallelDense<span style="color: #757575;">(</span>3<span style="color: #757575;">))</span>;
+    pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">transform</span>::CombineParallelBatchMatmul<span style="color: #757575;">(</span>3<span style="color: #757575;">))</span>;
+    pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">transform</span>::FoldConstant<span style="color: #757575;">())</span>;
+    pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">transform</span>::FoldScaleAxis<span style="color: #757575;">())</span>;
+    pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">transform</span>::CanonicalizeCast<span style="color: #757575;">())</span>;
+    pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">transform</span>::CanonicalizeOps<span style="color: #757575;">())</span>;
+    pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">transform</span>::FastMath<span style="color: #757575;">())</span>;
+    pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">transform</span>::FoldConstant<span style="color: #757575;">())</span>;
+    <span style="color: #859900;">return</span> pass_seqs;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org29d42b9" class="outline-4">
+<h4 id="org29d42b9"><span class="section-number-4">1.1.3</span> PassContext</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<p>
+PassContext 可以控制 pass 的开关, 包括 relay 和 tir 相关的 pass. 有时会需要关掉某个 pass, 例如: batchnorm 正常会被 SimplifyInference Pass 转换成 mul/add, 也许对某些 target 有更高效的实现
+</p>
+</div>
+
+<div id="outline-container-orgc9362ee" class="outline-5">
+<h5 id="orgc9362ee"><span class="section-number-5">1.1.3.1</span> opt_level</h5>
+</div>
+
+<div id="outline-container-orgb7cd764" class="outline-5">
+<h5 id="orgb7cd764"><span class="section-number-5">1.1.3.2</span> disabled_pass</h5>
+</div>
+
+<div id="outline-container-orgb8488b1" class="outline-5">
+<h5 id="orgb8488b1"><span class="section-number-5">1.1.3.3</span> required_pass</h5>
+</div>
+
+<div id="outline-container-org4c924de" class="outline-5">
+<h5 id="org4c924de"><span class="section-number-5">1.1.3.4</span> config</h5>
+<div class="outline-text-5" id="text-1-1-3-4">
+<div class="org-src-container">
+<pre class="src src-c++">TVM_REGISTER_PASS_CONFIG_OPTION<span style="color: #757575;">(</span><span style="color: #2aa198;">"tir.noalias"</span><span style="color: #757575;">,</span> Bool<span style="color: #757575;">)</span>;
+TVM_REGISTER_PASS_CONFIG_OPTION<span style="color: #757575;">(</span><span style="color: #2aa198;">"tir.detect_global_barrier"</span><span style="color: #757575;">,</span> Bool<span style="color: #757575;">)</span>;
+TVM_REGISTER_PASS_CONFIG_OPTION<span style="color: #757575;">(</span><span style="color: #2aa198;">"tir.instrument_bound_checkers"</span><span style="color: #757575;">,</span> Bool<span style="color: #757575;">)</span>;
+TVM_REGISTER_PASS_CONFIG_OPTION<span style="color: #757575;">(</span><span style="color: #2aa198;">"tir.disable_assert"</span><span style="color: #757575;">,</span> Bool<span style="color: #757575;">)</span>;
+TVM_REGISTER_PASS_CONFIG_OPTION<span style="color: #757575;">(</span><span style="color: #2aa198;">"tir.disable_vectorize"</span><span style="color: #757575;">,</span> Bool<span style="color: #757575;">)</span>;
+TVM_REGISTER_PASS_CONFIG_OPTION<span style="color: #757575;">(</span><span style="color: #2aa198;">"tir.add_lower_pass"</span><span style="color: #757575;">,</span> <span style="color: #b58900;">Array</span>&lt;<span style="color: #b58900;">Array</span>&lt;ObjectRef&gt;&gt;<span style="color: #757575;">)</span>;
+</pre>
+</div>
+
+<p>
+<a href="tvm_vta.html#orgc0f4e7b">tir.add_lower_pass</a>
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgfd42cfe" class="outline-4">
+<h4 id="orgfd42cfe"><span class="section-number-4">1.1.4</span> <a href="relay_transform.html#org38918f2">Relay Transform</a></h4>
+</div>
+</div>
+
+<div id="outline-container-orge205891" class="outline-3">
+<h3 id="orge205891"><span class="section-number-3">1.2</span> Relay IR -&gt; TE -&gt; TIR</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-org4079de9" class="outline-4">
+<h4 id="org4079de9"><span class="section-number-4">1.2.1</span> Relay IR -&gt; OpRegistry</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+
+</p>
+
+<p>
+Relay IR 例如 relay.op.sort() 返回的实际上是 Relay Expr:
+tvm::relay::Call(Op::Get("sort"))
+</p>
+</div>
+</div>
+
+<div id="outline-container-org3237196" class="outline-4">
+<h4 id="org3237196"><span class="section-number-4">1.2.2</span> OpRegistry -&gt; TE</h4>
+<div class="outline-text-4" id="text-1-2-2">
+</div>
+<div id="outline-container-org8a03858" class="outline-5">
+<h5 id="org8a03858"><span class="section-number-5">1.2.2.1</span> BuildRelay</h5>
+<div class="outline-text-5" id="text-1-2-2-1">
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #268bd2; font-weight: bold;">BuildRelay</span>:
+  executor_codegen_ = MakeExecutorCodegen<span style="color: #757575;">(</span>executor_<span style="color: #757575;">)</span>;
+  executor_codegen_-&gt;Init<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">nullptr</span><span style="color: #757575;">,</span> targets_<span style="color: #757575;">)</span>;
+  executor_codegen_-&gt;Codegen<span style="color: #757575;">(</span>func<span style="color: #757575;">,</span> mod_name<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">auto</span> <span style="color: #268bd2;">lowered_module</span> = <span style="color: #268bd2; font-weight: bold;">tec</span>::LowerTE<span style="color: #757575;">()</span>
+  executor_codegen_-&gt;UpdateOutput<span style="color: #757575;">(</span>&amp;ret_<span style="color: #757575;">)</span>;
+  ret_.params = executor_codegen_-&gt;GetParams<span style="color: #757575;">()</span>;
+
+  <span style="color: #859900;">auto</span> <span style="color: #268bd2;">lowered_funcs</span> = executor_codegen_-&gt;GetIRModule<span style="color: #757575;">()</span>;
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgfff5d64" class="outline-5">
+<h5 id="orgfff5d64"><span class="section-number-5">1.2.2.2</span> ExecutorCodegen</h5>
+<div class="outline-text-5" id="text-1-2-2-2">
+</div>
+<ol class="org-ol">
+<li><a id="orgddcf9eb"></a>GraphExecutorCodegen<br /></li>
+
+<li><a id="orgdacbb2f"></a>AOTExecutorCodegen<br /></li>
+</ol>
+</div>
+
+<div id="outline-container-org1274b77" class="outline-5">
+<h5 id="org1274b77"><span class="section-number-5">1.2.2.3</span> LowerTE</h5>
+<div class="outline-text-5" id="text-1-2-2-3">
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #268bd2; font-weight: bold;">LowerTE</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36825;&#37324; VisitExpr &#22788;&#29702;&#30340;&#37117;&#26159; Relay IR</span>
+  LowerTensorExpr.VisitExpr<span style="color: #757575;">()</span>
+    LowerInternal<span style="color: #757575;">()</span>
+      <span style="color: #859900;">auto</span> <span style="color: #268bd2;">cfunc</span> = PrimFuncFor<span style="color: #757575;">(</span>key-&gt;source_func<span style="color: #757575;">,</span> key-&gt;target<span style="color: #757575;">,</span> [&amp;]<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">string</span> <span style="color: #268bd2;">name</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">auto</span> <span style="color: #268bd2;">mangled</span> = mangle_fn<span style="color: #757575;">(</span>name<span style="color: #757575;">)</span>;
+        <span style="color: #859900;">return</span> GetUniqueName<span style="color: #757575;">(</span>mangled<span style="color: #757575;">,</span> &amp;name_map_<span style="color: #757575;">)</span>;
+      <span style="color: #757575;">})</span>;
+        <span style="color: #859900;">return</span> ScheduleBuilder<span style="color: #757575;">(</span>target<span style="color: #757575;">)</span>.Create<span style="color: #757575;">(</span>source_func<span style="color: #757575;">,</span> renamer<span style="color: #757575;">)</span>;
+          <span style="color: #859900;">this</span>-&gt;VisitExpr<span style="color: #757575;">(</span>prim_func-&gt;body<span style="color: #757575;">)</span>;
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">VisitExpr_(xxx)</span>
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36825;&#37324;&#20250;&#35843;&#29992;&#21040; python, &#26597;&#25214; strategy,</span>
+            <span style="color: #859900;">static</span> <span style="color: #859900;">auto</span> <span style="color: #268bd2;">flower_call</span> = <span style="color: #268bd2; font-weight: bold;">tvm</span>::<span style="color: #268bd2; font-weight: bold;">runtime</span>::<span style="color: #268bd2; font-weight: bold;">Registry</span>::Get<span style="color: #757575;">(</span><span style="color: #2aa198;">"relay.backend.lower_call"</span><span style="color: #757575;">)</span>;
+            <span style="color: #b58900;">LoweredOutput</span> <span style="color: #268bd2;">lowered_out</span> = <span style="color: #757575;">(</span>*flower_call<span style="color: #757575;">)(</span>GetRef&lt;Call&gt;<span style="color: #757575;">(</span>call_node<span style="color: #757575;">),</span> inputs<span style="color: #757575;">,</span> target_<span style="color: #757575;">)</span>;
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">!!! outputs &#26159; relay &#23545;&#24212;&#30340; te</span>
+            outputs = lowered_out-&gt;outputs;
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">!!! impl &#20013;&#21253;&#25324; schedule</span>
+            impl = lowered_out-&gt;implementation;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">external functional, &#21442;&#32771;  [[file:tvm_byoc_codegen.org::*&#32534;&#35793; external functions][&#32534;&#35793; external functions]]</span>
+  lowered_module.external_mods = compiler-&gt;LowerExternalFunctions<span style="color: #757575;">()</span>;
+
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orga93416f" class="outline-4">
+<h4 id="orga93416f"><span class="section-number-4">1.2.3</span> TE -&gt; TIR</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<p>
+TE 是没有经过 schedule 的 TIR， 因为 te.compute 返回的已经是 TIR 了.
+</p>
+
+<p>
+以下面代码为例：
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #268bd2;">M</span> = 10
+<span style="color: #268bd2;">A</span> = te.placeholder<span style="color: #757575;">((</span>M<span style="color: #757575;">,</span> <span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"A"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">B</span> = te.placeholder<span style="color: #757575;">((</span>M<span style="color: #757575;">,</span> <span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"B"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">import</span> ipdb; ipdb.set_trace<span style="color: #757575;">()</span>
+<span style="color: #268bd2;">C</span> = te.compute<span style="color: #757575;">((</span>M<span style="color: #757575;">,</span> <span style="color: #757575;">),</span> <span style="color: #859900;">lambda</span> x: A[x] + B[x]<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+当 te.compute 返回后， C.op 是由 TIR 组成的 ComputeOp:
+</p>
+
+<p>
+加了些 log 后打印出来的 ComputeOp 中的表达式类型为:
+</p>
+<pre class="example" id="orgffdd02d">
+&lt;Array&gt;
+  &lt;tir.Add&gt;
+    &lt;tir.ProducerLoad&gt;A[{&lt;tir.Var&gt;x}
+    &lt;tir.ProducerLoad&gt;B[{&lt;tir.Var&gt;x}
+</pre>
+
+<p>
+te.compute 执行时会直接执行 lambda 产生 Op, 具体过程依赖于 python 的 operator
+overloading, 例如:
+</p>
+
+<ol class="org-ol">
+<li>A 的类型为 Tensor, A[x] 会调用 Tensor.__getitem__, 产生一个 tir:ProducerLoad</li>
+<li>A[x]+B[x] 会调用 ExprOp.__add__， 产生一个 tir::Add</li>
+</ol>
+</div>
+
+
+<div id="outline-container-org954e885" class="outline-5">
+<h5 id="org954e885"><span class="section-number-5">1.2.3.1</span> Schedule</h5>
+<div class="outline-text-5" id="text-1-2-3-1">
+<p>
+Schedule 的原理: <a href="tvm_schedule.html#org1ef5dc0">Schedule</a>
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #268bd2; font-weight: bold;">LowerInternal</span> :
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">LowerSchedule &#25226; TE &#26681;&#25454; schedule &#32763;&#35793;&#25104; TIR</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">tvm.build, tvm.lower &#20063;&#26159;&#35843;&#29992;&#30340;&#36825;&#20010;&#20989;&#25968;&#25226; te.schedule &#32763;&#35793;&#25104; TIR</span>
+    cfunc-&gt;funcs-&gt;Update<span style="color: #757575;">(</span>
+        <span style="color: #268bd2; font-weight: bold;">tvm</span>::LowerSchedule<span style="color: #757575;">(</span>cfunc-&gt;schedule<span style="color: #757575;">,</span> all_args<span style="color: #757575;">,</span> func_name<span style="color: #757575;">,</span> binds<span style="color: #757575;">))</span>;
+</pre>
+</div>
+
+<p>
+以一个简单的 split 为例:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-08-03 11:11</span>
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> te
+
+<span style="color: #268bd2;">M</span> = 10
+<span style="color: #268bd2;">A</span> = te.placeholder<span style="color: #757575;">((</span>M<span style="color: #757575;">,),</span> name=<span style="color: #2aa198;">"A"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">B</span> = te.placeholder<span style="color: #757575;">((</span>M<span style="color: #757575;">,),</span> name=<span style="color: #2aa198;">"B"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">C</span> = te.compute<span style="color: #757575;">((</span>M<span style="color: #757575;">,),</span> <span style="color: #859900;">lambda</span> x: A[x] + B[x]<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">s</span> = te.create_schedule<span style="color: #757575;">(</span>C.op<span style="color: #757575;">)</span>
+s[C].split<span style="color: #757575;">(</span>C.op.axis[0]<span style="color: #757575;">,</span> factor=5<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">f</span> = tvm.build<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B<span style="color: #757575;">,</span> C]<span style="color: #757575;">,</span> target=<span style="color: #2aa198;">"c"</span><span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"hello"</span><span style="color: #757575;">)</span>
+</pre>
+</div>
+</div>
+
+<ol class="org-ol">
+<li><a id="org013235a"></a>ScheduleToModule<br />
+<div class="outline-text-6" id="text-1-2-3-1-1">
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #268bd2; font-weight: bold;">LowerSchedule</span>:
+  <span style="color: #b58900;">IRModule</span> <span style="color: #268bd2;">mod</span> = ScheduleToModule<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">std</span>::move<span style="color: #757575;">(</span>sch<span style="color: #757575;">),</span> args<span style="color: #757575;">,</span> name<span style="color: #757575;">,</span> binds<span style="color: #757575;">)</span>;
+  <span style="color: #b58900;">Array</span>&lt;<span style="color: #268bd2; font-weight: bold;">transform</span>::Pass&gt; <span style="color: #268bd2;">pass_list</span> = CreatePassList<span style="color: #757575;">(</span>simple_mode<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">true</span><span style="color: #757575;">)</span>;
+  <span style="color: #859900;">return</span> LowerWithPassList<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> pass_list<span style="color: #757575;">)</span>;
+
+<span style="color: #268bd2; font-weight: bold;">ScheduleToModule</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">InferBound &#26681;&#25454; split &#30340; factor &#24471;&#21040; itervar &#21450;&#20854;&#24490;&#29615;&#30340;&#33539;&#22260;&#65292; &#27604;&#22914;&#36825;&#37324;&#25171;&#21360;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20986; bounds &#30340;&#20449;&#24687;:</span>
+  <span style="color: #586e75;">// </span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">for (auto&amp; p : bounds) {</span>
+  <span style="color: #586e75;">//     </span><span style="color: #586e75;">LOG_INFO &lt;&lt; p.first &lt;&lt; p.second;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">}</span>
+  <span style="color: #586e75;">// </span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25171;&#21360;&#20986;&#32467;&#26524;&#20026;:</span>
+  <span style="color: #586e75;">// </span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">bound.cc:262: {&lt;tir.IterVar&gt;iter_var(x.outer, )}{&lt;Range&gt;range(min={&lt;IntImm&gt;0}, ext={&lt;IntImm&gt;2})}</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">bound.cc:262: {&lt;tir.IterVar&gt;iter_var(x, {&lt;Range&gt;range(min={&lt;IntImm&gt;0}, ext={&lt;IntImm&gt;10})})}{&lt;Range&gt;range(min={&lt;IntImm&gt;0}, ext={&lt;IntImm&gt;10})}</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">bound.cc:262: {&lt;tir.IterVar&gt;iter_var(x.inner, )}{&lt;Range&gt;range(min={&lt;IntImm&gt;0}, ext={&lt;IntImm&gt;5})}  </span>
+  <span style="color: #b58900;">Map</span>&lt;<span style="color: #268bd2; font-weight: bold;">tir</span>::IterVar<span style="color: #757575;">,</span> Range&gt; <span style="color: #268bd2;">bounds</span> = <span style="color: #268bd2; font-weight: bold;">te</span>::InferBound<span style="color: #757575;">(</span>sch<span style="color: #757575;">)</span>;
+  <span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #b58900;">Stmt</span> <span style="color: #268bd2;">stmt</span> = <span style="color: #268bd2; font-weight: bold;">te</span>::ScheduleOps<span style="color: #757575;">(</span>sch<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">std</span>::move<span style="color: #757575;">(</span>bounds<span style="color: #757575;">),</span> <span style="color: #268bd2; font-weight: bold;">false</span><span style="color: #757575;">)</span>;
+    body = MakePipeline<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> dom_map<span style="color: #757575;">,</span> body<span style="color: #757575;">,</span> debug_keep_trivial_loop<span style="color: #757575;">)</span>;
+      <span style="color: #b58900;">Stmt</span> <span style="color: #268bd2;">producer</span> = s-&gt;op-&gt;BuildProvide<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> dom_map<span style="color: #757575;">,</span>  debug_keep_trivial_loop<span style="color: #757575;">)</span>;
+        MakeComputeStmt<span style="color: #757575;">(</span><span style="color: #859900;">this</span><span style="color: #757575;">,</span> stage<span style="color: #757575;">,</span> dom_map<span style="color: #757575;">,</span> <span style="color: #b58900;">debug_</span> <span style="color: #268bd2;">keep_trivial_loop</span><span style="color: #757575;">)</span>;
+          <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21021;&#22987; body &#20013;&#21482;&#26377;&#19968;&#26465; stmt, &#21363; lambda(x) :A[x]+B[x] &#36890;&#36807; compute &#29983;&#25104; &#30340; stmt</span>
+          <span style="color: #586e75;">// </span><span style="color: #586e75;">{&lt;tir.ProducerStore&gt;compute[{&lt;tir.Var&gt;x }] ={&lt;tir.Add&gt;({&lt;tir.ProducerLoad&gt;A[{&lt;tir.Var&gt;x}]} + {&lt;tir.ProducerLoad&gt;B[{&lt;tir.Var&gt;x}]})}</span>
+          <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">i</span> = 0; i &lt; self-&gt;body.size<span style="color: #757575;">()</span>; ++i<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            provides.emplace_back<span style="color: #757575;">(</span>MakeProvide<span style="color: #757575;">(</span>self<span style="color: #757575;">,</span> stage-&gt;op.output<span style="color: #757575;">(</span>i<span style="color: #757575;">)))</span>;
+          <span style="color: #757575;">}</span> 
+          <span style="color: #586e75;">// </span><span style="color: #586e75;">MergeNest &#26368;&#32456;&#26681;&#25454; bounds (&#21363; dom_map)  &#29983;&#25104;&#39069;&#22806;&#30340;&#24490;&#29615;&#35821;&#21477;&#65292;</span>
+          <span style="color: #586e75;">// </span><span style="color: #586e75;">MergeNest &#36820;&#22238;&#30340; stmt &#20026;: </span>
+          <span style="color: #586e75;">//  </span>
+          <span style="color: #586e75;">// </span><span style="color: #586e75;">{&lt;tir.For&gt;for ({&lt;tir.Var&gt;x.outer}, {&lt;In tImm&gt;0}, {&lt;IntImm&gt;2}) {</span>
+          <span style="color: #586e75;">//   </span><span style="color: #586e75;">{&lt;tir.AttrStmt&gt;  // attr [{&lt;tir.IterV ar&gt;iter_var(x.outer, )}] loop_scope = {&lt;tir.Var&gt;x.outer}</span>
+          <span style="color: #586e75;">//   </span><span style="color: #586e75;">{&lt;tir.For&gt;  for ({&lt;tir.Var&gt;x.inner},  {&lt;IntImm&gt;0}, {&lt;IntImm&gt;5}) {</span>
+          <span style="color: #586e75;">//     </span><span style="color: #586e75;">{&lt;tir.AttrStmt&gt;    // attr [{&lt;tir.I terVar&gt;iter_var(x.inner, )}] loop_scope = {&lt;tir.Var&gt;x.inner}</span>
+          <span style="color: #586e75;">//     </span><span style="color: #586e75;">{&lt;tir.ProducerStore&gt;    compute[{&lt;t ir.Var&gt;x}] ={&lt;tir.Add&gt;({&lt;tir.ProducerLoad&gt;A[{&lt;tir.Var&gt;x}]} + {&lt;tir.ProducerLoad&gt;B[{&lt;tir.Var&gt;x}]})}}}</span>
+          <span style="color: #586e75;">//   </span><span style="color: #586e75;">}}}} </span>
+          <span style="color: #586e75;">// </span><span style="color: #586e75;">}           </span>
+          provide = MergeNest<span style="color: #757575;">(</span>n.main_nest<span style="color: #757575;">,</span> provide<span style="color: #757575;">)</span>; 
+</pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+
+<div id="outline-container-org0a6a671" class="outline-5">
+<h5 id="org0a6a671"><span class="section-number-5">1.2.3.2</span> TIR Optimizations</h5>
+<div class="outline-text-5" id="text-1-2-3-2">
+</div>
+<ol class="org-ol">
+<li><a id="orgf4ba107"></a>LowerWithPassList<br />
+<div class="outline-text-6" id="text-1-2-3-2-1">
+<p>
+ScheduleToModule 得到 tir 后, LowerWithPassList 可以对 tir 做进一步的修改和优化,
+每一种修改称为一个 pass, 针对 tir 的 pass 在 tvm::tir::transform 下
+</p>
+
+<p>
+其中 tir.add_lower_pass 是用户自己添加的 pass, 通过 add_lower_pass 机制, 上层可以定制生成的 tir. VTA 就是通过 add_lower_pass 添加自定义的 pass, 把一个 tir (例如 tir.add) 转换为对 vta runtime 的调用的 (例如 VTAPushALUOp)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #b58900;">Array</span>&lt;<span style="color: #268bd2; font-weight: bold;">tvm</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::Pass&gt; <span style="color: #268bd2;">CreatePassList</span><span style="color: #757575;">(</span><span style="color: #b58900;">bool</span> <span style="color: #268bd2;">disable_loop_partition</span><span style="color: #757575;">,</span> <span style="color: #b58900;">bool</span> <span style="color: #268bd2;">for_te_schedule</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+  <span style="color: #268bd2; font-weight: bold;">transform</span>::<span style="color: #b58900;">PassContext</span> <span style="color: #268bd2;">pass_ctx</span> = <span style="color: #268bd2; font-weight: bold;">transform</span>::<span style="color: #268bd2; font-weight: bold;">PassContext</span>::Current<span style="color: #757575;">()</span>;
+
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">Get any user-added passes</span>
+  <span style="color: #b58900;">Array</span>&lt;<span style="color: #b58900;">Array</span>&lt;ObjectRef&gt;&gt; <span style="color: #268bd2;">add_lower_pass</span> =
+      pass_ctx-&gt;GetConfig&lt;<span style="color: #b58900;">Array</span>&lt;<span style="color: #b58900;">Array</span>&lt;ObjectRef&gt;&gt;&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"tir.add_lower_pass"</span><span style="color: #757575;">,</span> Array&lt;<span style="color: #b58900;">Array</span>&lt;ObjectRef&gt;&gt;<span style="color: #757575;">())</span>
+          .value<span style="color: #757575;">()</span>;
+
+  <span style="color: #b58900;">Array</span>&lt;<span style="color: #268bd2; font-weight: bold;">transform</span>::Pass&gt; <span style="color: #268bd2;">user_lower_phase0</span> = Array&lt;<span style="color: #268bd2; font-weight: bold;">transform</span>::Pass&gt;<span style="color: #757575;">()</span>;
+  <span style="color: #b58900;">Array</span>&lt;<span style="color: #268bd2; font-weight: bold;">transform</span>::Pass&gt; <span style="color: #268bd2;">user_lower_phase1</span> = Array&lt;<span style="color: #268bd2; font-weight: bold;">transform</span>::Pass&gt;<span style="color: #757575;">()</span>;
+  <span style="color: #b58900;">Array</span>&lt;<span style="color: #268bd2; font-weight: bold;">transform</span>::Pass&gt; <span style="color: #268bd2;">user_lower_phase2</span> = Array&lt;<span style="color: #268bd2; font-weight: bold;">transform</span>::Pass&gt;<span style="color: #757575;">()</span>;
+  <span style="color: #b58900;">Array</span>&lt;<span style="color: #268bd2; font-weight: bold;">transform</span>::Pass&gt; <span style="color: #268bd2;">user_lower_phase3</span> = Array&lt;<span style="color: #268bd2; font-weight: bold;">transform</span>::Pass&gt;<span style="color: #757575;">()</span>;
+
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">phase pasees is of the form</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">[[phase_number, pass], [phase_number, pass]... ]</span>
+  <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">Array</span>&lt;ObjectRef&gt; <span style="color: #268bd2;">phase_pass</span> : add_lower_pass<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">IntImmNode</span>* <span style="color: #268bd2;">phase_num</span> = phase_pass[0].as&lt;<span style="color: #b58900;">IntImmNode</span>&gt;<span style="color: #757575;">()</span>;
+    ICHECK<span style="color: #757575;">(</span>phase_num<span style="color: #757575;">)</span>
+        &lt;&lt; <span style="color: #2aa198;">"Expected the first entry in the inner Array of tir.add_lower_pass to be an integer"</span>;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">phase_num_val</span> = phase_num-&gt;value;
+
+    CHECK_GE<span style="color: #757575;">(</span>phase_num_val<span style="color: #757575;">,</span> 0<span style="color: #757575;">)</span>;
+
+    <span style="color: #859900;">const</span> <span style="color: #268bd2; font-weight: bold;">tvm</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::<span style="color: #b58900;">PassNode</span>* <span style="color: #268bd2;">pass_node</span> = phase_pass[1].as&lt;<span style="color: #268bd2; font-weight: bold;">tvm</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::<span style="color: #b58900;">PassNode</span>&gt;<span style="color: #757575;">()</span>;
+    <span style="color: #268bd2; font-weight: bold;">tvm</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::<span style="color: #b58900;">Pass</span> <span style="color: #268bd2;">pass</span> = GetRef&lt;<span style="color: #268bd2; font-weight: bold;">tvm</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::<span style="color: #b58900;">Pass</span>&gt;<span style="color: #757575;">(</span>pass_node<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">Copy the pass into the correct phase</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>phase_num_val == 0<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+      user_lower_phase0.push_back<span style="color: #757575;">(</span>pass<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span> <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>phase_num_val == 1<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+      user_lower_phase1.push_back<span style="color: #757575;">(</span>pass<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span> <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>phase_num_val == 2<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+      user_lower_phase2.push_back<span style="color: #757575;">(</span>pass<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span> <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>phase_num_val &gt;= 3<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+      user_lower_phase3.push_back<span style="color: #757575;">(</span>pass<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+  <span style="color: #757575;">}</span>
+
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">Construct the pass list, inserting the user provided passes at the end of the phase</span>
+
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">PHASE 0</span>
+  <span style="color: #b58900;">Array</span>&lt;<span style="color: #268bd2; font-weight: bold;">tvm</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::<span style="color: #b58900;">Pass</span>&gt; <span style="color: #268bd2;">pass_list</span> = user_lower_phase0;
+
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">PHASE 1</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>for_te_schedule<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::InjectPrefetch<span style="color: #757575;">())</span>;
+    pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::StorageFlatten<span style="color: #757575;">(</span>64<span style="color: #757575;">,</span> instrument_bound_checkers<span style="color: #757575;">))</span>;
+  <span style="color: #757575;">}</span> <span style="color: #859900;">else</span> <span style="color: #757575;">{</span>
+    pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::LowerInitBlock<span style="color: #757575;">())</span>;
+    pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::PlanAndUpdateBufferAllocationLocation<span style="color: #757575;">())</span>;
+    pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::ConvertBlocksToOpaque<span style="color: #757575;">())</span>;
+    pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::CompactBufferAllocation<span style="color: #757575;">())</span>;
+    pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::LowerMatchBuffer<span style="color: #757575;">())</span>;
+    pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::FlattenBuffer<span style="color: #757575;">())</span>;
+  <span style="color: #757575;">}</span>
+  pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::BF16Legalize<span style="color: #757575;">())</span>;
+  pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::NarrowDataType<span style="color: #757575;">(</span>32<span style="color: #757575;">))</span>;
+  pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::Simplify<span style="color: #757575;">())</span>;
+
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">Add user-defined phase-1 passes</span>
+  pass_list.insert<span style="color: #757575;">(</span>pass_list.end<span style="color: #757575;">(),</span> user_lower_phase1.begin<span style="color: #757575;">(),</span> user_lower_phase1.end<span style="color: #757575;">())</span>;
+
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">PHASE 2</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>disable_loop_partition<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::LoopPartition<span style="color: #757575;">())</span>;
+  <span style="color: #757575;">}</span>
+
+  pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::VectorizeLoop<span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>disable_vectorize<span style="color: #757575;">))</span>;
+  pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::InjectVirtualThread<span style="color: #757575;">())</span>;
+  pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::InjectDoubleBuffer<span style="color: #757575;">())</span>;
+  pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::StorageRewrite<span style="color: #757575;">())</span>;
+  pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::UnrollLoop<span style="color: #757575;">())</span>;
+
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">Add user-defined phase-2 passes</span>
+  pass_list.insert<span style="color: #757575;">(</span>pass_list.end<span style="color: #757575;">(),</span> user_lower_phase2.begin<span style="color: #757575;">(),</span> user_lower_phase2.end<span style="color: #757575;">())</span>;
+
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">PHASE 3</span>
+  pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::Simplify<span style="color: #757575;">())</span>;
+  pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::RemoveNoOp<span style="color: #757575;">())</span>;
+  pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::RewriteUnsafeSelect<span style="color: #757575;">())</span>;
+  pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::HoistIfThenElse<span style="color: #757575;">())</span>;
+
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">Add user-defined phase-3 passes</span>
+  pass_list.insert<span style="color: #757575;">(</span>pass_list.end<span style="color: #757575;">(),</span> user_lower_phase3.begin<span style="color: #757575;">(),</span> user_lower_phase3.end<span style="color: #757575;">())</span>;
+
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>instrument_bound_checkers<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    pass_list.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">tir</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::InstrumentBoundCheckers<span style="color: #757575;">())</span>;
+  <span style="color: #757575;">}</span>
+  <span style="color: #859900;">return</span> pass_list;
+<span style="color: #757575;">}</span>
+
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org4712caf"></a><a href="tir_transform.html#org92c1af7">TIR Transform</a><br /></li>
+</ol>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org937b94d" class="outline-3">
+<h3 id="org937b94d"><span class="section-number-3">1.3</span> TIR -&gt; Codegen</h3>
+<div class="outline-text-3" id="text-1-3">
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #268bd2; font-weight: bold;">BuildRelay</span>:
+  ret_.mod = <span style="color: #268bd2; font-weight: bold;">tvm</span>::build<span style="color: #757575;">(</span>lowered_funcs<span style="color: #757575;">,</span> target_host_<span style="color: #757575;">)</span>;
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">driver_api.cc</span>
+<span style="color: #268bd2; font-weight: bold;">runtime</span>::<span style="color: #b58900;">Module</span> <span style="color: #268bd2;">build</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">Map</span>&lt;Target<span style="color: #757575;">,</span> IRModule&gt;&amp; <span style="color: #268bd2;">inputs_arg</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">Target</span>&amp; <span style="color: #268bd2;">target_host_arg</span><span style="color: #757575;">)</span> :
+  <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #859900;">auto</span>&amp; <span style="color: #268bd2;">it</span> : inputs<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>mdevice-&gt;functions.size<span style="color: #757575;">()</span> != 0<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+      device_modules.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">codegen</span>::Build<span style="color: #757575;">(</span>mdevice<span style="color: #757575;">,</span> it.first<span style="color: #757575;">))</span>;
+
+  <span style="color: #268bd2; font-weight: bold;">runtime</span>::<span style="color: #b58900;">Module</span> <span style="color: #268bd2;">mhost</span> = <span style="color: #268bd2; font-weight: bold;">codegen</span>::Build<span style="color: #757575;">(</span>mhost_all<span style="color: #757575;">,</span> target_host<span style="color: #757575;">)</span>;        
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">codegen.cc @ src/target/</span>
+<span style="color: #268bd2; font-weight: bold;">runtime</span>::<span style="color: #b58900;">Module</span> <span style="color: #268bd2;">Build</span><span style="color: #757575;">(</span>IRModule mod<span style="color: #757575;">,</span> Target target<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+  <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">string</span> <span style="color: #268bd2;">build_f_name</span> = <span style="color: #2aa198;">"target.build."</span> + target-&gt;kind-&gt;name;
+  <span style="color: #859900;">const</span> <span style="color: #b58900;">PackedFunc</span>* <span style="color: #268bd2;">bf</span> = <span style="color: #268bd2; font-weight: bold;">runtime</span>::<span style="color: #268bd2; font-weight: bold;">Registry</span>::Get<span style="color: #757575;">(</span>build_f_name<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">return</span> <span style="color: #757575;">(</span>*bf<span style="color: #757575;">)(</span>mod<span style="color: #757575;">,</span> target<span style="color: #757575;">)</span>;
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">"target.build.llvm" @ src/target/llvm/llvm_module.cc</span>
+TVM_REGISTER_GLOBAL<span style="color: #757575;">(</span><span style="color: #2aa198;">"target.build.llvm"</span><span style="color: #757575;">)</span>
+    .set_body_typed<span style="color: #757575;">(</span>[]<span style="color: #757575;">(</span><span style="color: #b58900;">IRModule</span> <span style="color: #268bd2;">mod</span><span style="color: #757575;">,</span> <span style="color: #b58900;">Target</span> <span style="color: #268bd2;">target</span><span style="color: #757575;">)</span> -&gt; <span style="color: #268bd2; font-weight: bold;">runtime</span>::Module <span style="color: #757575;">{</span>
+      <span style="color: #859900;">auto</span> <span style="color: #268bd2;">n</span> = make_object&lt;LLVMModuleNode&gt;<span style="color: #757575;">()</span>;
+      n-&gt;Init<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> target<span style="color: #757575;">)</span>;
+      <span style="color: #859900;">return</span> <span style="color: #268bd2; font-weight: bold;">runtime</span>::Module<span style="color: #757575;">(</span>n<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">})</span>;
+
+<span style="color: #b58900;">void</span> <span style="color: #268bd2; font-weight: bold;">LLVMModuleNode</span>::<span style="color: #268bd2;">Init</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> IRModule&amp; mod<span style="color: #757575;">,</span> <span style="color: #859900;">const</span> Target&amp; target<span style="color: #757575;">)</span>:
+  InitializeLLVM<span style="color: #757575;">()</span>;
+  tm_ = GetLLVMTargetMachine<span style="color: #757575;">(</span>target<span style="color: #757575;">)</span>;
+  <span style="color: #b58900;">bool</span> <span style="color: #268bd2;">system_lib</span> = target-&gt;GetAttr&lt;Bool&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"system-lib"</span><span style="color: #757575;">)</span>.value_or<span style="color: #757575;">(</span>Bool<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">false</span><span style="color: #757575;">))</span>;
+  <span style="color: #b58900;">bool</span> <span style="color: #268bd2;">target_c_runtime</span> = <span style="color: #757575;">(</span>target-&gt;GetAttr&lt;String&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"runtime"</span><span style="color: #757575;">)</span>.value_or<span style="color: #757575;">(</span><span style="color: #2aa198;">""</span><span style="color: #757575;">)</span> == kTvmRuntimeCrt<span style="color: #757575;">)</span>;
+  ctx_ = <span style="color: #268bd2; font-weight: bold;">std</span>::make_shared&lt;<span style="color: #268bd2; font-weight: bold;">llvm</span>::LLVMContext&gt;<span style="color: #757575;">()</span>;
+  <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">unique_ptr</span>&lt;CodeGenLLVM&gt; <span style="color: #268bd2;">cg</span> = <span style="color: #268bd2; font-weight: bold;">CodeGenLLVM</span>::Create<span style="color: #757575;">(</span>tm_.get<span style="color: #757575;">())</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+  <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #859900;">auto</span>&amp; <span style="color: #268bd2;">f</span> : funcs<span style="color: #757575;">)</span>:
+    cg-&gt;AddFunction<span style="color: #757575;">(</span>f<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">....</span>
+  module_ = cg-&gt;Finish<span style="color: #757575;">()</span>;  
+
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #586e75;">// </span><span style="color: #586e75;">codegen_llvm.cc @ src/target/llvm</span>
+<span style="color: #268bd2; font-weight: bold;">AddFunction</span>:
+  <span style="color: #b58900;">void</span> <span style="color: #268bd2; font-weight: bold;">CodeGenLLVM</span>::<span style="color: #268bd2;">AddFunctionInternal</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">PrimFunc</span>&amp; <span style="color: #268bd2;">f</span><span style="color: #757575;">,</span> <span style="color: #b58900;">bool</span> <span style="color: #268bd2;">ret_void</span><span style="color: #757575;">)</span>:
+    function_ = <span style="color: #268bd2; font-weight: bold;">llvm</span>::<span style="color: #268bd2; font-weight: bold;">Function</span>::Create<span style="color: #757575;">(</span>ftype<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">llvm</span>::<span style="color: #268bd2; font-weight: bold;">Function</span>::ExternalLinkage<span style="color: #757575;">,</span>
+                                     global_symbol.value<span style="color: #757575;">()</span>.<span style="color: #859900;">operator</span> <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">string</span><span style="color: #757575;">(),</span> module_.get<span style="color: #757575;">())</span>;
+    <span style="color: #859900;">this</span>-&gt;VisitStmt<span style="color: #757575;">(</span>f-&gt;body<span style="color: #757575;">)</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">.....</span>
+      <span style="color: #268bd2; font-weight: bold;">CodeGenLLVM</span>::VisitStmt_<span style="color: #757575;">()</span>
+        MakeValue<span style="color: #757575;">()</span>
+          VisitExpr<span style="color: #757575;">()</span>
+            VisitExpr_<span style="color: #757575;">()</span>
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org361578a" class="outline-4">
+<h4 id="org361578a"><span class="section-number-4">1.3.1</span> Example</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<p>
+由于 relay.build 时无法看到对应的 TIR,
+<a href="https://discuss.tvm.apache.org/t/capture-tensor-level-ir-and-schedule-from-relay/9630">https://discuss.tvm.apache.org/t/capture-tensor-level-ir-and-schedule-from-relay/9630</a>,
+所以直接使用一段 TE 来展示 codegen 的过程
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-08-03 11:11</span>
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> te
+
+<span style="color: #268bd2;">M</span> = 10
+<span style="color: #268bd2;">N</span> = 10
+<span style="color: #268bd2;">A</span> = te.placeholder<span style="color: #757575;">((</span>M<span style="color: #757575;">,</span> N<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"A"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">B</span> = te.placeholder<span style="color: #757575;">((</span>M<span style="color: #757575;">,</span> N<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"B"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">C</span> = te.compute<span style="color: #757575;">((</span>M<span style="color: #757575;">,</span> N<span style="color: #757575;">),</span> <span style="color: #859900;">lambda</span> x<span style="color: #757575;">,</span> y: A[x<span style="color: #757575;">,</span> y] + B[x<span style="color: #757575;">,</span> y]<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">s</span> = te.create_schedule<span style="color: #757575;">(</span>C.op<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>tvm.lower<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B<span style="color: #757575;">,</span> C]<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">f</span> = tvm.build<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B<span style="color: #757575;">,</span> C]<span style="color: #757575;">,</span> target = <span style="color: #2aa198;">"c"</span><span style="color: #757575;">,</span> name = <span style="color: #2aa198;">"hello"</span><span style="color: #757575;">)</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">print(f.get_source())</span>
+</pre>
+</div>
+
+<p>
+primfn(A_1: handle, B_1: handle, compute_1: handle) -&gt; ()
+  attr = {"global_symbol": "main", "tir.noalias": True}
+  buffers = {A: Buffer(A_2: Pointer(float32), float32, [10, 10], []),
+             compute: Buffer(compute_2: Pointer(float32), float32, [10, 10], []),
+             B: Buffer(B_2: Pointer(float32), float32, [10, 10], [])}
+  buffer_map = {A_1: A, B_1: B, compute_1: compute} {
+  for (x: int32, 0, 10) {
+    for (y: int32, 0, 10) {
+      compute_2[((x*10) + y)] = ((float32*)A_2[((x*10) + y)] + (float32*)B_2[((x*10) + y)])
+    }
+  }
+}
+</p>
+
+<p>
+下面的 log 展示的是 codegen_c.cc 生成如下的 TE 的过程
+</p>
+
+<pre class="example" id="org584eaba">
+for (x: int32, 0, 10) {
+  for (y: int32, 0, 10) {
+    compute_2[((x*10) + y)] = ((float32*)A_2[((x*10) + y)] + (float32*)B_2[((x*10) + y)])
+  }
+}
+</pre>
+
+<pre class="example" id="org82c33c4">
+tvm/src/target/source/codegen_c.cc:920: &gt;&gt;VisitStmt_:ForNode
+tvm/src/target/source/codegen_c.cc:469:   VisitExpr_: IntImmNode: 10
+tvm/src/target/source/codegen_c.cc:922:   extent: 10
+tvm/src/target/source/codegen_c.cc:925:   vid: x name_hint: x
+tvm/src/target/source/codegen_c.cc:920:   &gt;&gt;VisitStmt_:ForNode
+tvm/src/target/source/codegen_c.cc:469:     VisitExpr_: IntImmNode: 10
+tvm/src/target/source/codegen_c.cc:922:     extent: 10
+tvm/src/target/source/codegen_c.cc:925:     vid: y name_hint: y
+tvm/src/target/source/codegen_c.cc:754:     &gt;&gt;VisitStmt_:StoreNode
+tvm/src/target/source/codegen_c.cc:526:       &gt;&gt;VisitExpr_:ADD
+tvm/src/target/source/codegen_c.cc:159:         &gt;&gt;GetBufferRef
+tvm/src/target/source/codegen_c.cc:526:           &gt;&gt;VisitExpr_:ADD
+tvm/src/target/source/codegen_c.cc:534:             &gt;&gt;VisitExpr_:MUL
+tvm/src/target/source/codegen_c.cc:469:               VisitExpr_: IntImmNode: 10
+tvm/src/target/source/codegen_c.cc:536:             &lt;&lt;VisitExpr_:MUL
+tvm/src/target/source/codegen_c.cc:528:           &lt;&lt;VisitExpr_:ADD
+tvm/src/target/source/codegen_c.cc:231:         &lt;&lt;GetBufferRef:((float*)A)[(((x * 10) + y))]
+tvm/src/target/source/codegen_c.cc:159:         &gt;&gt;GetBufferRef
+tvm/src/target/source/codegen_c.cc:526:           &gt;&gt;VisitExpr_:ADD
+tvm/src/target/source/codegen_c.cc:534:             &gt;&gt;VisitExpr_:MUL
+tvm/src/target/source/codegen_c.cc:469:               VisitExpr_: IntImmNode: 10
+tvm/src/target/source/codegen_c.cc:536:             &lt;&lt;VisitExpr_:MUL
+tvm/src/target/source/codegen_c.cc:528:           &lt;&lt;VisitExpr_:ADD
+tvm/src/target/source/codegen_c.cc:231:         &lt;&lt;GetBufferRef:((float*)B)[(((x * 10) + y))]
+tvm/src/target/source/codegen_c.cc:528:       &lt;&lt;VisitExpr_:ADD
+tvm/src/target/source/codegen_c.cc:758:     &lt;&lt;VisitStmt_:StoreNode: (((float*)A)[(((x * 10) + y))] + ((float*)B)[(((x * 10) + y))])
+tvm/src/target/source/codegen_c.cc:159:     &gt;&gt;GetBufferRef
+tvm/src/target/source/codegen_c.cc:526:       &gt;&gt;VisitExpr_:ADD
+tvm/src/target/source/codegen_c.cc:534:         &gt;&gt;VisitExpr_:MUL
+tvm/src/target/source/codegen_c.cc:469:           VisitExpr_: IntImmNode: 10
+tvm/src/target/source/codegen_c.cc:536:         &lt;&lt;VisitExpr_:MUL
+tvm/src/target/source/codegen_c.cc:528:       &lt;&lt;VisitExpr_:ADD
+tvm/src/target/source/codegen_c.cc:231:     &lt;&lt;GetBufferRef:((float*)compute)[(((x * 10) + y))]
+tvm/src/target/source/codegen_c.cc:935:   &lt;&lt;VisitStmt_:ForNode
+tvm/src/target/source/codegen_c.cc:935: &lt;&lt;VisitStmt_:ForNode
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org4660dca" class="outline-3">
+<h3 id="org4660dca"><span class="section-number-3">1.4</span> <span class="done DONE">DONE</span> Build Target</h3>
+<div class="outline-text-3" id="text-1-4">
+<ul class="org-ul">
+<li>State "DONE"       from "WAIT"       <span class="timestamp-wrapper"><span class="timestamp">[2021-10-22 五 16:16]</span></span></li>
+</ul>
+</div>
+
+<div id="outline-container-org0df30cb" class="outline-4">
+<h4 id="org0df30cb"><span class="section-number-4">1.4.1</span> target 参数是如何被解析和使用的</h4>
+<div class="outline-text-4" id="text-1-4-1">
+<p>
+build 时的 target 参数, 例如
+</p>
+
+<pre class="example" id="org379b860">
+llvm --device=arm_cpu --mtriple=armv7a-linux-gnueabihf,
+</pre>
+
+<p>
+会通过 TargetInternal::FromConfig 进行解析, 变成一个 Target 对象, 打印出来是
+</p>
+
+<pre class="example" id="org31ec5db">
+llvm -keys=arm_cpu,cpu -device=arm_cpu -link-params=0 -mtriple=armv7a-linux-gnueabihf
+</pre>
+
+<p>
+keys 中的 `arm_cpu, cpu` 是 TargetInternal::FromConfig 补上去的.
+</p>
+
+<p>
+后续代码可能会根据需求访问 target 中的成员, 例如 x86 相关的 topi 会通过 "mcpu"
+成员确定 simd 宽度:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">get_simd_32bit_lanes</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">mcpu</span> = tvm.target.Target.current<span style="color: #757575;">()</span>.mcpu
+    <span style="color: #268bd2;">fp32_vec_len</span> = 4
+    <span style="color: #859900;">if</span> target_has_avx512<span style="color: #757575;">(</span>mcpu<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">fp32_vec_len</span> = 16
+    <span style="color: #859900;">elif</span> target_has_avx2<span style="color: #757575;">(</span>mcpu<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">fp32_vec_len</span> = 8
+    <span style="color: #859900;">return</span> fp32_vec_len
+</pre>
+</div>
+
+<p>
+Target 的支持的成员通过 target_kind 定义的, 主要包括:
+</p>
+
+<ol class="org-ol">
+<li>kind</li>
+<li>keys</li>
+<li>device</li>
+<li>mcpu</li>
+<li>mtriple</li>
+<li>runtime</li>
+<li>system-lib</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-C++">TVM_REGISTER_TARGET_KIND<span style="color: #757575;">(</span><span style="color: #2aa198;">"llvm"</span><span style="color: #757575;">,</span> kDLCPU<span style="color: #757575;">)</span>
+    .add_attr_option&lt;<span style="color: #b58900;">Array</span>&lt;String&gt;&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"mattr"</span><span style="color: #757575;">)</span>
+    .add_attr_option&lt;String&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"mcpu"</span><span style="color: #757575;">)</span>
+    .add_attr_option&lt;String&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"mtriple"</span><span style="color: #757575;">)</span>
+    .add_attr_option&lt;String&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"mfloat-abi"</span><span style="color: #757575;">)</span>
+    .add_attr_option&lt;String&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"mabi"</span><span style="color: #757575;">)</span>
+    .add_attr_option&lt;Bool&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"system-lib"</span><span style="color: #757575;">)</span>
+    .add_attr_option&lt;String&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"runtime"</span><span style="color: #757575;">)</span>
+    .add_attr_option&lt;Bool&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"link-params"</span><span style="color: #757575;">,</span> Bool<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">false</span><span style="color: #757575;">))</span>
+    .add_attr_option&lt;Bool&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"unpacked-api"</span><span style="color: #757575;">)</span>
+    .add_attr_option&lt;String&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"interface-api"</span><span style="color: #757575;">)</span>
+    .set_default_keys<span style="color: #757575;">({</span><span style="color: #2aa198;">"cpu"</span><span style="color: #757575;">})</span>;
+
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">TVM_REGISTER_TARGET_KIND</span><span style="color: #757575;">(</span><span style="color: #268bd2;">TargetKindName</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">DeviceType</span><span style="color: #757575;">)</span>      \
+  TVM_STR_CONCAT<span style="color: #757575;">(</span>TVM_TARGET_KIND_REGISTER_VAR_DEF<span style="color: #757575;">,</span> __COUNTER__<span style="color: #757575;">)</span> = \
+      ::<span style="color: #268bd2; font-weight: bold;">tvm</span>::<span style="color: #268bd2; font-weight: bold;">TargetKindRegEntry</span>::RegisterOrGet<span style="color: #757575;">(</span>TargetKindName<span style="color: #757575;">)</span>    \
+          .set_name<span style="color: #757575;">()</span>                                             \
+          .set_device_type<span style="color: #757575;">(</span>DeviceType<span style="color: #757575;">)</span>                            \
+          .add_attr_option&lt;<span style="color: #b58900;">Array</span>&lt;String&gt;&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"keys"</span><span style="color: #757575;">)</span>                 \
+          .add_attr_option&lt;String&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"tag"</span><span style="color: #757575;">)</span>                         \
+          .add_attr_option&lt;String&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"device"</span><span style="color: #757575;">)</span>                      \
+          .add_attr_option&lt;String&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"model"</span><span style="color: #757575;">)</span>                       \
+          .add_attr_option&lt;<span style="color: #b58900;">Array</span>&lt;String&gt;&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"libs"</span><span style="color: #757575;">)</span>                 \
+          .add_attr_option&lt;Target&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"host"</span><span style="color: #757575;">)</span>                        \
+          .add_attr_option&lt;Integer&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"from_device"</span><span style="color: #757575;">)</span>
+
+<span style="color: #757575;">}</span>  <span style="color: #586e75;">// </span><span style="color: #586e75;">namespace tvm</span>
+
+</pre>
+</div>
+
+<p>
+Target 中最重要的成员是 kind 和 keys:
+</p>
+
+<ol class="org-ol">
+<li><p>
+kind 决定了 target codegen
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">string</span> <span style="color: #268bd2;">build_f_name</span> = <span style="color: #2aa198;">"target.build."</span> + target-&gt;kind-&gt;name;
+</pre>
+</div></li>
+
+<li>keys 决定了查找哪些 strategy
+<a href="file:///home/sunway/source/tvm/python/tvm/target/generic_func.py#org188e1db">file:///home/sunway/source/tvm/python/tvm/target/generic_func.py#org188e1db</a></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgebae952" class="outline-4">
+<h4 id="orgebae952"><span class="section-number-4">1.4.2</span> LLVMTargetToString</h4>
+</div>
+
+<div id="outline-container-org4ceb104" class="outline-4">
+<h4 id="org4ceb104"><span class="section-number-4">1.4.3</span> arm_cpu 针对 arm 的特殊处理</h4>
+<div class="outline-text-4" id="text-1-4-3">
+</div>
+<div id="outline-container-org4b65014" class="outline-5">
+<h5 id="org4b65014"><span class="section-number-5">1.4.3.1</span> vectorize</h5>
+<div class="outline-text-5" id="text-1-4-3-1">
+<p>
+<a href="https://community.arm.com/arm-community-blogs/b/operating-systems-blog/posts/arm-neon-programming-quick-reference">https://community.arm.com/arm-community-blogs/b/operating-systems-blog/posts/arm-neon-programming-quick-reference</a>
+</p>
+
+<p>
+neon 最多支持 16 字节的向量操作, 所以 tvm 使用 vectorize shedule 时需要使用特定大小的 split
+</p>
+
+<p>
+arm_cpu 对应的 schedule_injective 为:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">schedule_injective</span><span style="color: #757575;">(</span>outs<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">outs</span> = [outs] <span style="color: #859900;">if</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>outs<span style="color: #757575;">,</span> te.tensor.Tensor<span style="color: #757575;">)</span> <span style="color: #859900;">else</span> outs
+    <span style="color: #268bd2;">s</span> = te.create_schedule<span style="color: #757575;">(</span>[x.op <span style="color: #859900;">for</span> x <span style="color: #859900;">in</span> outs]<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x</span> = outs[0]
+
+    <span style="color: #859900;">if</span> <span style="color: #839496;">list</span><span style="color: #757575;">(</span>s[x].op.axis<span style="color: #757575;">)</span>:
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">split &#22823;&#23567;&#20026; 4, &#22240;&#20026; 4 &#20010; float32 &#30340;&#22823;&#23567;&#21363;&#20026; 16</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">&#36825;&#37324;&#30340;&#20195;&#30721;&#26377;&#38382;&#39064;: &#33509;&#25968;&#25454;&#31867;&#22411;&#26159; int8, &#36825;&#37324;&#30340; split &#35774;&#32622;&#20026; 16 &#24615;&#33021;&#25165;&#26159;&#26368;&#22909;&#30340;</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">https://github.com/apache/tvm/pull/9339</span>
+        <span style="color: #757575;">(</span>io<span style="color: #757575;">,</span> ii<span style="color: #757575;">)</span> = s[x].split<span style="color: #757575;">(</span><span style="color: #839496;">list</span><span style="color: #757575;">(</span>s[x].op.axis<span style="color: #757575;">)</span>[-1]<span style="color: #757575;">,</span> 4<span style="color: #757575;">)</span>
+        s[x].vectorize<span style="color: #757575;">(</span>ii<span style="color: #757575;">)</span>
+    tvm.te.schedule.AutoInlineInjective<span style="color: #757575;">(</span>s<span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">if</span> <span style="color: #859900;">not</span> is_empty_shape<span style="color: #757575;">(</span>x.shape<span style="color: #757575;">)</span>:
+        schedule_injective_from_existing<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> x<span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> s
+
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+
+<span style="color: #268bd2;">x</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"x"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 1024<span style="color: #757575;">),</span> dtype=<span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">y</span> = relay.add<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> x<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">func</span> = relay.Function<span style="color: #757575;">(</span>[x]<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span> = tvm.IRModule.from_expr<span style="color: #757575;">(</span>func<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>opt_level=3<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>
+        mod<span style="color: #757575;">,</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">target &#20013;&#30340; `-mtriple=armv7a-linux-gnueabihf -mattr=+neon` &#20250;&#30452;&#25509;&#20256;&#32473; llvm</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">(LLVMTargetToString), &#20854;&#20013;armv7a &#30340; neon &#26159;&#21487;&#36873;&#25903;&#25345;, &#25152;&#20197;&#19981;&#20351;&#29992; +neon</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">&#30340;&#35805; llvm &#20250;&#20351;&#29992; vfp. &#22914;&#26524; triple &#25913;&#25104; armv8l &#21017;&#19981;&#38656;&#35201;&#25351;&#23450; +neon, &#22240;&#20026;</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">neon &#23545;&#20110; armv8l &#26159;&#24517;&#36873;&#25903;&#25345;</span>
+        target=<span style="color: #2aa198;">"llvm --device=arm_cpu -mtriple=armv7a-linux-gnueabihf -mattr=+neon"</span><span style="color: #757575;">,</span>
+        params=<span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">,</span>
+    <span style="color: #757575;">)</span>
+
+lib.save<span style="color: #757575;">(</span><span style="color: #2aa198;">"/tmp/a.o"</span><span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-bash">arm-linux-gnueabihf-objdump -d /tmp/a.o|tail -n 12
+</pre>
+</div>
+
+<p>
+
+</p>
+
+<p>
+000002a8 &lt;tvmgen_default_fused_add_compute_&gt;:
+ 2a8:	e3a02000 	mov	r2, #0
+ 2ac:	e0813002 	add	r3, r1, r2
+ 2b0:	f4630aef 	vld1.64	{d16-d17}, [r3 :128]
+ 2b4:	e0803002 	add	r3, r0, r2
+ 2b8:	f2400de0 	vadd.f32	q8, q8, q8
+ 2bc:	e2822010 	add	r2, r2, #16
+ 2c0:	e3520a01 	cmp	r2, #4096	; 0x1000
+ 2c4:	f4430aef 	vst1.64	{d16-d17}, [r3 :128]
+ 2c8:	1afffff7 	bne	2ac &lt;tvmgen_default_fused_add_compute_+0x4&gt;
+ 2cc:	e12fff1e 	bx	lr
+</p>
+</div>
+</div>
+
+<div id="outline-container-org41d9c16" class="outline-5">
+<h5 id="org41d9c16"><span class="section-number-5">1.4.3.2</span> tensorize</h5>
+<div class="outline-text-5" id="text-1-4-3-2">
+<p>
+<a href="https://stackoverflow.com/questions/2268562/what-are-intrinsics">what are intrinsics</a>
+</p>
+
+<p>
+为了加速 arm_cpu 的 conv2d, TVM 会直接使用 neon 相关的 llvm_intrin 进行
+tensorize, 例如:
+</p>
+
+<ul class="org-ul">
+<li>llvm.aarch64.neon.sdot</li>
+<li>llvm.aarch64.neon.udot</li>
+<li>llvm.aarch64.neon.ummla</li>
+<li>llvm.aarch64.neon.smmla</li>
+<li>llvm.aarch64.neon.umull</li>
+<li>llvm.aarch64.neon.smull</li>
+<li>llvm.aarch64.neon.saddlp</li>
+<li>llvm.aarch64.neon.uaddlp</li>
+<li>llvm.aarch64.neon.addp</li>
+<li>llvm.aarch64.neon.sqrdmulh</li>
+<li>llvm.aarch64.neon.srshl</li>
+<li>llvm.arm.neon.vpadd.v8i8</li>
+<li>llvm.arm.neon.vpadd.v8u8</li>
+<li>llvm.arm.neon.vpadals.v16i8.v8i16</li>
+<li>llvm.arm.neon.vpadalu.v16u8.v8u16</li>
+</ul>
+
+<p>
+最终 llvm 会生成对 ummla/smmla/udot/sdot 等指令的调用
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

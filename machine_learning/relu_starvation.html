@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ReLU Starvation</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">ReLU Starvation</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org0eb56bb">1. <span class="todo TODO">TODO</span> ReLU Starvation</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0eb56bb" class="outline-2">
+<h2 id="org0eb56bb"><span class="section-number-2">1</span> <span class="todo TODO">TODO</span> ReLU Starvation</h2>
+<div class="outline-text-2" id="text-1">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">import</span> random
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+
+<span style="color: #859900;">import</span> torch
+<span style="color: #859900;">from</span> torch <span style="color: #859900;">import</span> nn
+<span style="color: #859900;">from</span> torch <span style="color: #859900;">import</span> optim
+<span style="color: #859900;">from</span> torch.utils.data <span style="color: #859900;">import</span> DataLoader<span style="color: #757575;">,</span> Dataset
+<span style="color: #859900;">import</span> torch.nn.functional <span style="color: #859900;">as</span> F
+
+<span style="color: #268bd2;">GOOD_SEED</span> = 2
+<span style="color: #268bd2;">BAD_SEED</span> = 1
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">set_seed</span><span style="color: #757575;">(</span>seed<span style="color: #757575;">)</span>:
+    torch.manual_seed<span style="color: #757575;">(</span>seed<span style="color: #757575;">)</span>
+    np.random.seed<span style="color: #757575;">(</span>seed<span style="color: #757575;">)</span>
+    random.seed<span style="color: #757575;">(</span>seed<span style="color: #757575;">)</span>
+
+
+set_seed<span style="color: #757575;">(</span>BAD_SEED<span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">PlainDataset</span><span style="color: #757575;">(</span>Dataset<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">x</span> = torch.<span style="color: #839496;">round</span><span style="color: #757575;">(</span>torch.rand<span style="color: #757575;">(</span>1000<span style="color: #757575;">)</span> * 200<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">x</span> = x.unsqueeze<span style="color: #757575;">(</span>1<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">x</span> = torch.cat<span style="color: #757575;">(</span>
+            <span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> x * 2<span style="color: #757575;">,</span> x * 3<span style="color: #757575;">,</span> x * 4<span style="color: #757575;">,</span> x * 5<span style="color: #757575;">,</span> x * 6<span style="color: #757575;">,</span> x * 7<span style="color: #757575;">,</span> x * 8<span style="color: #757575;">,</span> x * 9<span style="color: #757575;">,</span> x * 10<span style="color: #757575;">),</span> 1
+        <span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.X = x
+        <span style="color: #859900;">self</span>.Y = <span style="color: #859900;">self</span>.X
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__getitem__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> index<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">return</span> <span style="color: #859900;">self</span>.X[index]<span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.Y[index]
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__len__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span>:
+        <span style="color: #859900;">return</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span>.X<span style="color: #757575;">)</span>
+
+
+<span style="color: #268bd2;">training_set</span> = PlainDataset<span style="color: #757575;">()</span>
+<span style="color: #268bd2;">training_loader</span> = DataLoader<span style="color: #757575;">(</span>training_set<span style="color: #757575;">,</span> batch_size=100<span style="color: #757575;">,</span> shuffle=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">test</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">m</span> = model[0]
+
+    <span style="color: #268bd2;">x</span> = torch.tensor<span style="color: #757575;">(</span>[[2<span style="color: #757575;">,</span> 4<span style="color: #757575;">,</span> 6<span style="color: #757575;">,</span> 8<span style="color: #757575;">,</span> 10<span style="color: #757575;">,</span> 12<span style="color: #757575;">,</span> 14<span style="color: #757575;">,</span> 16<span style="color: #757575;">,</span> 18<span style="color: #757575;">,</span> 20]]<span style="color: #757575;">)</span>.<span style="color: #839496;">float</span><span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">y_hat</span> = model<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"orig: "</span><span style="color: #757575;">,</span> x<span style="color: #757575;">,</span> <span style="color: #2aa198;">" new: "</span><span style="color: #757575;">,</span> y_hat<span style="color: #757575;">,</span> <span style="color: #2aa198;">"a:"</span><span style="color: #757575;">,</span> m<span style="color: #757575;">(</span>x<span style="color: #757575;">))</span>
+
+    <span style="color: #268bd2;">x</span> = torch.tensor<span style="color: #757575;">(</span>[[1<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 3<span style="color: #757575;">,</span> 4<span style="color: #757575;">,</span> 5<span style="color: #757575;">,</span> 6<span style="color: #757575;">,</span> 7<span style="color: #757575;">,</span> 8<span style="color: #757575;">,</span> 9<span style="color: #757575;">,</span> 10]]<span style="color: #757575;">)</span>.<span style="color: #839496;">float</span><span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">y_hat</span> = model<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"orig: "</span><span style="color: #757575;">,</span> x<span style="color: #757575;">,</span> <span style="color: #2aa198;">" new: "</span><span style="color: #757575;">,</span> y_hat<span style="color: #757575;">,</span> <span style="color: #2aa198;">"a:"</span><span style="color: #757575;">,</span> m<span style="color: #757575;">(</span>x<span style="color: #757575;">))</span>
+
+    <span style="color: #268bd2;">x</span> = torch.tensor<span style="color: #757575;">(</span>[[10<span style="color: #757575;">,</span> 20<span style="color: #757575;">,</span> 30<span style="color: #757575;">,</span> 40<span style="color: #757575;">,</span> 50<span style="color: #757575;">,</span> 60<span style="color: #757575;">,</span> 70<span style="color: #757575;">,</span> 80<span style="color: #757575;">,</span> 90<span style="color: #757575;">,</span> 100]]<span style="color: #757575;">)</span>.<span style="color: #839496;">float</span><span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">y_hat</span> = model<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"orig: "</span><span style="color: #757575;">,</span> x<span style="color: #757575;">,</span> <span style="color: #2aa198;">" new: "</span><span style="color: #757575;">,</span> y_hat<span style="color: #757575;">,</span> <span style="color: #2aa198;">"a:"</span><span style="color: #757575;">,</span> m<span style="color: #757575;">(</span>x<span style="color: #757575;">))</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">train</span><span style="color: #757575;">()</span>:
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>100<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">for</span> x<span style="color: #757575;">,</span> y <span style="color: #859900;">in</span> training_loader:
+            <span style="color: #268bd2;">loss</span> = criterion<span style="color: #757575;">(</span>model<span style="color: #757575;">(</span>x<span style="color: #757575;">),</span> y<span style="color: #757575;">)</span>
+            optimizer.zero_grad<span style="color: #757575;">()</span>
+            loss.backward<span style="color: #757575;">()</span>
+            optimizer.step<span style="color: #757575;">()</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"epoch #%d: loss: %f"</span> % <span style="color: #757575;">(</span>i<span style="color: #757575;">,</span> loss.item<span style="color: #757575;">()))</span>
+
+
+<span style="color: #268bd2;">model</span> = nn.Sequential<span style="color: #757575;">(</span>nn.Linear<span style="color: #757575;">(</span>10<span style="color: #757575;">,</span> 1<span style="color: #757575;">),</span> nn.ReLU<span style="color: #757575;">(),</span> nn.Linear<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">criterion</span> = nn.MSELoss<span style="color: #757575;">()</span>
+<span style="color: #268bd2;">optimizer</span> = optim.Adam<span style="color: #757575;">(</span>model.parameters<span style="color: #757575;">(),</span> lr=0.01<span style="color: #757575;">)</span>
+
+train<span style="color: #757575;">()</span>
+test<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<p>
+epoch #0: loss: 492592.062500
+epoch #200: loss: 484797.562500
+epoch #400: loss: 491294.125000
+epoch #600: loss: 482448.687500
+epoch #800: loss: 494034.031250
+epoch #1000: loss: 589855.875000
+epoch #1200: loss: 515357.156250
+epoch #1400: loss: 509135.812500
+orig:  tensor()  new:  tensor(, grad_fn=&lt;AddmmBackward&gt;) a: tensor(, grad_fn=&lt;AddmmBackward&gt;)
+orig:  tensor()  new:  tensor(, grad_fn=&lt;AddmmBackward&gt;) a: tensor(, grad_fn=&lt;AddmmBackward&gt;)
+orig:  tensor()  new:  tensor(, grad_fn=&lt;AddmmBackward&gt;) a: tensor(, grad_fn=&lt;AddmmBackward&gt;)
+</p>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

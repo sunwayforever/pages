@@ -1,0 +1,458 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Thread Local Storage</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Thread Local Storage</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org129f41e">1. Thread Local Storage</a></li>
+<li><a href="#org78efc61">2. emutls</a>
+<ul>
+<li><a href="#org384f7c5">2.1. __emutls_get_address</a></li>
+</ul>
+</li>
+<li><a href="#org1f56f9a">3. pthread_tls</a></li>
+<li><a href="#org8678150">4. thread_register</a></li>
+<li><a href="#org09645c2">5. elf_tls</a></li>
+<li><a href="#orgba1e1d3">6. tls_model</a></li>
+<li><a href="#org57f6593">7. errno</a></li>
+<li><a href="#orgd01bd14">8. tls_relocation</a>
+<ul>
+<li><a href="#orgeb5aeb4">8.1. emutls 的重定位</a>
+<ul>
+<li><a href="#org867bd2c">8.1.1. __emutls_v</a></li>
+<li><a href="#org81e676a">8.1.2. __emutls_t</a></li>
+<li><a href="#orgf443143">8.1.3. example</a></li>
+</ul>
+</li>
+<li><a href="#orgb5302e9">8.2. elf_tls 的重定位</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org129f41e" class="outline-2">
+<h2 id="org129f41e"><span class="section-number-2">1</span> Thread Local Storage</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+以 android 为例, 说明 tls 的实现方式
+</p>
+
+<ol class="org-ol">
+<li>tls 最底层依赖的是 thread_register, 例如 arm64 使用 tpidr_el0 做为
+thread_register
+
+<ol class="org-ol">
+<li>thread_register 指向的是一些 tls_slot, android 上的 pthread_tls 使用 tls_slot[1] 实现 pthread_tls
+
+<ul class="org-ul">
+<li>emutls 通过 pthread_tls 实现</li>
+</ul></li>
+
+<li>elf_tls 使用 tls_slot[0] 实现</li>
+</ol></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org78efc61" class="outline-2">
+<h2 id="org78efc61"><span class="section-number-2">2</span> emutls</h2>
+<div class="outline-text-2" id="text-2">
+<p>
+android NDK 默认使用 emutls 来支持 `__thread` 关键字声明的 tls
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;errno.h&gt;</span>
+
+__thread <span style="color: #b58900;">int</span> <span style="color: #268bd2;">xxx</span> = 1;
+__thread <span style="color: #b58900;">int</span> <span style="color: #268bd2;">yyy</span> = 1;
+__thread <span style="color: #b58900;">int</span> <span style="color: #268bd2;">zzz</span> = 1;
+
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+  xxx = yyy + zzz;
+  <span style="color: #859900;">return</span> 0;
+<span style="color: #757575;">}</span>
+
+</pre>
+</div>
+
+<pre class="example" id="orgd50a36a">
+$&gt; aarch64-linux-android-gcc test.c -O0 -g3  -fPIE -pie
+$&gt; aarch64-linux-android-objdump -D ./a.out
+
+0000000000000be8 &lt;main&gt;:
+ be8:	a9bd7bfd 	stp	x29, x30, [sp,#-48]!
+ bec:	910003fd 	mov	x29, sp
+ bf0:	f9000bf3 	str	x19, [sp,#16]
+ bf4:	b9002fa0 	str	w0, [x29,#44]
+ bf8:	f90013a1 	str	x1, [x29,#32]
+ bfc:	d0000080 	adrp	x0, 12000 &lt;__dso_handle&gt;
+ c00:	9100a000 	add	x0, x0, #0x28
+ c04:	94000055 	bl	d58 &lt;__emutls_get_address&gt;
+ c08:	b9400013 	ldr	w19, [x0]
+ c0c:	d0000080 	adrp	x0, 12000 &lt;__dso_handle&gt;
+ c10:	91002000 	add	x0, x0, #0x8
+ c14:	94000051 	bl	d58 &lt;__emutls_get_address&gt;
+ c18:	b9400000 	ldr	w0, [x0]
+ c1c:	0b000273 	add	w19, w19, w0
+ c20:	d0000080 	adrp	x0, 12000 &lt;__dso_handle&gt;
+ c24:	91012000 	add	x0, x0, #0x48
+ c28:	9400004c 	bl	d58 &lt;__emutls_get_address&gt;
+ c2c:	b9000013 	str	w19, [x0]
+
+// 其中 __emutls_get_address 表示使用了 libgcc 提供的 emutls
+
+</pre>
+</div>
+
+<div id="outline-container-org384f7c5" class="outline-3">
+<h3 id="org384f7c5"><span class="section-number-3">2.1</span> __emutls_get_address</h3>
+<div class="outline-text-3" id="text-2-1">
+<div class="org-src-container">
+<pre class="src src-c">libcompiler_rt::emutls.c
+
+  <span style="color: #b58900;">void</span>* __emutls_get_address<span style="color: #757575;">(</span><span style="color: #b58900;">__emutls_control</span>* <span style="color: #268bd2;">control</span><span style="color: #757575;">)</span>
+    <span style="color: #b58900;">uintptr_t</span> <span style="color: #268bd2;">index</span> = emutls_get_index<span style="color: #757575;">(</span>control<span style="color: #757575;">)</span>;
+    <span style="color: #b58900;">emutls_address_array</span>* <span style="color: #268bd2;">array</span> = emutls_get_address_array<span style="color: #757575;">(</span>index<span style="color: #757575;">)</span>;
+      <span style="color: #b58900;">emutls_address_array</span>* <span style="color: #268bd2;">array</span> = pthread_getspecific<span style="color: #757575;">(</span>emutls_pthread_key<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> array-&gt;data[index - 1];
+
+  <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">emutls_init</span><span style="color: #757575;">(</span><span style="color: #b58900;">void</span><span style="color: #757575;">)</span>:
+    pthread_key_create<span style="color: #757575;">(</span>&amp;emutls_pthread_key<span style="color: #757575;">,</span> emutls_key_destructor<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+可见 emutls 是依赖 pthread_tls 来实现的.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org1f56f9a" class="outline-2">
+<h2 id="org1f56f9a"><span class="section-number-2">3</span> pthread_tls</h2>
+<div class="outline-text-2" id="text-3">
+<p>
+在 bionic 的实现中, pthread_tls 使用 tls_slot[1] 来实现.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">pthread_getspecific</span><span style="color: #757575;">(</span><span style="color: #b58900;">pthread_key_t</span> <span style="color: #268bd2;">key</span><span style="color: #757575;">)</span>:
+  pthread_key_data_t* data = &amp;<span style="color: #757575;">(</span>__get_thread<span style="color: #757575;">()</span>-&gt;key_data[key]<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">return</span> data-&gt;data;
+
+<span style="color: #b58900;">pthread_internal_t</span>* <span style="color: #268bd2;">__get_thread</span><span style="color: #757575;">()</span>:
+  <span style="color: #859900;">return</span> reinterpret_cast&lt;pthread_internal_t*&gt;<span style="color: #757575;">(</span>__get_tls<span style="color: #757575;">()</span>[TLS_SLOT_THREAD_ID]<span style="color: #757575;">)</span>;
+
+<span style="color: #859900;">enum</span> <span style="color: #757575;">{</span>
+  <span style="color: #268bd2;">TLS_SLOT_SELF</span> = 0<span style="color: #757575;">,</span> <span style="color: #586e75;">// </span><span style="color: #586e75;">The kernel requires this specific slot for x86.</span>
+  <span style="color: #268bd2;">TLS_SLOT_THREAD_ID</span><span style="color: #757575;">,</span>
+  <span style="color: #268bd2;">TLS_SLOT_ERRNO</span><span style="color: #757575;">,</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">__get_tls</span><span style="color: #757575;">()</span> <span style="color: #757575;">({</span> <span style="color: #b58900;">void</span>** <span style="color: #268bd2;">__val</span>; <span style="color: #859900;">__asm__</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"mrs %0, tpidr_el0"</span> : <span style="color: #2aa198;">"=r"</span><span style="color: #757575;">(</span>__val<span style="color: #757575;">))</span>; __val; <span style="color: #757575;">})</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org8678150" class="outline-2">
+<h2 id="org8678150"><span class="section-number-2">4</span> thread_register</h2>
+<div class="outline-text-2" id="text-4">
+<p>
+arm64 的 thread_register 是 tpidr_el0
+</p>
+</div>
+</div>
+
+<div id="outline-container-org09645c2" class="outline-2">
+<h2 id="org09645c2"><span class="section-number-2">5</span> elf_tls</h2>
+<div class="outline-text-2" id="text-5">
+<p>
+<a href="https://www.akkadia.org/drepper/tls.pdf">https://www.akkadia.org/drepper/tls.pdf</a>
+</p>
+
+<p>
+elf_tls 是指编译器不使用 emutls 生成的相关代码, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;errno.h&gt;</span>
+
+__thread <span style="color: #b58900;">int</span> <span style="color: #268bd2;">xxx</span> = 0xa;
+__thread <span style="color: #b58900;">int</span> <span style="color: #268bd2;">yyy</span> = 0xb;
+__thread <span style="color: #b58900;">int</span> <span style="color: #268bd2;">zzz</span> = 0xc;
+
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">my_get_tls</span><span style="color: #757575;">()</span> <span style="color: #757575;">({</span> <span style="color: #b58900;">void</span>** <span style="color: #268bd2;">__val</span>; <span style="color: #859900;">__asm__</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"mrs %0, tpidr_el0"</span> : <span style="color: #2aa198;">"=r"</span><span style="color: #757575;">(</span>__val<span style="color: #757575;">))</span>; __val; <span style="color: #757575;">})</span>
+
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    xxx = yyy + zzz;
+
+    <span style="color: #b58900;">void</span>** <span style="color: #268bd2;">tls</span> = my_get_tls<span style="color: #757575;">()</span>;
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%p %p\n"</span><span style="color: #757575;">,</span> &amp;xxx<span style="color: #757575;">,</span> &amp;tls[0]<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> 0;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org710b56d">
+$&gt; aarch64-linux-gnu-gcc test.c -O0 -g3 -static
+$&gt; aarch64-linux-gnu-objdump -D ./a.out
+
+00000000000007f8 &lt;main&gt;:
+ 7f8:	d10043ff 	sub	sp, sp, #0x10
+ 7fc:	b9000fe0 	str	w0, [sp,#12]
+ 800:	f90003e1 	str	x1, [sp]
+ 804:	d53bd040 	mrs	x0, tpidr_el0
+ 808:	91400000 	add	x0, x0, #0x0, lsl #12
+ 80c:	91005000 	add	x0, x0, #0x14
+ 810:	b9400001 	ldr	w1, [x0]
+ 814:	d53bd040 	mrs	x0, tpidr_el0
+ 818:	91400000 	add	x0, x0, #0x0, lsl #12
+ 81c:	91006000 	add	x0, x0, #0x18
+ 820:	b9400000 	ldr	w0, [x0]
+ 824:	0b000021 	add	w1, w1, w0
+ 828:	d53bd040 	mrs	x0, tpidr_el0
+ 82c:	91400000 	add	x0, x0, #0x0, lsl #12
+ 830:	91004000 	add	x0, x0, #0x10
+ 834:	b9000001 	str	w1, [x0]
+
+// 这里没有使用 emutls, 而是通过 tpidr_el0 指向的 tls_slot 直接获得 tls 地址:
+// xxx 位于 tls_slot[0][0x10]
+// yyy 位于 tls_slot[0][0x14]
+// zzz 位于 tls_slot[0][0x18]
+
+$&gt; ./a.out
+
+0x3eeeb700 0x3eeeb6f0
+
+// 可见 &amp;xxx = tls_slot[0][0x10]
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orgba1e1d3" class="outline-2">
+<h2 id="orgba1e1d3"><span class="section-number-2">6</span> tls_model</h2>
+</div>
+
+<div id="outline-container-org57f6593" class="outline-2">
+<h2 id="org57f6593"><span class="section-number-2">7</span> errno</h2>
+<div class="outline-text-2" id="text-7">
+<p>
+error 是使用 tls 实现的.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">#define</span>  <span style="color: #268bd2;">errno</span>   <span style="color: #757575;">(</span>*__errno<span style="color: #757575;">())</span>
+
+<span style="color: #859900;">volatile</span> <span style="color: #b58900;">int</span>*  <span style="color: #268bd2;">__errno</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+  <span style="color: #859900;">return</span> reinterpret_cast&lt;<span style="color: #b58900;">int</span>*&gt;<span style="color: #757575;">(</span>&amp;<span style="color: #757575;">(</span>__get_tls<span style="color: #757575;">()</span>[TLS_SLOT_ERRNO]<span style="color: #757575;">))</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgd01bd14" class="outline-2">
+<h2 id="orgd01bd14"><span class="section-number-2">8</span> tls_relocation</h2>
+<div class="outline-text-2" id="text-8">
+</div>
+<div id="outline-container-orgeb5aeb4" class="outline-3">
+<h3 id="orgeb5aeb4"><span class="section-number-3">8.1</span> emutls 的重定位</h3>
+<div class="outline-text-3" id="text-8-1">
+<div class="org-src-container">
+<pre class="src src-c">__thread <span style="color: #b58900;">int</span> <span style="color: #268bd2;">xxx</span> = 0xa;
+
+<span style="color: #b58900;">void</span> <span style="color: #268bd2;">foo</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%d\n"</span><span style="color: #757575;">,</span> xxx<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+gcc 编译以上代码时, 会生成几个特殊的符号:
+</p>
+
+<ul class="org-ul">
+<li>__emutls_t.xxx</li>
+<li>__emutls_v.xxx</li>
+</ul>
+
+<pre class="example" id="org878344b">
+$&gt; aarch64-linux-android-gcc foo.c -fPIC -shared -o libfoo.so -O0 -g3
+$&gt; nm libfoo.so|grep xxx
+0000000000000d24 r __emutls_t.xxx
+0000000000012008 D __emutls_v.xxx
+
+// 其中 __emutls_v.xxx 位于 .data, __emutls_t.xxx 位于 .rodata
+</pre>
+</div>
+
+<div id="outline-container-org867bd2c" class="outline-4">
+<h4 id="org867bd2c"><span class="section-number-4">8.1.1</span> __emutls_v</h4>
+<div class="outline-text-4" id="text-8-1-1">
+<p>
+__emutls_v 的类型是 __emutls_control:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">typedef</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">__emutls_control</span> <span style="color: #757575;">{</span>
+  <span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">size</span>;  <span style="color: #586e75;">/* </span><span style="color: #586e75;">size of the object in bytes</span><span style="color: #586e75;"> */</span>
+  <span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">align</span>;  <span style="color: #586e75;">/* </span><span style="color: #586e75;">alignment of the object in bytes</span><span style="color: #586e75;"> */</span>
+  <span style="color: #859900;">union</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">uintptr_t</span> <span style="color: #268bd2;">index</span>;  <span style="color: #586e75;">/* </span><span style="color: #586e75;">data[index-1] is the object address</span><span style="color: #586e75;"> */</span>
+    <span style="color: #b58900;">void</span>* <span style="color: #268bd2;">address</span>;  <span style="color: #586e75;">/* </span><span style="color: #586e75;">object address, when in single thread env</span><span style="color: #586e75;"> */</span>
+  <span style="color: #757575;">}</span> <span style="color: #268bd2;">object</span>;
+  <span style="color: #b58900;">void</span>* <span style="color: #268bd2;">value</span>;  <span style="color: #586e75;">/* </span><span style="color: #586e75;">null or non-zero initial value for the object</span><span style="color: #586e75;"> */</span>
+<span style="color: #757575;">}</span> <span style="color: #b58900;">__emutls_control</span>;
+
+</pre>
+</div>
+
+<ul class="org-ul">
+<li><p>
+index
+</p>
+
+<p>
+__emutls_control 是所有线程都会访问的一个数据结构, 它所保存的 index
+标识了 xxx 在各个线程的 emutls array 中的索引
+</p></li>
+
+<li><p>
+value
+</p>
+
+<p>
+若 xxx 有初值, 则存在一个 __emutls_t.xxx 符号, 保存着这个初值.
+loader 会负责把 value 指向这个 __emutls_t.xxx
+</p></li>
+</ul>
+
+<p>
+__emutls_v.xxx 相当于 xxx 登记的全局标识, 所有线程和代码都需要先定位到__emutls_v.xxx 后, 然后根据 __emutls_t.xxx.object.index 在各自的
+emutls array 中找到 xxx 真正的 tls 地址
+</p>
+</div>
+</div>
+
+
+<div id="outline-container-org81e676a" class="outline-4">
+<h4 id="org81e676a"><span class="section-number-4">8.1.2</span> __emutls_t</h4>
+<div class="outline-text-4" id="text-8-1-2">
+<p>
+__emutls_t.xxx 保存着 xxx 的初值
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf443143" class="outline-4">
+<h4 id="orgf443143"><span class="section-number-4">8.1.3</span> example</h4>
+<div class="outline-text-4" id="text-8-1-3">
+<pre class="example" id="org9a8bb3a">
+$&gt; objdump -D libfoo.so
+
+0000000000000a4c &lt;foo&gt;:
+ a4c:	a9bf7bfd 	stp	x29, x30, [sp,#-16]!
+ a50:	910003fd 	mov	x29, sp
+ a54:	b0000080 	adrp	x0, 11000 &lt;__emutls_t.xxx+0x102dc&gt;
+ a58:	f947fc00 	ldr	x0, [x0,#4088]
+ a5c:	9400004d 	bl	b90 &lt;__emutls_get_address&gt;
+ a60:	b9400001 	ldr	w1, [x0]
+
+// [11000,#4088] ([0x11ff8]) 保存的是 __emutls_v.xxx 对应的 GOT entry:
+Disassembly of section .got:
+
+0000000000011f50 &lt;.got&gt;:
+        ...
+   11f68:	000008f0 	.word	0x000008f0
+   ...
+   11ff8:	00012008 	.word	0x00012008
+   ...
+
+0000000000012008 &lt;__emutls_v.xxx&gt;:
+   12008:	00000004 	.word	0x00000004
+   1200c:	00000000 	.word	0x00000000
+   12010:	00000004 	.word	0x00000004
+        ...
+
+// __emutls_v.xxx 的 index 初始为 0, value 也为 NULL, value 由 linker 负责初始化为对应的 __emutls_t.xxx,
+// 而 index 是 emutls 代码在运行时运行赋值的
+
+$&gt; readelf -a ./libfoo.so
+
+Relocation section '.rela.dyn' at offset 0x708 contains 4 entries:
+...
+000000012020  000000000403 R_AARCH64_RELATIV                    d24
+...
+
+// 0x12020 = 0x12008 + 24, 因为 offsetof(__emutls_v.xxx, value) = 24
+
+Disassembly of section .rodata:
+...
+0000000000000d24 &lt;__emutls_t.xxx&gt;:
+ d24:	0000000a 	.word	0x0000000a
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgb5302e9" class="outline-3">
+<h3 id="orgb5302e9"><span class="section-number-3">8.2</span> elf_tls 的重定位</h3>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

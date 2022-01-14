@@ -1,0 +1,343 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Webview</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Webview</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org7ee3bc0">1. Webview on android-N</a>
+<ul>
+<li><a href="#org2956dd5">1.1. Webview provider list</a></li>
+<li><a href="#orgb71d293">1.2. Keep track of installed/current webview provider</a>
+<ul>
+<li><a href="#orgc5abaab">1.2.1. receiving package manager broadcast</a></li>
+<li><a href="#org8380ee3">1.2.2. change webview provider from `DeveloperSettings`</a></li>
+</ul>
+</li>
+<li><a href="#orgbe5c1cd">1.3. Load the provider</a>
+<ul>
+<li><a href="#org4d4c8d3">1.3.1. Load java class</a></li>
+<li><a href="#org01ca368">1.3.2. Load native libraries</a></li>
+</ul>
+</li>
+<li><a href="#orgbac14a3">1.4. aosp, GMS, chrome, webview.apk, webviewgoogle.apk</a></li>
+<li><a href="#org7d39f2d">1.5. To summaries</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org7ee3bc0" class="outline-2">
+<h2 id="org7ee3bc0"><span class="section-number-2">1</span> Webview on android-N</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org2956dd5" class="outline-3">
+<h3 id="org2956dd5"><span class="section-number-3">1.1</span> Webview provider list</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+frameworks/base/core/res/res/xml/config_webview_packages.xml:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-xml">&lt;<span style="color: #268bd2;">webviewproviders</span>&gt;
+    &lt;<span style="color: #268bd2;">webviewprovider</span> <span style="color: #268bd2;">description</span>=<span style="color: #2aa198;">"Android WebView"</span> <span style="color: #268bd2;">packageName</span>=<span style="color: #2aa198;">"com.android.webview"</span> <span style="color: #268bd2;">availableByDefault</span>=<span style="color: #2aa198;">"true"</span>&gt;
+    &lt;/<span style="color: #268bd2;">webviewprovider</span>&gt;
+&lt;/<span style="color: #268bd2;">webviewproviders</span>&gt;
+</pre>
+</div>
+
+<p>
+In Android N, user could choose the webview `provider`, according to
+the `webviewprovider` list and the actually installed packages.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgb71d293" class="outline-3">
+<h3 id="orgb71d293"><span class="section-number-3">1.2</span> Keep track of installed/current webview provider</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+WebViewUpdateService keeps track of the installed webview providers
+</p>
+</div>
+
+<div id="outline-container-orgc5abaab" class="outline-4">
+<h4 id="orgc5abaab"><span class="section-number-4">1.2.1</span> receiving package manager broadcast</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<div class="org-src-container">
+<pre class="src src-java">mWebViewUpdatedReceiver = <span style="color: #859900;">new</span> <span style="color: #b58900;">BroadcastReceiver</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">switch</span> <span style="color: #757575;">(</span>intent.getAction<span style="color: #757575;">())</span> <span style="color: #757575;">{</span>
+            <span style="color: #859900;">case</span> <span style="color: #268bd2; font-weight: bold;">Intent</span>.ACTION_PACKAGE_REMOVED:
+                mImpl.packageStateChanged<span style="color: #757575;">(</span>packageNameFromIntent<span style="color: #757575;">(</span>intent<span style="color: #757575;">),</span>
+                                          PACKAGE_REMOVED<span style="color: #757575;">,</span> userId<span style="color: #757575;">)</span>;
+                <span style="color: #859900;">break</span>;
+            <span style="color: #859900;">case</span> <span style="color: #268bd2; font-weight: bold;">Intent</span>.ACTION_PACKAGE_CHANGED:
+                <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+            <span style="color: #859900;">case</span> <span style="color: #268bd2; font-weight: bold;">Intent</span>.ACTION_PACKAGE_ADDED:
+                <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+        <span style="color: #757575;">}</span>;
+    <span style="color: #757575;">}</span>;
+
+<span style="color: #b58900;">IntentFilter</span> <span style="color: #268bd2;">filter</span> = <span style="color: #859900;">new</span> <span style="color: #b58900;">IntentFilter</span><span style="color: #757575;">()</span>;
+filter.addAction<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">Intent</span>.ACTION_PACKAGE_ADDED<span style="color: #757575;">)</span>;
+filter.addAction<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">Intent</span>.ACTION_PACKAGE_REMOVED<span style="color: #757575;">)</span>;
+filter.addAction<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">Intent</span>.ACTION_PACKAGE_CHANGED<span style="color: #757575;">)</span>;
+filter.addDataScheme<span style="color: #757575;">(</span><span style="color: #2aa198;">"package"</span><span style="color: #757575;">)</span>;
+<span style="color: #586e75;">// </span><span style="color: #586e75;">mImpl.getWebViewPackages() corresponding to the `webview provider</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">list`, thus, only packages in the `webview provider list` are considered</span>
+<span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">WebViewProviderInfo</span> <span style="color: #268bd2;">provider</span> : mImpl.getWebViewPackages<span style="color: #757575;">())</span> <span style="color: #757575;">{</span>
+    filter.addDataSchemeSpecificPart<span style="color: #757575;">(</span>provider.packageName<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">PatternMatcher</span>.PATTERN_LITERAL<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+mImpl.packageStateChanged will remember the `current webview provider`
+as mCurrentWebViewPackage
+</p>
+</div>
+</div>
+
+<div id="outline-container-org8380ee3" class="outline-4">
+<h4 id="org8380ee3"><span class="section-number-4">1.2.2</span> change webview provider from `DeveloperSettings`</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<p>
+`changeProviderAndSetting` will also remember the
+mCurrentWebViewPackage, but is called by `DeveloperSettings` when the
+user choose a webview provider
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgbe5c1cd" class="outline-3">
+<h3 id="orgbe5c1cd"><span class="section-number-3">1.3</span> Load the provider</h3>
+<div class="outline-text-3" id="text-1-3">
+</div>
+<div id="outline-container-org4d4c8d3" class="outline-4">
+<h4 id="org4d4c8d3"><span class="section-number-4">1.3.1</span> Load java class</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<div class="org-src-container">
+<pre class="src src-java">WebView <span style="color: #757575;">()</span>:
+  ensureProviderCreated<span style="color: #757575;">()</span>
+    mProvider = getFactory<span style="color: #757575;">()</span>.createWebView<span style="color: #757575;">(</span><span style="color: #859900;">this</span><span style="color: #757575;">,</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">PrivateAccess</span><span style="color: #757575;">())</span>;
+
+<span style="color: #268bd2; font-weight: bold;">getFactory</span><span style="color: #757575;">()</span>:
+  <span style="color: #859900;">return</span> WebViewFactory.getProvider<span style="color: #757575;">()</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">getProviderClass will load class from mCurrentWebViewPackage</span>
+    <span style="color: #b58900;">Class</span>&lt;<span style="color: #b58900;">WebViewFactoryProvider</span>&gt; <span style="color: #268bd2;">providerClass</span> = getProviderClass<span style="color: #757575;">()</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">get the application context correponding to</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">mCurrentWebViewPackage</span>
+      webViewContext = getWebViewContextAndSetProvider<span style="color: #757575;">()</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">the class loader</span>
+      <span style="color: #b58900;">ClassLoader</span> <span style="color: #268bd2;">clazzLoader</span> = webViewContext.getClassLoader<span style="color: #757575;">()</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">return the class:</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">`com.android.webview.chromium.WebViewChromiumFactoryProvider`</span>
+      <span style="color: #859900;">return</span> <span style="color: #757575;">(</span><span style="color: #b58900;">Class</span>&lt;<span style="color: #b58900;">WebViewFactoryProvider</span>&gt;<span style="color: #757575;">)</span> Class.forName<span style="color: #757575;">(</span>CHROMIUM_WEBVIEW_FACTORY<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">true</span><span style="color: #757575;">,</span> clazzLoader<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">WebViewDelegate is used by the WebView provider implementation</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">to access the required framework functionality</span>
+    sProviderInstance = providerClass.getConstructor<span style="color: #757575;">(</span>WebViewDelegate.<span style="color: #859900;">class</span><span style="color: #757575;">)</span>.newInstance<span style="color: #757575;">(</span><span style="color: #859900;">new</span> <span style="color: #b58900;">WebViewDelegate</span><span style="color: #757575;">())</span>;
+    <span style="color: #859900;">return</span> sProviderInstance
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org01ca368" class="outline-4">
+<h4 id="org01ca368"><span class="section-number-4">1.3.2</span> Load native libraries</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<p>
+Just use the standard `System.loadLibrary` to load native libraries,
+which is based on `dlopen` and `dlsym`
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgbac14a3" class="outline-3">
+<h3 id="orgbac14a3"><span class="section-number-3">1.4</span> aosp, GMS, chrome, webview.apk, webviewgoogle.apk</h3>
+<div class="outline-text-3" id="text-1-4">
+<ul class="org-ul">
+<li><p>
+aosp
+</p>
+
+<p>
+aosp webview.apk is the sole provider
+</p></li>
+
+<li><p>
+aosp + chrome (standalone)
+</p>
+
+<p>
+because chrome's package name (com.android.chrome) is not listed in
+the provider list, it can't be treated as a webview provider. The
+aosp webview.apk is the sole provider
+</p></li>
+
+<li><p>
+GMS
+</p>
+
+<p>
+GMS will replace the provider list with
+${GMS}/products/gms_overlay/frameworks/base/core/res/res/xml/config_webview_packages.xml,
+which is:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-xml">&lt;<span style="color: #268bd2;">webviewproviders</span>&gt;
+  &lt;<span style="color: #268bd2;">webviewprovider</span> <span style="color: #268bd2;">description</span>=<span style="color: #2aa198;">"Chrome Stable"</span> <span style="color: #268bd2;">packageName</span>=<span style="color: #2aa198;">"com.android.chrome"</span> <span style="color: #268bd2;">availableByDefault</span>=<span style="color: #2aa198;">"true"</span>&gt;
+  &lt;/<span style="color: #268bd2;">webviewprovider</span>&gt;
+  &lt;<span style="color: #268bd2;">webviewprovider</span> <span style="color: #268bd2;">description</span>=<span style="color: #2aa198;">"Google WebView"</span> <span style="color: #268bd2;">packageName</span>=<span style="color: #2aa198;">"com.google.android.webview"</span> <span style="color: #268bd2;">availableByDefault</span>=<span style="color: #2aa198;">"true"</span> <span style="color: #268bd2;">isFallback</span>=<span style="color: #2aa198;">"true"</span>&gt;
+  &lt;/<span style="color: #268bd2;">webviewprovider</span>&gt;
+  &lt;<span style="color: #268bd2;">webviewprovider</span> <span style="color: #268bd2;">description</span>=<span style="color: #2aa198;">"Chrome Beta"</span> <span style="color: #268bd2;">packageName</span>=<span style="color: #2aa198;">"com.chrome.beta"</span>&gt;
+  &lt;/<span style="color: #268bd2;">webviewprovider</span>&gt;
+  <span style="color: #586e75;">&lt;!-- </span><span style="color: #586e75;">... </span><span style="color: #586e75;">--&gt;</span>
+&lt;/<span style="color: #268bd2;">webviewproviders</span>&gt;  
+</pre>
+</div>
+
+<p>
+`com.android.chrome` correponds to GMS chrome,
+`com.google.android.webview` correponds to GMS webviewgoogle.apk
+</p>
+
+<p>
+Because `com.google.android.webview` is `fallback`, although it is
+installed, it is disabled by the PackagedManagerService until all
+other non-fallback providers are removed. so GMS chrome is the sole
+provider on GMS
+</p></li>
+</ul>
+
+<p>
+It should be noted that GMS chrome is different from standalone
+chrome: standalone chrome can't be treated as webview provider because
+it doesn't meet the criteria listed below. 
+</p>
+</div>
+</div>
+
+<div id="outline-container-org7d39f2d" class="outline-3">
+<h3 id="org7d39f2d"><span class="section-number-3">1.5</span> To summaries</h3>
+<div class="outline-text-3" id="text-1-5">
+<ol class="org-ol">
+<li>android framework provides:
+
+<ol class="org-ol">
+<li><p>
+WebView interface
+</p>
+
+<p>
+which relay most of it's work to WebViewProvider implementation
+</p></li>
+
+<li><p>
+WebViewFactory, WebViewUpdateService
+</p>
+
+<p>
+find the WebViewProvider implementation
+</p></li>
+
+<li><p>
+WebViewDelegate
+</p>
+
+<p>
+WebViewProvider implementation use WebViewDelegate to access the
+framework functionality
+</p></li>
+
+<li><p>
+WebViewProvider interface
+</p>
+
+<p>
+interface with the WebViewProvider implementation
+</p></li>
+</ol></li>
+
+<li><p>
+WebViewProvider implementation
+</p>
+
+<p>
+any packages meets the following criteria could be a
+valid WebViewProvider implementation:
+</p>
+
+<ol class="org-ol">
+<li>listed in the webviewproviders list</li>
+
+<li>has implemented the class
+`com.android.webview.chromium.WebViewChromiumFactoryProvider`</li>
+
+<li><p>
+specifiy necessary meta-data in AndroidManifest.xml, like:
+</p>
+
+<p>
+&lt;meta-data android:name="com.android.webview.WebViewLibrary"
+android:value="libtest.so"/&gt;
+</p></li>
+</ol></li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

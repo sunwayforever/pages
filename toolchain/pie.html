@@ -1,0 +1,456 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PIE</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">PIE</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgf6ff621">1. PIE</a>
+<ul>
+<li><a href="#org842231f">1.1. PIC</a>
+<ul>
+<li><a href="#org505a7bb">1.1.1. sample code</a></li>
+<li><a href="#org5f54955">1.1.2. pic</a></li>
+<li><a href="#orgc933213">1.1.3. no-pic</a></li>
+<li><a href="#org5f41790">1.1.4. pic/no-pic 的区别</a></li>
+</ul>
+</li>
+<li><a href="#org411db0d">1.2. PIE</a>
+<ul>
+<li><a href="#orgf7b3fca">1.2.1. sample code</a></li>
+<li><a href="#orgd7752a9">1.2.2. pie</a></li>
+<li><a href="#org6f5cba9">1.2.3. no-pie</a></li>
+<li><a href="#orgbae0acd">1.2.4. PIE 的例子</a></li>
+<li><a href="#orge4b26e2">1.2.5. kernel 对 PIE 的支持</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+<div id="outline-container-orgf6ff621" class="outline-2">
+<h2 id="orgf6ff621"><span class="section-number-2">1</span> PIE</h2>
+<div class="outline-text-2" id="text-1">
+<ul class="org-ul">
+<li>PIC 是针对 so 的位置无关代码, 主要考虑的是 so 如何能被加载到任意位置</li>
+
+<li>PIE 是针对 exectuable 的位置无关代码, 主要考虑的是 ASLR, 即
+exectuable 如何能被加载到随机的位置开始执行</li>
+</ul>
+
+<p>
+实现上两者很相似, 主要是:
+</p>
+
+<ol class="org-ol">
+<li>需要通过 GOT 来访问全局变量 (某此情况下也可以通过 PC-relative 方式)</li>
+
+<li>需要通过 GOT/PLT 来访问其它函数</li>
+</ol>
+</div>
+
+<div id="outline-container-org842231f" class="outline-3">
+<h3 id="org842231f"><span class="section-number-3">1.1</span> PIC</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-org505a7bb" class="outline-4">
+<h4 id="org505a7bb"><span class="section-number-4">1.1.1</span> sample code</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #b58900;">int</span> <span style="color: #268bd2;">x</span> = 10;
+<span style="color: #b58900;">void</span> <span style="color: #268bd2;">foo</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+  x = 10;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org5f54955" class="outline-4">
+<h4 id="org5f54955"><span class="section-number-4">1.1.2</span> pic</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<pre class="example" id="org1b47ef9">
+$&gt; arm-linux-androideabi-gcc -fpic -shared test.c -o libtest.so -O0 -g3
+$&gt; arm-linux-androideabi-objdump -D libtest.so
+0000030c &lt;foo&gt;:
+ 30c:   e52db004        push    {fp}            ; (str fp, [sp, #-4]!)
+ 310:   e28db000        add     fp, sp, #0
+ 314:   e59f201c        ldr     r2, [pc, #28]   ; 338 &lt;foo+0x2c&gt;    &lt;--- r2 是 literal pool 中记录的 pc 与 GOT 表的偏移量                  I
+ 318:   e08f2002        add     r2, pc, r2                          &lt;--- r2 指向 GOT 表                                                    II
+ 31c:   e59f3018        ldr     r3, [pc, #24]   ; 33c &lt;foo+0x30&gt;    &lt;--- r3 是 GOT[x] 相对 GOT 表的偏移量 (0xfffffffc, 即 -4)              III
+ 320:   e7923003        ldr     r3, [r2, r3]                        &lt;--- r3 是 GOT[x] 中保存的 x 变量的地址                                               IV
+ 324:   e3a0200a        mov     r2, #10
+ 328:   e5832000        str     r2, [r3]
+ 32c:   e24bd000        sub     sp, fp, #0
+ 330:   e49db004        pop     {fp}            ; (ldr fp, [sp], #4)
+ 334:   e12fff1e        bx      lr
+ 338:   00001ccc        andeq   r1, r0, ip, asr #25
+ 33c:   fffffffc                        ; &lt;UNDEFINED&gt; instruction: 0xfffffffc
+
+I.
+PC = 0x31c, 所以 r2 = [0x31c+28] = [0x338] = 0x1ccc
+II.
+PC = 0x320, 所以 r2 = 0x320 + 0x1ccc = 0x1fec
+IV.
+r3 = [0x1fec + 0xfffffffc] = 0x1fe8
+
+</pre>
+
+<p>
+可见, 0x1fe8 应该是 x 变量的地址, 查看 GOT 的部分:
+</p>
+
+<pre class="example" id="orgd51bddb">
+00001fe8 &lt;_GLOBAL_OFFSET_TABLE_-0x4&gt;:
+    1fe8:	00002004 	andeq	r2, r0, r4           &lt;--- 1fe8 中保存的地址是 0x2004
+
+00001fec &lt;_GLOBAL_OFFSET_TABLE_&gt;:
+        ...
+    1ff8:	000002a4 	andeq	r0, r0, r4, lsr #5
+    1ffc:	000002a4 	andeq	r0, r0, r4, lsr #5
+
+Disassembly of section .data:
+
+00002000 &lt;__dso_handle&gt;:
+    2000:	00000000 	andeq	r0, r0, r0
+
+00002004 &lt;x&gt;:
+    2004:	0000000a 	andeq	r0, r0, sl          &lt;--- 0x2004 位于 .data, 其值为 0xa (10)
+</pre>
+
+<p>
+由于代码访问 literal pool 或 GOT 都是使用 PC-relative 方式, 所以 so 被加载到任意位置都不影响它对 GOT 的访问, 但有一个问题:
+</p>
+
+<p>
+GOT 表中的保存的地址 0x2004 是写死在 GOT 表中, 如果 so 被加载到
+0xabcd, 显然 GOT 表中的这个数据应该变成 0xabcd + 0x2004, 这个问题留待后面解决.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgc933213" class="outline-4">
+<h4 id="orgc933213"><span class="section-number-4">1.1.3</span> no-pic</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<pre class="example" id="org9eedef7">
+$&gt; arm-linux-androideabi-gcc -fno-pic -shared test.c -o libtest.so -O0 -g3
+$&gt; arm-linux-androideabi-objdump -D libtest.so
+0000030c &lt;foo&gt;:
+ 30c:	e52db004 	push	{fp}		; (str fp, [sp, #-4]!)
+ 310:	e28db000 	add	fp, sp, #0
+ 314:	e59f3010 	ldr	r3, [pc, #16]	; 32c &lt;foo+0x20&gt;   &lt;--- r3 直接通过 literal pool 获得 0x2004 这个地址
+ 318:	e3a0200a 	mov	r2, #10
+ 31c:	e5832000 	str	r2, [r3]
+ 320:	e24bd000 	sub	sp, fp, #0
+ 324:	e49db004 	pop	{fp}		; (ldr fp, [sp], #4)
+ 328:	e12fff1e 	bx	lr
+ 32c:	00002004 	andeq	r2, r0, r4
+
+Disassembly of section .data:
+
+00002000 &lt;__dso_handle&gt;:
+    2000:	00000000 	andeq	r0, r0, r0
+
+00002004 &lt;x&gt;:
+    2004:	0000000a 	andeq	r0, r0, sl                &lt;--- 0x2004 就是 .data 中 x 变量的地址
+</pre>
+
+<p>
+可见 no-pic 的方式简化很多, 但它与前面 pic 的方式有同样的问题: 0x2004
+这个值是直接被写到literal pool (即 .text) 中的, 如果处理 so 被加载到任意位置的问题?
+</p>
+</div>
+</div>
+
+<div id="outline-container-org5f41790" class="outline-4">
+<h4 id="org5f41790"><span class="section-number-4">1.1.4</span> pic/no-pic 的区别</h4>
+<div class="outline-text-4" id="text-1-1-4">
+<p>
+pic/no-pic 都需要处理 0x2004 需要被重定位的问题, 处理的方法其实很直接:
+linker 直接把这个 0x2004 修改成 0xabcd + 0x2004 即可.
+</p>
+
+<p>
+这时会显示出 pic/no-pic 的本质区别: pic 需要修改的是 GOT 表, 这个 GOT
+表位于 .data segment, 而 no-pic  需要修改的是 literal pool, 这个与代码是在一起的, 位于 .text segment.
+</p>
+
+<p>
+由于 COW 的存在, no-pic 会导致 .text 中所有使用到 x 的部分的 page 都无法被多进程共享, 这是 no-pic 的主要问题.
+</p>
+
+<p>
+linker 分别对 no-pic/pic 进行重定位:
+</p>
+
+<pre class="example" id="org2ac76c1">
+no-pic:
+
+0000030c &lt;foo&gt;:
+ 30c:   e52db004        push    {fp}            ; (str fp, [sp, #-4]!)
+ 310:   e28db000        add     fp, sp, #0
+ 314:   e59f3010        ldr     r3, [pc, #16]   ; 32c &lt;foo+0x20&gt;
+ 318:   e3a0200a        mov     r2, #10
+ 31c:   e5832000        str     r2, [r3]
+ 320:   e24bd000        sub     sp, fp, #0
+ 324:   e49db004        pop     {fp}            ; (ldr fp, [sp], #4)
+ 328:   e12fff1e        bx      lr
+ 32c:   00002004        andeq   r2, r0, r4                     ---------+
+                                                                        |
+Relocation section '.rel.dyn' at offset 0x284 contains 2 entries:       |
+ Offset     Info    Type            Sym.Value  Sym. Name                |
+0000032c  00000017 R_ARM_RELATIVE                             &lt;---------+
+00001ed0  00000017 R_ARM_RELATIVE
+
+
+pic:
+
+Disassembly of section .got:
+
+00001fe8 &lt;_GLOBAL_OFFSET_TABLE_-0x4&gt;:
+    1fe8:       00002004        andeq   r2, r0, r4              ----------+
+                                                                          |
+Relocation section '.rel.dyn' at offset 0x284 contains 2 entries:         |
+ Offset     Info    Type            Sym.Value  Sym. Name                  |
+00001ed4  00000017 R_ARM_RELATIVE                                         |
+00001fe8  00000017 R_ARM_RELATIVE                               &lt;---------+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org411db0d" class="outline-3">
+<h3 id="org411db0d"><span class="section-number-3">1.2</span> PIE</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+PIE 主要是针对 exectuable 的, 它可以把 exectuable 加载到任意地址, 而不是以 0 地址为基准加载. PIC 主要是针对多个 so 加载时地址空间怎么分配的问题, 而 PIE 主要是针对 ASLR 的考虑, 毕竟只有一个 exectuable 需要加载,
+而不像 so 那样有多个需要加载. 
+</p>
+</div>
+
+<div id="outline-container-orgf7b3fca" class="outline-4">
+<h4 id="orgf7b3fca"><span class="section-number-4">1.2.1</span> sample code</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #b58900;">int</span> <span style="color: #268bd2;">x</span> = 10;
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+  x = 11;
+  <span style="color: #859900;">return</span> 0;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgd7752a9" class="outline-4">
+<h4 id="orgd7752a9"><span class="section-number-4">1.2.2</span> pie</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<pre class="example" id="org7fe6d61">
+$&gt; arm-linux-androideabi-gcc -fPIE -pie test.c -O0 -g3
+$&gt; arm-linux-androideabi-objdump -D ./a.out
+
+000003ec &lt;main&gt;:
+ 3ec:	e52db004 	push	{fp}		; (str fp, [sp, #-4]!)
+ 3f0:	e28db000 	add	fp, sp, #0
+ 3f4:	e24dd00c 	sub	sp, sp, #12
+ 3f8:	e50b0008 	str	r0, [fp, #-8]
+ 3fc:	e50b100c 	str	r1, [fp, #-12]
+ 400:	e59f301c 	ldr	r3, [pc, #28]	; 424 &lt;main+0x38&gt;
+ 404:	e08f3003 	add	r3, pc, r3        &lt;--- pc + r3 = 40c + 1bf4 = 0x2000, 与 pic 不同的是,
+                                                       这里并没有通过 GOT 来查找, 而是通过 PC-relative 直接找到 .data 中 x 的地址
+ 408:	e3a0200b 	mov	r2, #11
+ 40c:	e5832000 	str	r2, [r3]
+ 410:	e3a03000 	mov	r3, #0
+ 414:	e1a00003 	mov	r0, r3
+ 418:	e24bd000 	sub	sp, fp, #0
+ 41c:	e49db004 	pop	{fp}		; (ldr fp, [sp], #4)
+ 420:	e12fff1e 	bx	lr
+ 424:	00001bf4 	strdeq	r1, [r0], -r4
+
+Disassembly of section .data:
+
+00002000 &lt;x&gt;:
+    2000:	0000000a 	andeq	r0, r0, sl
+
+</pre>
+
+<p>
+由于 x 是 exectuable 内部定义的全局符号, 这里可以仅仅通过 PC-relative
+而不通过 GOT 做到 PIE
+</p>
+</div>
+</div>
+
+<div id="outline-container-org6f5cba9" class="outline-4">
+<h4 id="org6f5cba9"><span class="section-number-4">1.2.3</span> no-pie</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<pre class="example" id="orgf735705">
+$&gt; arm-linux-androideabi-gcc -fno-pie test.c -O0 -g3
+$&gt; arm-linux-androideabi-objdump -D ./a.out
+
+000083c4 &lt;main&gt;:
+    83c4:	e52db004 	push	{fp}		; (str fp, [sp, #-4]!)
+    83c8:	e28db000 	add	fp, sp, #0
+    83cc:	e24dd00c 	sub	sp, sp, #12
+    83d0:	e50b0008 	str	r0, [fp, #-8]
+    83d4:	e50b100c 	str	r1, [fp, #-12]
+    83d8:	e59f3018 	ldr	r3, [pc, #24]	; 83f8 &lt;main+0x34&gt;
+    83dc:	e3a0200b 	mov	r2, #11
+    83e0:	e5832000 	str	r2, [r3]
+    83e4:	e3a03000 	mov	r3, #0
+    83e8:	e1a00003 	mov	r0, r3
+    83ec:	e24bd000 	sub	sp, fp, #0
+    83f0:	e49db004 	pop	{fp}		; (ldr fp, [sp], #4)
+    83f4:	e12fff1e 	bx	lr
+    83f8:	0000a000 	andeq	sl, r0, r0          &lt;--- no-pie 下直接访问 .data 中 x 的地址
+
+Disassembly of section .data:
+
+0000a000 &lt;x&gt;:
+    a000:	0000000a 	andeq	r0, r0, sl
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orgbae0acd" class="outline-4">
+<h4 id="orgbae0acd"><span class="section-number-4">1.2.4</span> PIE 的例子</h4>
+<div class="outline-text-4" id="text-1-2-4">
+<pre class="example" id="orgddecb21">
+$&gt; cat test.c
+int x = 10;
+int main(int argc, char *argv[]) {
+    printf("%p\n", main);
+}
+
+$&gt; gcc test.c -fno-pie
+~@tj02433pcu&gt; ./a.out 
+0x4004d7                 &lt;--- 这里 main 的地址是 0x400xxx, 是因为编译时 linker
+                              默认把 .text 加载到 0x400000 位置 (参考 linker_script)
+~@tj02433pcu&gt; ./a.out 
+0x4004d7
+~@tj02433pcu&gt; ./a.out 
+0x4004d7
+
+$&gt; gcc test.c -fpie
+~@tj02433pcu&gt; gcc test.c -fPIE -pie
+~@tj02433pcu&gt; ./a.out 
+0x55b97e93764a
+~@tj02433pcu&gt; ./a.out 
+0x5615d0ad064a
+~@tj02433pcu&gt; ./a.out 
+0x5576ed0c064a
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orge4b26e2" class="outline-4">
+<h4 id="orge4b26e2"><span class="section-number-4">1.2.5</span> kernel 对 PIE 的支持</h4>
+<div class="outline-text-4" id="text-1-2-5">
+<p>
+加载 so 是 linker 的工作, 但加载 exectuable 是 kernel 的工作, 所以
+kernel 需要支持 PIE
+</p>
+
+<p>
+linux 2.6.12 以后支持 ASLR, 从而支持 PIE
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">load_elf_binary</span>:
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span><span style="color: #757575;">(</span>current-&gt;personality &amp; ADDR_NO_RANDOMIZE<span style="color: #757575;">)</span> &amp;&amp; randomize_va_space<span style="color: #757575;">)</span>:
+    current-&gt;flags |= PF_RANDOMIZE;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>loc-&gt;elf_ex.e_type == ET_DYN<span style="color: #757575;">)</span>:
+    load_bias = ELF_ET_DYN_BASE - vaddr;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>current-&gt;flags &amp; PF_RANDOMIZE<span style="color: #757575;">)</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#32473; load_bias &#21152;&#19978;&#19968;&#20010;&#38543;&#26426;&#20559;&#31227;&#37327;</span>
+      load_bias += arch_mmap_rnd<span style="color: #757575;">()</span>;
+      load_bias = ELF_PAGESTART<span style="color: #757575;">(</span>load_bias<span style="color: #757575;">)</span>;
+
+  <span style="color: #268bd2;">elf_map</span><span style="color: #757575;">(</span>bprm-&gt;file<span style="color: #757575;">,</span> load_bias + vaddr<span style="color: #757575;">,</span> <span style="color: #b58900;">elf_ppnt</span><span style="color: #757575;">,</span> <span style="color: #b58900;">elf_prot</span><span style="color: #757575;">,</span> <span style="color: #b58900;">elf_flags</span><span style="color: #757575;">,</span> <span style="color: #b58900;">total_size</span><span style="color: #757575;">)</span>;
+</pre>
+</div>
+
+<p>
+通过 personality syscall 可以控制是否打开 PIE:
+</p>
+
+<pre class="example" id="org31f15b6">
+$&gt; cat test.c
+#include &lt;string.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;sys/personality.h&gt;
+
+int x = 10;
+int main(int argc, char *argv[]) {
+    personality(ADDR_NO_RANDOMIZE);
+    printf("%p\n", main);
+}
+
+$&gt; gcc test.c -fPIE -pie
+$&gt; ./a.out
+0x55f2abed368a
+$&gt; ./a.out 
+0x5579b06f968a
+$&gt; ./a.out 
+0x557a8bdc268a
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

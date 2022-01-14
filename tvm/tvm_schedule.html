@@ -1,0 +1,1207 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TVM Schedule</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">TVM Schedule</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgcc60e35">1. TVM Schedule</a>
+<ul>
+<li><a href="#org1ef5dc0">1.1. Schedule</a>
+<ul>
+<li><a href="#org3777769">1.1.1. Overview</a></li>
+<li><a href="#org616768d">1.1.2. Example</a></li>
+<li><a href="#org57fe87b">1.1.3. TVM Schedule Primitives</a></li>
+<li><a href="#org78e7b61">1.1.4. Injective Schedule</a></li>
+<li><a href="#org0decad0">1.1.5. Reduce Schedule</a></li>
+</ul>
+</li>
+<li><a href="#org3b580ad">1.2. AutoTVM</a>
+<ul>
+<li><a href="#org9224c36">1.2.1. MicroTVM 与 AutoTVM</a></li>
+</ul>
+</li>
+<li><a href="#org5a1f7bc">1.3. <span class="done DONE">DONE</span> <span class="priority">[C]</span> TVM Auto Scheduler</a>
+<ul>
+<li><a href="#org0cbdcaf">1.3.1. Testing Function</a></li>
+<li><a href="#org76497d7">1.3.2. AutoScheduler Tunning</a></li>
+<li><a href="#org859a074">1.3.3. Evaluation</a></li>
+<li><a href="#org70dcb95">1.3.4. Auto Scheduler Internals</a></li>
+<li><a href="#org26b759f">1.3.5. Auto Scheduler and MicroTVM</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgcc60e35" class="outline-2">
+<h2 id="orgcc60e35"><span class="section-number-2">1</span> TVM Schedule</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+
+<div id="outline-container-org1ef5dc0" class="outline-3">
+<h3 id="org1ef5dc0"><span class="section-number-3">1.1</span> Schedule</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-org3777769" class="outline-4">
+<h4 id="org3777769"><span class="section-number-4">1.1.1</span> Overview</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+<a href="http://tvm.apache.org/docs/api/python/te.html">http://tvm.apache.org/docs/api/python/te.html</a>
+</p>
+
+<p>
+<a href="https://github.com/StrongSpoon/tvm.schedule">https://github.com/StrongSpoon/tvm.schedule</a>
+</p>
+
+<p>
+TE (tensor expression) 位于 Relay IR 和 TIR 之间, TE 包含 compute + schedule, 其中 compute 用 TIR 来描述运算的核心操作，schedule 用来描述如何调度.
+</p>
+
+<p>
+Q: 什么是调度 &amp; 为什么需要调度
+</p>
+
+<p>
+<a href="http://people.csail.mit.edu/jrk/halide-pldi13.pdf">Halide: A Language and Compiler for Optimizing Parallelism, Locality, and Recomputation in Image Processing Pipelines</a>
+</p>
+
+<p>
+<a href="https://arxiv.org/pdf/1805.08166.pdf">Learning to Optimize Tensor Programs</a>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org616768d" class="outline-4">
+<h4 id="org616768d"><span class="section-number-4">1.1.2</span> Example</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+Relay IR 先经过 tvm.relay.transform 进行优化，然后转换为 TE, 然后通过 schedule
+产生最佳性能的代码 (例如 vectorize scheduler 会使用 SIMD 指令加速)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> te
+
+<span style="color: #268bd2;">M</span> = 1024
+<span style="color: #268bd2;">N</span> = 1024
+<span style="color: #268bd2;">A</span> = te.placeholder<span style="color: #757575;">((</span>M<span style="color: #757575;">,</span> N<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"A"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">B</span> = te.placeholder<span style="color: #757575;">((</span>M<span style="color: #757575;">,</span> N<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"B"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">C</span> = te.compute<span style="color: #757575;">((</span>M<span style="color: #757575;">,</span> N<span style="color: #757575;">),</span> <span style="color: #859900;">lambda</span> x<span style="color: #757575;">,</span> y: A[x<span style="color: #757575;">,</span> y] + B[x<span style="color: #757575;">,</span> y]<span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"C"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">s</span> = te.create_schedule<span style="color: #757575;">(</span>C.op<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>tvm.lower<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B<span style="color: #757575;">,</span> C]<span style="color: #757575;">))</span>
+
+<span style="color: #268bd2;">f</span> = tvm.build<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B<span style="color: #757575;">,</span> C]<span style="color: #757575;">,</span> <span style="color: #2aa198;">"c"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>f.get_source<span style="color: #757575;">())</span>
+</pre>
+</div>
+
+<p>
+primfn(A_1: handle, B_1: handle, C_1: handle) -&gt; ()
+  attr = {"global_symbol": "main", "tir.noalias": True}
+  buffers = {C: Buffer(C_2: Pointer(float32), float32, [1024, 1024], []),
+             A: Buffer(A_2: Pointer(float32), float32, [1024, 1024], []),
+             B: Buffer(B_2: Pointer(float32), float32, [1024, 1024], [])}
+  buffer_map = {A_1: A, B_1: B, C_1: C} {
+  for (x: int32, 0, 1024) {
+    for (y: int32, 0, 1024) {
+      C_2[((x*1024) + y)] = ((float32*)A_2[((x*1024) + y)] + (float32*)B_2[((x*1024) + y)])
+    }
+  }
+}
+</p>
+
+
+<p>
+// tvm target: c -keys=cpu -link-params=0
+#define TVM_EXPORTS
+#include "tvm/runtime/c_runtime_api.h"
+#include "tvm/runtime/c_backend_api.h"
+#include &lt;math.h&gt;
+#ifdef __cplusplus
+extern "C"
+#endif
+TVM_DLL int32_t default_function(void* args, void* arg_type_ids, int32_t num_args, void* out_ret_value, void* out_ret_tcode, void* resource_handle) {
+  void* arg0 = (((TVMValue*)args)[0].v_handle);
+  int32_t arg0_code = ((int32_t*)arg_type_ids)[(0)];
+  void* arg1 = (((TVMValue*)args)[1].v_handle);
+  int32_t arg1_code = ((int32_t*)arg_type_ids)[(1)];
+  void* arg2 = (((TVMValue*)args)[2].v_handle);
+  int32_t arg2_code = ((int32_t*)arg_type_ids)[(2)];
+  void* A = (((DLTensor*)arg0)[0].data);
+  void* arg0_shape = (((DLTensor*)arg0)[0].shape);
+  void* arg0_strides = (((DLTensor*)arg0)[0].strides);
+  int32_t dev_id = (((DLTensor*)arg0)[0].device.device_id);
+  void* B = (((DLTensor*)arg1)[0].data);
+  void* arg1_shape = (((DLTensor*)arg1)[0].shape);
+  void* arg1_strides = (((DLTensor*)arg1)[0].strides);
+  void* C = (((DLTensor*)arg2)[0].data);
+  void* arg2_shape = (((DLTensor*)arg2)[0].shape);
+  void* arg2_strides = (((DLTensor*)arg2)[0].strides);
+  if (!(arg0_strides == NULL)) {
+  }
+  if (!(arg1_strides == NULL)) {
+  }
+  if (!(arg2_strides == NULL)) {
+  }
+  for (int32_t x = 0; x &lt; 1024; ++x) {
+    for (int32_t y = 0; y &lt; 1024; ++y) {
+      ((float*)C)[(((x * 1024) + y))] = (((float*)A)[(((x * 1024) + y))] + ((float*)B)[(((x * 1024) + y))]);
+    }
+  }
+  return 0;
+}
+</p>
+
+<p>
+使用 split schedule 后：
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">s[C].split<span style="color: #757575;">(</span>C.op.axis[0]<span style="color: #757575;">,</span> factor=20<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>tvm.lower<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B<span style="color: #757575;">,</span> C]<span style="color: #757575;">))</span>
+</pre>
+</div>
+
+<p>
+primfn(A_1: handle, B_1: handle, C_1: handle) -&gt; ()
+  attr = {"global_symbol": "main", "tir.noalias": True}
+  buffers = {C: Buffer(C_2: Pointer(float32), float32, [1024, 1024], []),
+             A: Buffer(A_2: Pointer(float32), float32, [1024, 1024], []),
+             B: Buffer(B_2: Pointer(float32), float32, [1024, 1024], [])}
+  buffer_map = {A_1: A, B_1: B, C_1: C} {
+  for (x.outer: int32, 0, 52) {
+    for (x.inner: int32, 0, 20) {
+      if (((x.outer*20) + x.inner) &lt; 1024) {
+        for (y: int32, 0, 1024) {
+          C_2[(((x.outer*20480) + (x.inner*1024)) + y)] = ((float32*)A_2[(((x.outer*20480) + (x.inner*1024)) + y)] + (float32*)B_2[(((x.outer*20480) + (x.inner*1024)) + y)])
+        }
+      }
+    }
+  }
+}
+</p>
+
+<p>
+使用 vectorize schedule 后:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #268bd2;">s</span> = te.create_schedule<span style="color: #757575;">(</span>C.op<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">xo</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">yo</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">xi</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">yi</span> = s[C].tile<span style="color: #757575;">(</span>C.op.axis[0]<span style="color: #757575;">,</span> C.op.axis[1]<span style="color: #757575;">,</span> 32<span style="color: #757575;">,</span> 32<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>tvm.lower<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B<span style="color: #757575;">,</span> C]<span style="color: #757575;">,</span> simple_mode=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">))</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"---------cutting line---------"</span><span style="color: #757575;">)</span>
+
+s[C].vectorize<span style="color: #757575;">(</span>yi<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>tvm.lower<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B<span style="color: #757575;">,</span> C]<span style="color: #757575;">,</span> simple_mode=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">))</span>
+</pre>
+</div>
+
+<p>
+primfn(A_1: handle, B_1: handle, C_1: handle) -&gt; ()
+  attr = {"global_symbol": "main", "tir.noalias": True}
+  buffers = {C: Buffer(C_2: Pointer(float32), float32, [1024, 1024], []),
+             A: Buffer(A_2: Pointer(float32), float32, [1024, 1024], []),
+             B: Buffer(B_2: Pointer(float32), float32, [1024, 1024], [])}
+  buffer_map = {A_1: A, B_1: B, C_1: C} {
+  for (x.outer: int32, 0, 32) {
+    for (y.outer: int32, 0, 32) {
+      for (x.inner: int32, 0, 32) {
+        for (y.inner: int32, 0, 32) {
+          C_2[((((x.outer*32768) + (x.inner*1024)) + (y.outer*32)) + y.inner)] = ((float32*)A_2[((((x.outer*32768) + (x.inner*1024)) + (y.outer*32)) + y.inner)] + (float32*)B_2[((((x.outer*32768) + (x.inner*1024)) + (y.outer*32)) + y.inner)])
+        }
+      }
+    }
+  }
+}
+</p>
+
+
+<p>
+----&#x2013;&#x2014;cutting line----&#x2013;&#x2014;
+primfn(A_1: handle, B_1: handle, C_1: handle) -&gt; ()
+  attr = {"global_symbol": "main", "tir.noalias": True}
+  buffers = {C: Buffer(C_2: Pointer(float32), float32, [1024, 1024], []),
+             A: Buffer(A_2: Pointer(float32), float32, [1024, 1024], []),
+             B: Buffer(B_2: Pointer(float32), float32, [1024, 1024], [])}
+  buffer_map = {A_1: A, B_1: B, C_1: C} {
+  for (x.outer: int32, 0, 32) {
+    for (y.outer: int32, 0, 32) {
+      for (x.inner: int32, 0, 32) {
+        C_2[ramp((((x.outer*32768) + (x.inner*1024)) + (y.outer*32)), 1, 32)] = ((float32x32*)A_2[ramp((((x.outer*32768) + (x.inner*1024)) + (y.outer*32)), 1, 32)] + (float32x32*)B_2[ramp((((x.outer*32768) + (x.inner*1024)) + (y.outer*32)), 1, 32)])
+      }
+    }
+  }
+}
+</p>
+</div>
+</div>
+
+<div id="outline-container-org57fe87b" class="outline-4">
+<h4 id="org57fe87b"><span class="section-number-4">1.1.3</span> TVM Schedule Primitives</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<p>
+<a href="https://tvm.apache.org/docs/tutorials/language/schedule_primitives.html">https://tvm.apache.org/docs/tutorials/language/schedule_primitives.html</a>
+</p>
+
+<p>
+schedule 主要分为以下几类:
+</p>
+
+<ol class="org-ol">
+<li>memory tiling</li>
+<li>loop transformation (splitting, reording, unrolling)</li>
+<li>vectorization/tensorization</li>
+<li>parallelization</li>
+</ol>
+</div>
+
+<div id="outline-container-orgdfaa41f" class="outline-5">
+<h5 id="orgdfaa41f"><span class="section-number-5">1.1.3.1</span> split</h5>
+</div>
+
+<div id="outline-container-org83dde96" class="outline-5">
+<h5 id="org83dde96"><span class="section-number-5">1.1.3.2</span> <span class="done DONE">DONE</span> ternsorize</h5>
+<div class="outline-text-5" id="text-1-1-3-2">
+<ul class="org-ul">
+<li>State "DONE"       from              <span class="timestamp-wrapper"><span class="timestamp">[2021-10-25 一 16:21]</span></span></li>
+</ul>
+
+<p>
+<a href="https://tvm.apache.org/docs/tutorials/language/tensorize.html">https://tvm.apache.org/docs/tutorials/language/tensorize.html</a>
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-10-22 16:46</span>
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> te
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">a = 1024 x 64</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">b = 512  x 64</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">c = a @ b.T = 1024 x 512</span>
+<span style="color: #268bd2;">N</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">M</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">L</span> = 1024<span style="color: #757575;">,</span> 512<span style="color: #757575;">,</span> 64
+<span style="color: #268bd2;">A</span> = te.placeholder<span style="color: #757575;">((</span>N<span style="color: #757575;">,</span> L<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"A"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">B</span> = te.placeholder<span style="color: #757575;">((</span>M<span style="color: #757575;">,</span> L<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"B"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">k</span> = te.reduce_axis<span style="color: #757575;">((</span>0<span style="color: #757575;">,</span> L<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"k"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">C</span> = te.compute<span style="color: #757575;">((</span>N<span style="color: #757575;">,</span> M<span style="color: #757575;">),</span> <span style="color: #859900;">lambda</span> i<span style="color: #757575;">,</span> j: te.<span style="color: #839496;">sum</span><span style="color: #757575;">(</span>A[i<span style="color: #757575;">,</span> k] * B[j<span style="color: #757575;">,</span> k]<span style="color: #757575;">,</span> axis=k<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"C"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">s</span> = te.create_schedule<span style="color: #757575;">(</span>C.op<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">factor</span> = 32
+<span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span> = C.op.axis
+<span style="color: #757575;">(</span>z<span style="color: #757575;">,)</span> = C.op.reduce_axis
+<span style="color: #268bd2;">yo</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">yi</span> = s[C].split<span style="color: #757575;">(</span>y<span style="color: #757575;">,</span> factor=factor<span style="color: #757575;">)</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">s[C].reorder(x, yo, yi, z)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"------ before ------"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>tvm.lower<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B<span style="color: #757575;">,</span> C]<span style="color: #757575;">,</span> simple_mode=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">))</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">intrin_gemv</span><span style="color: #757575;">(</span>m<span style="color: #757575;">,</span> l<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">a</span> = te.placeholder<span style="color: #757575;">((</span>l<span style="color: #757575;">,),</span> name=<span style="color: #2aa198;">"a"</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">b</span> = te.placeholder<span style="color: #757575;">((</span>m<span style="color: #757575;">,</span> l<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"b"</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">k</span> = te.reduce_axis<span style="color: #757575;">((</span>0<span style="color: #757575;">,</span> l<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"k"</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">c</span> = te.compute<span style="color: #757575;">((</span>m<span style="color: #757575;">,),</span> <span style="color: #859900;">lambda</span> i: te.<span style="color: #839496;">sum</span><span style="color: #757575;">(</span>a[k] * b[i<span style="color: #757575;">,</span> k]<span style="color: #757575;">,</span> axis=k<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"c"</span><span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">Abuf</span> = tvm.tir.decl_buffer<span style="color: #757575;">(</span>a.shape<span style="color: #757575;">,</span> a.dtype<span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"A"</span><span style="color: #757575;">,</span> offset_factor=1<span style="color: #757575;">,</span> strides=[1]<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">Bbuf</span> = tvm.tir.decl_buffer<span style="color: #757575;">(</span>
+        b.shape<span style="color: #757575;">,</span> b.dtype<span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"B"</span><span style="color: #757575;">,</span> offset_factor=1<span style="color: #757575;">,</span> strides=[te.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"s1"</span><span style="color: #757575;">),</span> 1]
+    <span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">Cbuf</span> = tvm.tir.decl_buffer<span style="color: #757575;">(</span>c.shape<span style="color: #757575;">,</span> c.dtype<span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"C"</span><span style="color: #757575;">,</span> offset_factor=1<span style="color: #757575;">,</span> strides=[1]<span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">intrin_func</span><span style="color: #757575;">(</span>ins<span style="color: #757575;">,</span> outs<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">ib</span> = tvm.tir.ir_builder.create<span style="color: #757575;">()</span>
+        <span style="color: #268bd2;">aa</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">bb</span> = ins
+        <span style="color: #268bd2;">cc</span> = outs[0]
+        ib.emit<span style="color: #757575;">(</span>
+            tvm.tir.call_extern<span style="color: #757575;">(</span>
+                <span style="color: #2aa198;">"int32"</span><span style="color: #757575;">,</span>
+                <span style="color: #2aa198;">"gemv_update"</span><span style="color: #757575;">,</span>
+                cc.access_ptr<span style="color: #757575;">(</span><span style="color: #2aa198;">"w"</span><span style="color: #757575;">),</span>
+                aa.access_ptr<span style="color: #757575;">(</span><span style="color: #2aa198;">"r"</span><span style="color: #757575;">),</span>
+                bb.access_ptr<span style="color: #757575;">(</span><span style="color: #2aa198;">"r"</span><span style="color: #757575;">),</span>
+                m<span style="color: #757575;">,</span>
+                l<span style="color: #757575;">,</span>
+                bb.strides[0]<span style="color: #757575;">,</span>
+            <span style="color: #757575;">)</span>
+        <span style="color: #757575;">)</span>
+        <span style="color: #859900;">return</span> ib.get<span style="color: #757575;">()</span>
+
+    <span style="color: #859900;">return</span> te.decl_tensor_intrin<span style="color: #757575;">(</span>c.op<span style="color: #757575;">,</span> intrin_func<span style="color: #757575;">,</span> binds=<span style="color: #757575;">{</span>a: Abuf<span style="color: #757575;">,</span> b: Bbuf<span style="color: #757575;">,</span> c: Cbuf<span style="color: #757575;">})</span>
+
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">def gemv_impl():</span>
+<span style="color: #586e75;">#     </span><span style="color: #586e75;">cc_code = """</span>
+<span style="color: #586e75;">#       </span><span style="color: #586e75;">extern "C" int gemv_update(float *cc, float *aa, float *bb, int m, int l, int stride) {</span>
+<span style="color: #586e75;">#         </span><span style="color: #586e75;">for (int i = 0; i &lt; m; ++i) {</span>
+<span style="color: #586e75;">#             </span><span style="color: #586e75;">for (int j = 0; j &lt; l; ++j) {</span>
+<span style="color: #586e75;">#                 </span><span style="color: #586e75;">cc[i] += aa[j] * bb[i * stride + j];</span>
+<span style="color: #586e75;">#             </span><span style="color: #586e75;">}</span>
+<span style="color: #586e75;">#         </span><span style="color: #586e75;">}</span>
+<span style="color: #586e75;">#         </span><span style="color: #586e75;">return 0;</span>
+<span style="color: #586e75;">#       </span><span style="color: #586e75;">}</span>
+<span style="color: #586e75;">#     </span><span style="color: #586e75;">"""</span>
+<span style="color: #586e75;">#     </span><span style="color: #586e75;">from tvm.contrib import utils, clang</span>
+<span style="color: #586e75;">#     </span><span style="color: #586e75;">temp = utils.tempdir()</span>
+<span style="color: #586e75;">#     </span><span style="color: #586e75;">ll_path = temp.relpath("temp.ll")</span>
+<span style="color: #586e75;">#     </span><span style="color: #586e75;"># Create LLVM ir from c source code</span>
+<span style="color: #586e75;">#     </span><span style="color: #586e75;">ll_code = clang.create_llvm(cc_code, output=ll_path)</span>
+<span style="color: #586e75;">#     </span><span style="color: #586e75;">return ll_code</span>
+<span style="color: #586e75;">#</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">s[C].pragma(x, "import_llvm", gemv_impl())</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"------ after ------"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">gemv</span> = intrin_gemv<span style="color: #757575;">(</span>factor<span style="color: #757575;">,</span> L<span style="color: #757575;">)</span>
+s[C].tensorize<span style="color: #757575;">(</span>yi<span style="color: #757575;">,</span> gemv<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>tvm.lower<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B<span style="color: #757575;">,</span> C]<span style="color: #757575;">,</span> simple_mode=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">))</span>
+</pre>
+</div>
+
+<p>
+-&#x2013;&#x2014; before -&#x2013;&#x2014;
+primfn(A_1: handle, B_1: handle, C_1: handle) -&gt; ()
+  attr = {"from_legacy_te_schedule": True, "global_symbol": "main", "tir.noalias": True}
+  buffers = {C: Buffer(C_2: Pointer(float32), float32, [1024, 512], []),
+             B: Buffer(B_2: Pointer(float32), float32, [512, 64], []),
+             A: Buffer(A_2: Pointer(float32), float32, [1024, 64], [])}
+  buffer_map = {A_1: A, B_1: B, C_1: C} {
+  for (i: int32, 0, 1024) {
+    for (j.outer: int32, 0, 16) {
+      for (j.inner: int32, 0, 32) {
+        C_2[(((i*512) + (j.outer*32)) + j.inner)] = 0f32
+        for (k: int32, 0, 64) {
+          C_2[(((i*512) + (j.outer*32)) + j.inner)] = ((float32*)C_2[(((i*512) + (j.outer*32)) + j.inner)] + ((float32*)A_2[((i*64) + k)]*(float32*)B_2[(((j.outer*2048) + (j.inner*64)) + k)]))
+        }
+      }
+    }
+  }
+}
+</p>
+
+
+<p>
+-&#x2013;&#x2014; after -&#x2013;&#x2014;
+primfn(A_1: handle, B_1: handle, C_1: handle) -&gt; ()
+  attr = {"from_legacy_te_schedule": True, "global_symbol": "main", "tir.noalias": True}
+  buffers = {C: Buffer(C_2: Pointer(float32), float32, [1024, 512], []),
+             B: Buffer(B_2: Pointer(float32), float32, [512, 64], []),
+             A: Buffer(A_2: Pointer(float32), float32, [1024, 64], [])}
+  buffer_map = {A_1: A, B_1: B, C_1: C} {
+  for (i: int32, 0, 1024) {
+    for (j.outer: int32, 0, 16) {
+      @tir.
+    }
+  }
+}
+</p>
+</div>
+</div>
+
+<div id="outline-container-org71326a3" class="outline-5">
+<h5 id="org71326a3"><span class="section-number-5">1.1.3.3</span> parallel</h5>
+<div class="outline-text-5" id="text-1-1-3-3">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> te
+
+<span style="color: #268bd2;">n</span> = 1024
+<span style="color: #268bd2;">m</span> = 1024
+
+<span style="color: #268bd2;">A</span> = te.placeholder<span style="color: #757575;">((</span>n<span style="color: #757575;">,</span> m<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"A"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">l</span> = te.reduce_axis<span style="color: #757575;">((</span>0<span style="color: #757575;">,</span> m<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"l"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">B</span> = te.compute<span style="color: #757575;">((</span>n<span style="color: #757575;">,),</span> <span style="color: #859900;">lambda</span> i: te.<span style="color: #839496;">sum</span><span style="color: #757575;">(</span>A[i<span style="color: #757575;">,</span> l]<span style="color: #757575;">,</span> axis=l<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"B"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">s</span> = te.create_schedule<span style="color: #757575;">(</span>B.op<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>tvm.lower<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B]<span style="color: #757575;">,</span> simple_mode=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">))</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"---------cutting line---------"</span><span style="color: #757575;">)</span>
+
+s[B].parallel<span style="color: #757575;">(</span>B.op.reduce_axis[0]<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>tvm.lower<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B]<span style="color: #757575;">,</span> simple_mode=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">))</span>
+</pre>
+</div>
+
+<p>
+primfn(A_1: handle, B_1: handle) -&gt; ()
+  attr = {"from_legacy_te_schedule": True, "global_symbol": "main", "tir.noalias": True}
+  buffers = {B: Buffer(B_2: Pointer(float32), float32, [1024], []),
+             A: Buffer(A_2: Pointer(float32), float32, [1024, 1024], [])}
+  buffer_map = {A_1: A, B_1: B} {
+  for (i: int32, 0, 1024) {
+    B_2[i] = 0f32
+    for (l: int32, 0, 1024) {
+      B_2[i] = ((float32*)B_2[i] + (float32*)A_2[((i*1024) + l)])
+    }
+  }
+}
+</p>
+
+
+<p>
+----&#x2013;&#x2014;cutting line----&#x2013;&#x2014;
+primfn(A_1: handle, B_1: handle) -&gt; ()
+  attr = {"from_legacy_te_schedule": True, "global_symbol": "main", "tir.noalias": True}
+  buffers = {B: Buffer(B_2: Pointer(float32), float32, [1024], []),
+             A: Buffer(A_2: Pointer(float32), float32, [1024, 1024], [])}
+  buffer_map = {A_1: A, B_1: B} {
+  for (i: int32, 0, 1024) {
+    B_2[i] = 0f32
+    for (l: int32, 0, 1024) "parallel" {
+      B_2[i] = ((float32*)B_2[i] + (float32*)A_2[((i*1024) + l)])
+    }
+  }
+}
+</p>
+</div>
+</div>
+
+<div id="outline-container-org35424b7" class="outline-5">
+<h5 id="org35424b7"><span class="section-number-5">1.1.3.4</span> vectorize</h5>
+</div>
+
+<div id="outline-container-org8a6a310" class="outline-5">
+<h5 id="org8a6a310"><span class="section-number-5">1.1.3.5</span> tile</h5>
+</div>
+
+<div id="outline-container-org171a811" class="outline-5">
+<h5 id="org171a811"><span class="section-number-5">1.1.3.6</span> reorder</h5>
+</div>
+
+<div id="outline-container-org3ed19ce" class="outline-5">
+<h5 id="org3ed19ce"><span class="section-number-5">1.1.3.7</span> compute_at</h5>
+</div>
+
+<div id="outline-container-org86c7b2a" class="outline-5">
+<h5 id="org86c7b2a"><span class="section-number-5">1.1.3.8</span> compute_inline</h5>
+</div>
+
+<div id="outline-container-org64682d1" class="outline-5">
+<h5 id="org64682d1"><span class="section-number-5">1.1.3.9</span> compute_root</h5>
+</div>
+
+<div id="outline-container-org0f22cd1" class="outline-5">
+<h5 id="org0f22cd1"><span class="section-number-5">1.1.3.10</span> fuse</h5>
+<div class="outline-text-5" id="text-1-1-3-10">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> te
+
+<span style="color: #268bd2;">n</span> = 1024
+<span style="color: #268bd2;">A</span> = te.placeholder<span style="color: #757575;">((</span>n<span style="color: #757575;">,),</span> name=<span style="color: #2aa198;">"A"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">k</span> = te.reduce_axis<span style="color: #757575;">((</span>0<span style="color: #757575;">,</span> n<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"k"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">B</span> = te.compute<span style="color: #757575;">((</span>1<span style="color: #757575;">,),</span> <span style="color: #859900;">lambda</span> i: te.<span style="color: #839496;">sum</span><span style="color: #757575;">(</span>A[k]<span style="color: #757575;">,</span> axis=k<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"B"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">s</span> = te.create_schedule<span style="color: #757575;">(</span>B.op<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">ko</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">ki</span> = s[B].split<span style="color: #757575;">(</span>B.op.reduce_axis[0]<span style="color: #757575;">,</span> factor=32<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"------before------"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>tvm.lower<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B]<span style="color: #757575;">,</span> simple_mode=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">))</span>
+
+s[B].fuse<span style="color: #757575;">(</span>ko<span style="color: #757575;">,</span> ki<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"------after------"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>tvm.lower<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B]<span style="color: #757575;">,</span> simple_mode=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">))</span>
+</pre>
+</div>
+
+<p>
+-&#x2013;&#x2014;before-&#x2013;&#x2014;
+primfn(A_1: handle, B_1: handle) -&gt; ()
+  attr = {"from_legacy_te_schedule": True, "global_symbol": "main", "tir.noalias": True}
+  buffers = {B: Buffer(B_2: Pointer(float32), float32, [1], []),
+             A: Buffer(A_2: Pointer(float32), float32, [1024], [])}
+  buffer_map = {A_1: A, B_1: B} {
+  B_2[0] = 0f32
+  for (k.outer: int32, 0, 32) {
+    for (k.inner: int32, 0, 32) {
+      B_2[0] = ((float32*)B_2[0] + (float32*)A_2[((k.outer*32) + k.inner)])
+    }
+  }
+}
+</p>
+
+
+<p>
+-&#x2013;&#x2014;after-&#x2013;&#x2014;
+primfn(A_1: handle, B_1: handle) -&gt; ()
+  attr = {"from_legacy_te_schedule": True, "global_symbol": "main", "tir.noalias": True}
+  buffers = {B: Buffer(B_2: Pointer(float32), float32, [1], []),
+             A: Buffer(A_2: Pointer(float32), float32, [1024], [])}
+  buffer_map = {A_1: A, B_1: B} {
+  B_2[0] = 0f32
+  for (k.outer.k.inner.fused: int32, 0, 1024) {
+    B_2[0] = ((float32*)B_2[0] + (float32*)A_2[k.outer.k.inner.fused])
+  }
+}
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgdad1a42" class="outline-5">
+<h5 id="orgdad1a42"><span class="section-number-5">1.1.3.11</span> bind</h5>
+</div>
+</div>
+
+<div id="outline-container-org78e7b61" class="outline-4">
+<h4 id="org78e7b61"><span class="section-number-4">1.1.4</span> Injective Schedule</h4>
+<div class="outline-text-4" id="text-1-1-4">
+<p>
+<a href="https://en.wikipedia.org/wiki/Injective_function">https://en.wikipedia.org/wiki/Injective_function</a>
+</p>
+
+<p>
+injective function 即单射函数, 也称为 one-to-one function, 在 TVM 中, 有大量的符合 injective 定义的 op 都使用同一个 schedule: schedule_injective, 因为它们执行时除了具体的运算不同, schedule 的要求实际上是一样的.
+</p>
+
+<p>
+TVM 提供了几个函数来指定 schedule_injective 做为 schedule:
+</p>
+
+<ol class="org-ol">
+<li>register_injective_schedule</li>
+<li>register_broadcast_schedule</li>
+</ol>
+
+<p>
+例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python">register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"log"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"log2"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"log10"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"tan"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"cos"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"cosh"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"sin"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"sinh"</span><span style="color: #757575;">)</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">...</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"add"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"subtract"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"multiply"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"divide"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"floor_divide"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"power"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"copy"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"logical_not"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"logical_and"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"logical_or"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"logical_xor"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"bitwise_not"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"bitwise_and"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"bitwise_or"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"bitwise_xor"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"negative"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"mod"</span><span style="color: #757575;">)</span>
+register_broadcast_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"floor_mod"</span><span style="color: #757575;">)</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">...</span>
+register_injective_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"one_hot"</span><span style="color: #757575;">)</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">...</span>
+</pre>
+</div>
+
+<p>
+register_injective_schedule 会使用一个名为 schedule_injective 的 generic
+function, 不同的 target 会通过 schedule_injective.register 注册不同的实现
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #b58900;">@schedule_injective.register</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"cpu"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">schedule_injective_cpu</span><span style="color: #757575;">(</span>attrs<span style="color: #757575;">,</span> outs<span style="color: #757575;">,</span> target<span style="color: #757575;">)</span>:
+    <span style="color: #2aa198;">"""schedule injective ops for x86"""</span>
+    <span style="color: #859900;">with</span> target:
+        <span style="color: #859900;">return</span> topi.x86.schedule_injective<span style="color: #757575;">(</span>outs<span style="color: #757575;">)</span>
+
+
+<span style="color: #b58900;">@schedule_injective.register</span><span style="color: #757575;">(</span>[<span style="color: #2aa198;">"arm_cpu"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"micro_dev"</span>]<span style="color: #757575;">)</span>
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">schedule_injective_arm_cpu</span><span style="color: #757575;">(</span>_<span style="color: #757575;">,</span> outs<span style="color: #757575;">,</span> target<span style="color: #757575;">)</span>:
+    <span style="color: #2aa198;">"""schedule injective ops for arm cpu"""</span>
+    <span style="color: #859900;">with</span> target:
+        <span style="color: #859900;">return</span> topi.arm_cpu.schedule_injective<span style="color: #757575;">(</span>outs<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+injective schedule 主要是利用 split+vectorize, 因为 vectorize (simd) 本来就是用来加速 injective 操作的
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0decad0" class="outline-4">
+<h4 id="org0decad0"><span class="section-number-4">1.1.5</span> Reduce Schedule</h4>
+<div class="outline-text-4" id="text-1-1-5">
+<p>
+Reduce Schedule 与 Injective Schedule 类似, 但它针对的是 sum, max 等进行
+reduction 的操作, reduce schedule 无法使用 vectorize, tvm 的实现主要是使用
+<a href="#org71326a3">parallel</a>
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python">register_reduce_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"argmax"</span><span style="color: #757575;">)</span>
+register_reduce_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"argmin"</span><span style="color: #757575;">)</span>
+register_reduce_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"sum"</span><span style="color: #757575;">)</span>
+register_reduce_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"all"</span><span style="color: #757575;">)</span>
+register_reduce_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"any"</span><span style="color: #757575;">)</span>
+register_reduce_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"max"</span><span style="color: #757575;">)</span>
+register_reduce_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"min"</span><span style="color: #757575;">)</span>
+register_reduce_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"prod"</span><span style="color: #757575;">)</span>
+register_reduce_schedule<span style="color: #757575;">(</span><span style="color: #2aa198;">"mean"</span><span style="color: #757575;">)</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">...</span>
+
+
+<span style="color: #b58900;">@schedule_reduce.register</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"arm_cpu"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">schedule_reduce_cpu</span><span style="color: #757575;">(</span>attrs<span style="color: #757575;">,</span> outs<span style="color: #757575;">,</span> target<span style="color: #757575;">)</span>:
+    <span style="color: #2aa198;">"""schedule reduction ops for arm_cpu"""</span>
+    <span style="color: #859900;">with</span> target:
+        <span style="color: #859900;">return</span> topi.x86.schedule_reduce<span style="color: #757575;">(</span>outs<span style="color: #757575;">)</span>
+
+
+<span style="color: #b58900;">@schedule_reduce.register</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"cpu"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">schedule_reduce_cpu</span><span style="color: #757575;">(</span>attrs<span style="color: #757575;">,</span> outs<span style="color: #757575;">,</span> target<span style="color: #757575;">)</span>:
+    <span style="color: #2aa198;">"""schedule reduction ops for x86"""</span>
+    <span style="color: #859900;">with</span> target:
+        <span style="color: #859900;">return</span> topi.x86.schedule_reduce<span style="color: #757575;">(</span>outs<span style="color: #757575;">)</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org3b580ad" class="outline-3">
+<h3 id="org3b580ad"><span class="section-number-3">1.2</span> AutoTVM</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+<a href="file:///home/sunway/source/tvm/gallery/tutorial/autotvm_matmul_x86.py">file:~/source/tvm/gallery/tutorials/autotvm_matmul_x86.py</a>
+</p>
+</div>
+
+<div id="outline-container-org9224c36" class="outline-4">
+<h4 id="org9224c36"><span class="section-number-4">1.2.1</span> <a href="micro_tvm.html#org959f26e">MicroTVM 与 AutoTVM</a></h4>
+</div>
+</div>
+
+<div id="outline-container-org5a1f7bc" class="outline-3">
+<h3 id="org5a1f7bc"><span class="section-number-3">1.3</span> <span class="done DONE">DONE</span> <span class="priority">[C]</span> TVM Auto Scheduler</h3>
+<div class="outline-text-3" id="text-1-3">
+<ul class="org-ul">
+<li>State "DONE"       from "TODO"       <span class="timestamp-wrapper"><span class="timestamp">[2021-09-07 二 17:17]</span></span></li>
+</ul>
+
+<p>
+<a href="file:///home/sunway/source/tvm/gallery/tutorial/auto_scheduler_matmul_x86.py">file:~/source/tvm/tutorials/get_started/auto_scheduler_matmul_x86.py</a>
+</p>
+
+<p>
+<a href="https://tvm.apache.org/docs/tutorials/index.html#autoscheduler-template-free-auto-scheduling">https://tvm.apache.org/docs/tutorials/index.html#autoscheduler-template-free-auto-scheduling</a>
+<a href="https://tvm.apache.org/docs/tutorials/get_started/auto_scheduler_matmul_x86.html?highlight=auto">https://tvm.apache.org/docs/tutorials/get_started/auto_scheduler_matmul_x86.html?highlight=auto</a>
+</p>
+</div>
+
+<div id="outline-container-org0cbdcaf" class="outline-4">
+<h4 id="org0cbdcaf"><span class="section-number-4">1.3.1</span> Testing Function</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-08-09 17:16</span>
+<span style="color: #859900;">import</span> os
+
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> te<span style="color: #757575;">,</span> auto_scheduler
+
+<span style="color: #268bd2;">N</span> = <span style="color: #268bd2;">L</span> = <span style="color: #268bd2;">M</span> = 1024
+<span style="color: #268bd2;">target</span> = tvm.target.Target<span style="color: #757575;">(</span><span style="color: #2aa198;">"llvm -mcpu=skylake-avx512"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">A</span> = tvm.nd.array<span style="color: #757575;">(</span>np.random.uniform<span style="color: #757575;">(</span>size=<span style="color: #757575;">(</span>N<span style="color: #757575;">,</span> L<span style="color: #757575;">))</span>.astype<span style="color: #757575;">(</span>np.float32<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">B</span> = tvm.nd.array<span style="color: #757575;">(</span>np.random.uniform<span style="color: #757575;">(</span>size=<span style="color: #757575;">(</span>L<span style="color: #757575;">,</span> M<span style="color: #757575;">))</span>.astype<span style="color: #757575;">(</span>np.float32<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">C</span> = tvm.nd.array<span style="color: #757575;">(</span>np.random.uniform<span style="color: #757575;">(</span>size=<span style="color: #757575;">(</span>N<span style="color: #757575;">,</span> M<span style="color: #757575;">))</span>.astype<span style="color: #757575;">(</span>np.float32<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">OUT</span> = tvm.nd.empty<span style="color: #757575;">((</span>N<span style="color: #757575;">,</span> M<span style="color: #757575;">))</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">eval</span><span style="color: #757575;">(</span>sch<span style="color: #757575;">,</span> args<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">print(tvm.lower(sch, args))</span>
+    <span style="color: #268bd2;">func</span> = tvm.build<span style="color: #757575;">(</span>sch<span style="color: #757575;">,</span> args<span style="color: #757575;">,</span> target<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">evaluator</span> = func.time_evaluator<span style="color: #757575;">(</span>func.entry_name<span style="color: #757575;">,</span> tvm.cpu<span style="color: #757575;">())</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>
+        <span style="color: #2aa198;">"Execution time of this operator: %.3f ms"</span>
+        % <span style="color: #757575;">(</span>np.median<span style="color: #757575;">(</span>evaluator<span style="color: #757575;">(</span>A<span style="color: #757575;">,</span> B<span style="color: #757575;">,</span> C<span style="color: #757575;">,</span> OUT<span style="color: #757575;">)</span>.results<span style="color: #757575;">)</span> * 100<span style="color: #757575;">)</span>
+    <span style="color: #757575;">)</span>
+
+
+<span style="color: #b58900;">@auto_scheduler.register_workload</span>
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">matmul_add</span><span style="color: #757575;">(</span>N<span style="color: #757575;">,</span> L<span style="color: #757575;">,</span> M<span style="color: #757575;">,</span> dtype<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">A</span> = te.placeholder<span style="color: #757575;">((</span>N<span style="color: #757575;">,</span> L<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"A"</span><span style="color: #757575;">,</span> dtype=dtype<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">B</span> = te.placeholder<span style="color: #757575;">((</span>L<span style="color: #757575;">,</span> M<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"B"</span><span style="color: #757575;">,</span> dtype=dtype<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">C</span> = te.placeholder<span style="color: #757575;">((</span>N<span style="color: #757575;">,</span> M<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"C"</span><span style="color: #757575;">,</span> dtype=dtype<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">k</span> = te.reduce_axis<span style="color: #757575;">((</span>0<span style="color: #757575;">,</span> L<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"k"</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">matmul</span> = te.compute<span style="color: #757575;">(</span>
+        <span style="color: #757575;">(</span>N<span style="color: #757575;">,</span> M<span style="color: #757575;">),</span>
+        <span style="color: #859900;">lambda</span> i<span style="color: #757575;">,</span> j: te.<span style="color: #839496;">sum</span><span style="color: #757575;">(</span>A[i<span style="color: #757575;">,</span> k] * B[k<span style="color: #757575;">,</span> j]<span style="color: #757575;">,</span> axis=k<span style="color: #757575;">),</span>
+        name=<span style="color: #2aa198;">"matmul"</span><span style="color: #757575;">,</span>
+        attrs=<span style="color: #757575;">{</span><span style="color: #2aa198;">"layout_free_placeholders"</span>: [B]<span style="color: #757575;">},</span>
+    <span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">out</span> = te.compute<span style="color: #757575;">((</span>N<span style="color: #757575;">,</span> M<span style="color: #757575;">),</span> <span style="color: #859900;">lambda</span> i<span style="color: #757575;">,</span> j: matmul[i<span style="color: #757575;">,</span> j] + C[i<span style="color: #757575;">,</span> j]<span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"out"</span><span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">return</span> [A<span style="color: #757575;">,</span> B<span style="color: #757575;">,</span> C<span style="color: #757575;">,</span> out]
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org76497d7" class="outline-4">
+<h4 id="org76497d7"><span class="section-number-4">1.3.2</span> AutoScheduler Tunning</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #268bd2;">task</span> = tvm.auto_scheduler.SearchTask<span style="color: #757575;">(</span>
+    func=matmul_add<span style="color: #757575;">,</span> args=<span style="color: #757575;">(</span>N<span style="color: #757575;">,</span> L<span style="color: #757575;">,</span> M<span style="color: #757575;">,</span> <span style="color: #2aa198;">"float32"</span><span style="color: #757575;">),</span> target=target
+<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">log_file</span> = <span style="color: #2aa198;">"/tmp/matmul.json"</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"-------------------- tunning --------------------"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">tune_option</span> = auto_scheduler.TuningOptions<span style="color: #757575;">(</span>
+    num_measure_trials=10<span style="color: #757575;">,</span>
+    measure_callbacks=[auto_scheduler.RecordToFile<span style="color: #757575;">(</span>log_file<span style="color: #757575;">)</span>]<span style="color: #757575;">,</span>
+    verbose=1<span style="color: #757575;">,</span>
+<span style="color: #757575;">)</span>
+task.tune<span style="color: #757575;">(</span>tune_option<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+---------------&#x2013;&#x2014; tunning ---------------&#x2013;&#x2014;
+</p>
+<hr />
+<p>
+-------------------------&#x2013;&#x2014;  [ Search ]
+</p>
+<hr />
+<p>
+Generate Sketches		#s: 3
+Sample Initial Population	#s: 2015	fail_ct: 1	Time elapsed: 0.67
+GA Iter: 0	Max score: 0.9998	Min score: 0.9348	#Pop: 128	#M+: 0	#M-: 0
+GA Iter: 4	Max score: 1.0000	Min score: 0.9887	#Pop: 128	#M+: 1381	#M-: 72
+EvolutionarySearch		#s: 128	Time elapsed: 2.90
+</p>
+<hr />
+<p>
+-------------------------&#x2013;&#x2014;  [ Measure ]
+</p>
+<hr />
+<p>
+Get 10 programs to measure:
+&#x2026;&#x2026;&#x2026;.*T*T*T*T*T*T*T*T*T*T
+Time elapsed for measurement: 101.94 s
+</p>
+<hr />
+<p>
+-------------------------&#x2013;&#x2014;  [ Done ]
+</p>
+<hr />
+<p>
+No valid state found in this search round. Check if it has traversed all of the search space.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org859a074" class="outline-4">
+<h4 id="org859a074"><span class="section-number-4">1.3.3</span> Evaluation</h4>
+<div class="outline-text-4" id="text-1-3-3">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"-------------------- orig_scheuler--------------------"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">args</span> = matmul_add<span style="color: #757575;">(</span>N<span style="color: #757575;">,</span> L<span style="color: #757575;">,</span> M<span style="color: #757575;">,</span> <span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">sch</span> = te.create_schedule<span style="color: #757575;">(</span>args[-1].op<span style="color: #757575;">)</span>
+<span style="color: #839496;">eval</span><span style="color: #757575;">(</span>sch<span style="color: #757575;">,</span> args<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"-------------------- auto_scheuler--------------------"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">sch</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">args</span> = task.apply_best<span style="color: #757575;">(</span>log_file<span style="color: #757575;">)</span>
+<span style="color: #839496;">eval</span><span style="color: #757575;">(</span>sch<span style="color: #757575;">,</span> args<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+---------------&#x2013;&#x2014; orig_scheuler---------------&#x2013;&#x2014;
+Execution time of this operator: 287.769 ms
+---------------&#x2013;&#x2014; auto_scheuler---------------&#x2013;&#x2014;
+Execution time of this operator: 6.305 ms
+</p>
+</div>
+</div>
+
+<div id="outline-container-org70dcb95" class="outline-4">
+<h4 id="org70dcb95"><span class="section-number-4">1.3.4</span> Auto Scheduler Internals</h4>
+<div class="outline-text-4" id="text-1-3-4">
+<p>
+auto_scheduler 要解决的问题是:
+</p>
+
+<p>
+定义一个 schedule 参数的搜索空间, 通过一个 measure 函数在这个空间中 sample, 然后基于这些 sample 用 cost_model 预测最佳的 schedule 参数
+</p>
+</div>
+
+<div id="outline-container-org2086135" class="outline-5">
+<h5 id="org2086135"><span class="section-number-5">1.3.4.1</span> SearchTask</h5>
+<div class="outline-text-5" id="text-1-3-4-1">
+<div class="org-src-container">
+<pre class="src src-python">SearchTask.init:
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">SearchTask &#25509;&#21463;&#19968;&#20010; target &#21442;&#25968;, &#36825;&#20010;&#21442;&#25968;&#21487;&#20197;&#21578;&#35785; builder &#29983;&#25104;&#38024;&#23545;&#21738;&#20010; target &#30340;&#20195;&#30721; </span>
+
+SearchTask.tune: 
+    <span style="color: #859900;">if</span> search_policy <span style="color: #859900;">is</span> <span style="color: #268bd2; font-weight: bold;">None</span>:
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">&#40664;&#35748;&#20351;&#29992; xgboost &#26469;&#39044;&#27979;</span>
+        <span style="color: #268bd2;">cost_model</span> = XGBModel<span style="color: #757575;">()</span>
+        <span style="color: #268bd2;">search_policy</span> = SketchPolicy<span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> cost_model<span style="color: #757575;">)</span>
+
+    _ffi_api.AutoSchedule<span style="color: #757575;">(</span>search_policy<span style="color: #757575;">,</span> tuning_options<span style="color: #757575;">)</span>
+
+AutoSchedule:
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">tuning_options-&gt;builder &#30340;&#40664;&#35748;&#20540;&#26159; LocalBuilder</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">tuning_options-&gt;runner &#30340;&#40664;&#35748;&#20540;&#26159; LocalRunner</span>
+    ProgramMeasurer <span style="color: #268bd2;">measurer</span> =
+      ProgramMeasurer<span style="color: #757575;">(</span>tuning_options-&gt;builder<span style="color: #757575;">,</span> tuning_options-&gt;runner<span style="color: #757575;">,</span>
+                      tuning_options-&gt;measure_callbacks<span style="color: #757575;">,</span> tuning_options-&gt;verbose<span style="color: #757575;">)</span>;    
+
+    State <span style="color: #268bd2;">state</span> =
+        search_policy-&gt;Search<span style="color: #757575;">(</span>tuning_options-&gt;num_measure_trials<span style="color: #757575;">,</span> tuning_options-&gt;early_stopping<span style="color: #757575;">,</span>
+                            tuning_options-&gt;num_measures_per_round<span style="color: #757575;">,</span> measurer<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> search_policy-&gt;search_task-&gt;compute_dag.ApplySteps<span style="color: #757575;">(</span>state-&gt;transform_steps<span style="color: #757575;">)</span>;
+
+SketchPolicy::Search:
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">MeasureInput &#21253;&#21547;&#20102; schedule &#21442;&#25968;</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">MeasureResult &#21253;&#21547;&#38024;&#23545;&#19968;&#22871;&#21442;&#25968; measure &#21518;&#30340;&#32467;&#26524; (cost, ...)</span>
+    Array&lt;MeasureInput&gt; inputs;
+    Array&lt;MeasureResult&gt; results;
+    <span style="color: #859900;">while</span> <span style="color: #757575;">(</span>ct &lt; n_trials<span style="color: #757575;">)</span>:
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">train xgboost, inputs &#30456;&#24403;&#20110; x, results &#30456;&#24403;&#20110; y</span>
+        program_cost_model-&gt;Update<span style="color: #757575;">(</span>inputs<span style="color: #757575;">,</span> results<span style="color: #757575;">)</span>;
+
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">sample &#20986;&#26032;&#30340;&#21442;&#25968;</span>
+        <span style="color: #268bd2;">inputs</span> = PickStatesWithEpsGreedy<span style="color: #757575;">(</span>best_states<span style="color: #757575;">,</span> random_states<span style="color: #757575;">,</span> n_trials - ct<span style="color: #757575;">)</span>;
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">measure &#36825;&#20123;&#21442;&#25968;</span>
+        <span style="color: #268bd2;">results</span> = measurer-&gt;Measure<span style="color: #757575;">(</span>search_task<span style="color: #757575;">,</span> GetRef&lt;SearchPolicy&gt;<span style="color: #757575;">(</span>this<span style="color: #757575;">),</span> inputs<span style="color: #757575;">)</span>;        
+
+    <span style="color: #859900;">return</span> measurer-&gt;best_state[search_task-&gt;workload_key];        
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgd741480" class="outline-5">
+<h5 id="orgd741480"><span class="section-number-5">1.3.4.2</span> Measure</h5>
+<div class="outline-text-5" id="text-1-3-4-2">
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #268bd2; font-weight: bold;">ProgramMeasurerNode</span>::Measure:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">tvm &#40664;&#35748;&#20250;&#21516;&#26102; measure &#22810;&#22871;&#21442;&#25968;</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>batch_size == -1<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">set default batch size</span>
+    batch_size = builder-&gt;n_parallel * 2;
+  <span style="color: #757575;">}</span>
+  <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">i</span> = 0; i &lt; inputs.size<span style="color: #757575;">()</span>; i += batch_size<span style="color: #757575;">)</span>:
+    <span style="color: #b58900;">Array</span>&lt;MeasureInput&gt; <span style="color: #268bd2;">input_batch</span><span style="color: #757575;">(</span>inputs.begin<span style="color: #757575;">()</span> + i<span style="color: #757575;">,</span>
+                                      inputs.begin<span style="color: #757575;">()</span> + <span style="color: #268bd2; font-weight: bold;">std</span>::min<span style="color: #757575;">(</span>i + batch_size<span style="color: #757575;">,</span> inputs.size<span style="color: #757575;">()))</span>;
+    <span style="color: #b58900;">Array</span>&lt;MeasureResult&gt; <span style="color: #268bd2;">result_batch</span>;
+    SilentMeasure<span style="color: #757575;">(</span>task<span style="color: #757575;">,</span> input_batch<span style="color: #757575;">,</span> &amp;result_batch<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #859900;">auto</span>&amp; <span style="color: #268bd2;">res</span> : result_batch<span style="color: #757575;">)</span> : 
+      results.push_back<span style="color: #757575;">(</span>res<span style="color: #757575;">)</span>;
+
+  <span style="color: #859900;">return</span> results;
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #268bd2; font-weight: bold;">SilentMeasure</span>:
+  <span style="color: #b58900;">Array</span>&lt;BuildResult&gt; <span style="color: #268bd2;">build_res_batch</span> = builder-&gt;Build<span style="color: #757575;">(</span>inputs<span style="color: #757575;">,</span> verbose<span style="color: #757575;">)</span>;
+  <span style="color: #b58900;">Array</span>&lt;MeasureResult&gt; <span style="color: #268bd2;">result_batch</span> = runner-&gt;Run<span style="color: #757575;">(</span>inputs<span style="color: #757575;">,</span> build_res_batch<span style="color: #757575;">,</span> verbose<span style="color: #757575;">)</span>;
+
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">Store result batch</span>
+  <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #859900;">auto</span>&amp; <span style="color: #268bd2;">res</span> : result_batch<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    results-&gt;push_back<span style="color: #757575;">(</span>res<span style="color: #757575;">)</span>;
+  <span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+
+<ol class="org-ol">
+<li><a id="org7b1824d"></a>builder.Build<br />
+<div class="outline-text-6" id="text-1-3-4-2-1">
+<p>
+builder 是一个 ProgramBuilder 接口, LocalBuilder 是一个参考实现. 注: 虽然
+TuningOptions 指定的 builder 是 python 对象, 最终调用是在 c++ 代码中
+(SilentMeasure), 所以实现一个自定义的 builder 有两种选择:
+</p>
+
+<ol class="org-ol">
+<li>模仿 LocalBuilder 的写法, 用 c++ 来实现, 然后通过 Registry 再调回到 python</li>
+<li>使用 LocalBuilder, 但需要提供一个 python 实现的和 ndk.create_shared 或
+tar.tar 类似的自定义 build_func</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">class</span> <span style="color: #b58900;">LocalBuilder</span><span style="color: #757575;">(</span>ProgramBuilder<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> timeout=15<span style="color: #757575;">,</span> n_parallel=multiprocessing.cpu_count<span style="color: #757575;">(),</span> build_func=<span style="color: #2aa198;">"default"</span><span style="color: #757575;">)</span>:
+        <span style="color: #859900;">if</span> build_func == <span style="color: #2aa198;">"default"</span>:
+            <span style="color: #268bd2;">BuildFunc.name</span> = <span style="color: #2aa198;">"default"</span>
+            <span style="color: #268bd2;">BuildFunc.build_func</span> = tar.tar
+        <span style="color: #859900;">elif</span> build_func == <span style="color: #2aa198;">"ndk"</span>:
+            <span style="color: #268bd2;">BuildFunc.name</span> = <span style="color: #2aa198;">"ndk"</span>
+            <span style="color: #268bd2;">BuildFunc.build_func</span> = ndk.create_shared
+        <span style="color: #859900;">elif</span> <span style="color: #839496;">callable</span><span style="color: #757575;">(</span>build_func<span style="color: #757575;">)</span>:
+            <span style="color: #268bd2;">BuildFunc.name</span> = <span style="color: #2aa198;">"custom"</span>
+            <span style="color: #268bd2;">BuildFunc.build_func</span> = build_func
+        <span style="color: #859900;">else</span>:
+            <span style="color: #859900;">raise</span> <span style="color: #b58900;">ValueError</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"Invalid build_func"</span> + build_func<span style="color: #757575;">)</span>
+
+        <span style="color: #859900;">self</span>.__init_handle_by_constructor__<span style="color: #757575;">(</span>
+            _ffi_api.LocalBuilder<span style="color: #757575;">,</span> timeout<span style="color: #757575;">,</span> n_parallel<span style="color: #757575;">,</span> BuildFunc.name
+        <span style="color: #757575;">)</span>
+
+</pre>
+</div>
+
+<p>
+c++ LocalBuilder 会通过 ffi 调用回 python 的 local_builder_build
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #b58900;">Array</span>&lt;BuildResult&gt; <span style="color: #268bd2; font-weight: bold;">LocalBuilderNode</span>::<span style="color: #268bd2;">Build</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">Array</span>&lt;MeasureInput&gt;&amp; <span style="color: #268bd2;">inputs</span><span style="color: #757575;">,</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">verbose</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #859900;">auto</span>* <span style="color: #268bd2;">f</span> = <span style="color: #268bd2; font-weight: bold;">runtime</span>::<span style="color: #268bd2; font-weight: bold;">Registry</span>::Get<span style="color: #757575;">(</span><span style="color: #2aa198;">"auto_scheduler.local_builder.build"</span><span style="color: #757575;">))</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">Array</span>&lt;BuildResult&gt; <span style="color: #268bd2;">results</span> = <span style="color: #757575;">(</span>*f<span style="color: #757575;">)(</span>inputs<span style="color: #757575;">,</span> timeout<span style="color: #757575;">,</span> n_parallel<span style="color: #757575;">,</span> build_func<span style="color: #757575;">,</span> verbose<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> results;
+  <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">local_builder_build</span><span style="color: #757575;">(</span>inputs<span style="color: #757575;">,</span> timeout<span style="color: #757575;">,</span> n_parallel<span style="color: #757575;">,</span> build_func=<span style="color: #2aa198;">"default"</span><span style="color: #757575;">,</span> verbose=1<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">pool</span> = multiprocessing.pool.ThreadPool<span style="color: #757575;">(</span>n_parallel<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">tuple_res</span> = pool.<span style="color: #839496;">map</span><span style="color: #757575;">(</span>
+        local_build_worker<span style="color: #757575;">,</span>
+        [
+            <span style="color: #757575;">(</span>
+                i.serialize<span style="color: #757575;">(),</span>
+                build_func<span style="color: #757575;">,</span>
+                timeout<span style="color: #757575;">,</span>
+                verbose<span style="color: #757575;">,</span>
+            <span style="color: #757575;">)</span>
+            <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> inputs
+        ]<span style="color: #757575;">,</span>
+    <span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">results</span> = []
+    <span style="color: #859900;">for</span> res <span style="color: #859900;">in</span> tuple_res:
+        results.append<span style="color: #757575;">(</span>BuildResult<span style="color: #757575;">(</span>*res<span style="color: #757575;">))</span>
+
+    <span style="color: #859900;">return</span> results
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">local_build_worker</span><span style="color: #757575;">(</span>args<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">build_func</span> = BuildFunc.build_func
+    <span style="color: #268bd2;">res</span> = call_func_with_timeout<span style="color: #757575;">(</span>timeout<span style="color: #757575;">,</span> _timed_func<span style="color: #757575;">,</span> args=<span style="color: #757575;">(</span>inp<span style="color: #757575;">,</span> build_func<span style="color: #757575;">,</span> verbose<span style="color: #757575;">))</span>
+
+</pre>
+</div>
+
+<p>
+最终的 build 过程:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">_timed_func</span><span style="color: #757575;">(</span>inp_serialized<span style="color: #757575;">,</span> build_func<span style="color: #757575;">,</span> verbose<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">inp</span> = MeasureInput.deserialize<span style="color: #757575;">(</span>inp_serialized<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">task</span> = inp.task
+    <span style="color: #268bd2;">sch</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">args</span> = task.compute_dag.apply_steps_from_state<span style="color: #757575;">(</span>
+        inp.state<span style="color: #757575;">,</span> layout_rewrite=task.layout_rewrite_option
+    <span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">dirname</span> = tempfile.mkdtemp<span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">filename</span> = os.path.join<span style="color: #757575;">(</span>dirname<span style="color: #757575;">,</span> <span style="color: #2aa198;">"tmp_func."</span> + build_func.output_format<span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">with</span> transform.PassContext<span style="color: #757575;">()</span>:
+        <span style="color: #268bd2;">func</span> = build_module.build<span style="color: #757575;">(</span>sch<span style="color: #757575;">,</span> args<span style="color: #757575;">,</span> target=task.target<span style="color: #757575;">)</span>
+    func.export_library<span style="color: #757575;">(</span>filename<span style="color: #757575;">,</span> build_func<span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">return</span> filename<span style="color: #757575;">,</span> args<span style="color: #757575;">,</span> error_no<span style="color: #757575;">,</span> error_msg<span style="color: #757575;">,</span> time.time<span style="color: #757575;">()</span> - tic
+
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org9770623"></a>runner.Run<br />
+<div class="outline-text-6" id="text-1-3-4-2-2">
+<p>
+runner 的调用过程和 builder 类似 (python-&gt;c++-&gt;python), 但实现一个自定义的
+runner 时没有类似于 build_func 的东西, 需要参照 _timed_eval_func 从头实现, 比较重要的信息是从 build_res 可以拿到 builder.Build 生成的文件名
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">_timed_eval_func</span><span style="color: #757575;">(</span>
+    inp_serialized<span style="color: #757575;">,</span>
+    build_res<span style="color: #757575;">,</span>
+    number<span style="color: #757575;">,</span>
+    repeat<span style="color: #757575;">,</span>
+    min_repeat_ms<span style="color: #757575;">,</span>
+    cooldown_interval<span style="color: #757575;">,</span>
+    enable_cpu_cache_flush<span style="color: #757575;">,</span>
+    verbose<span style="color: #757575;">,</span>
+<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">inp</span> = MeasureInput.deserialize<span style="color: #757575;">(</span>inp_serialized<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">task_input_names</span> = inp.task.task_input_names
+
+    <span style="color: #268bd2;">func</span> = module.load_module<span style="color: #757575;">(</span>build_res.filename<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">dev</span> = ndarray.device<span style="color: #757575;">(</span><span style="color: #839496;">str</span><span style="color: #757575;">(</span>inp.task.target<span style="color: #757575;">),</span> 0<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">time_f</span> = func.time_evaluator<span style="color: #757575;">(</span>
+        func.entry_name<span style="color: #757575;">,</span>
+        dev<span style="color: #757575;">,</span>
+        number=number<span style="color: #757575;">,</span>
+        repeat=repeat<span style="color: #757575;">,</span>
+        min_repeat_ms=min_repeat_ms<span style="color: #757575;">,</span>
+        f_preproc=f_prepare<span style="color: #757575;">,</span>
+    <span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">random_fill</span> = tvm.get_global_func<span style="color: #757575;">(</span><span style="color: #2aa198;">"tvm.contrib.random.random_fill"</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">tensor_input_map</span> = prepare_input_map<span style="color: #757575;">(</span>build_res.args<span style="color: #757575;">)</span> <span style="color: #859900;">if</span> task_input_names <span style="color: #859900;">else</span> <span style="color: #757575;">{}</span>
+    <span style="color: #268bd2;">args</span> = []
+    <span style="color: #268bd2;">task_inputs_count</span> = 0
+    <span style="color: #859900;">for</span> arg <span style="color: #859900;">in</span> build_res.args:
+        <span style="color: #859900;">if</span> arg <span style="color: #859900;">in</span> tensor_input_map:
+            <span style="color: #268bd2;">tensor_name</span> = tensor_input_map[arg]
+            <span style="color: #859900;">if</span> tensor_name <span style="color: #859900;">in</span> task_input_names:
+                args.append<span style="color: #757575;">(</span>
+                    ndarray.array<span style="color: #757575;">(</span>
+                        get_task_input_buffer<span style="color: #757575;">(</span>inp.task.workload_key<span style="color: #757575;">,</span> tensor_name<span style="color: #757575;">),</span> dev
+                    <span style="color: #757575;">)</span>
+                <span style="color: #757575;">)</span>
+                <span style="color: #268bd2;">task_inputs_count</span> += 1
+        <span style="color: #859900;">else</span>:
+            <span style="color: #268bd2;">empty_array</span> = ndarray.empty<span style="color: #757575;">(</span>get_const_tuple<span style="color: #757575;">(</span>arg.shape<span style="color: #757575;">),</span> arg.dtype<span style="color: #757575;">,</span> dev<span style="color: #757575;">)</span>
+            random_fill<span style="color: #757575;">(</span>empty_array<span style="color: #757575;">)</span>
+            args.append<span style="color: #757575;">(</span>empty_array<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">costs</span> = time_f<span style="color: #757575;">(</span>*args<span style="color: #757575;">)</span>.results
+
+    <span style="color: #859900;">return</span> costs<span style="color: #757575;">,</span> error_no<span style="color: #757575;">,</span> error_msg<span style="color: #757575;">,</span> toc - tic + build_res.time_cost<span style="color: #757575;">,</span> toc
+</pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org26b759f" class="outline-4">
+<h4 id="org26b759f"><span class="section-number-4">1.3.5</span> Auto Scheduler and MicroTVM</h4>
+<div class="outline-text-4" id="text-1-3-5">
+<p>
+auto_scheduler 自带实现的:
+</p>
+
+<ol class="org-ol">
+<li>builder
+
+<ul class="org-ul">
+<li><p>
+LocalBuilder
+</p>
+
+<p>
+多进程, 最终调用 build_module.build 及 export_library
+</p></li>
+</ul></li>
+
+<li>runner
+
+<ul class="org-ul">
+<li><p>
+LocalRunner
+</p>
+
+<p>
+单进程, 在本地 CPU 上执行, 所以非本机 target 编译的 module 无法用 LocalRunner
+</p></li>
+
+<li><p>
+RPCRunner
+</p>
+
+<p>
+多进程, 使用 RPC 在多个远端的 target 设备上执行, 所以这种方式可以并行执行,
+而且可以执行为其它 target 编译的 module, 但现在的实现是依赖于一个基于 TCP
+的中心 tracker 来连接 PC 和多个 target 设备, 和 MicroTVM 自己那一套基于串口
+RPC 机制没有任何关系
+</p></li>
+</ul></li>
+</ol>
+
+<p>
+虽然 MicroTVM 有一套自己的 Flasher, Transport 以及 RPC 机制, 现在看和
+auto_scheduler 并不能一起工作, 为了让 auto_scheduler 支持 MicroTVM, 需要自己实现
+builder 和 runner,
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

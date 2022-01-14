@@ -1,0 +1,579 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kalman Filter</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Kalman Filter</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org3c85ea1">1. <span class="done DONE">DONE</span> <span class="priority">[B]</span> Kalman Filter</a>
+<ul>
+<li><a href="#org9846cb7">1.1. Overview</a>
+<ul>
+<li><a href="#orgfd2c103">1.1.1. 初始化</a></li>
+<li><a href="#orgde46ef6">1.1.2. measure</a></li>
+<li><a href="#org13a78bd">1.1.3. correct</a></li>
+<li><a href="#org9574b7c">1.1.4. predict</a></li>
+</ul>
+</li>
+<li><a href="#org67a9f89">1.2. Example</a>
+<ul>
+<li><a href="#org228f781">1.2.1. constant dynamics</a></li>
+<li><a href="#org303d5c7">1.2.2. non-constant dynamics</a></li>
+</ul>
+</li>
+<li><a href="#org02444a1">1.3. 多维 kalman filter</a></li>
+<li><a href="#orga8306d2">1.4. cv2.KalmanFilter</a>
+<ul>
+<li><a href="#orgc1fe846">1.4.1. 匀速运动的小车</a></li>
+<li><a href="#org7e6036c">1.4.2. 跟踪鼠标</a></li>
+</ul>
+</li>
+<li><a href="#orge62c541">1.5. HMM vs. Kalman Filter</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org3c85ea1" class="outline-2">
+<h2 id="org3c85ea1"><span class="section-number-2">1</span> <span class="done DONE">DONE</span> <span class="priority">[B]</span> Kalman Filter</h2>
+<div class="outline-text-2" id="text-1">
+<ul class="org-ul">
+<li>State "DONE"       from "TODO"       <span class="timestamp-wrapper"><span class="timestamp">[2020-12-21 一 14:32]</span></span></li>
+</ul>
+
+<p>
+<span class="timestamp-wrapper"><span class="timestamp">[2020-12-18 五]</span></span>
+</p>
+
+<p>
+<a href="https://www.kalmanfilter.net/CN/default_cn.aspx">https://www.kalmanfilter.net/CN/default_cn.aspx</a>
+<a href="https://stackoverflow.com/questions/43377626/how-to-use-kalman-filter-in-python-for-location-data">https://stackoverflow.com/questions/43377626/how-to-use-kalman-filter-in-python-for-location-data</a>
+<a href="https://www.bilibili.com/video/BV1TW411N7Hg/">https://www.bilibili.com/video/BV1TW411N7Hg/</a>
+<a href="http://www.bzarg.com/p/how-a-kalman-filter-works-in-pictures/">http://www.bzarg.com/p/how-a-kalman-filter-works-in-pictures/</a>
+</p>
+</div>
+
+<div id="outline-container-org9846cb7" class="outline-3">
+<h3 id="org9846cb7"><span class="section-number-3">1.1</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<ol class="org-ol">
+<li>\(K_n=\frac{p_{n-1}}{p_{n-1}+r_{n}}\)</li>
+
+<li>\(p_n=(1-K_n)p_{n-1}\)</li>
+
+<li>\(\hat{x}_n=(1-K_n)\hat{x}_{n-1}+K_nZ_n\)</li>
+
+<li>\(\hat{x}_n = \hat{x}_{n-1}\)</li>
+
+<li>\(p_n = p_{n-1}\)</li>
+</ol>
+
+
+
+<div id="org0a9ed00" class="figure">
+<p><img src="../extra/kalman_filter.png" alt="kalman_filter.png" />
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgfd2c103" class="outline-4">
+<h4 id="orgfd2c103"><span class="section-number-4">1.1.1</span> 初始化</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+kalman filter update 时需要的前一时刻的数据, 包含:
+</p>
+
+<ol class="org-ol">
+<li>\(p_{n-1}\) predicted variance</li>
+<li>\(X_{n-1}\) predicted state</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgde46ef6" class="outline-4">
+<h4 id="orgde46ef6"><span class="section-number-4">1.1.2</span> measure</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+通过 measure 获得:
+</p>
+
+<ol class="org-ol">
+<li>\(r_n\) measured variance</li>
+<li>\(Z_n\) measured state</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org13a78bd" class="outline-4">
+<h4 id="org13a78bd"><span class="section-number-4">1.1.3</span> correct</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<p>
+通过 measured 来更正 predicted
+</p>
+
+<ul class="org-ul">
+<li>通过公式 1 计算 \(K_n\)</li>
+<li>通过公式 2 计算 \(p_n\)</li>
+<li>通过公式 3 计算 \(\hat{x}_n\)</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org9574b7c" class="outline-4">
+<h4 id="org9574b7c"><span class="section-number-4">1.1.4</span> predict</h4>
+<div class="outline-text-4" id="text-1-1-4">
+<p>
+根据系统的 dynamics 预测 x, p
+</p>
+
+<p>
+若系统是 constant dynamics, 则不需要 predict, 直接 \(x_{n}=x_{n-1}\)
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org67a9f89" class="outline-3">
+<h3 id="org67a9f89"><span class="section-number-3">1.2</span> Example</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-org228f781" class="outline-4">
+<h4 id="org228f781"><span class="section-number-4">1.2.1</span> constant dynamics</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+
+<span style="color: #268bd2;">t</span> = np.arange<span style="color: #757575;">(</span>50<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">position</span> = np.ones<span style="color: #757575;">(</span>50<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">STD_POSITION</span> = 10
+<span style="color: #268bd2;">poisy_position</span> = position + np.random.normal<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> STD_POSITION<span style="color: #757575;">,</span> size=<span style="color: #757575;">(</span>position.shape[0]<span style="color: #757575;">))</span>
+
+plt.plot<span style="color: #757575;">(</span>t<span style="color: #757575;">,</span> position<span style="color: #757575;">,</span> label=<span style="color: #2aa198;">"truth position"</span><span style="color: #757575;">)</span>
+plt.plot<span style="color: #757575;">(</span>t<span style="color: #757575;">,</span> poisy_position<span style="color: #757575;">,</span> label=<span style="color: #2aa198;">"measured"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">predicts</span> = [poisy_position[0]]
+<span style="color: #268bd2;">position_predict</span> = predicts[0]
+
+<span style="color: #268bd2;">p</span> = 100
+<span style="color: #268bd2;">r</span> = STD_POSITION ** 2
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 50<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">k</span> = p / <span style="color: #757575;">(</span>p + r<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">position_predict</span> = position_predict * <span style="color: #757575;">(</span>1 - k<span style="color: #757575;">)</span> + poisy_position[i] * k
+    <span style="color: #268bd2;">p</span> = <span style="color: #757575;">(</span>1 - k<span style="color: #757575;">)</span> * p
+    predicts.append<span style="color: #757575;">(</span>position_predict<span style="color: #757575;">)</span>
+
+plt.plot<span style="color: #757575;">(</span>t<span style="color: #757575;">,</span> predicts<span style="color: #757575;">,</span> label=<span style="color: #2aa198;">"kalman"</span><span style="color: #757575;">)</span>
+
+plt.legend<span style="color: #757575;">()</span>
+plt.show<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+
+<div id="orga1a1e26" class="figure">
+<p><img src="../extra/kalman_filter_simple1.png" alt="kalman_filter_simple1.png" />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org303d5c7" class="outline-4">
+<h4 id="org303d5c7"><span class="section-number-4">1.2.2</span> non-constant dynamics</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+
+<span style="color: #268bd2;">t</span> = np.linspace<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 100<span style="color: #757575;">,</span> 100<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">a</span> = 5
+<span style="color: #268bd2;">position</span> = 10 * t + 1
+
+<span style="color: #268bd2;">STD_POSITION</span> = 100
+<span style="color: #268bd2;">STD_IMU</span> = 30
+
+<span style="color: #268bd2;">poisy_position</span> = position + np.random.normal<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> STD_POSITION<span style="color: #757575;">,</span> size=<span style="color: #757575;">(</span>t.shape[0]<span style="color: #757575;">))</span>
+
+plt.plot<span style="color: #757575;">(</span>t<span style="color: #757575;">,</span> position<span style="color: #757575;">,</span> label=<span style="color: #2aa198;">"truth position"</span><span style="color: #757575;">)</span>
+plt.plot<span style="color: #757575;">(</span>t<span style="color: #757575;">,</span> poisy_position<span style="color: #757575;">,</span> label=<span style="color: #2aa198;">"measured"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">predicts</span> = [poisy_position[0]]
+<span style="color: #268bd2;">position_predict</span> = predicts[0]
+
+<span style="color: #268bd2;">p</span> = 0
+<span style="color: #268bd2;">r</span> = STD_POSITION ** 2
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 100<span style="color: #757575;">)</span>:
+
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">----------measure</span>
+    <span style="color: #268bd2;">dv</span> = <span style="color: #757575;">(</span>position[i] - position[i - 1]<span style="color: #757575;">)</span> + np.random.normal<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> STD_IMU<span style="color: #757575;">)</span>
+
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">----------predict</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">&#26681;&#25454; dynamics &#26469;&#26356;&#26032; position_predict &#21644; p</span>
+    <span style="color: #268bd2;">position_predict</span> = position_predict + dv
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">aX+bY &#20173;&#26159;&#27491;&#24120;&#20998;&#24067;, &#19988;&#26041;&#24046;&#20026; a^2*variance(X) + b^2*variance(Y)</span>
+    <span style="color: #268bd2;">p</span> += STD_IMU ** 2
+
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">----------update</span>
+    <span style="color: #268bd2;">k</span> = p / <span style="color: #757575;">(</span>p + r<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">position_predict</span> = position_predict * <span style="color: #757575;">(</span>1 - k<span style="color: #757575;">)</span> + poisy_position[i] * k
+    <span style="color: #268bd2;">p</span> = <span style="color: #757575;">(</span>1 - k<span style="color: #757575;">)</span> * p
+    predicts.append<span style="color: #757575;">(</span>position_predict<span style="color: #757575;">)</span>
+
+
+plt.plot<span style="color: #757575;">(</span>t<span style="color: #757575;">,</span> predicts<span style="color: #757575;">,</span> label=<span style="color: #2aa198;">"kalman"</span><span style="color: #757575;">)</span>
+
+plt.legend<span style="color: #757575;">()</span>
+plt.show<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+
+<div id="org85d893c" class="figure">
+<p><img src="../extra/kalman_filter_simple.png" alt="kalman_filter_simple.png" />
+</p>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org02444a1" class="outline-3">
+<h3 id="org02444a1"><span class="section-number-3">1.3</span> 多维 kalman filter</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+以一个在一维空间里匀速运动的小车为例:
+</p>
+
+<ol class="org-ol">
+<li>z,x 变为 2x1 矩阵 [[x],[v]]</li>
+
+<li>需要一个 F 描述 dynamics, 设 dynamics 为: x = x+v*dt, v=v, 则 F =
+[[1,dt],[0,1]]</li>
+
+<li>p,r 变为 2x2 矩阵, 是一个关于 x,v 的协方差矩阵, 例如 r=[[A,0],[0,B]], 表示 x
+方差为 A, v 的方差为 B. x,v 不相关, 协方差为 0</li>
+</ol>
+
+<p>
+相应的五个公式变为:
+</p>
+
+<p>
+<a href="https://www.kalmanfilter.net/multiSummary.html">https://www.kalmanfilter.net/multiSummary.html</a>
+</p>
+
+<ol class="org-ol">
+<li>\(K_n=P_nH^T(HP_nH^T+R)^{-1}\)</li>
+<li>\(P_n=(I-K_nH)P_n(I-K_nH)^T+K_nR_n{K_n}^T\)</li>
+<li>\(\hat{x}_n=\hat{x}_n+K_n(Z_n-H\hat{x}_n)\)</li>
+<li>\(\hat{x}_{n}=F\hat{x}_{n-1}\)</li>
+<li>\(P_n=FP_{n}F^T+Q\)</li>
+</ol>
+
+<p>
+涉及到 P, R 的公式都是 \(APA^T\) 的形式, 因为当 X, Y 是不相关的正态分布是, \(aX+bY\)
+也是正态分布, 且其方差为 \(a^2\delta^2_X+b^2\delta^2_Y\)
+</p>
+
+<p>
+其中 H 为 observation matrix, 用来处理 predict 中某些数据不能 measure 的情况 <a href="#org7e6036c">跟踪鼠标</a>
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+
+<span style="color: #268bd2;">N</span> = 100
+<span style="color: #268bd2;">t</span> = np.linspace<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> N<span style="color: #757575;">,</span> N<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">position</span> = 2 * t + 1
+
+<span style="color: #268bd2;">STD_POSITION</span> = 10
+<span style="color: #268bd2;">STD_IMU</span> = 3
+
+<span style="color: #268bd2;">noisy_position</span> = position + np.random.normal<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> STD_POSITION<span style="color: #757575;">,</span> size=N<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">noisy_speed</span> = <span style="color: #757575;">(</span>position[1:] - position[:-1]<span style="color: #757575;">)</span> + np.random.normal<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> STD_IMU<span style="color: #757575;">,</span> size=N - 1<span style="color: #757575;">)</span>
+
+plt.plot<span style="color: #757575;">(</span>t<span style="color: #757575;">,</span> position<span style="color: #757575;">,</span> label=<span style="color: #2aa198;">"truth position"</span><span style="color: #757575;">)</span>
+plt.plot<span style="color: #757575;">(</span>t<span style="color: #757575;">,</span> noisy_position<span style="color: #757575;">,</span> label=<span style="color: #2aa198;">"measured"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">predicts</span> = [0]
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2x1</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">X=[[x],[v]]</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2x2</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">F=[[1,dt],[0,1]]</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2x2</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">P=[[1,0],[0,1]]</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2x2</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">r=[[STD_POSITION**2,0],[0,STD_IMU**2]]</span>
+<span style="color: #586e75;">#</span>
+<span style="color: #268bd2;">dt</span> = 1
+<span style="color: #268bd2;">X</span> = np.array<span style="color: #757575;">(</span>[[0]<span style="color: #757575;">,</span> [0]]<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">P</span> = [[1<span style="color: #757575;">,</span> 0]<span style="color: #757575;">,</span> [0<span style="color: #757575;">,</span> 1]]
+<span style="color: #586e75;"># </span><span style="color: #586e75;">F,R &#26159;&#25105;&#20204;&#29992; kalman filter &#26102;&#24517;&#38656;&#25552;&#20379;&#30340;&#20004;&#20010;&#21442;&#25968;, F &#20195;&#34920; dynamics &#21442;&#25968;, R &#20195;&#34920;</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">correct &#21442;&#25968;</span>
+<span style="color: #268bd2;">F</span> = np.array<span style="color: #757575;">(</span>[[1<span style="color: #757575;">,</span> dt]<span style="color: #757575;">,</span> [0<span style="color: #757575;">,</span> 1]]<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">R</span> = [[STD_POSITION ** 2<span style="color: #757575;">,</span> 0]<span style="color: #757575;">,</span> [0<span style="color: #757575;">,</span> STD_IMU ** 2]]
+
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> N<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">measure</span>
+    <span style="color: #268bd2;">Z</span> = [
+        [noisy_position[i]]<span style="color: #757575;">,</span>
+        [<span style="color: #757575;">(</span>position[i] - position[i - 1]<span style="color: #757575;">)</span> + np.random.normal<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> STD_IMU<span style="color: #757575;">)</span>]<span style="color: #757575;">,</span>
+    ]
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">predict</span>
+    <span style="color: #268bd2;">X</span> = F @ X
+    <span style="color: #268bd2;">P</span> = F @ P @ F.T
+
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">update</span>
+    <span style="color: #268bd2;">K</span> = P @ np.linalg.inv<span style="color: #757575;">(</span>P + R<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">X</span> = X + K @ <span style="color: #757575;">(</span>Z - X<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">P</span> = <span style="color: #757575;">(</span>np.eye<span style="color: #757575;">(</span>2<span style="color: #757575;">)</span> - K<span style="color: #757575;">)</span> @ P @ <span style="color: #757575;">(</span>np.eye<span style="color: #757575;">(</span>2<span style="color: #757575;">)</span> - K<span style="color: #757575;">)</span>.T + K @ R @ K.T
+
+    predicts.append<span style="color: #757575;">(</span>X[0][0]<span style="color: #757575;">)</span>
+
+
+plt.plot<span style="color: #757575;">(</span>t<span style="color: #757575;">,</span> predicts<span style="color: #757575;">,</span> label=<span style="color: #2aa198;">"kalman"</span><span style="color: #757575;">)</span>
+
+plt.legend<span style="color: #757575;">()</span>
+plt.show<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+
+<div id="orgf5f06cf" class="figure">
+<p><img src="../extra/kalman_filter_2d.png" alt="kalman_filter_2d.png" />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orga8306d2" class="outline-3">
+<h3 id="orga8306d2"><span class="section-number-3">1.4</span> cv2.KalmanFilter</h3>
+<div class="outline-text-3" id="text-1-4">
+</div>
+<div id="outline-container-orgc1fe846" class="outline-4">
+<h4 id="orgc1fe846"><span class="section-number-4">1.4.1</span> 匀速运动的小车</h4>
+<div class="outline-text-4" id="text-1-4-1">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+<span style="color: #859900;">import</span> cv2
+
+<span style="color: #268bd2;">N</span> = 100
+<span style="color: #268bd2;">t</span> = np.linspace<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> N<span style="color: #757575;">,</span> N<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">position</span> = 3 * t + 1
+
+<span style="color: #268bd2;">STD_POSITION</span> = 10
+<span style="color: #268bd2;">STD_IMU</span> = 3
+
+<span style="color: #268bd2;">noisy_position</span> = position + np.random.normal<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> STD_POSITION<span style="color: #757575;">,</span> size=N<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">noisy_speed</span> = <span style="color: #757575;">(</span>position[1:] - position[:-1]<span style="color: #757575;">)</span> + np.random.normal<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> STD_IMU<span style="color: #757575;">,</span> size=N - 1<span style="color: #757575;">)</span>
+
+plt.plot<span style="color: #757575;">(</span>t<span style="color: #757575;">,</span> position<span style="color: #757575;">,</span> label=<span style="color: #2aa198;">"truth position"</span><span style="color: #757575;">)</span>
+plt.plot<span style="color: #757575;">(</span>t<span style="color: #757575;">,</span> noisy_position<span style="color: #757575;">,</span> label=<span style="color: #2aa198;">"measured"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">predicts</span> = [0]
+
+<span style="color: #268bd2;">dt</span> = 1
+<span style="color: #268bd2;">F</span> = np.array<span style="color: #757575;">(</span>[[1<span style="color: #757575;">,</span> dt]<span style="color: #757575;">,</span> [0<span style="color: #757575;">,</span> 1]]<span style="color: #757575;">,</span> np.float32<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">R</span> = np.array<span style="color: #757575;">(</span>[[STD_POSITION ** 2<span style="color: #757575;">,</span> 0]<span style="color: #757575;">,</span> [0<span style="color: #757575;">,</span> STD_IMU ** 2]]<span style="color: #757575;">,</span> np.float32<span style="color: #757575;">)</span>
+
+<span style="color: #839496;">filter</span> = cv2.KalmanFilter<span style="color: #757575;">(</span>2<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 0<span style="color: #757575;">)</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">F</span>
+<span style="color: #839496;">filter</span>.transitionMatrix = F
+<span style="color: #586e75;"># </span><span style="color: #586e75;">R</span>
+<span style="color: #839496;">filter</span>.measurementNoiseCov = R
+<span style="color: #586e75;"># </span><span style="color: #586e75;">H</span>
+<span style="color: #839496;">filter</span>.measurementMatrix = np.eye<span style="color: #757575;">(</span>2<span style="color: #757575;">,</span> dtype=np.float32<span style="color: #757575;">)</span>
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> N<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">measure</span>
+    <span style="color: #268bd2;">Z</span> = np.array<span style="color: #757575;">(</span>
+        [
+            noisy_position[i]<span style="color: #757575;">,</span>
+            <span style="color: #757575;">(</span>position[i] - position[i - 1]<span style="color: #757575;">)</span> + np.random.normal<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> STD_IMU<span style="color: #757575;">),</span>
+        ]<span style="color: #757575;">,</span>
+        np.float32<span style="color: #757575;">,</span>
+    <span style="color: #757575;">)</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">predict</span>
+    <span style="color: #839496;">filter</span>.predict<span style="color: #757575;">()</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">corrent</span>
+    <span style="color: #268bd2;">output</span> = <span style="color: #839496;">filter</span>.correct<span style="color: #757575;">(</span>Z<span style="color: #757575;">)</span>
+    predicts.append<span style="color: #757575;">(</span>output[0]<span style="color: #757575;">)</span>
+
+plt.plot<span style="color: #757575;">(</span>t<span style="color: #757575;">,</span> predicts<span style="color: #757575;">,</span> label=<span style="color: #2aa198;">"kalman"</span><span style="color: #757575;">)</span>
+
+plt.legend<span style="color: #757575;">()</span>
+plt.show<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+
+<div id="org5592d48" class="figure">
+<p><img src="../extra/kalman_filter_cv2.png" alt="kalman_filter_cv2.png" />
+</p>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org7e6036c" class="outline-4">
+<h4 id="org7e6036c"><span class="section-number-4">1.4.2</span> 跟踪鼠标</h4>
+<div class="outline-text-4" id="text-1-4-2">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> cv2
+
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">Stabilizer</span>:
+    <span style="color: #2aa198;">"""Using Kalman filter as a point stabilizer."""</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> state_num=4<span style="color: #757575;">,</span> measure_num=2<span style="color: #757575;">,</span> cov_process=0.0001<span style="color: #757575;">,</span> cov_measure=0.1<span style="color: #757575;">)</span>:
+
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">Store the parameters.</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">&#38544;&#34255;&#29366;&#24577;</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">X &#20026; [[x],[y],[v_x],[v_y]]</span>
+        <span style="color: #859900;">self</span>.state_num = state_num
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">&#35266;&#27979;&#29366;&#24577;</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">Z &#20026; [[x],[y]]</span>
+        <span style="color: #859900;">self</span>.measure_num = measure_num
+
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">The filter itself.</span>
+        <span style="color: #859900;">self</span>.<span style="color: #839496;">filter</span> = cv2.KalmanFilter<span style="color: #757575;">(</span>state_num<span style="color: #757575;">,</span> measure_num<span style="color: #757575;">,</span> 0<span style="color: #757575;">)</span>
+
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">&#36716;&#31227;&#30697;&#38453;: FX+Q</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">F</span>
+        <span style="color: #859900;">self</span>.<span style="color: #839496;">filter</span>.transitionMatrix = np.array<span style="color: #757575;">(</span>
+            [[1<span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> 1<span style="color: #757575;">,</span> 0]<span style="color: #757575;">,</span> [0<span style="color: #757575;">,</span> 1<span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> 1]<span style="color: #757575;">,</span> [0<span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> 1<span style="color: #757575;">,</span> 0]<span style="color: #757575;">,</span> [0<span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> 1]]<span style="color: #757575;">,</span> np.float32
+        <span style="color: #757575;">)</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">Q</span>
+        <span style="color: #859900;">self</span>.<span style="color: #839496;">filter</span>.processNoiseCov = np.eye<span style="color: #757575;">(</span>4<span style="color: #757575;">,</span> dtype=np.float32<span style="color: #757575;">)</span> * cov_process
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">&#35266;&#27979;&#30697;&#38453;: HX+R</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">H, &#30001;&#20110; measure &#20449;&#24687;&#37324;&#21482;&#26377; x,y, &#19981;&#21253;&#25324; v_x, v_y, &#25152;&#20197;&#38656;&#35201;&#29992; H &#25226; x &#20013;</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">&#30340;&#21518;&#20004;&#20010;&#25968;&#25454; mask &#25481;</span>
+        <span style="color: #859900;">self</span>.<span style="color: #839496;">filter</span>.measurementMatrix = np.eye<span style="color: #757575;">(</span>2<span style="color: #757575;">,</span> 4<span style="color: #757575;">,</span> dtype=np.float32<span style="color: #757575;">)</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">R</span>
+        <span style="color: #859900;">self</span>.<span style="color: #839496;">filter</span>.measurementNoiseCov = np.eye<span style="color: #757575;">(</span>2<span style="color: #757575;">,</span> dtype=np.float32<span style="color: #757575;">)</span> * cov_measure
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">update</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> measurement<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">self</span>.<span style="color: #839496;">filter</span>.predict<span style="color: #757575;">()</span>
+        <span style="color: #859900;">self</span>.<span style="color: #839496;">filter</span>.correct<span style="color: #757575;">(</span>measurement<span style="color: #757575;">)</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">statePost &#26159; correct &#20043;&#21518;&#30340; state</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">statePre &#26159; predict &#20043;&#21518;, corrent &#20043;&#21069;&#30340; state</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span>:
+    <span style="color: #859900;">global</span> mp
+    <span style="color: #268bd2;">mp</span> = np.array<span style="color: #757575;">((</span>2<span style="color: #757575;">,</span> 1<span style="color: #757575;">),</span> np.float32<span style="color: #757575;">)</span>  <span style="color: #586e75;"># </span><span style="color: #586e75;">measurement</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">onmouse</span><span style="color: #757575;">(</span>k<span style="color: #757575;">,</span> x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> s<span style="color: #757575;">,</span> p<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">global</span> mp
+        <span style="color: #268bd2;">mp</span> = np.array<span style="color: #757575;">(</span>[[np.float32<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>]<span style="color: #757575;">,</span> [np.float32<span style="color: #757575;">(</span>y<span style="color: #757575;">)</span>]]<span style="color: #757575;">)</span>
+
+    cv2.namedWindow<span style="color: #757575;">(</span><span style="color: #2aa198;">"kalman"</span><span style="color: #757575;">)</span>
+    cv2.setMouseCallback<span style="color: #757575;">(</span><span style="color: #2aa198;">"kalman"</span><span style="color: #757575;">,</span> onmouse<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">kalman</span> = Stabilizer<span style="color: #757575;">(</span>4<span style="color: #757575;">,</span> 2<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">frame</span> = np.zeros<span style="color: #757575;">((</span>768<span style="color: #757575;">,</span> 1024<span style="color: #757575;">,</span> 3<span style="color: #757575;">),</span> np.uint8<span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">while</span> <span style="color: #268bd2; font-weight: bold;">True</span>:
+        kalman.update<span style="color: #757575;">(</span>mp<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">state</span> = kalman.<span style="color: #839496;">filter</span>.statePost
+        cv2.circle<span style="color: #757575;">(</span>frame<span style="color: #757575;">,</span> <span style="color: #757575;">(</span><span style="color: #839496;">int</span><span style="color: #757575;">(</span>mp[0]<span style="color: #757575;">),</span> <span style="color: #839496;">int</span><span style="color: #757575;">(</span>mp[1]<span style="color: #757575;">)),</span> 2<span style="color: #757575;">,</span> <span style="color: #757575;">(</span>255<span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> 0<span style="color: #757575;">),</span> -1<span style="color: #757575;">)</span>
+        cv2.circle<span style="color: #757575;">(</span>frame<span style="color: #757575;">,</span> <span style="color: #757575;">(</span><span style="color: #839496;">int</span><span style="color: #757575;">(</span>state[0]<span style="color: #757575;">),</span> <span style="color: #839496;">int</span><span style="color: #757575;">(</span>state[1]<span style="color: #757575;">)),</span> 2<span style="color: #757575;">,</span> <span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> 255<span style="color: #757575;">),</span> -1<span style="color: #757575;">)</span>
+        cv2.imshow<span style="color: #757575;">(</span><span style="color: #2aa198;">"kalman"</span><span style="color: #757575;">,</span> frame<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">k</span> = cv2.waitKey<span style="color: #757575;">(</span>30<span style="color: #757575;">)</span> &amp; 0xFF
+        <span style="color: #859900;">if</span> k == 27:
+            <span style="color: #859900;">break</span>
+
+
+<span style="color: #859900;">if</span> <span style="color: #839496;">__name__</span> == <span style="color: #2aa198;">"__main__"</span>:
+    main<span style="color: #757575;">()</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orge62c541" class="outline-3">
+<h3 id="orge62c541"><span class="section-number-3">1.5</span> HMM vs. Kalman Filter</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+实际上，卡尔曼滤波与隐马尔可夫类似. HMM 的离散高斯动态模型, 而 kalman filter 是连续高斯动态模型. HX+R 相当于观测矩阵, FX+Q 相当于转移矩阵。卡尔曼滤波是给定观测状态序列 Z 求概率最大的隐含状态序列 X
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

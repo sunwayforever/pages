@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GDB</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">GDB</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org41f627b">1. GDB</a>
+<ul>
+<li><a href="#org3d2705e">1.1. commands</a></li>
+<li><a href="#orgd3dc86a">1.2. dump_binary_memory</a></li>
+<li><a href="#orgc6b2ae3">1.3. add_symbol_file</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org41f627b" class="outline-2">
+<h2 id="org41f627b"><span class="section-number-2">1</span> GDB</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org3d2705e" class="outline-3">
+<h3 id="org3d2705e"><span class="section-number-3">1.1</span> commands</h3>
+</div>
+
+<div id="outline-container-orgd3dc86a" class="outline-3">
+<h3 id="orgd3dc86a"><span class="section-number-3">1.2</span> dump_binary_memory</h3>
+<div class="outline-text-3" id="text-1-2">
+<pre class="example" id="org5fe65d7">
+(gdb) dump binary memory ./file &lt;from&gt; &lt;to&gt;
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orgc6b2ae3" class="outline-3">
+<h3 id="orgc6b2ae3"><span class="section-number-3">1.3</span> add_symbol_file</h3>
+<div class="outline-text-3" id="text-1-3">
+<pre class="example" id="org1d530b3">
+$&gt; cat test.c
+
+extern void foo();
+int main(int argc, char *argv[]) {
+    foo();
+}
+
+$&gt; cat foo.c
+
+void foo() {
+    sleep(100000);
+    printf("hello\n");
+}
+
+$&gt; gcc -shared -O0 -g foo.c -o libfoo.so
+$&gt; gcc test.c -L. -lfoo
+$&gt; LD_LIBRARY_PATH=. ./a.out
+...
+$&gt; mv libfoo.so ~/download
+$&gt; sudo gdb a.out
+(gdb) attach 10511
+Attaching to program: /home/sunway/a.out, process 10511
+warning: Could not load shared library symbols for ./libfoo.so.
+Do you need "set solib-search-path" or "set sysroot"?
+Reading symbols from /usr/lib/libc.so.6...(no debugging symbols found)...done.
+Reading symbols from /lib64/ld-linux-x86-64.so.2...(no debugging symbols found)...done.
+0x00007f7dfb79f1b1 in nanosleep () from /usr/lib/libc.so.6
+
+(gdb) info sharedlibrary
+From                To                  Syms Read   Shared Object Library
+                                        No          ./libfoo.so
+0x00007f7dfb6fb790  0x00007f7dfb83dc0c  Yes (*)     /usr/lib/libc.so.6
+0x00007f7dfbc95db0  0x00007f7dfbcb23e0  Yes (*)     /lib64/ld-linux-x86-64.so.2
+(*): Shared library is missing debugging information.
+
+$&gt; cat /proc/10511/maps|grep libfoo
+7f7dfba93000-7f7dfba94000 r-xp 00000000 08:03 17043246                   /home/sunway/download/libfoo.so
+...
+
+$&gt; readelf -a ~/download/libfoo.so|grep .text
+  [11] .text             PROGBITS         0000000000000560  00000560
+                                          ~~~~~~~~~~~~~~~~
+
+(gdb) add-symbol-file ~/download/libfoo.so 0x7f7dfba93000+0x560
+add symbol table from file "/home/sunway/download/libfoo.so" at
+        .text_addr = 0x7f7dfba93560
+(y or n) y
+Reading symbols from /home/sunway/download/libfoo.so...done.
+
+(gdb) bt
+#0  0x00007f7dfb79f1b1 in nanosleep () from /usr/lib/libc.so.6
+#1  0x00007f7dfb79f0ea in sleep () from /usr/lib/libc.so.6
+#2  0x00007f7dfba9364d in foo () at foo.c:2
+#3  0x00005629c2e4a723 in main ()
+</pre>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

@@ -1,0 +1,296 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Qt Event Loop</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Qt Event Loop</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orge3632fe">1. Qt Event Loop</a>
+<ul>
+<li><a href="#orgde99ce5">1.1. Overview</a>
+<ul>
+<li><a href="#org8ba12b8">1.1.1. QThread</a></li>
+<li><a href="#orgb8f0a9c">1.1.2. QObject::moveToThread</a></li>
+<li><a href="#org0048145">1.1.3. Timer</a></li>
+<li><a href="#org6be4214">1.1.4. QCoreApplication::processEvents</a></li>
+<li><a href="#org7c69338">1.1.5. QCoreApplication::postEvent</a></li>
+<li><a href="#orgd600e30">1.1.6. QEventLoop</a></li>
+</ul>
+</li>
+<li><a href="#org33049f1">1.2. Event vs. Signal</a></li>
+<li><a href="#orgc9ff384">1.3. exec</a></li>
+<li><a href="#orga08a21a">1.4. postEvent</a></li>
+<li><a href="#org969bd7d">1.5. sendEvent</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orge3632fe" class="outline-2">
+<h2 id="orge3632fe"><span class="section-number-2">1</span> Qt Event Loop</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-orgde99ce5" class="outline-3">
+<h3 id="orgde99ce5"><span class="section-number-3">1.1</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-org8ba12b8" class="outline-4">
+<h4 id="org8ba12b8"><span class="section-number-4">1.1.1</span> QThread</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #859900;">class</span> <span style="color: #b58900;">MyThread</span> : <span style="color: #859900;">public</span> <span style="color: #b58900;">QThread</span> <span style="color: #757575;">{</span>
+  <span style="color: #859900;">public</span>:
+    <span style="color: #b58900;">void</span> <span style="color: #268bd2;">run</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        qDebug<span style="color: #757575;">()</span> &lt;&lt; <span style="color: #2aa198;">"my thread run: "</span> &lt;&lt; currentThreadId<span style="color: #757575;">()</span>;
+        exec<span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+
+<ol class="org-ol">
+<li>myThread 需要在 run 里执行 exec 才能进入 event loop</li>
+<li>thread 默认的实现是 void run() {exec();}, 所以 QThread 默认会进入 event loop</li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-orgb8f0a9c" class="outline-4">
+<h4 id="orgb8f0a9c"><span class="section-number-4">1.1.2</span> QObject::moveToThread</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #b58900;">SimpleObject</span> <span style="color: #268bd2;">obj</span>;
+obj.moveToThread<span style="color: #757575;">(</span>&amp;myThread<span style="color: #757575;">)</span>;
+
+<span style="color: #b58900;">SimpleObject</span> <span style="color: #268bd2;">obj2</span><span style="color: #757575;">(</span>&amp;obj<span style="color: #757575;">)</span>;
+obj2.moveToThread<span style="color: #757575;">(</span>&amp;thread<span style="color: #757575;">)</span>;
+</pre>
+</div>
+
+<ol class="org-ol">
+<li>moveToThread 可以把 qobject 与 thread 绑定, obj 对应的 slot 会通过 event 的形式在相应的 thread 执行</li>
+<li>obj2 的 move 会失败, 因为整个 qobject 树的 object 必须在绑定到同一个 thread,
+因为涉及到 object 释放的问题</li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-org0048145" class="outline-4">
+<h4 id="org0048145"><span class="section-number-4">1.1.3</span> Timer</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #b58900;">QTimer</span> <span style="color: #268bd2;">timer</span>;
+<span style="color: #268bd2; font-weight: bold;">QObject</span>::connect<span style="color: #757575;">(</span>&amp;timer<span style="color: #757575;">,</span> &amp;<span style="color: #268bd2; font-weight: bold;">QTimer</span>::timeout<span style="color: #757575;">,</span> &amp;obj<span style="color: #757575;">,</span> &amp;<span style="color: #268bd2; font-weight: bold;">SimpleObject</span>::handleEvent<span style="color: #757575;">)</span>;
+timer.start<span style="color: #757575;">(</span>1000<span style="color: #757575;">)</span>;
+</pre>
+</div>
+
+<p>
+Timer 是通过直接向 thread event loop 注册 timer 实现的, 并不需要单独的线程
+</p>
+</div>
+</div>
+
+<div id="outline-container-org6be4214" class="outline-4">
+<h4 id="org6be4214"><span class="section-number-4">1.1.4</span> QCoreApplication::processEvents</h4>
+<div class="outline-text-4" id="text-1-1-4">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #b58900;">QTimer</span> <span style="color: #268bd2;">timer2</span>;
+timer2.setSingleShot<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">true</span><span style="color: #757575;">)</span>;
+timer2.callOnTimeout<span style="color: #757575;">(</span>&amp;obj<span style="color: #757575;">,</span> &amp;<span style="color: #268bd2; font-weight: bold;">SimpleObject</span>::handleLongEvent<span style="color: #757575;">)</span>;
+timer2.start<span style="color: #757575;">(</span>2000<span style="color: #757575;">)</span>;
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #859900;">class</span> <span style="color: #b58900;">SimpleObject</span> : <span style="color: #859900;">public</span> <span style="color: #b58900;">QObject</span> <span style="color: #757575;">{</span>
+    Q_OBJECT
+
+    <span style="color: #b58900;">void</span> handleLongEvent<span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">while</span> <span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">true</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            qDebug<span style="color: #757575;">()</span> &lt;&lt; <span style="color: #2aa198;">"handle long time event"</span>;
+            <span style="color: #268bd2; font-weight: bold;">QCoreApplication</span>::processEvents<span style="color: #757575;">()</span>;
+            <span style="color: #268bd2; font-weight: bold;">QThread</span>::sleep<span style="color: #757575;">(</span>5<span style="color: #757575;">)</span>;
+        <span style="color: #757575;">}</span>
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+
+<p>
+handleLongEvent 会长时间运行以致阻塞主线程的 event loop, 所以 handleLongEvent 中需要通过 QCoreApplication::processEvents 来强行处理event
+</p>
+</div>
+</div>
+
+<div id="outline-container-org7c69338" class="outline-4">
+<h4 id="org7c69338"><span class="section-number-4">1.1.5</span> QCoreApplication::postEvent</h4>
+<div class="outline-text-4" id="text-1-1-5">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #268bd2; font-weight: bold;">QCoreApplication</span>::postEvent<span style="color: #757575;">(</span>&amp;obj<span style="color: #757575;">,</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">QEvent</span><span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">QEvent</span>::None<span style="color: #757575;">))</span>;
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #859900;">class</span> <span style="color: #b58900;">SimpleObject</span> : <span style="color: #859900;">public</span> <span style="color: #b58900;">QObject</span> <span style="color: #757575;">{</span>
+    Q_OBJECT
+
+    <span style="color: #b58900;">bool</span> event<span style="color: #757575;">(</span><span style="color: #b58900;">QEvent</span> *<span style="color: #268bd2;">event</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        qDebug<span style="color: #757575;">()</span> &lt;&lt; <span style="color: #2aa198;">"got event"</span> &lt;&lt; event-&gt;type<span style="color: #757575;">()</span>;
+        <span style="color: #859900;">return</span> <span style="color: #268bd2; font-weight: bold;">QObject</span>::event<span style="color: #757575;">(</span>event<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+
+<p>
+postEvent 可以向 event loop 直接发送一个特定的 event, QObject::event() 负责处理 event
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgd600e30" class="outline-4">
+<h4 id="orgd600e30"><span class="section-number-4">1.1.6</span> QEventLoop</h4>
+<div class="outline-text-4" id="text-1-1-6">
+<p>
+QCoreApplication::exec 和 QThread::exec 最终都是通过 QEventLoop::exec 进行 event
+loop 的
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org33049f1" class="outline-3">
+<h3 id="org33049f1"><span class="section-number-3">1.2</span> Event vs. Signal</h3>
+<div class="outline-text-3" id="text-1-2">
+<ol class="org-ol">
+<li>若 connect 使用了 Qt::DirectConnection 参数, 则 slot 是直接调用 metacall 实现的</li>
+
+<li>若 connect 使用了 Qt::QueuedConnection 参数, 则 slot 是通过 post 一个 event,
+由 event loop 来调用 metacall 实现的.</li>
+
+<li>若 connect 使用了 Qt::AutoConnection 参数, 则 qt 自己选择使用
+DirectConnection 还是 QueuedConnection, 具体的, 若 sender 和 receiver 在同一个线程, 则使用 DirectConnection, 否则使用 QueuedConnection</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgc9ff384" class="outline-3">
+<h3 id="orgc9ff384"><span class="section-number-3">1.3</span> exec</h3>
+<div class="outline-text-3" id="text-1-3">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #268bd2; font-weight: bold;">QCoreApplication</span>::<span style="color: #b58900;">exec</span>
+  <span style="color: #268bd2;">eventLoop</span>.exec<span style="color: #757575;">()</span>
+    <span style="color: #859900;">while</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>d-&gt;exit.loadAcquire<span style="color: #757575;">())</span>:
+      processEvents<span style="color: #757575;">(</span>flags | WaitForMoreEvents | EventLoopExec<span style="color: #757575;">)</span>;
+        data-&gt;eventDispatcher.loadRelaxed<span style="color: #757575;">()</span>-&gt;processEvents<span style="color: #757575;">(</span>flags<span style="color: #757575;">)</span>;
+
+<span style="color: #268bd2; font-weight: bold;">EventDispatcher</span>::processEvents :
+  <span style="color: #268bd2; font-weight: bold;">QCoreApplicationPrivate</span>::sendPostedEvents<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> d-&gt;threadData<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">postEventList !!</span>
+    <span style="color: #859900;">while</span> <span style="color: #757575;">(</span>i &lt; data-&gt;postEventList.size<span style="color: #757575;">())</span>: 
+      <span style="color: #859900;">const</span> <span style="color: #b58900;">QPostEvent</span> &amp;<span style="color: #268bd2;">pe</span> = data-&gt;postEventList.at<span style="color: #757575;">(</span>i<span style="color: #757575;">)</span>; ++i;
+      <span style="color: #b58900;">QEvent</span> *<span style="color: #268bd2;">e</span> = pe.event;
+      <span style="color: #b58900;">QObject</span> * <span style="color: #268bd2;">r</span> = pe.receiver;
+      <span style="color: #268bd2; font-weight: bold;">QCoreApplication</span>::sendEvent<span style="color: #757575;">(</span>r<span style="color: #757575;">,</span> e<span style="color: #757575;">)</span>;
+        notifyInternal2<span style="color: #757575;">(</span>receiver<span style="color: #757575;">,</span> event<span style="color: #757575;">)</span>;
+          doNotify<span style="color: #757575;">(</span>receiver<span style="color: #757575;">,</span>event<span style="color: #757575;">)</span>
+            notify_helper<span style="color: #757575;">(</span>receiver<span style="color: #757575;">,</span> event<span style="color: #757575;">)</span>
+              <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>sendThroughObjectEventFilters<span style="color: #757575;">(</span>receiver<span style="color: #757575;">,</span> event<span style="color: #757575;">))</span>: 
+                filtered = <span style="color: #268bd2; font-weight: bold;">true</span>;
+                <span style="color: #859900;">return</span> filtered;
+              <span style="color: #586e75;">// </span><span style="color: #586e75;">deliver the event</span>
+              consumed = receiver-&gt;event<span style="color: #757575;">(</span>event<span style="color: #757575;">)</span>;
+
+  d-&gt;pollfds.append<span style="color: #757575;">(</span>d-&gt;threadPipe.prepare<span style="color: #757575;">())</span>;
+  <span style="color: #859900;">switch</span> <span style="color: #757575;">(</span>qt_safe_poll<span style="color: #757575;">(</span>d-&gt;pollfds.data<span style="color: #757575;">(),</span> d-&gt;pollfds.size<span style="color: #757575;">(),</span> tm<span style="color: #757575;">))</span>: 
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orga08a21a" class="outline-3">
+<h3 id="orga08a21a"><span class="section-number-3">1.4</span> postEvent</h3>
+<div class="outline-text-3" id="text-1-4">
+<div class="org-src-container">
+<pre class="src src-cpp"><span style="color: #268bd2; font-weight: bold;">QCoreApplication</span>::<span style="color: #b58900;">postEvent</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">postEventList !!</span>
+  <span style="color: #268bd2;">data</span>-&gt;postEventList.addEvent<span style="color: #757575;">(</span>QPostEvent<span style="color: #757575;">(</span>receiver<span style="color: #757575;">,</span> event<span style="color: #757575;">,</span> priority<span style="color: #757575;">))</span>;
+  dispatcher-&gt;wakeUp<span style="color: #757575;">()</span>;
+    eventfd_write<span style="color: #757575;">(</span>fds[0]<span style="color: #757575;">,</span> value<span style="color: #757575;">)</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org969bd7d" class="outline-3">
+<h3 id="org969bd7d"><span class="section-number-3">1.5</span> sendEvent</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+sendEvent 会直接调用到对方的 event(), 是需要经过 event loop.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #b58900;">bool</span> <span style="color: #268bd2; font-weight: bold;">QCoreApplication</span>::<span style="color: #268bd2;">sendEvent</span><span style="color: #757575;">(</span><span style="color: #b58900;">QObject</span> *<span style="color: #268bd2;">receiver</span><span style="color: #757575;">,</span> <span style="color: #b58900;">QEvent</span> *<span style="color: #268bd2;">event</span><span style="color: #757575;">)</span>
+  notifyInternal2<span style="color: #757575;">(</span>receiver<span style="color: #757575;">,</span> event<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+  consumed = receiver-&gt;event<span style="color: #757575;">(</span>event<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

@@ -1,0 +1,513 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RNN</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">RNN</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org1b8af9c">1. RNN</a>
+<ul>
+<li><a href="#org7bc805f">1.1. Overview</a></li>
+<li><a href="#org8189824">1.2. RNN Cells</a>
+<ul>
+<li><a href="#org0054c27">1.2.1. Basic RNN</a></li>
+<li><a href="#orga9a00d9">1.2.2. GRU</a></li>
+<li><a href="#orgffccfac">1.2.3. LSTM</a></li>
+<li><a href="#orga8c6265">1.2.4. example</a></li>
+</ul>
+</li>
+<li><a href="#org9f24b85">1.3. RNN 与 RNN Cell</a></li>
+<li><a href="#org78bec25">1.4. Example: random chinese</a>
+<ul>
+<li><a href="#org13abcca">1.4.1. training</a></li>
+<li><a href="#orgfa6620b">1.4.2. sampling</a></li>
+</ul>
+</li>
+<li><a href="#org16bbfba">1.5. Word2vec</a></li>
+<li><a href="#org882df93">1.6. Misc</a>
+<ul>
+<li><a href="#orge4215e7">1.6.1. Backpropagation Through Time</a></li>
+<li><a href="#org96c8198">1.6.2. different type of RNN</a></li>
+<li><a href="#orgc7c98c0">1.6.3. stacked RNN</a></li>
+<li><a href="#org5e988c9">1.6.4. Bidirectional RNN</a></li>
+<li><a href="#org7b6c7d4">1.6.5. Teacher Forcing</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org1b8af9c" class="outline-2">
+<h2 id="org1b8af9c"><span class="section-number-2">1</span> RNN</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org7bc805f" class="outline-3">
+<h3 id="org7bc805f"><span class="section-number-3">1.1</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+RNN (Recurrent Neural Network)
+</p>
+
+<p>
+问题: 识别负面言论
+</p>
+
+<ol class="org-ol">
+<li>I hate you -&gt; negative</li>
+<li>I love you -&gt; positive</li>
+</ol>
+
+<p>
+如果用机器学习来解决这个问题, feature 和 label 分别是什么?
+</p>
+
+<ol class="org-ol">
+<li><p>
+label
+</p>
+
+<p>
+label 很好定义, 我们用 0 表示 negative, 1 表示 positive.
+在网络的输出端使用一个 sigmoid 即可.
+</p></li>
+
+<li><p>
+feature
+</p>
+
+<ul class="org-ul">
+<li>分词</li>
+</ul>
+
+<p>
+首先, 需要以单词为单位进行分词, 因为单个字母无所谓正面负面.<br />
+然后, 要以构造一个 vocabulary, 给每个英文单词赋一个值, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #268bd2;">vocabulary</span> = <span style="color: #757575;">{</span><span style="color: #2aa198;">"I"</span>:0<span style="color: #757575;">,</span> <span style="color: #2aa198;">"hate"</span>:1<span style="color: #757575;">,</span> <span style="color: #2aa198;">"you"</span>: 2<span style="color: #757575;">,</span> <span style="color: #2aa198;">"love"</span>: 3<span style="color: #757575;">,</span> <span style="color: #2aa198;">"hello"</span>:4<span style="color: #757575;">,</span> <span style="color: #2aa198;">"world"</span>: 5<span style="color: #757575;">,</span>...<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+vocabulary 可以通过扫描 wikipedia 或英文字典的方式得到.
+</p>
+
+<ul class="org-ul">
+<li>one-hot</li>
+</ul>
+
+<p>
+然后我们可以对单词的索引使用 one-hot 编码. 假设 vocabulary 大小为
+1000,000, 而 one-hot 编码后 feature 中的每个单词都变 成一个大小为
+1000,000 的 vector
+</p>
+
+<ul class="org-ul">
+<li>then?</li>
+</ul>
+
+<p>
+feature size 是 [X, 1000,000], X 代表一个样本里有多少个单词.
+但与之前的机器问题不同的是, X 大小不是固定的. 对于 <code>I love you</code>, X
+为 3, 而对于 <code>hello world</code>, X 为 2
+</p></li>
+</ol>
+
+<p>
+上面这个问题实际上称为 sequence model, 它的 feature 不是固定的大小,
+而是一个变长的序列, 还有一些问题,
+它的输出也是一个变长的序列(例如语言翻译), 通过 RNN, 我们可以解决这类问题
+</p>
+</div>
+</div>
+
+<div id="outline-container-org8189824" class="outline-3">
+<h3 id="org8189824"><span class="section-number-3">1.2</span> RNN Cells</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+RNN 的结构都是类似的, 即序列中的元素依次被同一个 cell 处理, 不同的是, 不同的
+cell 内部可以有不同的结构
+</p>
+</div>
+
+<div id="outline-container-org0054c27" class="outline-4">
+<h4 id="org0054c27"><span class="section-number-4">1.2.1</span> Basic RNN</h4>
+<div class="outline-text-4" id="text-1-2-1">
+
+<div id="org11df891" class="figure">
+<p><img src="../extra/rnn.png" alt="rnn.png" />
+</p>
+<p><span class="figure-number">Figure 1: </span>rnn</p>
+</div>
+
+<p>
+\(h_t = tanh(W_R(h_{t-1})+W_I(X_t))\)
+</p>
+
+<p>
+\(y_t = W_Oh_t\)
+</p>
+</div>
+
+<div id="outline-container-org7083a53" class="outline-5">
+<h5 id="org7083a53"><span class="section-number-5">1.2.1.1</span> Basic RNN 难以训练</h5>
+<div class="outline-text-5" id="text-1-2-1-1">
+<p>
+<a href="https://weberna.github.io/blog/2017/11/15/LSTM-Vanishing-Gradients.html">https://weberna.github.io/blog/2017/11/15/LSTM-Vanishing-Gradients.html</a>
+</p>
+
+<p>
+现在只考虑 loss 对 W_h 的梯度:
+</p>
+
+<p>
+假设输入为 x0..xt, 输出为 y0..yt, 根据 BPTT (backprop throught time), 总的 error 为
+</p>
+
+<p>
+\(E=\sum_{i=0}^{t}{E_i}\), 则 \(\frac{\partial E}{\partial
+W_h}=\sum_{i=0}^{t}\ldots\frac{\partial h_t}{\partial h_i}\ldots\), 其中
+\(\frac{\partial h_t}{\partial h_i}\) 又需要链式求导, 以 \(\frac{\partial
+h_t}{\partial h_0}\) 为例:
+</p>
+
+<p>
+\(\frac{\partial h_t}{\partial h_0}=\frac{\partial h_t}{\partial
+h_{t-1}}\frac{\partial h_{t-1}}{\partial h_{t-2}}\ldots\frac{\partial
+h_1}{\partial h_0}=\prod_{k=i}^{t-1}\frac{\partial h_{k+1}}{\partial h_k}\)
+</p>
+
+<p>
+其中 \(\frac{\partial h_t}{\partial h_{t-1}}=tanh'W_h\), 由于 \(tanh'\) 上限为 1, 所以 \(\frac{\partial E_t}{W_h}\) 结果类似于 \(\prod_{i=0}^{t}W_h\)
+</p>
+
+<ul class="org-ul">
+<li>当 \(W_h < 1\) 时, 发生梯度消失</li>
+<li>当 \(W_h > 1\) 时, 发生梯度爆炸</li>
+</ul>
+
+<p>
+究其原因, 和普通 dnn 中的梯度消失和爆炸问题是一致的: dnn 中的梯度问题的原因是 bp
+时中间节点的梯度过大或过小, 对于 rnn 来说, 中间节点的梯度即是 W_h 自身!
+</p>
+
+<p>
+实际上, \(h_1\) 传播到 \(h_0\) 还是很容易的 (因为连乘中的 \(W_h\) 只有一项), 但 \(h_t\) 传播到 \(h_0\) 就非常困难了 (连乘中 \(W_h\) 有 t 项), 所以 RNN 无法 `记住` 很长的序列
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orga9a00d9" class="outline-4">
+<h4 id="orga9a00d9"><span class="section-number-4">1.2.2</span> GRU</h4>
+<div class="outline-text-4" id="text-1-2-2">
+
+<div id="orgc3db3d0" class="figure">
+<p><img src="../extra/gru.png" alt="gru.png" />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgffccfac" class="outline-4">
+<h4 id="orgffccfac"><span class="section-number-4">1.2.3</span> LSTM</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<p>
+LSTM 内部比 basic rnn 和 GRU 复杂, 其中除了 H, 还有一个 C 也会在 cell 之间传递,
+这个 C 为 cell state, H 为 hidden state
+</p>
+
+
+<div id="org122a2bd" class="figure">
+<p><img src="../extra/lstm.jpg" alt="lstm.jpg" />
+</p>
+<p><span class="figure-number">Figure 3: </span>lstm</p>
+</div>
+
+
+<p>
+上图中:
+</p>
+
+<ol class="org-ol">
+<li>粉色的三个 x 是 gate, 从左到右依次为 forget gate, input gate, output gate</li>
+<li>正常情况下 lstm 的输出是最后一个 h_t, 但也可以输出最后一个 (h_t, c_t) 或者所有的 (h_1, h_2, &#x2026; h<sub>t-1</sub>, h_t)</li>
+</ol>
+
+
+<p>
+\(f_t=\sigma(W_f[h_{t-1},X_t])\)
+\(i_t=\sigma(W_i[h_{t-1},X_t])\)
+\(o_t=\sigma(W_o[h_{t-1},X_t])\)
+\(c_t=tanh(W_c[h_{t-1},X_t])\)
+\(C_t=f_t*C_{t-1}+i_t*c_t\)
+\(h_t=o_ttanh(C_t)\)
+</p>
+</div>
+
+
+<div id="outline-container-orgd22d5f6" class="outline-5">
+<h5 id="orgd22d5f6"><span class="section-number-5">1.2.3.1</span> LSTM 可以解决 RNN 的梯度消失问题</h5>
+<div class="outline-text-5" id="text-1-2-3-1">
+<p>
+根本原因在于 forget gate
+</p>
+
+<p>
+根据 lstm 的公式: \(C_t=f_t*C_{t-1}+i_t*c_t\), 得到 \(\frac{\partial C_t}{\partial
+C_{t-1}}=f_t+\ldots\), 其中省略的部分会和 rnn 类似, 包含 \(W_c\) 的值, 但是与仅仅包含 \(W_c\) 的 rnn 不同, lstm 可以通过调整 \(f_t\) 的值 (0~1) 避免
+\(\frac{\partial C_t}{\partial C_{t-1}}\) 过小, 从而避免梯度消失, 但无法避免梯度爆炸
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgcc58283" class="outline-5">
+<h5 id="orgcc58283"><span class="section-number-5">1.2.3.2</span> <a href="nn_benchmark.html#org1b053c6">LSTM Profiling</a></h5>
+</div>
+</div>
+
+<div id="outline-container-orga8c6265" class="outline-4">
+<h4 id="orga8c6265"><span class="section-number-4">1.2.4</span> example</h4>
+<div class="outline-text-4" id="text-1-2-4">
+</div>
+<div id="outline-container-org91192af" class="outline-5">
+<h5 id="org91192af"><span class="section-number-5">1.2.4.1</span> tensorflow</h5>
+<div class="outline-text-5" id="text-1-2-4-1">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">import</span> tensorflow <span style="color: #859900;">as</span> tf
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">batch size &#20026; 32, &#24207;&#21015;&#38271;&#24230;&#20026; 10, &#24207;&#21015;&#20013;&#27599;&#20010;&#25968;&#25454;&#30340;&#38271;&#24230;&#20026; 8</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">&#20197; binary adder &#38382;&#39064;&#20026;&#20363;, &#20551;&#35774;&#36755;&#20837;&#25968;&#25454;&#26159;&#20004;&#20010;&#22235;&#20301;&#20108;&#36827;&#21046;&#24418;&#24335;&#30340;&#25968;, &#20363;&#22914; 1010+0101</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">&#21017; inputs shape &#20026; [batch, 4, 2], 4 &#34920;&#31034;&#24207;&#21015;&#38271;&#24230;&#20026; 4, 2 &#34920;&#31034;&#20004;&#20010;&#25968;&#30456;&#21152;</span>
+<span style="color: #268bd2;">inputs</span> = tf.random.normal<span style="color: #757575;">(</span>[32<span style="color: #757575;">,</span> 10<span style="color: #757575;">,</span> 8]<span style="color: #757575;">)</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">LSTM cell &#30340; units &#20026; 4, &#25351; H(&#21644; C) &#30340;&#22823;&#23567;&#20026;4</span>
+<span style="color: #268bd2;">rnn</span> = tf.keras.layers.RNN<span style="color: #757575;">(</span>tf.keras.layers.LSTMCell<span style="color: #757575;">(</span>4<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">output</span> = rnn<span style="color: #757575;">(</span>inputs<span style="color: #757575;">)</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">&#27491;&#24120;&#24773;&#20917;&#19979; RNN &#30340;&#36755;&#20986;&#26159;&#26368;&#21518;&#19968;&#20010; cell &#30340; H, &#25152;&#20197;&#36825;&#37324;&#30340;&#32467;&#26524;&#26159; [32,4]</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>output.shape<span style="color: #757575;">)</span>
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">return_sequences &#34920;&#31034; rnn &#36820;&#22238; sequence &#30340;&#22823;&#23567;(&#21508;&#20010; cell &#30340; H &#32452;&#25104;&#30340; sequence)</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">&#32780;&#19981;&#26159;&#26368;&#21518;&#19968;&#20010; cell &#30340; H</span>
+<span style="color: #586e75;">#</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">return_state &#26159;&#25351;&#36820;&#22238;&#26368;&#21518;&#19968;&#20010; cell &#30340;&#25152;&#26377; state, &#23545;&#20110; LSTM &#21363; C</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">(final_carry_state) &#21644; H (final_memory_state)</span>
+<span style="color: #268bd2;">rnn</span> = tf.keras.layers.RNN<span style="color: #757575;">(</span>
+    tf.keras.layers.LSTMCell<span style="color: #757575;">(</span>4<span style="color: #757575;">),</span> return_sequences=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">,</span> return_state=<span style="color: #268bd2; font-weight: bold;">True</span>
+<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">whole_seq_output</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">final_memory_state</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">final_carry_state</span> = rnn<span style="color: #757575;">(</span>inputs<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>whole_seq_output.shape<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>final_memory_state.shape<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>final_carry_state.shape<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+(32, 4)
+(32, 10, 4)
+(32, 4)
+(32, 4)
+</p>
+</div>
+</div>
+
+<div id="outline-container-org42854e6" class="outline-5">
+<h5 id="org42854e6"><span class="section-number-5">1.2.4.2</span> torch</h5>
+<div class="outline-text-5" id="text-1-2-4-2">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;"># </span><span style="color: #586e75;">input &#21521;&#37327;&#38271;&#24230;&#20026; 10, hidden state &#38271;&#24230;&#20026; 20, 2 &#23618; ltsm cell stack &#22312;&#19968;&#36215;</span>
+<span style="color: #268bd2;">rnn</span> = nn.LSTM<span style="color: #757575;">(</span>10<span style="color: #757575;">,</span> 20<span style="color: #757575;">,</span> 2<span style="color: #757575;">)</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">batch &#20026; 3, &#24207;&#21015;&#38271;&#24230;&#20026; 5, &#22240;&#20026; nn.LSTM &#27809;&#26377;&#25351;&#23450; batch_first, &#25152;&#20197; first(5) &#26159;</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">&#24207;&#21015;&#38271;&#24230;&#32780;&#19981;&#26159; batch</span>
+<span style="color: #839496;">input</span> = torch.randn<span style="color: #757575;">(</span>5<span style="color: #757575;">,</span> 3<span style="color: #757575;">,</span> 10<span style="color: #757575;">)</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">h0,c0 &#30340;&#21021;&#22987;&#29366;&#24577; (layer, batch, hidden_size)</span>
+<span style="color: #268bd2;">h0</span> = torch.randn<span style="color: #757575;">(</span>2<span style="color: #757575;">,</span> 3<span style="color: #757575;">,</span> 20<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">c0</span> = torch.randn<span style="color: #757575;">(</span>2<span style="color: #757575;">,</span> 3<span style="color: #757575;">,</span> 20<span style="color: #757575;">)</span>
+output<span style="color: #757575;">,</span> <span style="color: #757575;">(</span>hn<span style="color: #757575;">,</span> cn<span style="color: #757575;">)</span> = rnn<span style="color: #757575;">(</span><span style="color: #839496;">input</span><span style="color: #757575;">,</span> <span style="color: #757575;">(</span>h0<span style="color: #757575;">,</span> c0<span style="color: #757575;">))</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org9f24b85" class="outline-3">
+<h3 id="org9f24b85"><span class="section-number-3">1.3</span> RNN 与 RNN Cell</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+RNN (例如 torch 的 LSTM) 与 RNN Cell (例如 torch 的 LSTMCell) 的区别在于:
+</p>
+
+<p>
+LSTM 会自己去处理输入序列, 而 LSTMCell 需要外部自己通过循环去处理输入序列
+</p>
+</div>
+</div>
+
+<div id="outline-container-org78bec25" class="outline-3">
+<h3 id="org78bec25"><span class="section-number-3">1.4</span> Example: random chinese</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+<a href="file:///home/sunway/Gitbox/code/machine_learning/pytorch/random_chinese">file:~/Gitbox/code/machine_learning/pytorch/random_chinese</a>
+</p>
+</div>
+
+<div id="outline-container-org13abcca" class="outline-4">
+<h4 id="org13abcca"><span class="section-number-4">1.4.1</span> training</h4>
+<div class="outline-text-4" id="text-1-4-1">
+
+<div id="org37a513c" class="figure">
+<p><img src="../extra/rnn_sample1.png" alt="rnn_sample1.png" />
+</p>
+<p><span class="figure-number">Figure 4: </span>rnn\_training</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgfa6620b" class="outline-4">
+<h4 id="orgfa6620b"><span class="section-number-4">1.4.2</span> sampling</h4>
+<div class="outline-text-4" id="text-1-4-2">
+
+<div id="org7507993" class="figure">
+<p><img src="../extra/rnn_sample2.png" alt="rnn_sample2.png" />
+</p>
+<p><span class="figure-number">Figure 5: </span>rnn\_sampl2</p>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org16bbfba" class="outline-3">
+<h3 id="org16bbfba"><span class="section-number-3">1.5</span> <a href="word2vec.html#org4ca3b9c">Word2vec</a></h3>
+</div>
+
+<div id="outline-container-org882df93" class="outline-3">
+<h3 id="org882df93"><span class="section-number-3">1.6</span> Misc</h3>
+<div class="outline-text-3" id="text-1-6">
+</div>
+<div id="outline-container-orge4215e7" class="outline-4">
+<h4 id="orge4215e7"><span class="section-number-4">1.6.1</span> Backpropagation Through Time</h4>
+<div class="outline-text-4" id="text-1-6-1">
+<p>
+<img src="../extra/rnn_bp.png" alt="rnn_bp.png" /> <img src="../extra/rnn_bp2.png" alt="rnn_bp2.png" />
+</p>
+</div>
+</div>
+
+<div id="outline-container-org96c8198" class="outline-4">
+<h4 id="org96c8198"><span class="section-number-4">1.6.2</span> different type of RNN</h4>
+<div class="outline-text-4" id="text-1-6-2">
+
+<div id="org7c4e05e" class="figure">
+<p><img src="../extra/rnn_types.png" alt="rnn_types.png" />
+</p>
+<p><span class="figure-number">Figure 6: </span>rnn\_types</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgc7c98c0" class="outline-4">
+<h4 id="orgc7c98c0"><span class="section-number-4">1.6.3</span> stacked RNN</h4>
+<div class="outline-text-4" id="text-1-6-3">
+
+<div id="org97aab96" class="figure">
+<p><img src="../extra/stacked_rnn.png" alt="stacked_rnn.png" />
+</p>
+<p><span class="figure-number">Figure 7: </span>stacked\_rnn</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org5e988c9" class="outline-4">
+<h4 id="org5e988c9"><span class="section-number-4">1.6.4</span> Bidirectional RNN</h4>
+<div class="outline-text-4" id="text-1-6-4">
+
+<div id="orgc87ab7b" class="figure">
+<p><img src="../extra/brnn.png" alt="brnn.png" />
+</p>
+<p><span class="figure-number">Figure 8: </span>brnn</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org7b6c7d4" class="outline-4">
+<h4 id="org7b6c7d4"><span class="section-number-4">1.6.5</span> Teacher Forcing</h4>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ResNet</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">ResNet</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org5d962c8">1. <span class="done DONE">DONE</span> <span class="priority">[C]</span> ResNet</a>
+<ul>
+<li><a href="#orgcf1b6ae">1.1. Overview</a></li>
+<li><a href="#org581165d">1.2. 不同大小的 ResNet</a></li>
+<li><a href="#org4c7b8d7">1.3. 示例代码</a></li>
+<li><a href="#orga882e30">1.4. <span class="todo WAIT">WAIT</span> bottleneck</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org5d962c8" class="outline-2">
+<h2 id="org5d962c8"><span class="section-number-2">1</span> <span class="done DONE">DONE</span> <span class="priority">[C]</span> ResNet</h2>
+<div class="outline-text-2" id="text-1">
+<ul class="org-ul">
+<li>State "DONE"       from "TODO"       <span class="timestamp-wrapper"><span class="timestamp">[2020-12-12 六 19:48]</span></span></li>
+</ul>
+<p>
+<span class="timestamp-wrapper"><span class="timestamp">[2020-12-11 五]</span></span>
+</p>
+
+<p>
+<a href="https://arxiv.org/pdf/1512.03385.pdf">https://arxiv.org/pdf/1512.03385.pdf</a>
+</p>
+</div>
+
+<div id="outline-container-orgcf1b6ae" class="outline-3">
+<h3 id="orgcf1b6ae"><span class="section-number-3">1.1</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+以 ResNet-18 为例:
+</p>
+
+<ul class="org-ul">
+<li>18 指一共 18 层</li>
+
+<li>输入为 224x224x3 的图片</li>
+
+<li>conv1: 7x7 conv,64,/2 加一个 3x3 max pool, /2, 输出为 224/2/2=56x56x64</li>
+
+<li>conv2_x: (3x3 conv, 64, /1 * 2) * 2, 输出为 56x56x64, 共 4 层</li>
+
+<li>conv3_x: (3x3 conv, 128 * 2) *2, 其中 第一层的 stride 为 2, 其它层为 1, 输出为
+28x28x128, 共 4 层</li>
+
+<li>conv4_x: (3x3 conv, 256 * 2) *2, 其中 第一层的 stride 为 2, 其它层为 1, 输出为
+14x14x256, 共 4 层</li>
+
+<li>conv5_x: (3x3 conv, 512 * 2) *2, 其中 第一层的 stride 为 2, 其它层为 1, 输出为
+7x7x512,共 4 层</li>
+
+<li>fc: 首先一个 (7x7 avg pooling), 输出为 1x1x512, 然后一个 (512, 1000) 的 fc, 输出为 1000, 然后一个 softmax</li>
+</ul>
+
+<p>
+共 18 层
+</p>
+
+<p>
+conv{2,3,4,5}_x 四个 layer 结构类似:
+</p>
+
+<ol class="org-ol">
+<li>每个 layer 都包含两个 block</li>
+
+<li>每个 block 包含两个 3x3 conv.</li>
+
+<li><p>
+conv{3,4,5}_x layer 的 block_0 的 conv_0 为 (3x3, input*2, /2), (H,W) shape
+减半, output_channel 倍增
+</p>
+
+<p>
+其它 conv 均为 (3x3, input, /1), 即 output shape 保持不变
+</p></li>
+
+<li>每个 layer 的第一个 block 的 input 需要通过一个 (1x1, 2*input_channel, /2) 的
+conv 转换以后再和 block 的 output 相加, 保持 shape 一致. conv2_x layer 除外,
+因为它的 block_0 的 input 与 output 大小相同</li>
+
+<li>其它 block 的 input 直接加到 block 的 output 即可</li>
+</ol>
+
+
+
+<div id="org3b6ef11" class="figure">
+<p><img src="../extra/resnet.png" alt="resnet.png" />
+</p>
+</div>
+
+<p>
+上图中, 虚线的 shortcut 表示 block input 需要先经过一个 (1x1 conv, 2*input, /2)
+处理后再加到 block 的 output 上
+</p>
+
+<p>
+实线表示 shortcut input 可以直接加到 block output 上
+</p>
+
+<p>
+相同的颜色表示同一个 layer, 除了 conv2_x, 其它 layer 的一个 conv 的 stride 为 2,
+且 output_channel 倍增
+</p>
+</div>
+</div>
+
+<div id="outline-container-org581165d" class="outline-3">
+<h3 id="org581165d"><span class="section-number-3">1.2</span> 不同大小的 ResNet</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+所有 ResNet 均包含四个 layer, 每个 layer 有 N 个不同的 block, block 之间有
+shortcut connection
+</p>
+
+<p>
+根据 block 的类型和个数, 有 18, 34, 50, 101 和 152 几种不同的配置.
+</p>
+
+<p>
+18, 34 使用的 block 包含两层 conv, 称为 basic block
+</p>
+
+<p>
+50, 101, 152 使用的 block 包含三层 conv, 称为 bottleneck
+</p>
+
+<p>
+bottleneck block 把 basic block (3x3,output_channel; 3x3, output_channel) 变成
+(1x1, output_channel/4; 3x3, output_channel/4; 1x1, output_channel)
+</p>
+
+<p>
+大部分 conv 的 stride 为 1, 只有两个 layer 交界处的 conv 的 stride 会是 2, 相应的其 output_channel 会变成 input_channel 的两倍
+</p>
+
+
+<div id="org6827ca8" class="figure">
+<p><img src="../extra/resnet_all.png" alt="resnet_all.png" />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org4c7b8d7" class="outline-3">
+<h3 id="org4c7b8d7"><span class="section-number-3">1.3</span> 示例代码</h3>
+<div class="outline-text-3" id="text-1-3">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">class</span> <span style="color: #b58900;">BasicBlock</span><span style="color: #757575;">(</span>tf.keras.Model<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> in_channels<span style="color: #757575;">,</span> out_channels<span style="color: #757575;">,</span> strides=1<span style="color: #757575;">)</span>:
+        <span style="color: #839496;">super</span><span style="color: #757575;">(</span>BasicBlock<span style="color: #757575;">,</span> <span style="color: #859900;">self</span><span style="color: #757575;">)</span>.__init__<span style="color: #757575;">()</span>
+        <span style="color: #859900;">self</span>.conv1 = tf.keras.layers.Conv2D<span style="color: #757575;">(</span>
+            out_channels<span style="color: #757575;">,</span>
+            kernel_size=3<span style="color: #757575;">,</span>
+            strides=strides<span style="color: #757575;">,</span>
+            padding=<span style="color: #2aa198;">"same"</span><span style="color: #757575;">,</span>
+            use_bias=<span style="color: #268bd2; font-weight: bold;">False</span><span style="color: #757575;">,</span>
+        <span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.bn1 = tf.keras.layers.BatchNormalization<span style="color: #757575;">()</span>
+
+        <span style="color: #859900;">self</span>.conv2 = tf.keras.layers.Conv2D<span style="color: #757575;">(</span>
+            out_channels<span style="color: #757575;">,</span>
+            kernel_size=3<span style="color: #757575;">,</span>
+            strides=1<span style="color: #757575;">,</span>
+            padding=<span style="color: #2aa198;">"same"</span><span style="color: #757575;">,</span>
+            use_bias=<span style="color: #268bd2; font-weight: bold;">False</span><span style="color: #757575;">,</span>
+        <span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.bn2 = tf.keras.layers.BatchNormalization<span style="color: #757575;">()</span>
+
+        <span style="color: #2aa198;">"""</span>
+<span style="color: #2aa198;">        Adds a shortcut between input and residual block and merges them with "sum"</span>
+<span style="color: #2aa198;">        """</span>
+        <span style="color: #859900;">if</span> strides != 1 <span style="color: #859900;">or</span> in_channels != out_channels:
+            <span style="color: #859900;">self</span>.shortcut = tf.keras.Sequential<span style="color: #757575;">(</span>
+                [
+                    tf.keras.layers.Conv2D<span style="color: #757575;">(</span>
+                        out_channels<span style="color: #757575;">,</span>
+                        kernel_size=1<span style="color: #757575;">,</span>
+                        strides=strides<span style="color: #757575;">,</span>
+                        use_bias=<span style="color: #268bd2; font-weight: bold;">False</span><span style="color: #757575;">,</span>
+                    <span style="color: #757575;">),</span>
+                    tf.keras.layers.BatchNormalization<span style="color: #757575;">(),</span>
+                ]
+            <span style="color: #757575;">)</span>
+        <span style="color: #859900;">else</span>:
+            <span style="color: #859900;">self</span>.shortcut = <span style="color: #859900;">lambda</span> x<span style="color: #757575;">,</span> _: x
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">call</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> x<span style="color: #757575;">,</span> training=<span style="color: #268bd2; font-weight: bold;">False</span><span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">out</span> = <span style="color: #859900;">self</span>.bn1<span style="color: #757575;">(</span><span style="color: #859900;">self</span>.conv1<span style="color: #757575;">(</span>x<span style="color: #757575;">),</span> training=training<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">out</span> = tf.nn.relu<span style="color: #757575;">(</span>out<span style="color: #757575;">)</span>
+        <span style="color: #859900;">if</span> training:
+            <span style="color: #268bd2;">out</span> = tf.nn.dropout<span style="color: #757575;">(</span>out<span style="color: #757575;">,</span> 0.1<span style="color: #757575;">)</span>
+            <span style="color: #268bd2;">out</span> = <span style="color: #859900;">self</span>.bn2<span style="color: #757575;">(</span><span style="color: #859900;">self</span>.conv2<span style="color: #757575;">(</span>out<span style="color: #757575;">),</span> training=training<span style="color: #757575;">)</span>
+            <span style="color: #268bd2;">out</span> = tf.nn.relu<span style="color: #757575;">(</span>out<span style="color: #757575;">)</span>
+        <span style="color: #859900;">if</span> training:
+            <span style="color: #268bd2;">out</span> = tf.nn.dropout<span style="color: #757575;">(</span>out<span style="color: #757575;">,</span> 0.1<span style="color: #757575;">)</span>
+            <span style="color: #268bd2;">out</span> += <span style="color: #859900;">self</span>.shortcut<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> training<span style="color: #757575;">)</span>
+        <span style="color: #859900;">return</span> tf.nn.relu<span style="color: #757575;">(</span>out<span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">ResNet</span><span style="color: #757575;">(</span>tf.keras.Model<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> block<span style="color: #757575;">,</span> num_blocks<span style="color: #757575;">,</span> num_classes=512<span style="color: #757575;">)</span>:
+        <span style="color: #839496;">super</span><span style="color: #757575;">(</span>ResNet<span style="color: #757575;">,</span> <span style="color: #859900;">self</span><span style="color: #757575;">)</span>.__init__<span style="color: #757575;">()</span>
+        <span style="color: #859900;">self</span>.in_channels = 32
+
+        <span style="color: #859900;">self</span>.conv1 = tf.keras.layers.Conv2D<span style="color: #757575;">(</span>
+            64<span style="color: #757575;">,</span>
+            3<span style="color: #757575;">,</span>
+            1<span style="color: #757575;">,</span>
+            padding=<span style="color: #2aa198;">"same"</span><span style="color: #757575;">,</span>
+            use_bias=<span style="color: #268bd2; font-weight: bold;">False</span><span style="color: #757575;">,</span>
+        <span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.bn1 = tf.keras.layers.BatchNormalization<span style="color: #757575;">()</span>
+
+        <span style="color: #859900;">self</span>.layer1 = <span style="color: #859900;">self</span>._make_layer<span style="color: #757575;">(</span>block<span style="color: #757575;">,</span> 64<span style="color: #757575;">,</span> num_blocks[0]<span style="color: #757575;">,</span> stride=1<span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.layer2 = <span style="color: #859900;">self</span>._make_layer<span style="color: #757575;">(</span>block<span style="color: #757575;">,</span> 128<span style="color: #757575;">,</span> num_blocks[1]<span style="color: #757575;">,</span> stride=2<span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.layer3 = <span style="color: #859900;">self</span>._make_layer<span style="color: #757575;">(</span>block<span style="color: #757575;">,</span> 256<span style="color: #757575;">,</span> num_blocks[2]<span style="color: #757575;">,</span> stride=2<span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.layer4 = <span style="color: #859900;">self</span>._make_layer<span style="color: #757575;">(</span>block<span style="color: #757575;">,</span> 512<span style="color: #757575;">,</span> num_blocks[3]<span style="color: #757575;">,</span> stride=2<span style="color: #757575;">)</span>
+
+        <span style="color: #859900;">self</span>.avg_pool2d = tf.keras.layers.AveragePooling2D<span style="color: #757575;">(</span>7<span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.linear = tf.keras.layers.Dense<span style="color: #757575;">(</span>units=num_classes<span style="color: #757575;">,</span> activation=<span style="color: #2aa198;">"softmax"</span><span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">_make_layer</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> block<span style="color: #757575;">,</span> out_channels<span style="color: #757575;">,</span> num_blocks<span style="color: #757575;">,</span> stride<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">strides</span> = [stride] + [1] * <span style="color: #757575;">(</span>num_blocks - 1<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">layers</span> = []
+        <span style="color: #859900;">for</span> stride <span style="color: #859900;">in</span> strides:
+            layers.append<span style="color: #757575;">(</span>block<span style="color: #757575;">(</span><span style="color: #859900;">self</span>.in_channels<span style="color: #757575;">,</span> out_channels<span style="color: #757575;">,</span> stride<span style="color: #757575;">))</span>
+            <span style="color: #859900;">self</span>.in_channels = out_channels
+        <span style="color: #859900;">return</span> tf.keras.Sequential<span style="color: #757575;">(</span>layers<span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">call</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> x<span style="color: #757575;">,</span> training=<span style="color: #268bd2; font-weight: bold;">False</span><span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">out</span> = tf.nn.relu<span style="color: #757575;">(</span><span style="color: #859900;">self</span>.bn1<span style="color: #757575;">(</span><span style="color: #859900;">self</span>.conv1<span style="color: #757575;">(</span>x<span style="color: #757575;">),</span> training<span style="color: #757575;">))</span>
+        <span style="color: #268bd2;">out</span> = <span style="color: #859900;">self</span>.layer1<span style="color: #757575;">(</span>out<span style="color: #757575;">,</span> training=training<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">out</span> = <span style="color: #859900;">self</span>.layer2<span style="color: #757575;">(</span>out<span style="color: #757575;">,</span> training=training<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">out</span> = <span style="color: #859900;">self</span>.layer3<span style="color: #757575;">(</span>out<span style="color: #757575;">,</span> training=training<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">out</span> = <span style="color: #859900;">self</span>.layer4<span style="color: #757575;">(</span>out<span style="color: #757575;">,</span> training=training<span style="color: #757575;">)</span>
+
+        <span style="color: #268bd2;">out</span> = <span style="color: #859900;">self</span>.avg_pool2d<span style="color: #757575;">(</span>out<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">out</span> = tf.keras.layers.Flatten<span style="color: #757575;">()(</span>out<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">out</span> = <span style="color: #859900;">self</span>.linear<span style="color: #757575;">(</span>out<span style="color: #757575;">)</span>
+        <span style="color: #859900;">return</span> out
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">ResNet18</span><span style="color: #757575;">(</span>nclass<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">return</span> ResNet<span style="color: #757575;">(</span>BasicBlock<span style="color: #757575;">,</span> [2<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 2]<span style="color: #757575;">,</span> num_classes=nclass<span style="color: #757575;">)</span>
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orga882e30" class="outline-3">
+<h3 id="orga882e30"><span class="section-number-3">1.4</span> <span class="todo WAIT">WAIT</span> bottleneck</h3>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

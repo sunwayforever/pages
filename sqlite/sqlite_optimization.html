@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 11:55 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Android SQLite Optimization Plan</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="孙伟" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Android SQLite Optimization Plan</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org6a4adec">1. Android SQLite Optimization Plan</a>
+<ul>
+<li><a href="#org9adc567">1.1. Benchmark tools</a></li>
+<li><a href="#orgf0c01e2">1.2. SQLite tuning</a>
+<ul>
+<li><a href="#org707369e">1.2.1. threading model</a></li>
+<li><a href="#org6b7126f">1.2.2. page size</a></li>
+<li><a href="#org7bfe0cd">1.2.3. cache size</a></li>
+<li><a href="#org50eed7e">1.2.4. synchronous</a></li>
+<li><a href="#org25e268b">1.2.5. in-memory db</a></li>
+<li><a href="#org422a37f">1.2.6. count change</a></li>
+<li><a href="#org9b8ec31">1.2.7. vacuum</a></li>
+<li><a href="#org823efce">1.2.8. &#x2026;</a></li>
+</ul>
+</li>
+<li><a href="#orga0d59b1">1.3. Best practice</a>
+<ul>
+<li><a href="#org1f1cf01">1.3.1. Sql best practice</a></li>
+<li><a href="#orgdd4f913">1.3.2. Android database api best practice</a></li>
+</ul>
+</li>
+<li><a href="#orgf0afd4f">1.4. Optimization</a>
+<ul>
+<li><a href="#orge4a4c52">1.4.1. Android framework optimization</a></li>
+<li><a href="#orgd8051ca">1.4.2. SQLite optimization</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org6a4adec" class="outline-2">
+<h2 id="org6a4adec"><span class="section-number-2">1</span> Android SQLite Optimization Plan</h2>
+<div class="outline-text-2" id="text-1">
+<blockquote>
+<p>
+Premature optimization is the root of all evil  &#x2013; Donald Knuth
+</p>
+</blockquote>
+
+<p>
+Before applying the `optimization', to my knowledge , the following
+topics should be carefully explored.
+</p>
+</div>
+
+<div id="outline-container-org9adc567" class="outline-3">
+<h3 id="org9adc567"><span class="section-number-3">1.1</span> Benchmark tools</h3>
+</div>
+
+<div id="outline-container-orgf0c01e2" class="outline-3">
+<h3 id="orgf0c01e2"><span class="section-number-3">1.2</span> SQLite tuning</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-org707369e" class="outline-4">
+<h4 id="org707369e"><span class="section-number-4">1.2.1</span> threading model</h4>
+</div>
+
+<div id="outline-container-org6b7126f" class="outline-4">
+<h4 id="org6b7126f"><span class="section-number-4">1.2.2</span> page size</h4>
+</div>
+
+<div id="outline-container-org7bfe0cd" class="outline-4">
+<h4 id="org7bfe0cd"><span class="section-number-4">1.2.3</span> cache size</h4>
+</div>
+
+<div id="outline-container-org50eed7e" class="outline-4">
+<h4 id="org50eed7e"><span class="section-number-4">1.2.4</span> synchronous</h4>
+</div>
+
+<div id="outline-container-org25e268b" class="outline-4">
+<h4 id="org25e268b"><span class="section-number-4">1.2.5</span> in-memory db</h4>
+</div>
+
+<div id="outline-container-org422a37f" class="outline-4">
+<h4 id="org422a37f"><span class="section-number-4">1.2.6</span> count change</h4>
+</div>
+
+<div id="outline-container-org9b8ec31" class="outline-4">
+<h4 id="org9b8ec31"><span class="section-number-4">1.2.7</span> vacuum</h4>
+</div>
+
+<div id="outline-container-org823efce" class="outline-4">
+<h4 id="org823efce"><span class="section-number-4">1.2.8</span> &#x2026;</h4>
+</div>
+</div>
+
+<div id="outline-container-orga0d59b1" class="outline-3">
+<h3 id="orga0d59b1"><span class="section-number-3">1.3</span> Best practice</h3>
+<div class="outline-text-3" id="text-1-3">
+</div>
+<div id="outline-container-org1f1cf01" class="outline-4">
+<h4 id="org1f1cf01"><span class="section-number-4">1.3.1</span> Sql best practice</h4>
+<div class="outline-text-4" id="text-1-3-1">
+</div>
+<div id="outline-container-orgefffeeb" class="outline-5">
+<h5 id="orgefffeeb"><span class="section-number-5">1.3.1.1</span> index</h5>
+</div>
+
+<div id="outline-container-orge90b3f0" class="outline-5">
+<h5 id="orge90b3f0"><span class="section-number-5">1.3.1.2</span> glob &amp; like</h5>
+</div>
+
+<div id="outline-container-orgf726fea" class="outline-5">
+<h5 id="orgf726fea"><span class="section-number-5">1.3.1.3</span> trigger</h5>
+</div>
+
+<div id="outline-container-org29b2cc1" class="outline-5">
+<h5 id="org29b2cc1"><span class="section-number-5">1.3.1.4</span> user functions</h5>
+</div>
+
+<div id="outline-container-org2e4cc6a" class="outline-5">
+<h5 id="org2e4cc6a"><span class="section-number-5">1.3.1.5</span> conflict resolution</h5>
+</div>
+
+<div id="outline-container-org23e8ce9" class="outline-5">
+<h5 id="org23e8ce9"><span class="section-number-5">1.3.1.6</span> join</h5>
+</div>
+
+<div id="outline-container-orge7f631b" class="outline-5">
+<h5 id="orge7f631b"><span class="section-number-5">1.3.1.7</span> explain query plan</h5>
+</div>
+
+<div id="outline-container-org37d128f" class="outline-5">
+<h5 id="org37d128f"><span class="section-number-5">1.3.1.8</span> &#x2026;</h5>
+</div>
+</div>
+
+<div id="outline-container-orgdd4f913" class="outline-4">
+<h4 id="orgdd4f913"><span class="section-number-4">1.3.2</span> Android database api best practice</h4>
+<div class="outline-text-4" id="text-1-3-2">
+</div>
+<div id="outline-container-org9f989fd" class="outline-5">
+<h5 id="org9f989fd"><span class="section-number-5">1.3.2.1</span> applyBatch</h5>
+</div>
+
+<div id="outline-container-org5ce352d" class="outline-5">
+<h5 id="org5ce352d"><span class="section-number-5">1.3.2.2</span> ContentProviderClient</h5>
+</div>
+
+<div id="outline-container-orga5306b9" class="outline-5">
+<h5 id="orga5306b9"><span class="section-number-5">1.3.2.3</span> withYieldAllowed</h5>
+</div>
+
+<div id="outline-container-orga6af580" class="outline-5">
+<h5 id="orga6af580"><span class="section-number-5">1.3.2.4</span> DatabaseUtils.insertHelper</h5>
+</div>
+
+<div id="outline-container-org39450ac" class="outline-5">
+<h5 id="org39450ac"><span class="section-number-5">1.3.2.5</span> DatabaseUtils.longForQuery</h5>
+</div>
+
+<div id="outline-container-org38815b5" class="outline-5">
+<h5 id="org38815b5"><span class="section-number-5">1.3.2.6</span> use SQLiteDatabase</h5>
+</div>
+
+<div id="outline-container-org320aab1" class="outline-5">
+<h5 id="org320aab1"><span class="section-number-5">1.3.2.7</span> notifyChange &amp; ContentObserver</h5>
+</div>
+
+<div id="outline-container-orgafda1ce" class="outline-5">
+<h5 id="orgafda1ce"><span class="section-number-5">1.3.2.8</span> CursorWindow</h5>
+</div>
+
+<div id="outline-container-orgab9832e" class="outline-5">
+<h5 id="orgab9832e"><span class="section-number-5">1.3.2.9</span> Multiple-process provider</h5>
+</div>
+
+<div id="outline-container-org0a830f0" class="outline-5">
+<h5 id="org0a830f0"><span class="section-number-5">1.3.2.10</span> &#x2026;</h5>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgf0afd4f" class="outline-3">
+<h3 id="orgf0afd4f"><span class="section-number-3">1.4</span> Optimization</h3>
+<div class="outline-text-3" id="text-1-4">
+</div>
+<div id="outline-container-orge4a4c52" class="outline-4">
+<h4 id="orge4a4c52"><span class="section-number-4">1.4.1</span> Android framework optimization</h4>
+<div class="outline-text-4" id="text-1-4-1">
+</div>
+<div id="outline-container-orgf9edd5f" class="outline-5">
+<h5 id="orgf9edd5f"><span class="section-number-5">1.4.1.1</span> Write Ahead Logging</h5>
+</div>
+
+<div id="outline-container-orgdfa9d25" class="outline-5">
+<h5 id="orgdfa9d25"><span class="section-number-5">1.4.1.2</span> Multiple connection</h5>
+</div>
+
+<div id="outline-container-org984e779" class="outline-5">
+<h5 id="org984e779"><span class="section-number-5">1.4.1.3</span> SQLiteDatabase locking model</h5>
+</div>
+
+<div id="outline-container-orgf93e82c" class="outline-5">
+<h5 id="orgf93e82c"><span class="section-number-5">1.4.1.4</span> &#x2026;</h5>
+</div>
+</div>
+
+<div id="outline-container-orgd8051ca" class="outline-4">
+<h4 id="orgd8051ca"><span class="section-number-4">1.4.2</span> SQLite optimization</h4>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

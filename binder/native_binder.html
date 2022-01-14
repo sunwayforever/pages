@@ -1,0 +1,318 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 11:55 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Native Binder</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Native Binder</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org3695b59">1. Native Binder</a>
+<ul>
+<li><a href="#org9603781">1.1. BpInterface</a></li>
+<li><a href="#org7ecd789">1.2. IInterface</a></li>
+<li><a href="#org1ab0aa7">1.3. BnInterface</a></li>
+<li><a href="#org99a78a6">1.4. BBinder</a></li>
+<li><a href="#org1e7078f">1.5. BpBinder</a></li>
+<li><a href="#org5c7b679">1.6. Binder Thread</a></li>
+<li><a href="#org97f1cdf">1.7. ProcessState</a>
+<ul>
+<li><a href="#org55707fd">1.7.1. StartThreadPool</a></li>
+</ul>
+</li>
+<li><a href="#orgdd7e131">1.8. IPCThreadState</a>
+<ul>
+<li><a href="#org95b0e70">1.8.1. joinThreadPool</a></li>
+<li><a href="#orgd79d81f">1.8.2. transact</a></li>
+<li><a href="#orgfc558ba">1.8.3. waitForResponse</a></li>
+</ul>
+</li>
+<li><a href="#orge247b0a">1.9. Parcel</a>
+<ul>
+<li><a href="#orgc16ec31">1.9.1. Parcle.freeData()</a></li>
+<li><a href="#orga3e9f26">1.9.2. flatten_binder</a></li>
+<li><a href="#org4c7279c">1.9.3. writeFileDescriptor</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+<div id="outline-container-org3695b59" class="outline-2">
+<h2 id="org3695b59"><span class="section-number-2">1</span> Native Binder</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org9603781" class="outline-3">
+<h3 id="org9603781"><span class="section-number-3">1.1</span> BpInterface</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+BpInterface:IInterface
+</p>
+
+<p>
+BpInterface resides in the proxy part, but it't nothing but an
+encapsulation of the remote IBinder (actually BpBinder)
+</p>
+
+<p>
+it's most import method is BpInterface.asInterface(IBinder) , it will
+implement those IXX.xx functions and dispatch them to
+BpBinder.transact().
+</p>
+</div>
+</div>
+
+<div id="outline-container-org7ecd789" class="outline-3">
+<h3 id="org7ecd789"><span class="section-number-3">1.2</span> IInterface</h3>
+</div>
+
+<div id="outline-container-org1ab0aa7" class="outline-3">
+<h3 id="org1ab0aa7"><span class="section-number-3">1.3</span> BnInterface</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+BnInterface:BBinder,IInterface so, BnInterface resides in the stub
+part, and mainly act as two parts:
+</p>
+
+<ol class="org-ol">
+<li>it extends IInterface, so it will implement IXX.xx functions</li>
+<li>it extends BBinder, so it will implement onTransact(), it will be
+called by BBinder.transact(), and will dispatch transact code to
+it's own IXX.xx functions.</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org99a78a6" class="outline-3">
+<h3 id="org99a78a6"><span class="section-number-3">1.4</span> BBinder</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+BBinder corresponds to BpBinder, it is the real stub part.
+</p>
+
+<p>
+when IPCThreadState discovers an IPC, it will call BBinder.transact(),
+which will call deprived class's (which is usually BnInterface)
+onTransact()
+</p>
+</div>
+</div>
+
+<div id="outline-container-org1e7078f" class="outline-3">
+<h3 id="org1e7078f"><span class="section-number-3">1.5</span> BpBinder</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+when BnInterface, as the stub part,is returned to client as IBinder
+through Parcel.writeStrongBinder and Parcel.readStrongBinder, the
+proxy part actually will get a BpBinder as IBinder (since both
+BpBinder and BBinder extends IBinder).
+</p>
+
+<p>
+To make it clear, BpInterface use BpBinder, and BnInterface extends
+BBinder
+</p>
+
+<p>
+BpBinder's most import method is transact(), which will call
+IPCThreadState.transact() to interact will binder driver.
+</p>
+
+<p>
+BpBinder's member variable `handle` could be used by the driver to
+distinguish it from other BpBinder and found the corresponding strub
+process.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org5c7b679" class="outline-3">
+<h3 id="org5c7b679"><span class="section-number-3">1.6</span> Binder Thread</h3>
+</div>
+
+<div id="outline-container-org97f1cdf" class="outline-3">
+<h3 id="org97f1cdf"><span class="section-number-3">1.7</span> ProcessState</h3>
+<div class="outline-text-3" id="text-1-7">
+<p>
+both the proxy and stub process has one and only one ProcessState.
+</p>
+
+<ol class="org-ol">
+<li>proxy part:</li>
+</ol>
+
+<p>
+BpBinder-&gt;transact()-&gt;IPCThreadState.transact()
+</p>
+
+<p>
+IPCThreadState need to use ProcessState to interact with binder driver
+</p>
+
+<ol class="org-ol">
+<li>stub part:</li>
+</ol>
+</div>
+
+<div id="outline-container-org55707fd" class="outline-4">
+<h4 id="org55707fd"><span class="section-number-4">1.7.1</span> StartThreadPool</h4>
+</div>
+</div>
+
+<div id="outline-container-orgdd7e131" class="outline-3">
+<h3 id="orgdd7e131"><span class="section-number-3">1.8</span> IPCThreadState</h3>
+<div class="outline-text-3" id="text-1-8">
+</div>
+<div id="outline-container-org95b0e70" class="outline-4">
+<h4 id="org95b0e70"><span class="section-number-4">1.8.1</span> joinThreadPool</h4>
+</div>
+<div id="outline-container-orgd79d81f" class="outline-4">
+<h4 id="orgd79d81f"><span class="section-number-4">1.8.2</span> transact</h4>
+</div>
+<div id="outline-container-orgfc558ba" class="outline-4">
+<h4 id="orgfc558ba"><span class="section-number-4">1.8.3</span> waitForResponse</h4>
+</div>
+</div>
+
+<div id="outline-container-orge247b0a" class="outline-3">
+<h3 id="orge247b0a"><span class="section-number-3">1.9</span> Parcel</h3>
+<div class="outline-text-3" id="text-1-9">
+</div>
+<div id="outline-container-orgc16ec31" class="outline-4">
+<h4 id="orgc16ec31"><span class="section-number-4">1.9.1</span> Parcle.freeData()</h4>
+<div class="outline-text-4" id="text-1-9-1">
+<pre class="example" id="org348bcee">
+Parcel::freeData()
+   Parecel::mOwner()
+     ioctl(BINDER_WRITE_READ) with BC_FREE_BUFFER
+      drv::binder_thread_write()
+          free buffer of the proc
+</pre>
+
+<p>
+Parcel::mOwner is actually a callback fun, it is registered to the
+parcel in BC_TRANSACTION (server got the data parcel) or BC_REPLY
+(client got the reply parcel), through `ipcSetDataReference`. The
+callback will ioctl to the driver the free the parcel.
+</p>
+
+<p>
+通常情况下 parcel 都不需要应用层主动去 free:
+</p>
+
+<ol class="org-ol">
+<li><p>
+对于 server 收到的 data parcel, IPCTheadState 负责调用 parcel 析构函数来 freeData
+</p>
+
+<pre class="example" id="org76b112d">
+IPCThreadState::executeCommand
+  case BR_TRANSACTION:
+    Parcel buffer;
+    buffer.ipcSetDataReference(...)
+    b-&gt;transact(tr.code, buffer, &amp;reply, tr.flags);
+    // server 的 transact() 返回后, buffer 的析构函数负责 freeData
+</pre></li>
+
+<li><p>
+对于 client 的 reply parcel, 应用需要自己控制, 但 aidl 生成的代码会帮助 java 应用去处理
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c">virtual <span style="color: #b58900;">status_t</span> <span style="color: #268bd2;">onAuthenticated</span><span style="color: #757575;">(</span><span style="color: #b58900;">int64_t</span> <span style="color: #268bd2;">devId</span><span style="color: #757575;">,</span> <span style="color: #b58900;">int32_t</span> <span style="color: #268bd2;">fpId</span><span style="color: #757575;">,</span> <span style="color: #b58900;">int32_t</span> <span style="color: #268bd2;">gpId</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">Parcel</span> <span style="color: #268bd2;">data</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">reply</span>;
+    data.writeInterfaceToken<span style="color: #757575;">(</span>IFingerprintDaemonCallback::getInterfaceDescriptor<span style="color: #757575;">())</span>;
+    data.writeInt64<span style="color: #757575;">(</span>devId<span style="color: #757575;">)</span>;
+    data.writeInt32<span style="color: #757575;">(</span>fpId<span style="color: #757575;">)</span>;
+    data.writeInt32<span style="color: #757575;">(</span>gpId<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> remote<span style="color: #757575;">()</span>-&gt;transact<span style="color: #757575;">(</span>ON_AUTHENTICATED<span style="color: #757575;">,</span> data<span style="color: #757575;">,</span> &amp;reply<span style="color: #757575;">,</span> IBinder::FLAG_ONEWAY<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">reply &#36825;&#37324;&#26512;&#26500;</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #268bd2; font-weight: bold;">@Override</span> <span style="color: #859900;">public</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">test</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">x</span><span style="color: #757575;">)</span> <span style="color: #859900;">throws</span> <span style="color: #268bd2; font-weight: bold;">android</span>.<span style="color: #268bd2; font-weight: bold;">os</span>.<span style="color: #b58900;">RemoteException</span>
+<span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">android</span>.<span style="color: #268bd2; font-weight: bold;">os</span>.<span style="color: #b58900;">Parcel</span> <span style="color: #268bd2;">_data</span> = <span style="color: #268bd2; font-weight: bold;">android</span>.<span style="color: #268bd2; font-weight: bold;">os</span>.Parcel.obtain<span style="color: #757575;">()</span>;
+    <span style="color: #268bd2; font-weight: bold;">android</span>.<span style="color: #268bd2; font-weight: bold;">os</span>.<span style="color: #b58900;">Parcel</span> <span style="color: #268bd2;">_reply</span> = <span style="color: #268bd2; font-weight: bold;">android</span>.<span style="color: #268bd2; font-weight: bold;">os</span>.Parcel.obtain<span style="color: #757575;">()</span>;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">_result</span>;
+    <span style="color: #859900;">try</span> <span style="color: #757575;">{</span>
+        _data.writeInterfaceToken<span style="color: #757575;">(</span>DESCRIPTOR<span style="color: #757575;">)</span>;
+        _data.writeInt<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>;
+        mRemote.transact<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">Stub</span>.TRANSACTION_test<span style="color: #757575;">,</span> _data<span style="color: #757575;">,</span> _reply<span style="color: #757575;">,</span> 0<span style="color: #757575;">)</span>;
+        _reply.readException<span style="color: #757575;">()</span>;
+        _result = _reply.readInt<span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">finally</span> <span style="color: #757575;">{</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36825;&#37324;&#20027;&#21160; recycle reply</span>
+        _reply.recycle<span style="color: #757575;">()</span>;       
+        _data.recycle<span style="color: #757575;">()</span>;        
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">return</span> _result;
+<span style="color: #757575;">}</span>
+</pre>
+</div></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orga3e9f26" class="outline-4">
+<h4 id="orga3e9f26"><span class="section-number-4">1.9.2</span> flatten_binder</h4>
+</div>
+
+<div id="outline-container-org4c7279c" class="outline-4">
+<h4 id="org4c7279c"><span class="section-number-4">1.9.3</span> writeFileDescriptor</h4>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

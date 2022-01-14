@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sql Injection</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Sql Injection</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org5207a31">1. Sql Injection</a>
+<ul>
+<li><a href="#org3d75ed3">1.1. 形式</a></li>
+<li><a href="#org0110c20">1.2. 检测</a>
+<ul>
+<li><a href="#org5008e68">1.2.1. escape</a></li>
+<li><a href="#orgf238c55">1.2.2. 参数化的查询</a></li>
+<li><a href="#org667a666">1.2.3. pattern check</a></li>
+<li><a href="#org099a866">1.2.4. 防火墙</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org5207a31" class="outline-2">
+<h2 id="org5207a31"><span class="section-number-2">1</span> Sql Injection</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org3d75ed3" class="outline-3">
+<h3 id="org3d75ed3"><span class="section-number-3">1.1</span> 形式</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+对于原始的 query:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sql"><span style="color: #859900;">statement</span> = "<span style="color: #859900;">SELECT</span> * <span style="color: #859900;">FROM</span> users <span style="color: #859900;">WHERE</span> <span style="color: #859900;">name</span> = <span style="color: #2aa198;">'" + userName + "'</span>;"
+</pre>
+</div>
+
+<p>
+用户可以通过输出 userName 生成下面的攻击:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sql"><span style="color: #859900;">SELECT</span> * <span style="color: #859900;">FROM</span> users <span style="color: #859900;">WHERE</span> <span style="color: #859900;">name</span> = <span style="color: #2aa198;">''</span> <span style="color: #859900;">OR</span> <span style="color: #2aa198;">'1'</span>=<span style="color: #2aa198;">'1'</span>;
+<span style="color: #859900;">SELECT</span> * <span style="color: #859900;">from</span> users <span style="color: #859900;">where</span> <span style="color: #859900;">name</span> = <span style="color: #2aa198;">'a'</span>;<span style="color: #859900;">DROP</span> <span style="color: #859900;">TABLE</span> users; <span style="color: #859900;">SELECT</span> * <span style="color: #859900;">FROM</span> userinfo <span style="color: #859900;">WHERE</span> <span style="color: #2aa198;">'t'</span> = <span style="color: #2aa198;">'t'</span>
+<span style="color: #859900;">SELECT</span> * <span style="color: #859900;">from</span> users <span style="color: #859900;">where</span> <span style="color: #859900;">name</span> = <span style="color: #2aa198;">'a'</span> <span style="color: #859900;">UNION</span> <span style="color: #859900;">SELECT</span> * <span style="color: #859900;">FROM</span> userinfo <span style="color: #859900;">WHERE</span> <span style="color: #2aa198;">'t'</span> = <span style="color: #2aa198;">'t'</span>
+</pre>
+</div>
+
+<p>
+通过使用 ";", "OR", "UNION" 等特殊字符构造 userName, 可以直接查到需要的信息.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0110c20" class="outline-3">
+<h3 id="org0110c20"><span class="section-number-3">1.2</span> 检测</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-org5008e68" class="outline-4">
+<h4 id="org5008e68"><span class="section-number-4">1.2.1</span> escape</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+对用户的输入中的特殊符号进行 escape, 包含 ";","'" 等
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf238c55" class="outline-4">
+<h4 id="orgf238c55"><span class="section-number-4">1.2.2</span> 参数化的查询</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<div class="org-src-container">
+<pre class="src src-sql"><span style="color: #859900;">SELECT</span> * <span style="color: #859900;">from</span> <span style="color: #839496;">user</span> <span style="color: #859900;">where</span> userName=<span style="color: #2aa198;">'?'</span>
+</pre>
+</div>
+
+<p>
+然后通过 sql 引擎的 bind 功能把用户输入 bind 到 statement 上. 即数据库引擎并不是把用户的输入做为语句来解析
+</p>
+</div>
+</div>
+
+<div id="outline-container-org667a666" class="outline-4">
+<h4 id="org667a666"><span class="section-number-4">1.2.3</span> pattern check</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<p>
+检查用户的输入是否包含特殊的字符
+</p>
+</div>
+</div>
+
+<div id="outline-container-org099a866" class="outline-4">
+<h4 id="org099a866"><span class="section-number-4">1.2.4</span> 防火墙</h4>
+<div class="outline-text-4" id="text-1-2-4">
+<p>
+像垃圾邮件过滤一样, 来自同一个 host 的多个失败或特殊的查询会导致该 host 被防火墙 block
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Try With Resources</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Try With Resources</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org53141bf">1. Try With Resources</a>
+<ul>
+<li><a href="#orgb889feb">1.1. try finally</a></li>
+<li><a href="#orgefc036e">1.2. try with resources</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org53141bf" class="outline-2">
+<h2 id="org53141bf"><span class="section-number-2">1</span> Try With Resources</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-orgb889feb" class="outline-3">
+<h3 id="orgb889feb"><span class="section-number-3">1.1</span> try finally</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+在 java 7 之前, 都会使用 try-finally 保证资源被释放:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java">System.out.println<span style="color: #757575;">(</span><span style="color: #2aa198;">"-----------------------"</span><span style="color: #757575;">)</span>;
+<span style="color: #b58900;">MyResource</span> <span style="color: #268bd2;">r</span> = <span style="color: #268bd2; font-weight: bold;">null</span>;
+<span style="color: #859900;">try</span> <span style="color: #757575;">{</span>
+    r = <span style="color: #859900;">new</span> <span style="color: #b58900;">MyResource</span><span style="color: #757575;">()</span>;
+    <span style="color: #859900;">throw</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">RuntimeException</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"running error"</span><span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+<span style="color: #859900;">finally</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>r != <span style="color: #268bd2; font-weight: bold;">null</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        r.close<span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+但有一个问题: 若 r.close() 时抛出了异常 A, 则整个函数会抛出 A, 而忽略了 `running
+error` 这个异常.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgefc036e" class="outline-3">
+<h3 id="orgefc036e"><span class="section-number-3">1.2</span> try with resources</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+为了解决上面的问题, java 7 定义了三个相关的东西:
+</p>
+
+<ol class="org-ol">
+<li>AutoClosable</li>
+<li>try-with-resources</li>
+<li>supressed exception</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">class</span> <span style="color: #b58900;">MyResource</span> <span style="color: #859900;">implements</span> <span style="color: #b58900;">AutoCloseable</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Override</span>
+    <span style="color: #859900;">public</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">close</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        System.out.println<span style="color: #757575;">(</span><span style="color: #2aa198;">"MyResource closed"</span><span style="color: #757575;">)</span>;
+        <span style="color: #859900;">throw</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">RuntimeException</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"close error"</span><span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+<span style="color: #859900;">public</span> <span style="color: #859900;">class</span> <span style="color: #b58900;">Test</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">testTry</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        System.out.println<span style="color: #757575;">(</span><span style="color: #2aa198;">"-----------------------"</span><span style="color: #757575;">)</span>;
+        <span style="color: #b58900;">MyResource</span> <span style="color: #268bd2;">r</span> = <span style="color: #268bd2; font-weight: bold;">null</span>;
+        <span style="color: #859900;">try</span> <span style="color: #757575;">{</span>
+            r = <span style="color: #859900;">new</span> <span style="color: #b58900;">MyResource</span><span style="color: #757575;">()</span>;
+            <span style="color: #859900;">throw</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">RuntimeException</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"running error"</span><span style="color: #757575;">)</span>;
+        <span style="color: #757575;">}</span>
+        <span style="color: #859900;">finally</span> <span style="color: #757575;">{</span>
+            <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>r != <span style="color: #268bd2; font-weight: bold;">null</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+                r.close<span style="color: #757575;">()</span>;
+            <span style="color: #757575;">}</span>
+        <span style="color: #757575;">}</span>
+    <span style="color: #757575;">}</span>
+
+    <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">testTryWithResource</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        System.out.println<span style="color: #757575;">(</span><span style="color: #2aa198;">"-----------------------"</span><span style="color: #757575;">)</span>;
+        <span style="color: #859900;">try</span> <span style="color: #757575;">(</span><span style="color: #b58900;">MyResource</span> <span style="color: #268bd2;">r</span> = <span style="color: #859900;">new</span> <span style="color: #b58900;">MyResource</span><span style="color: #757575;">())</span> <span style="color: #757575;">{</span>
+            <span style="color: #859900;">throw</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">RuntimeException</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"running error"</span><span style="color: #757575;">)</span>;
+        <span style="color: #757575;">}</span>
+    <span style="color: #757575;">}</span>
+
+    <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">testSurpressedException</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        System.out.println<span style="color: #757575;">(</span><span style="color: #2aa198;">"-----------------------"</span><span style="color: #757575;">)</span>;
+        <span style="color: #b58900;">RuntimeException</span> <span style="color: #268bd2;">e</span> = <span style="color: #859900;">new</span> <span style="color: #b58900;">RuntimeException</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"running error"</span><span style="color: #757575;">)</span>;
+        e.addSuppressed<span style="color: #757575;">(</span><span style="color: #859900;">new</span> <span style="color: #b58900;">RuntimeException</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"supressed 1"</span><span style="color: #757575;">))</span>;
+        e.addSuppressed<span style="color: #757575;">(</span><span style="color: #859900;">new</span> <span style="color: #b58900;">RuntimeException</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"supressed 2"</span><span style="color: #757575;">))</span>;
+        e.addSuppressed<span style="color: #757575;">(</span><span style="color: #859900;">new</span> <span style="color: #b58900;">RuntimeException</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"supressed 3"</span><span style="color: #757575;">))</span>;
+        <span style="color: #859900;">throw</span> e;
+    <span style="color: #757575;">}</span>
+
+    <span style="color: #859900;">public</span> <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">String</span> <span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">try</span> <span style="color: #757575;">{</span>
+            testTry<span style="color: #757575;">()</span>;
+        <span style="color: #757575;">}</span> <span style="color: #859900;">catch</span> <span style="color: #757575;">(</span><span style="color: #b58900;">Exception</span> <span style="color: #268bd2;">e</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            e.printStackTrace<span style="color: #757575;">(</span>System.out<span style="color: #757575;">)</span>;
+        <span style="color: #757575;">}</span>
+
+        <span style="color: #859900;">try</span> <span style="color: #757575;">{</span>
+            testTryWithResource<span style="color: #757575;">()</span>;
+        <span style="color: #757575;">}</span> <span style="color: #859900;">catch</span> <span style="color: #757575;">(</span><span style="color: #b58900;">Exception</span> <span style="color: #268bd2;">e</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            e.printStackTrace<span style="color: #757575;">(</span>System.out<span style="color: #757575;">)</span>;
+        <span style="color: #757575;">}</span>
+
+        <span style="color: #859900;">try</span> <span style="color: #757575;">{</span>
+            testSurpressedException<span style="color: #757575;">()</span>;
+        <span style="color: #757575;">}</span> <span style="color: #859900;">catch</span> <span style="color: #757575;">(</span><span style="color: #b58900;">Exception</span> <span style="color: #268bd2;">e</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            e.printStackTrace<span style="color: #757575;">(</span>System.out<span style="color: #757575;">)</span>;
+        <span style="color: #757575;">}</span>
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+</pre>
+</div>
+
+<hr />
+<p>
+MyResource closed
+java.lang.RuntimeException: close error
+	at MyResource.close(Test.java:5)
+	at Test.testTry(Test.java:18)
+	at Test.main(Test.java:41)
+</p>
+<hr />
+<p>
+MyResource closed
+java.lang.RuntimeException: running error
+	at Test.testTryWithResource(Test.java:26)
+	at Test.main(Test.java:47)
+	Suppressed: java.lang.RuntimeException: close error
+		at MyResource.close(Test.java:5)
+		at Test.testTryWithResource(Test.java:27)
+		&#x2026; 1 more
+</p>
+<hr />
+<p>
+java.lang.RuntimeException: running error
+	at Test.testSurpressedException(Test.java:32)
+	at Test.main(Test.java:53)
+	Suppressed: java.lang.RuntimeException: supressed 1
+		at Test.testSurpressedException(Test.java:33)
+		&#x2026; 1 more
+	Suppressed: java.lang.RuntimeException: supressed 2
+		at Test.testSurpressedException(Test.java:34)
+		&#x2026; 1 more
+	Suppressed: java.lang.RuntimeException: supressed 3
+		at Test.testSurpressedException(Test.java:35)
+		&#x2026; 1 more
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

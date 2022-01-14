@@ -1,0 +1,1277 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Linux Kernel: Ext2</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Linux Kernel: Ext2</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgc969f1c">1. Linux Kernel: Ext2</a>
+<ul>
+<li><a href="#org38e37bd">1.1. Ext2 的磁盘布局</a>
+<ul>
+<li><a href="#orgaa4e4ce">1.1.1. super block</a></li>
+<li><a href="#orgab6b2ec">1.1.2. group descriptors</a></li>
+<li><a href="#org09207c5">1.1.3. block bitmap</a></li>
+<li><a href="#orgc047476">1.1.4. inode bitmap</a></li>
+<li><a href="#org01caac7">1.1.5. inode table</a></li>
+</ul>
+</li>
+<li><a href="#orgc118347">1.2. 管理 Ext2 磁盘空间</a>
+<ul>
+<li><a href="#org3c6ab8c">1.2.1. 创建 inode</a></li>
+<li><a href="#orgf3b50ba">1.2.2. 删除 inode</a></li>
+<li><a href="#org89bc28a">1.2.3. data block</a></li>
+</ul>
+</li>
+<li><a href="#orgba9e140">1.3. Ext2 file holes</a>
+<ul>
+<li><a href="#orga297459">1.3.1. File holes on disk</a></li>
+<li><a href="#orgbe19484">1.3.2. Read from file holes</a></li>
+</ul>
+</li>
+<li><a href="#org2d54aa1">1.4. 使用 debugfs 观察磁盘布局</a></li>
+<li><a href="#orgf21b930">1.5. Journaling</a></li>
+<li><a href="#org7a2a183">1.6. Appendix</a>
+<ul>
+<li><a href="#org5a919cd">1.6.1. immutable files</a></li>
+<li><a href="#org510d998">1.6.2. reserved block</a></li>
+<li><a href="#org0cacb08">1.6.3. Ext2 directory layout</a></li>
+<li><a href="#org10bf944">1.6.4. extended attribute</a></li>
+<li><a href="#org028d903">1.6.5. bitmap 如何被 sync 到磁盘</a></li>
+<li><a href="#org57fdd3d">1.6.6. Ext2 会占用多少磁盘空间</a></li>
+<li><a href="#orgf6947b3">1.6.7. Utility</a></li>
+</ul>
+</li>
+<li><a href="#orgbab107c">1.7. See also</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+<div id="outline-container-orgc969f1c" class="outline-2">
+<h2 id="orgc969f1c"><span class="section-number-2">1</span> Linux Kernel: Ext2</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org38e37bd" class="outline-3">
+<h3 id="org38e37bd"><span class="section-number-3">1.1</span> Ext2 的磁盘布局</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+Ext2 将磁盘分割为几个连续的, 大小相同的 block group, 每个 group 的结构为:
+</p>
+
+<ol class="org-ol">
+<li><p>
+super block
+</p>
+
+<p>
+ 占一个 block (如果没有特别说明, 这里及以后所指的的 block 都是指
+mkfs 时指定的 block size, 与物理设备的 block (sector)无关)
+</p></li>
+
+<li><p>
+group descriptors
+</p>
+
+<p>
+ 占用多个 block, 表示所有的 group 的相关信息 (而并非仅保存当前
+group 的信息)
+</p></li>
+
+<li><p>
+block bitmap
+</p>
+
+<p>
+占一个 block
+</p></li>
+
+<li><p>
+inode bitmap
+</p>
+
+<p>
+一个 block
+</p></li>
+
+<li><p>
+inode table
+</p>
+
+<p>
+占用多个 block
+</p></li>
+
+<li><p>
+data blocks
+</p>
+
+<p>
+占用多个 block 直到 group 末尾
+</p></li>
+</ol>
+
+<p>
+之所以分成许多 group, 是为了减少外部碎片: 对于同一个文件, 尽是分配在同一个 group.
+</p>
+</div>
+
+<div id="outline-container-orgaa4e4ce" class="outline-4">
+<h4 id="orgaa4e4ce"><span class="section-number-4">1.1.1</span> super block</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+super block 和 group descriptors 在每个 group 都有一个, 但平时只有
+group 0 的 super block 会被使用, 其它 group 的都是备份, 和 fsck 有关
+</p>
+
+<p>
+super block 的主要成员:
+</p>
+
+<ol class="org-ol">
+<li><p>
+s_inodes_count
+</p>
+
+<p>
+文件系统能容纳的最大的 inode 个数
+</p></li>
+
+<li><p>
+s_block_count
+</p>
+
+<p>
+文件系统的大小
+</p></li>
+
+<li><p>
+s_r_blocks_count
+</p>
+
+<p>
+reserved 的 block 数目
+</p></li>
+
+<li><p>
+s_groups_count
+</p>
+
+<p>
+group 数目
+</p></li>
+
+<li><p>
+s_free_inodes_count
+</p>
+
+<p>
+可用的 inode 数, s_free_inodes_count/s_groups_count 可计算出每个
+group 平均的 inode 数, 后续创建 inode 时会根据这个值选择相应的 group
+</p></li>
+
+<li><p>
+s_free_blocks_count
+</p>
+
+<p>
+可用的 block 数
+</p></li>
+
+<li><p>
+s_log_block_size
+</p>
+
+<p>
+block 大小
+</p></li>
+
+<li><p>
+s_blocks_per_group
+</p>
+
+<p>
+每个 group 的 block 数
+</p></li>
+
+<li><p>
+s_inodes_per_group
+</p>
+
+<p>
+每个 group 的 inode 数
+</p></li>
+
+<li><p>
+s_mtime/s_wtime
+</p>
+
+<p>
+最近的 mount 时间和修改时间
+</p></li>
+
+<li><p>
+s_mnt_count
+</p>
+
+<p>
+mount 次数
+</p></li>
+
+<li><p>
+s_def_resuid/s_def_resgid
+</p>
+
+<p>
+可用使用 reserved block 的 uid/gid
+</p></li>
+
+<li><p>
+s_last_mounted
+</p>
+
+<p>
+最近一次被挂载到哪
+</p></li>
+</ol>
+
+<p>
+super block 的这些成员大多是运行时的统计信息, 但有一些是需要用户通过
+mkfs 或 tune2fs 指定的:
+</p>
+
+<ol class="org-ol">
+<li><p>
+s_r_blocks_count
+</p>
+
+<p>
+默认的 reserved block 数目是 s_block_count 的 5%
+</p></li>
+
+<li><p>
+s_log_block_size
+</p>
+
+<p>
+block 大小默认为 1024B
+</p></li>
+
+<li><p>
+s_blocks_per_group
+</p>
+
+<p>
+大小和 block 大小有关: 因为一个 group 只用一个 block 来保存 block
+bitmap, 所以对于 1024B 的 block 来说, block bitmap 最多只能表示
+1024*8*1024=8MB 的大小, 即 1024*8 = 8192 个 block
+</p></li>
+
+<li><p>
+s_inodes_per_group
+</p>
+
+<p>
+和磁盘大小有关, 默认情况下, 每个 inode 需要至少 8KB, 所以假设 block
+size 为 1K, 若磁盘大小为 256K, 则 inode 总数是 256/8 = 32, group 为
+1, s_inodes_per_group 为 32.
+</p></li>
+
+<li>s_def_resuid/s_def_resgid</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgab6b2ec" class="outline-4">
+<h4 id="orgab6b2ec"><span class="section-number-4">1.1.2</span> group descriptors</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+group descriptors 是一系列的 group descriptor 的集合, 占用多个 block,
+每个 group descriptor 的成员包括:
+</p>
+
+<ol class="org-ol">
+<li><p>
+bg_block_bitmap
+</p>
+
+<p>
+block bitmap 对应的 block number
+</p></li>
+
+<li><p>
+bg_inode_bitmap
+</p>
+
+<p>
+inode bitamp 对应的 block number
+</p></li>
+
+<li><p>
+bg_inode_table
+</p>
+
+<p>
+inode table 起始 block 对应的 block number, 因为有
+s_inodes_per_group, 所以这里不需要记录 inode table 的大小
+</p></li>
+
+<li>&#x2026;</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org09207c5" class="outline-4">
+<h4 id="org09207c5"><span class="section-number-4">1.1.3</span> block bitmap</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<p>
+block bitmap 占用一个 block, 记录的是 group 所有 data block 是否已经分配, 这个 block 的大小决定了每个 group 能容纳多少 data block.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgc047476" class="outline-4">
+<h4 id="orgc047476"><span class="section-number-4">1.1.4</span> inode bitmap</h4>
+<div class="outline-text-4" id="text-1-1-4">
+<p>
+占用一个 block, 记录 group 的某个 inode 是否已经被使用.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org01caac7" class="outline-4">
+<h4 id="org01caac7"><span class="section-number-4">1.1.5</span> inode table</h4>
+<div class="outline-text-4" id="text-1-1-5">
+<p>
+占用多个 block, 这个 table 中每一项都是一个 128B 的 inode 结构, 所以
+inode table 占用的 block 数 = (128 / s_log_block_size ) *
+s_inodes_per_group
+</p>
+
+<p>
+由于每个 group 的 inode table 大小都是相同的, 所以 Ext2 的 inode
+number 是这样实现的: 对 group x 的 inode table 中的第 y 个 inode, 其
+inode number 为: x * s_inodes_per_group + y, 反之, 根据 inode number 可以很快找到对应的 group 和 inode table 中对应的 inode
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgc118347" class="outline-3">
+<h3 id="orgc118347"><span class="section-number-3">1.2</span> 管理 Ext2 磁盘空间</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-org3c6ab8c" class="outline-4">
+<h4 id="org3c6ab8c"><span class="section-number-4">1.2.1</span> 创建 inode</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+创建 inode 的过程主要是需要分配一个 inode number, 或者说找到一个合适的
+group, 并且在这个 group 的 inode table 中找到某一个 entry.
+</p>
+
+<p>
+大约的函数调用为:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">ext2_new_inode</span>:
+  inode = new_inode<span style="color: #757575;">(</span>sb<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25214;&#19968;&#20010;&#21512;&#36866;&#30340; group</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>S_ISDIR<span style="color: #757575;">(</span>mode<span style="color: #757575;">))</span>:
+    group = find_group_orlov<span style="color: #757575;">(</span>sb<span style="color: #757575;">,</span> dir<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">else</span>:
+    group = find_group_other<span style="color: #757575;">(</span>sb<span style="color: #757575;">,</span> dir<span style="color: #757575;">)</span>;
+  bitmap_bh = read_inode_bitmap<span style="color: #757575;">(</span>sb<span style="color: #757575;">,</span> group<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36890;&#36807; inode bitmap &#25214;&#19968;&#20010;&#21487;&#29992;&#30340; inode table entry</span>
+  ino = ext2_find_next_zero_bit<span style="color: #757575;">((</span><span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">long</span> *<span style="color: #757575;">)</span>bitmap_bh-&gt;b_data<span style="color: #757575;">,</span> EXT2_INODES_PER_GROUP<span style="color: #757575;">(</span>sb<span style="color: #757575;">),</span> ino<span style="color: #757575;">)</span>;
+  <span style="color: #268bd2;">ext2_set_bit_atomic</span><span style="color: #757575;">(</span>sb_bgl_lock<span style="color: #757575;">(</span><span style="color: #b58900;">sbi</span><span style="color: #757575;">,</span> <span style="color: #b58900;">group</span><span style="color: #757575;">),</span><span style="color: #b58900;">ino</span><span style="color: #757575;">,</span> bitmap_bh-&gt;b_data<span style="color: #757575;">)</span>
+  <span style="color: #268bd2;">mark_buffer_dirty</span><span style="color: #757575;">(</span><span style="color: #b58900;">bitmap_bh</span><span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#35745;&#31639; inode number</span>
+  ino += group * EXT2_INODES_PER_GROUP<span style="color: #757575;">(</span>sb<span style="color: #757575;">)</span> + 1;
+  inode-&gt;i_ino = ino;
+  inode-&gt;i_uid = current-&gt;fsuid;
+  inode-&gt;i_mode = mode;
+  inode-&gt;i_mtime = inode-&gt;i_atime = inode-&gt;i_ctime = CURRENT_TIME_SEC;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+  <span style="color: #859900;">return</span> inode
+</pre>
+</div>
+
+<p>
+创建 inode 最主要的过程是查找一个`合适`的 group (find_group_xxx), 该过程使用如下的 heuristic:
+</p>
+
+<ol class="org-ol">
+<li>若新建的 inode 对应一个目录:
+
+<ol class="org-ol">
+<li>若 parent 是 root inode, 则 inode 会尽量平均分布在各个 group: 选择 free inode 和 free block 大于平均值的 group</li>
+
+<li>对于 parent 不是 root 的 inode, 会尽量选择 parent inode 所在的
+group, 除非这个 group 有太多的目录或者 free inode 已经很少</li>
+
+<li>做为 1 和 2 的 fallback, 如果 1 和 2 没有找到合适的 group, 则从
+parent inode 所在的 group 开始, 找一个 free inode 大于平均值的
+group</li>
+</ol></li>
+
+<li><p>
+若新建 inode 是一个文件:
+</p>
+
+<p>
+从 parent inode 所在的 group 开始 (假设为 i), 跳跃式的查找一个可用的 inode, 大约是这样跳的: i, i+1, i+1+2, i+1+2+4 &#x2026;, 代码如下:
+</p>
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">for</span> <span style="color: #757575;">(</span>i = 1; i &lt; ngroups; i &lt;&lt;= 1<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    group += i;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>group &gt;= ngroups<span style="color: #757575;">)</span>
+        group -= ngroups;
+    desc = ext2_get_group_desc <span style="color: #757575;">(</span>sb<span style="color: #757575;">,</span> group<span style="color: #757575;">,</span> &amp;bh<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>desc &amp;&amp; le16_to_cpu<span style="color: #757575;">(</span>desc-&gt;bg_free_inodes_count<span style="color: #757575;">)</span> &amp;&amp;
+        le16_to_cpu<span style="color: #757575;">(</span>desc-&gt;bg_free_blocks_count<span style="color: #757575;">))</span>
+        <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">found</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+若上面的查找失败, 进行线性查找:
+</p>
+<div class="org-src-container">
+<pre class="src src-c">group = parent_group;
+<span style="color: #859900;">for</span> <span style="color: #757575;">(</span>i = 0; i &lt; ngroups; i++<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>++group &gt;= ngroups<span style="color: #757575;">)</span>
+        group = 0;
+    desc = ext2_get_group_desc <span style="color: #757575;">(</span>sb<span style="color: #757575;">,</span> group<span style="color: #757575;">,</span> &amp;bh<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36825;&#37324;&#24182;&#19981;&#38656;&#35201; group &#26377; free block ..., &#22240;&#20026;&#26497;&#26377;&#21487;&#33021;&#25214;&#19981;&#21040;&#36825;&#26679;&#30340;</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">group</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>desc &amp;&amp; le16_to_cpu<span style="color: #757575;">(</span>desc-&gt;bg_free_inodes_count<span style="color: #757575;">))</span>
+        <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">found</span>;
+<span style="color: #757575;">}</span>
+
+</pre>
+</div></li>
+</ol>
+
+<p>
+总的来说, find group 主要的逻辑是:
+</p>
+
+<ol class="org-ol">
+<li>inode 尽量与 parent inode 位于同一个 group</li>
+
+<li>inode 尽量的分散到不同的 group</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgf3b50ba" class="outline-4">
+<h4 id="orgf3b50ba"><span class="section-number-4">1.2.2</span> 删除 inode</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<p>
+ext2_free_inode 负责删除 inode 本身 (修改 inode bitmap), 至于 unlink
+和 rmdir 相关的其它逻辑, 比如通过 link count 决定是否需要真正删除
+inode, 修改 parent directory 的 dentry, 删除 inode 的 data block, 以及判断目录是否为空等由其它函数实现, ext2_free_inode 被调用时可以认为之前的动作已经完成.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">ext2_free_inode</span>:
+  block_group = <span style="color: #757575;">(</span>ino - 1<span style="color: #757575;">)</span> / EXT2_INODES_PER_GROUP<span style="color: #757575;">(</span>sb<span style="color: #757575;">)</span>;
+  bit = <span style="color: #757575;">(</span>ino - 1<span style="color: #757575;">)</span> % EXT2_INODES_PER_GROUP<span style="color: #757575;">(</span>sb<span style="color: #757575;">)</span>;
+  bitmap_bh = read_inode_bitmap<span style="color: #757575;">(</span>sb<span style="color: #757575;">,</span> block_group<span style="color: #757575;">)</span>;
+  <span style="color: #268bd2;">ext2_clear_bit_atomic</span><span style="color: #757575;">(</span>sb_bgl_lock<span style="color: #757575;">(</span><span style="color: #b58900;">EXT2_SB</span><span style="color: #757575;">(</span><span style="color: #268bd2;">sb</span><span style="color: #757575;">),</span> <span style="color: #b58900;">block_group</span><span style="color: #757575;">),</span><span style="color: #b58900;">bit</span><span style="color: #757575;">,</span> <span style="color: #757575;">(</span><span style="color: #b58900;">void</span> *<span style="color: #757575;">)</span> bitmap_bh-&gt;b_data<span style="color: #757575;">))</span>
+  <span style="color: #268bd2;">ext2_release_inode</span><span style="color: #757575;">(</span><span style="color: #b58900;">sb</span><span style="color: #757575;">,</span> <span style="color: #b58900;">block_group</span><span style="color: #757575;">,</span> <span style="color: #b58900;">is_directory</span><span style="color: #757575;">)</span>;
+    desc = ext2_get_group_desc<span style="color: #757575;">(</span>sb<span style="color: #757575;">,</span> group<span style="color: #757575;">,</span> &amp;bh<span style="color: #757575;">)</span>;
+    desc-&gt;bg_free_inodes_count = cpu_to_le16<span style="color: #757575;">(</span>le16_to_cpu<span style="color: #757575;">(</span>desc-&gt;bg_free_inodes_count<span style="color: #757575;">)</span> + 1<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>dir<span style="color: #757575;">)</span>:
+      desc-&gt;bg_used_dirs_count = cpu_to_le16<span style="color: #757575;">(</span>le16_to_cpu<span style="color: #757575;">(</span>desc-&gt;bg_used_dirs_count<span style="color: #757575;">)</span> - 1<span style="color: #757575;">)</span>;
+    <span style="color: #268bd2;">mark_buffer_dirty</span><span style="color: #757575;">(</span><span style="color: #b58900;">bh</span><span style="color: #757575;">)</span>;
+  <span style="color: #268bd2;">mark_buffer_dirty</span><span style="color: #757575;">(</span><span style="color: #b58900;">bitmap_bh</span><span style="color: #757575;">)</span>;
+</pre>
+</div>
+
+<p>
+unlink 调用 ext2_free_inode 的逻辑为:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">sys_unlink</span>:
+  <span style="color: #268bd2;">path_lookup</span><span style="color: #757575;">(</span><span style="color: #b58900;">name</span><span style="color: #757575;">,</span> <span style="color: #b58900;">LOOKUP_PARENT</span><span style="color: #757575;">,</span> &amp;nd<span style="color: #757575;">)</span>;
+  <span style="color: #268bd2;">vfs_unlink</span><span style="color: #757575;">(</span>nd.dentry-&gt;d_inode<span style="color: #757575;">,</span> <span style="color: #b58900;">dentry</span><span style="color: #757575;">)</span>;
+    <span style="color: #268bd2;">ext2_unlink</span> <span style="color: #757575;">()</span>
+      <span style="color: #268bd2;">ext2_delete_entry</span> <span style="color: #757575;">(</span><span style="color: #b58900;">de</span><span style="color: #757575;">,</span> <span style="color: #b58900;">page</span><span style="color: #757575;">)</span>;
+      <span style="color: #268bd2;">ext2_dec_count</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">)</span>;
+  <span style="color: #268bd2;">iput</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">)</span>;  <span style="color: #586e75;">/* </span><span style="color: #586e75;">truncate the inode here</span><span style="color: #586e75;"> */</span>
+    <span style="color: #268bd2;">iput_final</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">generic_drop_inode</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">)</span>
+      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>inode-&gt;i_nlink<span style="color: #757575;">)</span>:
+        generic_delete_inode<span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span>;
+          <span style="color: #268bd2;">ext2_delete_inode</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">)</span>
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">ext2_truncate &#37322;&#25918; inode &#30340; data blocks (&#23450;&#20301; inode &#25152;</span>
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">&#26377;&#30340; block &#24182;&#20462;&#25913; block bitmap)</span>
+            <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>inode-&gt;i_blocks<span style="color: #757575;">)</span>:
+              ext2_truncate <span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span>;
+            <span style="color: #268bd2;">ext2_free_inode</span> <span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org89bc28a" class="outline-4">
+<h4 id="org89bc28a"><span class="section-number-4">1.2.3</span> data block</h4>
+<div class="outline-text-4" id="text-1-2-3">
+</div>
+<div id="outline-container-org5b24ba9" class="outline-5">
+<h5 id="org5b24ba9"><span class="section-number-5">1.2.3.1</span> Locate data block</h5>
+<div class="outline-text-5" id="text-1-2-3-1">
+<p>
+一个 inode 对应的 data block 通过 ext2_inode-&gt;i_block[EXT2_N_BLOCKS]
+来定位, EXT2_N_BLOCKS 为 15, 其中:
+</p>
+
+<ol class="org-ol">
+<li>0~11 是直接索引</li>
+<li>12 是一级间接索引</li>
+<li>13 是二级间接索引</li>
+<li>14 是三级间接索引</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">EXT2_NDIR_BLOCKS</span>        12
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">EXT2_IND_BLOCK</span>          EXT2_NDIR_BLOCKS
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">EXT2_DIND_BLOCK</span>         <span style="color: #757575;">(</span>EXT2_IND_BLOCK + 1<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">EXT2_TIND_BLOCK</span>         <span style="color: #757575;">(</span>EXT2_DIND_BLOCK + 1<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">EXT2_N_BLOCKS</span>           <span style="color: #757575;">(</span>EXT2_TIND_BLOCK + 1<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+假设 block size 为 1K, 则能定位的最大单个文件大小为:
+</p>
+
+<pre class="example" id="orgc3e70a9">
+12 * 1K + 1 * 256 * 1K + 1 * 256^2 * 1K + 1 * 256^3 * 1K = 16G
+</pre>
+
+<p>
+其中 256 指一个 block (1K) 能保存 256 个 block 指针 (block 指针类型为__le32)
+</p>
+
+<p>
+若 block size 为 4K, 则最大文件大小为 4T
+</p>
+
+<p>
+实际上 ext2 支持的最大单个文件大小是 2T 而不是 4T, 2T 的限制来源于
+ext2_inode-&gt;i_blocks, 这个值表示的是 sector 的大小, 所以 4B 的
+i_blocks 最多只能表示 2T.
+</p>
+
+<p>
+另外, 由于 block number 是 4B 大小, 所以 ext2 支持的最大文件系统大小为
+4G * 8K = 32 T (ext2 最大可以使用 8K 做为 block size)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">ext2_get_block</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">inode</span> *<span style="color: #268bd2;">inode</span><span style="color: #757575;">,</span> <span style="color: #b58900;">sector_t</span> <span style="color: #268bd2;">iblock</span><span style="color: #757575;">,</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">buffer_head</span> *<span style="color: #268bd2;">bh_result</span><span style="color: #757575;">,</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">create</span><span style="color: #757575;">)</span>:
+  <span style="color: #b58900;">int</span> offsets[4];
+  <span style="color: #b58900;">Indirect</span> <span style="color: #268bd2;">chain</span>[4];
+  <span style="color: #b58900;">Indirect</span> *<span style="color: #268bd2;">partial</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">ext2_block_to_path &#20316;&#29992;&#26159;&#23558; iblock &#36716;&#25442;&#20026;&#19968;&#20010; offsets &#25968;&#32452;, &#36825;&#20010;&#25968;&#32452;&#20013;&#30340;&#31532; n &#39033;&#34920;&#31034;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#31532; n &#32423; indirect block &#22312; n-1 &#32423; indirect block &#20013;&#30340; offset, &#20363;&#22914;:</span>
+  <span style="color: #586e75;">// </span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509; iblock &#20026; 11, &#32780; offset[0] = 11, &#36820;&#22238; depth = 1</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509; iblock &#20026; 12, &#21017; offset[0] = 12 (EXT2_IND_BLOCK), offset[1] = 0, depth = 2</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509; iblock &#20026; 13, &#21017; offset[0] = 12, offset[1] = 1, depth = 2</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36825;&#20010;&#36807;&#31243;&#19981;&#38656;&#35201;&#20570; IO</span>
+  <span style="color: #b58900;">int</span> <span style="color: #268bd2;">depth</span> = ext2_block_to_path<span style="color: #757575;">(</span>inode<span style="color: #757575;">,</span> iblock<span style="color: #757575;">,</span> offsets<span style="color: #757575;">,</span> &amp;boundary<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>i_block &lt; 0<span style="color: #757575;">)</span>:
+      ext2_warning <span style="color: #757575;">(</span>inode-&gt;i_sb<span style="color: #757575;">,</span> <span style="color: #2aa198;">"ext2_block_to_path"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"block &lt; 0"</span><span style="color: #757575;">)</span>;
+    <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>i_block &lt; direct_blocks<span style="color: #757575;">)</span>:
+      offsets[n++] = i_block;
+      final = direct_blocks;
+    <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span> <span style="color: #757575;">(</span>i_block -= direct_blocks<span style="color: #757575;">)</span> &lt; indirect_blocks<span style="color: #757575;">)</span>:
+      offsets[n++] = EXT2_IND_BLOCK;
+      <span style="color: #b58900;">offsets</span>[n++] = i_block;
+      final = ptrs;
+    <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">((</span>i_block -= indirect_blocks<span style="color: #757575;">)</span> &lt; double_blocks<span style="color: #757575;">)</span>:
+      offsets[n++] = EXT2_DIND_BLOCK;
+      <span style="color: #b58900;">offsets</span>[n++] = i_block &gt;&gt; ptrs_bits;
+      <span style="color: #b58900;">offsets</span>[n++] = i_block &amp; <span style="color: #757575;">(</span>ptrs - 1<span style="color: #757575;">)</span>;
+      final = ptrs;
+    <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(((</span>i_block -= double_blocks<span style="color: #757575;">)</span> &gt;&gt; <span style="color: #757575;">(</span>ptrs_bits * 2<span style="color: #757575;">))</span> &lt; ptrs<span style="color: #757575;">)</span>:
+      offsets[n++] = EXT2_TIND_BLOCK;
+      <span style="color: #b58900;">offsets</span>[n++] = i_block &gt;&gt; <span style="color: #757575;">(</span>ptrs_bits * 2<span style="color: #757575;">)</span>;
+      <span style="color: #b58900;">offsets</span>[n++] = <span style="color: #757575;">(</span>i_block &gt;&gt; ptrs_bits<span style="color: #757575;">)</span> &amp; <span style="color: #757575;">(</span>ptrs - 1<span style="color: #757575;">)</span>;
+      <span style="color: #b58900;">offsets</span>[n++] = i_block &amp; <span style="color: #757575;">(</span>ptrs - 1<span style="color: #757575;">)</span>;
+      final = ptrs;
+    <span style="color: #859900;">return</span> n
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>depth == 0<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">out</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25226;&#25972;&#20010; iblock[] &#21450;&#20854; indirect blocks &#30475;&#20570;&#19968;&#26869;&#26641;&#30340;&#35805;, &#19978;&#19968;&#27493;&#35745;&#31639;&#30340;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">offsets &#25968;&#32452;&#30456;&#24403;&#20110;&#19968;&#20010;&#36941;&#21382;&#36825;&#20010;&#26641;&#30340;&#32034;&#24341;, &#19979;&#19968;&#27493;&#30340; ext2_get_branch</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#38656;&#35201;&#26681;&#25454;&#36825;&#20010;&#32034;&#24341;&#20174;&#30913;&#30424;&#35835;&#21462;&#30456;&#24212;&#30340; block, &#23558;&#32467;&#26524;&#20445;&#23384;&#22312; chain[] &#20013;,</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">chain &#19982; offsets &#26159;&#23545;&#24212;&#30340;: chain[depth-1] &#23601;&#26159;&#26368;&#32456; get_block &#38656;&#35201;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#30340; block</span>
+  partial = ext2_get_branch<span style="color: #757575;">(</span>inode<span style="color: #757575;">,</span> depth<span style="color: #757575;">,</span> offsets<span style="color: #757575;">,</span> chain<span style="color: #757575;">,</span> &amp;err<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">/* </span><span style="color: #586e75;">Simplest case - block found, no allocation needed</span><span style="color: #586e75;"> */</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>partial<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">map_bh &#20250;&#23558; bh_result &#35774;&#32622;&#20026; BH_mapped</span>
+    map_bh<span style="color: #757575;">(</span>bh_result<span style="color: #757575;">,</span> inode-&gt;i_sb<span style="color: #757575;">,</span> le32_to_cpu<span style="color: #757575;">(</span>chain[depth-1].key<span style="color: #757575;">))</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orge56f1a0" class="outline-5">
+<h5 id="orge56f1a0"><span class="section-number-5">1.2.3.2</span> Allocate data block</h5>
+<div class="outline-text-5" id="text-1-2-3-2">
+<p>
+分配 data block 与分配 inode 类似, 也是使用了某种 heuristic. 与分配
+inode 不同的是, 分配 data block 主要考虑的是 locality, 简单的说:
+</p>
+
+<ol class="org-ol">
+<li>能连续分配的尽量连续分配</li>
+<li>同一个 inode 的 block 应该尽量分配在一起</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">ext2_get_block</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20551;&#35774;&#21069;&#38754;&#30340;&#20195;&#30721;&#27809;&#26377;&#25214;&#21040;&#23545;&#24212;&#30340; block, &#35828;&#26126;&#38656;&#35201;&#20998;&#37197;&#19968;&#20010;&#26032;&#30340; block</span>
+
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">ext2_find_goal &#29992;&#26469;&#25214;&#19968;&#20010; block &#20316;&#20026; goal, &#23427;&#24182;&#19981;&#20851;&#24515;&#36825;&#20010; goal</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#26159;&#21542;&#24050;&#32463;&#34987;&#21344;&#29992;, &#21482;&#26159;&#20026;&#20102;&#25214;&#19968;&#20010;&#26368;&#29702;&#24819;&#30340;&#30446;&#26631;, goal &#30495;&#27491;&#26159;&#21542;&#33021;&#20998;&#37197;&#20197;&#21450;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#34987;&#21344;&#29992;&#20102;&#24590;&#20040;&#22788;&#29702;&#30001; ext2_alloc_branch &#22788;&#29702;</span>
+  <span style="color: #268bd2;">ext2_find_goal</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">,</span> <span style="color: #b58900;">iblock</span><span style="color: #757575;">,</span> <span style="color: #b58900;">chain</span><span style="color: #757575;">,</span> <span style="color: #b58900;">partial</span><span style="color: #757575;">,</span> &amp;goal<span style="color: #757575;">)</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">((</span>block == ei-&gt;i_next_alloc_block + 1<span style="color: #757575;">)</span> &amp;&amp; ei-&gt;i_next_alloc_goal<span style="color: #757575;">)</span>:
+      ei-&gt;i_next_alloc_block++;
+      ei-&gt;i_next_alloc_goal++;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509;&#24403;&#21069;&#26159;&#26576;&#31181;&#36830;&#32493;&#20998;&#37197;&#30340;&#24773;&#24418;, &#21017; goal &#20026;&#19978;&#19968;&#27425;&#20998;&#37197;&#30340; block+1</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>block == ei-&gt;i_next_alloc_block<span style="color: #757575;">)</span>:
+      *goal = ei-&gt;i_next_alloc_goal;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>*goal<span style="color: #757575;">)</span>:
+      *goal = ext2_find_near<span style="color: #757575;">(</span>inode<span style="color: #757575;">,</span> partial<span style="color: #757575;">)</span>;
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">ext2_find_near &#25214;&#19968;&#20010;&#21644; partial &#26368;&#25509;&#36817;&#30340; block, &#20998;&#19977;&#31181;&#24773;&#24418;</span>
+    <span style="color: #586e75;">/* </span><span style="color: #586e75;">Try to find previous block</span><span style="color: #586e75;"> */</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">1. &#25214;&#19968;&#20010;&#20043;&#21069; indirect block &#20013;&#24050;&#32463;&#20998;&#37197;&#36807;&#30340; block</span>
+        <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>p = ind-&gt;p - 1; p &gt;= start; p--<span style="color: #757575;">)</span>:
+          <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>*p<span style="color: #757575;">)</span>
+            <span style="color: #859900;">return</span> le32_to_cpu<span style="color: #757575;">(</span>*p<span style="color: #757575;">)</span>;
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">2. &#27809;&#26377;&#20998;&#37197;&#36807;, &#30452;&#25509;&#20351;&#29992; indirect block &#33258;&#36523;</span>
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>ind-&gt;bh<span style="color: #757575;">)</span>:
+          <span style="color: #859900;">return</span> ind-&gt;bh-&gt;b_blocknr;
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">3. &#27809;&#26377;&#20351;&#29992; indirect block, &#35828;&#26126; inode &#30446;&#21069;&#21482;&#20351;&#29992;&#20102; direct block, &#21017;</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20351;&#29992; inode (inode table) &#38468;&#36817;&#30340; block</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">&#19979;&#38754;&#30340; heuristic &#26159;&#25351;: &#22312; inode &#25152;&#22312;&#30340; group &#25214;&#19968;&#20010; block, &#24182;&#19988;</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36890;&#36807; pid &#36991;&#20813;&#22810;&#20010;&#36827;&#31243;&#20351;&#29992;&#21516;&#19968;&#22359; block &#21306;&#22495;...</span>
+        bg_start = <span style="color: #757575;">(</span>ei-&gt;i_block_group * EXT2_BLOCKS_PER_GROUP<span style="color: #757575;">(</span>inode-&gt;i_sb<span style="color: #757575;">))</span> +
+            le32_to_cpu<span style="color: #757575;">(</span>EXT2_SB<span style="color: #757575;">(</span>inode-&gt;i_sb<span style="color: #757575;">)</span>-&gt;s_es-&gt;s_first_data_block<span style="color: #757575;">)</span>;
+        colour = <span style="color: #757575;">(</span>current-&gt;pid % 16<span style="color: #757575;">)</span> * <span style="color: #757575;">(</span>EXT2_BLOCKS_PER_GROUP<span style="color: #757575;">(</span>inode-&gt;i_sb<span style="color: #757575;">)</span> / 16<span style="color: #757575;">)</span>;
+        <span style="color: #859900;">return</span> bg_start + colour;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">find goal &#20197;&#21518;, ext2_alloc_branch &#36127;&#36131;&#30495;&#27491;&#21435;&#20998;&#37197; block</span>
+  <span style="color: #268bd2;">ext2_alloc_branch</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">,</span> <span style="color: #b58900;">left</span><span style="color: #757575;">,</span> <span style="color: #b58900;">goal</span><span style="color: #757575;">,</span> offsets+<span style="color: #757575;">(</span>partial-chain<span style="color: #757575;">),</span> <span style="color: #b58900;">partial</span><span style="color: #757575;">)</span>;
+    <span style="color: #268bd2;">ext2_new_block</span><span style="color: #757575;">(</span><span style="color: #b58900;">goal</span><span style="color: #757575;">)</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509; goal &#31354;&#38386;, &#36820;&#22238; goal, &#21542;&#21017;, &#21521;&#21518;&#19968;&#23450;&#33539;&#22260;&#20869;&#26597;&#25214;&#19968;&#20010;&#31354;&#38386;&#30340;</span>
+      ret_block = grab_block<span style="color: #757575;">(</span>sb_bgl_lock<span style="color: #757575;">(</span>sbi<span style="color: #757575;">,</span> group_no<span style="color: #757575;">),</span>
+                           bitmap_bh-&gt;b_data<span style="color: #757575;">,</span> group_size<span style="color: #757575;">,</span> ret_block<span style="color: #757575;">)</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509;&#19978;&#19968;&#27493;&#27809;&#26377;&#25214;&#21040;, &#21017;&#20174;&#24403;&#21069; group &#24320;&#22987;&#20174;&#25152;&#26377; group &#26597;&#25214;</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org09ffbc8" class="outline-5">
+<h5 id="org09ffbc8"><span class="section-number-5">1.2.3.3</span> Release data block</h5>
+<div class="outline-text-5" id="text-1-2-3-3">
+<p>
+前面提到的 unlink 已经提到释放 data block 的过程: unlink 时通过
+ext2_truncate 调用 ext2_free_blocks 释放 data block, 主要就是修改 block
+bitmap
+</p>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgba9e140" class="outline-3">
+<h3 id="orgba9e140"><span class="section-number-3">1.3</span> Ext2 file holes</h3>
+<div class="outline-text-3" id="text-1-3">
+</div>
+<div id="outline-container-orga297459" class="outline-4">
+<h4 id="orga297459"><span class="section-number-4">1.3.1</span> File holes on disk</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<pre class="example" id="orgc9563f9">
+#&gt; dd if=/dev/zero of=hole bs=4096 count=1 seek=5
+
+~@dell-work&gt; sudo debugfs /dev/sda2
+debugfs 1.42.13 (17-May-2015)
+debugfs:  cd sunway
+debugfs:  bmap hole 0
+0
+debugfs:  bmap hole 1
+0
+debugfs:  bmap hole 2
+0
+debugfs:  bmap hole 3
+0
+debugfs:  bmap hole 4
+0
+debugfs:  bmap hole 5
+86016417
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orgbe19484" class="outline-4">
+<h4 id="orgbe19484"><span class="section-number-4">1.3.2</span> Read from file holes</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">block_read_full_page</span>:
+  <span style="color: #268bd2;">get_block</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">,</span> <span style="color: #b58900;">iblock</span><span style="color: #757575;">,</span> <span style="color: #b58900;">bh</span><span style="color: #757575;">,</span> 0<span style="color: #757575;">)</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#23545;&#20110;&#31354;&#27934;&#37096;&#20998;&#30340; block, get_block &#36820;&#22238; BH_mapped &#20026; false</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>buffer_mapped<span style="color: #757575;">(</span>bh<span style="color: #757575;">))</span>:
+      <span style="color: #b58900;">void</span> *kaddr = kmap_atomic<span style="color: #757575;">(</span>page<span style="color: #757575;">,</span> KM_USER0<span style="color: #757575;">)</span>;
+      <span style="color: #268bd2;">memset</span><span style="color: #757575;">(</span>kaddr + i * blocksize<span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> <span style="color: #b58900;">blocksize</span><span style="color: #757575;">)</span>;
+      <span style="color: #268bd2;">set_buffer_uptodate</span><span style="color: #757575;">(</span><span style="color: #b58900;">bh</span><span style="color: #757575;">)</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">continued, submit_bh(bh) is skipped</span>
+      <span style="color: #859900;">continue</span>;
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org2d54aa1" class="outline-3">
+<h3 id="org2d54aa1"><span class="section-number-3">1.4</span> 使用 debugfs 观察磁盘布局</h3>
+<div class="outline-text-3" id="text-1-4">
+<pre class="example" id="orgf94403a">
+~@dell-work&gt; sudo debugfs
+debugfs 1.42.13 (17-May-2015)
+debugfs:  open -w /dev/loop0
+debugfs:  stats
+...
+Inode count:              32
+Block size:               1024
+Blocks per group:         8192
+Inode size:               128
+ Group  0: block bitmap at 3, inode bitmap at 4, inode table at 5
+           233 free blocks, 21 free inodes, 2 used directories
+...
+
+// 展示 inode bitmap 的使用
+debugfs:  bd 4
+0000  ff07 0000 ffff ffff ffff ffff ffff ffff  ................
+0020  ffff ffff ffff ffff ffff ffff ffff ffff  ................
+*
+
+debugfs:  ls
+ 2  (12) .    2  (12) ..    11  (1000) lost+found   
+debugfs:  write hello hello
+Allocated inode: 12
+debugfs:  ls
+ 2  (12) .    2  (12) ..    11  (20) lost+found    12  (980) hello
+
+debugfs:  quit
+~@dell-work&gt; sudo debugfs
+debugfs 1.42.13 (17-May-2015)
+debugfs:  open -w /dev/loop0
+debugfs:  bd 4
+0000  ff0f 0000 ffff ffff ffff ffff ffff ffff  ................
+0020  ffff ffff ffff ffff ffff ffff ffff ffff  ................
+*
+// NOTE: 增加一个 inode 12 后, inode bitmap 由 ff07 -&gt; ff0f
+// 若再增加 13, 14, 15, 16, 17 inode, 则 bitmap 会依次变为 ff1f -&gt; ff3f -&gt; ff7f -&gt; ffff -&gt; ffff01
+// 最后一个是 ffff01 而不是 ffff10, 因为 kernel 是使用 bts 指令来置位的
+
+// 后面的部分展示的是所谓的 "恢复已删除文件" 的原理
+debugfs:  rm hello
+debugfs:  lsdel
+ Inode  Owner  Mode    Size      Blocks   Time deleted
+    12      0 100644      6      1/     1 Sun Jun 12 11:49:44 2016
+1 deleted inodes found.
+debugfs:  id &lt;12&gt;
+0000  a481 0000 0600 0000 badb 5c57 badb 5c57  ..........\W..\W
+0020  badb 5c57 d8db 5c57 0000 0000 0200 0000  ..\W..\W........
+0040  0000 0000 0000 0000 1700 0000 0000 0000  ................
+0060  0000 0000 0000 0000 0000 0000 0000 0000  ................
+*
+
+# imap 显示 inode 12 在 inode table 的位置为 block 6+0x180
+# 手动的计算过程为: inode table 起始于 block 5, 这个 block 保存着
+# inode 1 ~ inode 8 共 8 个 inode (1024/128=8), block 6 中依次为 9, 10, 11, 12...
+# 所以 inode 12 的 offset 为 3*128=0x180
+debugfs:  imap &lt;12&gt;
+Inode 12 is part of block group 0
+        located at block 6, offset 0x0180
+
+debugfs:  bd 6
+0000  0000 0000 0000 0000 0000 0000 0000 0000  ................
+*
+0400  c041 0000 0030 0000 f0d9 5c57 f0d9 5c57  .A...0....\W..\W
+0420  f0d9 5c57 0000 0000 0000 0200 1800 0000  ..\W............
+0440  0000 0000 0000 0000 0a00 0000 0b00 0000  ................
+0460  0c00 0000 0d00 0000 0e00 0000 0f00 0000  ................
+0500  1000 0000 1100 0000 1200 0000 1300 0000  ................
+0520  1400 0000 1500 0000 0000 0000 0000 0000  ................
+0540  0000 0000 0000 0000 0000 0000 0000 0000  ................
+*
+0600  a481 0000 0600 0000 badb 5c57 badb 5c57  ..........\W..\W
+0620  badb 5c57 d8db 5c57 0000 0000 0200 0000  ..\W..\W........
+0640  0000 0000 0000 0000 1700 0000 0000 0000  ................
+0660  0000 0000 0000 0000 0000 0000 0000 0000  ................
+*
+
+debugfs: quit
+~@dell-work&gt; sudo dd if=/dev/loop0 of=dump bs=1024 count=1 skip=6 
+~@dell-work&gt; od -A x -t x1 dump
+000000 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+*
+000100 c0 41 00 00 00 30 00 00 f0 d9 5c 57 f0 d9 5c 57
+000110 f0 d9 5c 57 00 00 00 00 00 00 02 00 18 00 00 00
+000120 00 00 00 00 00 00 00 00 0a 00 00 00 0b 00 00 00
+000130 0c 00 00 00 0d 00 00 00 0e 00 00 00 0f 00 00 00
+000140 10 00 00 00 11 00 00 00 12 00 00 00 13 00 00 00
+000150 14 00 00 00 15 00 00 00 00 00 00 00 00 00 00 00
+000160 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+*
+000180 a4 81 00 00 06 00 00 00 ba db 5c 57 ba db 5c 57
+000190 ba db 5c 57 d8 db 5c 57 00 00 00 00 02 00 00 00
+0001a0 00 00 00 00 00 00 00 00 17 00 00 00 00 00 00 00
+0001b0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+*
+000400
+
+~@dell-work&gt; sudo debugfs
+debugfs 1.42.13 (17-May-2015)
+debugfs:  open -w /dev/loop0
+
+debugfs:  lsdel
+ Inode  Owner  Mode    Size      Blocks   Time deleted
+    12      0 100644      6      1/     1 Sun Jun 12 11:49:44 2016
+1 deleted inodes found.
+debugfs:  dump &lt;12&gt; aaa
+~@dell-work&gt; cat aaa
+hello
+
+debugfs:  blocks &lt;12&gt;
+23 
+debugfs:  bd 23
+0000  6865 6c6c 6f0a 0000 0000 0000 0000 0000  hello...........
+0020  0000 0000 0000 0000 0000 0000 0000 0000  ................
+*
+
+debugfs:  zap_block -o 0x180 -l 128 6
+
+debugfs: quit
+~@dell-work&gt; sudo debugfs
+debugfs 1.42.13 (17-May-2015)
+debugfs:  open -w /dev/loop0
+debugfs:  id &lt;12&gt;
+0000  0000 0000 0000 0000 0000 0000 0000 0000  ................
+*
+debugfs:  lsdel
+ Inode  Owner  Mode    Size      Blocks   Time deleted
+0 deleted inodes found.
+</pre>
+
+<p>
+需要注意的是 debugfs dump 或 od 在 dump 时, 第一列的 file offset 是
+octal 而不是 hex
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf21b930" class="outline-3">
+<h3 id="orgf21b930"><span class="section-number-3">1.5</span> Journaling</h3>
+</div>
+
+<div id="outline-container-org7a2a183" class="outline-3">
+<h3 id="org7a2a183"><span class="section-number-3">1.6</span> Appendix</h3>
+<div class="outline-text-3" id="text-1-6">
+</div>
+<div id="outline-container-org5a919cd" class="outline-4">
+<h4 id="org5a919cd"><span class="section-number-4">1.6.1</span> immutable files</h4>
+<div class="outline-text-4" id="text-1-6-1">
+<p>
+通过 chattr/lsattr 可以修改/查看文件的 attribute, 这里的 attribute 包括:
+</p>
+
+<ul class="org-ul">
+<li>S_IMMUTABLE, 文件不可更改, 删除, 改名等</li>
+<li>S_APPEND, 文件只能追加</li>
+<li>&#x2026;</li>
+</ul>
+
+<p>
+attribute 与 ext2 的 extended attribute 并没有关系, 它是 VFS 定义的
+(inode-&gt;i_flags 保存了文件的 attribute), ext2 通过如下代码支持
+attribute:
+</p>
+</div>
+
+<div id="outline-container-orgf0c0532" class="outline-5">
+<h5 id="orgf0c0532"><span class="section-number-5">1.6.1.1</span> VFS 中的 IS_IMMUTABLE 宏</h5>
+<div class="outline-text-5" id="text-1-6-1-1">
+<p>
+VFS 在许多地方都会调用 IS_IMMUTABLE 一类的宏来判断 inode-&gt;i_flags,
+ext2 在 read inode 时会负责初始化 inode-&gt;i_flags
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">ext2_read_inode</span>:
+  <span style="color: #268bd2;">ext2_set_inode_flags</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">)</span>
+    <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">flags</span> = EXT2_I<span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span>-&gt;i_flags;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>flags &amp; EXT2_IMMUTABLE_FL<span style="color: #757575;">)</span>:
+      inode-&gt;i_flags |= S_IMMUTABLE;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">if xxx</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org789ad8c" class="outline-5">
+<h5 id="org789ad8c"><span class="section-number-5">1.6.1.2</span> 支持 chattr/lsattr</h5>
+<div class="outline-text-5" id="text-1-6-1-2">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">ext2_ioctl</span>:
+  <span style="color: #859900;">switch</span> <span style="color: #757575;">(</span>cmd<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">case</span> EXT2_IOC_GETFLAGS:
+      flags = ei-&gt;i_flags &amp; EXT2_FL_USER_VISIBLE;
+      <span style="color: #859900;">return</span> put_user<span style="color: #757575;">(</span>flags<span style="color: #757575;">,</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">__user</span> *<span style="color: #757575;">)</span> arg<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">case</span> EXT2_IOC_SETFLAGS:
+      ei-&gt;i_flags = flags;
+      ext2_set_inode_flags<span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org510d998" class="outline-4">
+<h4 id="org510d998"><span class="section-number-4">1.6.2</span> reserved block</h4>
+<div class="outline-text-4" id="text-1-6-2">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">ext2_new_block</span>:
+  <span style="color: #268bd2;">reserve_blocks</span><span style="color: #757575;">()</span>
+    free_blocks = percpu_counter_read_positive<span style="color: #757575;">(</span>&amp;sbi-&gt;s_freeblocks_counter<span style="color: #757575;">)</span>;
+    root_blocks = le32_to_cpu<span style="color: #757575;">(</span>es-&gt;s_r_blocks_count<span style="color: #757575;">)</span>;
+
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>free_blocks &lt; root_blocks + count &amp;&amp; <span style="color: #b58900; font-weight: bold;">!</span>capable<span style="color: #757575;">(</span>CAP_SYS_RESOURCE<span style="color: #757575;">)</span> &amp;&amp;
+      sbi-&gt;s_resuid != current-&gt;fsuid &amp;&amp;
+      <span style="color: #757575;">(</span>sbi-&gt;s_resgid == 0 || <span style="color: #b58900; font-weight: bold;">!</span>in_group_p <span style="color: #757575;">(</span>sbi-&gt;s_resgid<span style="color: #757575;">)))</span>:
+      <span style="color: #586e75;">/*</span>
+<span style="color: #586e75;">       * We are too close to reserve and we are not privileged.</span>
+<span style="color: #586e75;">       * Can we allocate anything at all?</span>
+<span style="color: #586e75;">       */</span>
+      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>free_blocks &gt; root_blocks<span style="color: #757575;">)</span>
+        count = free_blocks - root_blocks;
+      <span style="color: #859900;">else</span>
+        <span style="color: #859900;">return</span> 0;
+    <span style="color: #859900;">return</span> count;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">reserve_blocks ends</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0cacb08" class="outline-4">
+<h4 id="org0cacb08"><span class="section-number-4">1.6.3</span> Ext2 directory layout</h4>
+<div class="outline-text-4" id="text-1-6-3">
+<p>
+ext2 的目录的 data block 保存着一系列的 ext2_dir_entry_2:
+</p>
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">struct</span> <span style="color: #b58900;">ext2_dir_entry_2</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">__le32</span>  <span style="color: #268bd2;">inode</span>;          <span style="color: #586e75;">/* </span><span style="color: #586e75;">Inode number</span><span style="color: #586e75;"> */</span>
+    <span style="color: #b58900;">__le16</span>  <span style="color: #268bd2;">rec_len</span>;        <span style="color: #586e75;">/* </span><span style="color: #586e75;">Directory entry length</span><span style="color: #586e75;"> */</span>
+    <span style="color: #b58900;">__u8</span>    <span style="color: #268bd2;">name_len</span>;       <span style="color: #586e75;">/* </span><span style="color: #586e75;">Name length</span><span style="color: #586e75;"> */</span>
+    <span style="color: #b58900;">__u8</span>    <span style="color: #268bd2;">file_type</span>;
+    <span style="color: #b58900;">char</span>    <span style="color: #268bd2;">name</span>[EXT2_NAME_LEN];    <span style="color: #586e75;">/* </span><span style="color: #586e75;">File name</span><span style="color: #586e75;"> */</span>
+<span style="color: #757575;">}</span>;
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org10bf944" class="outline-4">
+<h4 id="org10bf944"><span class="section-number-4">1.6.4</span> extended attribute</h4>
+<div class="outline-text-4" id="text-1-6-4">
+<p>
+Ext2 支持 inode 扩展属性, 扩展属性并不像普通 inode 属性那样保存在 128B
+的 inode table entry 中, 而是通过一个单独的 block 保存,
+ext2_inode_info-&gt;i_file_acl 指向这个 block, 从 i_file_acl 名字也能猜到
+extended attribute 主要用来实现 ACL (例如 user1, user2 可以访问这个文件), 另外, selinux 也使用 extended attr 来保存 file context
+</p>
+</div>
+</div>
+
+<div id="outline-container-org028d903" class="outline-4">
+<h4 id="org028d903"><span class="section-number-4">1.6.5</span> bitmap 如何被 sync 到磁盘</h4>
+<div class="outline-text-4" id="text-1-6-5">
+<p>
+从 fsync 代码可以看到 inode 对应的 data 部分 (address_space) 和 inode
+部分 (实际对应于 inode table) 最终会通过 writepage 写到磁盘 (), 但 superblock, inode bitmap 以及 block bitmap 如何被写到磁盘?
+</p>
+
+<p>
+从代码上猜测是通过 block device file:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">sys_sync</span>:
+  <span style="color: #268bd2;">sync_inodes</span><span style="color: #757575;">()</span>; <span style="color: #586e75;">/* </span><span style="color: #586e75;">All mappings, inodes and their blockdevs</span><span style="color: #586e75;"> */</span>
+    <span style="color: #859900;">while</span> <span style="color: #757575;">((</span>sb = get_super_to_sync<span style="color: #757575;">())</span> != <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>:
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">sb &#35760;&#24405;&#30340;&#25152;&#26377; dirty inode &#21450;&#20854; mappings &#34987;&#20889;&#22238;</span>
+      sync_inodes_sb<span style="color: #757575;">(</span>sb<span style="color: #757575;">,</span> 0<span style="color: #757575;">)</span>;
+      <span style="color: #268bd2;">sync_blockdev</span><span style="color: #757575;">(</span>sb-&gt;s_bdev<span style="color: #757575;">)</span>;
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">&#30001;&#20110;&#25991;&#20214;&#31995;&#32479;&#20869;&#37096;&#23545;&#35774;&#22791;&#30340;&#35835;&#20889;&#37117;&#26159;&#36890;&#36807; bd_inode &#30340; pagecache</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">(_bread), &#25152;&#20197; sync bd_inode &#30340; address_space &#20250;&#23548;&#33268;&#25991;&#20214;&#31995;&#32479;</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20869;&#37096;&#30340;&#36825;&#26679;&#20462;&#25913;(&#21253;&#25324;&#23545; bitmap &#30340;&#20462;&#25913;)&#34987;&#20889;&#22238;</span>
+        <span style="color: #268bd2;">filemap_fdatawrite</span><span style="color: #757575;">(</span>bdev-&gt;bd_inode-&gt;i_mapping<span style="color: #757575;">)</span>;
+  <span style="color: #268bd2;">sync_supers</span><span style="color: #757575;">()</span>; <span style="color: #586e75;">/* </span><span style="color: #586e75;">Write the superblocks</span><span style="color: #586e75;"> */</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">sync_supers &#21482;&#26159;&#20462;&#25913; superblock &#24182;&#32622;&#30456;&#24212; block &#20026; dirty,</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21518;&#32493;&#30340; sync_inodes &#20250;&#20445;&#35777;&#23427;&#34987;&#20889;&#22238;</span>
+  <span style="color: #268bd2;">sync_inodes</span><span style="color: #757575;">()</span>; <span style="color: #586e75;">/* </span><span style="color: #586e75;">sync inodes again?</span><span style="color: #586e75;"> */</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org57fdd3d" class="outline-4">
+<h4 id="org57fdd3d"><span class="section-number-4">1.6.6</span> Ext2 会占用多少磁盘空间</h4>
+<div class="outline-text-4" id="text-1-6-6">
+<p>
+新建的 ext2 文件系统占用的磁盘空间, 主要依赖于 groups 的个数和 inode
+的个数.
+</p>
+
+<p>
+以一个 128GB 的磁盘为例, 假设 ext2 block size 为 1KB
+</p>
+
+<ol class="org-ol">
+<li>一个 group 能索引的空间大小为 1K*8*1K = 8M, 则一共需要 128G/8M =
+16384 个 group, 这些 group 的 block bitmap 和 inode bitmap 一共需要占用 16384 * 2K = 32MB</li>
+
+<li>默认配置下, 每 8 KB 分配一个 inode, 则一共 128G/8K = 16777216 个
+inode, 每个 inode 占 128B, 一共需要 2G</li>
+</ol>
+
+<p>
+可见, 占用空间的主要是 inode table, 不考虑 inode table 与 block size 的对齐的话, 比例大约是 128/8K = 1.6%, 这个比例和 ext2 的 block size 基本没关系, 和 mkfs.ext2 是指定的 bytes_per_inode 有关.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf6947b3" class="outline-4">
+<h4 id="orgf6947b3"><span class="section-number-4">1.6.7</span> Utility</h4>
+<div class="outline-text-4" id="text-1-6-7">
+</div>
+<div id="outline-container-orgbb5b83b" class="outline-5">
+<h5 id="orgbb5b83b"><span class="section-number-5">1.6.7.1</span> tune2fs</h5>
+</div>
+
+<div id="outline-container-orgc2d4566" class="outline-5">
+<h5 id="orgc2d4566"><span class="section-number-5">1.6.7.2</span> dumpe2fs</h5>
+</div>
+
+<div id="outline-container-org0d06e68" class="outline-5">
+<h5 id="org0d06e68"><span class="section-number-5">1.6.7.3</span> blktrace</h5>
+<div class="outline-text-5" id="text-1-6-7-3">
+<pre class="example" id="org2140822">
+// dev/sda2 是 /home/sunway 所在的设备
+# 1&gt; su
+$ 1&gt; cd /tmp; blktrace -d /dev/sda2 -o trace
+
+# 2&gt; cd /home/sunway
+# 2&gt; dd if=/dev/zero of=test bs=1024 count=100000
+
+$ 1&gt; blkparse -i trace|grep " A "
+  8,0    2     4012     6.118875228  6444  A   W 517705728 + 2048 &lt;- (8,2) 517703680
+  8,0    2     4015     6.118984246  6444  A   W 517707776 + 2048 &lt;- (8,2) 517705728
+  8,0    2     4018     6.119091708  6444  A   W 517709824 + 2048 &lt;- (8,2) 517707776
+  8,0    2     4021     6.119195285  6444  A   W 517711872 + 2048 &lt;- (8,2) 517709824
+  8,0    2     4024     6.119299673  6444  A   W 517713920 + 2048 &lt;- (8,2) 517711872
+  ....
+// blkparse 打印的 517705728 是 IO 操作的起始 sector, 由于 /dev/sda2 的 block size 是 4K,
+// 所以除 8 得到 IO 操作的 block
+$ 1&gt; echo 517705728/8|bc
+64713216
+
+# 3&gt; sudo debugfs
+debugfs:  open /dev/sda2
+
+debugfs:  icheck 64713216
+Block   Inode number
+64713216        21496249
+
+debugfs:  ncheck 21496249
+Inode   Pathname
+21496249        /sunway/test
+^C
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org8ec2b7a" class="outline-5">
+<h5 id="org8ec2b7a"><span class="section-number-5">1.6.7.4</span> debugfs</h5>
+<div class="outline-text-5" id="text-1-6-7-4">
+</div>
+<ol class="org-ol">
+<li><a id="orge67f693"></a>stats<br /></li>
+
+<li><a id="org344b660"></a>stat<br /></li>
+
+<li><a id="org3a31fa6"></a>id<br />
+<div class="outline-text-6" id="text-1-6-7-4-3">
+<p>
+dump inode
+</p>
+</div>
+</li>
+
+<li><a id="org1220c41"></a>bd<br />
+<div class="outline-text-6" id="text-1-6-7-4-4">
+<p>
+dump block
+</p>
+</div>
+</li>
+
+<li><a id="orgd9d8170"></a>dump<br />
+<div class="outline-text-6" id="text-1-6-7-4-5">
+<p>
+dump file
+</p>
+</div>
+</li>
+
+<li><a id="org1251904"></a>blocks<br />
+<div class="outline-text-6" id="text-1-6-7-4-6">
+<p>
+show data blocks of a file
+</p>
+</div>
+</li>
+
+<li><a id="org4727c79"></a>icheck<br />
+<div class="outline-text-6" id="text-1-6-7-4-7">
+<p>
+block -&gt; inode
+</p>
+</div>
+</li>
+
+<li><a id="orge4158f6"></a>ncheck<br />
+<div class="outline-text-6" id="text-1-6-7-4-8">
+<p>
+inode -&gt; file name
+</p>
+</div>
+</li>
+
+<li><a id="org5d7b6f1"></a>imap<br />
+<div class="outline-text-6" id="text-1-6-7-4-9">
+<p>
+inode -&gt; inode table entry
+</p>
+</div>
+</li>
+
+<li><a id="orgb8b111b"></a>bmap<br />
+<div class="outline-text-6" id="text-1-6-7-4-10">
+<p>
+logical block -&gt; physical block
+</p>
+</div>
+</li>
+
+<li><a id="orgacd44a8"></a>mi<br />
+<div class="outline-text-6" id="text-1-6-7-4-11">
+<p>
+modify inode by inode structure
+</p>
+</div>
+</li>
+
+<li><a id="org66f801d"></a>lsdel<br /></li>
+
+<li><a id="org3f7d7a0"></a>undel<br /></li>
+
+<li><a id="org89377c5"></a>write<br />
+<div class="outline-text-6" id="text-1-6-7-4-14">
+<p>
+copy file from host
+</p>
+</div>
+</li>
+</ol>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgbab107c" class="outline-3">
+<h3 id="orgbab107c"><span class="section-number-3">1.7</span> See also</h3>
+<div class="outline-text-3" id="text-1-7">
+<p>
+<a href="http://www.nongnu.org/ext2-doc/">http://www.nongnu.org/ext2-doc/</a>
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bare Metal</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Bare Metal</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org5542119">1. Bare Metal</a>
+<ul>
+<li><a href="#org1d8129e">1.1. qemu arm bare metal example</a></li>
+<li><a href="#org6b66b28">1.2. newlib</a></li>
+<li><a href="#orgfa7008b">1.3. nosys.specs</a></li>
+<li><a href="#org58dcfff">1.4. libgcc, crt0.o 与 nostdlib, nodefaultlibs, nostartfiles</a>
+<ul>
+<li><a href="#orgf466b43">1.4.1. libgcc</a></li>
+<li><a href="#org82fe37c">1.4.2. crt0.o</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org5542119" class="outline-2">
+<h2 id="org5542119"><span class="section-number-2">1</span> Bare Metal</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org1d8129e" class="outline-3">
+<h3 id="org1d8129e"><span class="section-number-3">1.1</span> qemu arm bare metal example</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+<a href="https://balau82.wordpress.com/2010/02/28/hello-world-for-bare-metal-arm-using-qemu/">https://balau82.wordpress.com/2010/02/28/hello-world-for-bare-metal-arm-using-qemu/</a>
+</p>
+
+<p>
+为了验证 kws 在 mips bare metal 上的情况, 使用 qemu arm bare metal example 来测试 bare metal 的基本概念
+</p>
+
+<p>
+支持 bare metal 的方法:
+</p>
+
+<ol class="org-ol">
+<li>针对板子写 start.s, 初始化 sp 等, 然后跳转到 main</li>
+<li>linker script 需要把 start.o 放在板子要求的地址上, 同时需要提供一些符号, 例如
+newlib 中的 _sbrk 需要 linker script 定义 `end` 以后才能支持 malloc</li>
+<li>使用 nosys.specs 把 newlib 做为 libc, 同时使用 libnosys 给 _fork, _exit 等函数提供 dummy 实现, 避免 newlib 编译不过</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org6b66b28" class="outline-3">
+<h3 id="org6b66b28"><span class="section-number-3">1.2</span> newlib</h3>
+</div>
+
+<div id="outline-container-orgfa7008b" class="outline-3">
+<h3 id="orgfa7008b"><span class="section-number-3">1.3</span> nosys.specs</h3>
+</div>
+
+<div id="outline-container-org58dcfff" class="outline-3">
+<h3 id="org58dcfff"><span class="section-number-3">1.4</span> libgcc, crt0.o 与 nostdlib, nodefaultlibs, nostartfiles</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+<a href="http://cs107e.github.io/guides/gcc/">http://cs107e.github.io/guides/gcc/</a>
+<a href="https://gcc.gnu.org/onlinedocs/gccint/Libgcc.html">https://gcc.gnu.org/onlinedocs/gccint/Libgcc.html</a>
+</p>
+
+<p>
+nodefaultlibs: 不使用 libc, libgcc
+nostartfiles: 不使用  crt0.o, crt1.o, crtend.o 等 startfiles
+nostdlib: nodefaultlibs + nostartfiles
+</p>
+</div>
+
+<div id="outline-container-orgf466b43" class="outline-4">
+<h4 id="orgf466b43"><span class="section-number-4">1.4.1</span> libgcc</h4>
+<div class="outline-text-4" id="text-1-4-1">
+<p>
+GCC provides a low-level runtime library, libgcc.a or libgcc_s.so.1 on some
+platforms. GCC generates calls to routines in this library automatically,
+whenever it needs to perform some operation that is too complicated to emit
+inline code for.
+</p>
+
+<ol class="org-ol">
+<li>libgcc 是为了弥补平台本身对某些功能的支持问题, 例如 soft-float</li>
+
+<li>gcc 会针对某些代码生成对 libgcc 的隐式的调用, 例如 gcc 会把对 thread_local 的变量的读写的代码编译成对 libgcc 中 emutls 相关函数的调用, 所以针对 libgcc 的编译错误经常不那么直观</li>
+
+<li>libgcc 的主要功能包括:
+<ul class="org-ul">
+<li>emutls 相关</li>
+<li>automic 相关</li>
+<li>soft float 相关</li>
+<li>clear_cache</li>
+<li>数学运算, 包括乘除移位等</li>
+</ul></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org82fe37c" class="outline-4">
+<h4 id="org82fe37c"><span class="section-number-4">1.4.2</span> crt0.o</h4>
+<div class="outline-text-4" id="text-1-4-2">
+<p>
+crt0.o 会提供一个 _start 符号, 它的代码差不多是这样的:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #586e75;">/* </span><span style="color: #586e75;">ida &#21453;&#32534;&#35793;&#30340;&#32467;&#26524;</span><span style="color: #586e75;"> */</span>
+<span style="color: #b58900;">void</span> <span style="color: #268bd2;">__fastcall</span> start<span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">v0</span>;  <span style="color: #586e75;">// </span><span style="color: #586e75;">r0@4</span>
+
+    stack_init<span style="color: #757575;">()</span>;
+    memset<span style="color: #757575;">()</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>atexit<span style="color: #757575;">)</span> atexit<span style="color: #757575;">(</span>_libc_fini_array<span style="color: #757575;">)</span>;
+    _libc_init_array<span style="color: #757575;">()</span>;
+    v0 = main<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> 0<span style="color: #757575;">)</span>;
+    exit<span style="color: #757575;">(</span>v0<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+其中 _libc_init_array 会调用 .init_array 中的函数指针
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #586e75;">/* </span><span style="color: #586e75;">ida &#21453;&#32534;&#35793;&#30340;&#32467;&#26524;</span><span style="color: #586e75;"> */</span>
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">__fastcall</span> _libc_init_array<span style="color: #757575;">()</span>
+<span style="color: #757575;">{</span>
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">result</span>; <span style="color: #586e75;">// </span><span style="color: #586e75;">r0@3</span>
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">v5</span>; <span style="color: #586e75;">// </span><span style="color: #586e75;">r4@4</span>
+    <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">v6</span>; <span style="color: #586e75;">// </span><span style="color: #586e75;">r5@4</span>
+    <span style="color: #b58900;">int</span> <span style="color: #757575;">(</span><span style="color: #b58900;">__fastcall</span> *<span style="color: #268bd2;">v7</span><span style="color: #757575;">)(</span>_DWORD<span style="color: #757575;">)</span>; <span style="color: #586e75;">// </span><span style="color: #586e75;">t1@5</span>
+
+    result = init_proc<span style="color: #757575;">()</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span> 0xC &gt;&gt; 2 <span style="color: #757575;">)</span>
+    <span style="color: #757575;">{</span>
+        v5 = 0;
+
+        <span style="color: #586e75;">/*</span>
+<span style="color: #586e75;">         * ~/download@sunway-t14&gt; readelf -a ./a.out |grep __init_array_start</span>
+<span style="color: #586e75;">         *           100: 000186cc     0 NOTYPE  LOCAL  DEFAULT    7 __init_array_start</span>
+<span style="color: #586e75;">         *           </span>
+<span style="color: #586e75;">         */</span>
+
+        v6 = 0x186C8u;
+        <span style="color: #859900;">do</span>
+        <span style="color: #757575;">{</span>
+            <span style="color: #586e75;">/*</span>
+<span style="color: #586e75;">             * * 0x186c8+4 &#26159; __init_array_start &#30340;&#31532;&#19968;&#20010;&#20989;&#25968;&#25351;&#38024;&#30340;&#22320;&#22336;            </span>
+<span style="color: #586e75;">             */</span>
+            v7 = *<span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #757575;">(</span><span style="color: #b58900;">__fastcall</span> **<span style="color: #757575;">)(</span>_DWORD<span style="color: #757575;">))(</span>v6 + 4<span style="color: #757575;">)</span>;
+            v6 += 4;
+            ++v5;
+            <span style="color: #586e75;">/* </span><span style="color: #586e75;">&#35843;&#29992;&#36825;&#20010;&#20989;&#25968;</span><span style="color: #586e75;"> */</span>
+            result = v7<span style="color: #757575;">(</span>result<span style="color: #757575;">)</span>;
+        <span style="color: #757575;">}</span>
+        <span style="color: #859900;">while</span> <span style="color: #757575;">(</span> 0xC &gt;&gt; 2 != v5 <span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">return</span> result;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

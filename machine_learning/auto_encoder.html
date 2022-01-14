@@ -1,0 +1,389 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Auto Encoder</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Auto Encoder</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org77df6e8">1. Auto Encoder</a>
+<ul>
+<li><a href="#orgb8fc4f7">1.1. auto-encoder</a></li>
+<li><a href="#org9f561a3">1.2. 提取简单的特征</a></li>
+<li><a href="#org62bf1b7">1.3. 复杂一点的特征</a></li>
+<li><a href="#orgb2f75ab">1.4. 无法压缩的特征</a></li>
+<li><a href="#orgc04dd21">1.5. sparse auto-encoder</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org77df6e8" class="outline-2">
+<h2 id="org77df6e8"><span class="section-number-2">1</span> Auto Encoder</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-orgb8fc4f7" class="outline-3">
+<h3 id="orgb8fc4f7"><span class="section-number-3">1.1</span> auto-encoder</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+auto-encoder (自编码器) 是一种无监督的机器学习方法, 目的是拟合 identity 函数, 即
+\(f(x)=x\).
+</p>
+
+
+<div id="org770e1bd" class="figure">
+<p><img src="../extra/auto_encoder.png" alt="auto_encoder.png" />
+</p>
+</div>
+
+<p>
+上面显示了一个简单的 auto-encoder:
+</p>
+
+<ul class="org-ul">
+<li>输入 feature 大小为 6,</li>
+<li>input layer 与 hidden layer 之间的权重可以看作是 encoder, 可以把 input 大小压缩为 3</li>
+<li>hidden layer 与 output layer 之间的权重看作是 decoder, 可以把压缩的数据还原为原始数据</li>
+</ul>
+
+<p>
+数据可以压缩, 是因为数据通常具有相关性, 例如: 假设输入数据 x 为
+\([[1,2,3,4,5],[2,4,6,8,10],[3,6,9,12,15]\ldots]\), 其中隐含着一个规律是
+\(x_i^j=x_i^0*(j+1)\)
+</p>
+
+<p>
+所以 x 实际可以压缩为 \([1,2,3...]^T\).
+</p>
+
+<p>
+auto-encoder 可以学习到这个隐含的规律, 从而对原数据进行压缩. 压缩的结果体现在
+hidden layer, 而规律则体现在 encoder 和 decoder 的权重.
+</p>
+
+<p>
+实际上, auto-encoder 这个特征也可以看作是某种`特征提取`, 和 PCA 降维有类似的效果.但
+PCA 属于线性降维, 而 auto-encoder 属于非线性降维 (与 t-SNE) 类似.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org9f561a3" class="outline-3">
+<h3 id="org9f561a3"><span class="section-number-3">1.2</span> 提取简单的特征</h3>
+<div class="outline-text-3" id="text-1-2">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+
+<span style="color: #859900;">import</span> torch
+<span style="color: #859900;">from</span> torch <span style="color: #859900;">import</span> nn
+<span style="color: #859900;">from</span> torch <span style="color: #859900;">import</span> optim
+<span style="color: #859900;">from</span> torch.utils.data <span style="color: #859900;">import</span> DataLoader<span style="color: #757575;">,</span> Dataset
+<span style="color: #859900;">import</span> torch.nn.functional <span style="color: #859900;">as</span> F
+
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">---------- data ----------</span>
+<span style="color: #859900;">class</span> <span style="color: #b58900;">PlainDataset</span><span style="color: #757575;">(</span>Dataset<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">x</span> = torch.<span style="color: #839496;">round</span><span style="color: #757575;">(</span>torch.rand<span style="color: #757575;">(</span>1000<span style="color: #757575;">)</span> * 200<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">x</span> = x.unsqueeze<span style="color: #757575;">(</span>1<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">x</span> = torch.cat<span style="color: #757575;">((</span>x<span style="color: #757575;">,</span> x * 2<span style="color: #757575;">,</span> x * 3<span style="color: #757575;">,</span> x * 4<span style="color: #757575;">,</span> x * 5<span style="color: #757575;">,</span> x * 6<span style="color: #757575;">,</span> x * 7<span style="color: #757575;">,</span> x * 8<span style="color: #757575;">,</span>
+                       x * 9<span style="color: #757575;">,</span> x * 10<span style="color: #757575;">),</span> 1<span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.X = x
+        <span style="color: #859900;">self</span>.Y = <span style="color: #859900;">self</span>.X
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__getitem__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> index<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">return</span> <span style="color: #859900;">self</span>.X[index]<span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.Y[index]
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__len__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span>:
+        <span style="color: #859900;">return</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span>.X<span style="color: #757575;">)</span>
+
+
+<span style="color: #268bd2;">training_set</span> = PlainDataset<span style="color: #757575;">()</span>
+<span style="color: #268bd2;">training_loader</span> = DataLoader<span style="color: #757575;">(</span>training_set<span style="color: #757575;">,</span> batch_size=100<span style="color: #757575;">,</span> shuffle=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">---------- helper ----------</span>
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">test</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">m</span> = model[0]
+
+    <span style="color: #268bd2;">x</span> = torch.tensor<span style="color: #757575;">(</span>[[2<span style="color: #757575;">,</span> 4<span style="color: #757575;">,</span> 6<span style="color: #757575;">,</span> 8<span style="color: #757575;">,</span> 10<span style="color: #757575;">,</span> 12<span style="color: #757575;">,</span> 14<span style="color: #757575;">,</span> 16<span style="color: #757575;">,</span> 18<span style="color: #757575;">,</span> 20]]<span style="color: #757575;">)</span>.<span style="color: #839496;">float</span><span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">y_hat</span> = model<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"orig: "</span><span style="color: #757575;">,</span> x<span style="color: #757575;">,</span> <span style="color: #2aa198;">" new: "</span><span style="color: #757575;">,</span> y_hat<span style="color: #757575;">,</span> <span style="color: #2aa198;">"a:"</span><span style="color: #757575;">,</span> m<span style="color: #757575;">(</span>x<span style="color: #757575;">))</span>
+
+    <span style="color: #268bd2;">x</span> = torch.tensor<span style="color: #757575;">(</span>[[1<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 3<span style="color: #757575;">,</span> 4<span style="color: #757575;">,</span> 5<span style="color: #757575;">,</span> 6<span style="color: #757575;">,</span> 7<span style="color: #757575;">,</span> 8<span style="color: #757575;">,</span> 9<span style="color: #757575;">,</span> 10]]<span style="color: #757575;">)</span>.<span style="color: #839496;">float</span><span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">y_hat</span> = model<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"orig: "</span><span style="color: #757575;">,</span> x<span style="color: #757575;">,</span> <span style="color: #2aa198;">" new: "</span><span style="color: #757575;">,</span> y_hat<span style="color: #757575;">,</span> <span style="color: #2aa198;">"a:"</span><span style="color: #757575;">,</span> m<span style="color: #757575;">(</span>x<span style="color: #757575;">))</span>
+
+    <span style="color: #268bd2;">x</span> = torch.tensor<span style="color: #757575;">(</span>[[10<span style="color: #757575;">,</span> 20<span style="color: #757575;">,</span> 30<span style="color: #757575;">,</span> 40<span style="color: #757575;">,</span> 50<span style="color: #757575;">,</span> 60<span style="color: #757575;">,</span> 70<span style="color: #757575;">,</span> 80<span style="color: #757575;">,</span> 90<span style="color: #757575;">,</span> 100]]<span style="color: #757575;">)</span>.<span style="color: #839496;">float</span><span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">y_hat</span> = model<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"orig: "</span><span style="color: #757575;">,</span> x<span style="color: #757575;">,</span> <span style="color: #2aa198;">" new: "</span><span style="color: #757575;">,</span> y_hat<span style="color: #757575;">,</span> <span style="color: #2aa198;">"a:"</span><span style="color: #757575;">,</span> m<span style="color: #757575;">(</span>x<span style="color: #757575;">))</span>
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">train</span><span style="color: #757575;">()</span>:
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>1500<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">for</span> x<span style="color: #757575;">,</span> y <span style="color: #859900;">in</span> training_loader:
+            <span style="color: #268bd2;">loss</span> = criterion<span style="color: #757575;">(</span>model<span style="color: #757575;">(</span>x<span style="color: #757575;">),</span> y<span style="color: #757575;">)</span>
+            optimizer.zero_grad<span style="color: #757575;">()</span>
+            loss.backward<span style="color: #757575;">()</span>
+            optimizer.step<span style="color: #757575;">()</span>
+        <span style="color: #859900;">if</span> i % 200 == 0:
+            <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"epoch #%d: loss: %f"</span> % <span style="color: #757575;">(</span>i<span style="color: #757575;">,</span> loss.item<span style="color: #757575;">()))</span>
+
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">---------- model ----------</span>
+
+<span style="color: #268bd2;">model</span> = nn.Sequential<span style="color: #757575;">(</span>nn.Linear<span style="color: #757575;">(</span>10<span style="color: #757575;">,</span> 1<span style="color: #757575;">),</span> nn.ReLU<span style="color: #757575;">(),</span> nn.Linear<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">criterion</span> = nn.MSELoss<span style="color: #757575;">()</span>
+<span style="color: #268bd2;">optimizer</span> = optim.Adam<span style="color: #757575;">(</span>model.parameters<span style="color: #757575;">(),</span> weight_decay=0.001<span style="color: #757575;">)</span>
+
+train<span style="color: #757575;">()</span>
+test<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<p>
+epoch #0: loss: 497518.718750
+epoch #200: loss: 0.224333
+epoch #400: loss: 0.175876
+epoch #600: loss: 0.167690
+epoch #800: loss: 0.147397
+epoch #1000: loss: 0.062419
+epoch #1200: loss: 0.034183
+epoch #1400: loss: 0.084953
+orig:  tensor()  new:  tensor() a: tensor()
+orig:  tensor()  new:  tensor() a: tensor()
+orig:  tensor()  new:  tensor() a: tensor()
+</p>
+</div>
+</div>
+
+<div id="outline-container-org62bf1b7" class="outline-3">
+<h3 id="org62bf1b7"><span class="section-number-3">1.3</span> 复杂一点的特征</h3>
+<div class="outline-text-3" id="text-1-3">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">class</span> <span style="color: #b58900;">PlainDataset</span><span style="color: #757575;">(</span>Dataset<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">x</span> = torch.<span style="color: #839496;">round</span><span style="color: #757575;">(</span>torch.rand<span style="color: #757575;">(</span>1000<span style="color: #757575;">)</span> * 200<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">z</span> = torch.<span style="color: #839496;">round</span><span style="color: #757575;">(</span>torch.rand<span style="color: #757575;">(</span>1000<span style="color: #757575;">)</span> * 200<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">x</span> = x.unsqueeze<span style="color: #757575;">(</span>1<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">x</span> = torch.cat<span style="color: #757575;">((</span>x<span style="color: #757575;">,</span> x * 2<span style="color: #757575;">,</span> x * 3<span style="color: #757575;">,</span> x * 4<span style="color: #757575;">,</span> x * 5<span style="color: #757575;">,</span> x * 6<span style="color: #757575;">,</span> x * 7<span style="color: #757575;">,</span> x * 8<span style="color: #757575;">,</span>
+                       x * 9<span style="color: #757575;">,</span> x * 10<span style="color: #757575;">),</span> 1<span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.X = x + z.unsqueeze<span style="color: #757575;">(</span>1<span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.Y = <span style="color: #859900;">self</span>.X
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__getitem__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> index<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">return</span> <span style="color: #859900;">self</span>.X[index]<span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.Y[index]
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__len__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span>:
+        <span style="color: #859900;">return</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span>.X<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+x 的规律变为 \(x_i^j=x_i^0*(j+1)+k_i\), 其中 \(k_i\) 是一个随机数.
+</p>
+
+<p>
+如果 hidden layer 大小为 1, 则无论怎么训练都无法收敛, 因为 x 不可能压缩为一个数,
+直观上感觉至少需要两个数: \(x_i^0\) 和 \(k_i\). 实现测试时, 设置 hidden layer 大小为
+3 时可以收敛
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgb2f75ab" class="outline-3">
+<h3 id="orgb2f75ab"><span class="section-number-3">1.4</span> 无法压缩的特征</h3>
+<div class="outline-text-3" id="text-1-4">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">class</span> <span style="color: #b58900;">PlainDataset</span><span style="color: #757575;">(</span>Dataset<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span>:
+        <span style="color: #859900;">self</span>.X = torch.randn<span style="color: #757575;">(</span>1000<span style="color: #757575;">,</span> 10<span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.Y = <span style="color: #859900;">self</span>.X
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__getitem__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> index<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">return</span> <span style="color: #859900;">self</span>.X[index]<span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.Y[index]
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__len__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span>:
+        <span style="color: #859900;">return</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span>.X<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+若 x 为随机数, 则 hidden layer 的大小小于 feature 大小时都无法收敛, 因为不同的
+feature 之间完全没有相关性, 无法压缩.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgc04dd21" class="outline-3">
+<h3 id="orgc04dd21"><span class="section-number-3">1.5</span> sparse auto-encoder<sup><a id="fnr.1" class="footref" href="#fn.1">1</a></sup></h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+autoencoder hidden layer 神经元的个数并不一定需要小于 feature 的大小, 例如手写数字识别的例子中, 针对 10*10 大小的图片, 我们期望 autoencoder 能提取出更多的特征
+(超过 100 个), 以检测各种不同的边缘.
+</p>
+
+<p>
+若直接使用 autoencoder, 由于 hidden layer 大小 &gt;= feature 大小, 所以 autoencoder
+有极大的自由度来选择权重: 无论 hidden layer 为多少, 通过调用权重总是可以收敛. 通过实验可以发现, 每次测试时都会收敛, 但每次收敛时的权重都不同.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> torch
+<span style="color: #859900;">from</span> torch <span style="color: #859900;">import</span> nn
+<span style="color: #859900;">from</span> torch <span style="color: #859900;">import</span> optim
+<span style="color: #859900;">from</span> torch.utils.data <span style="color: #859900;">import</span> DataLoader<span style="color: #757575;">,</span> Dataset
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">---------- data ----------</span>
+<span style="color: #859900;">class</span> <span style="color: #b58900;">PlainDataset</span><span style="color: #757575;">(</span>Dataset<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">x</span> = torch.randn<span style="color: #757575;">(</span>1000<span style="color: #757575;">,</span> 10<span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.X = x
+        <span style="color: #859900;">self</span>.Y = <span style="color: #859900;">self</span>.X
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__getitem__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> index<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">return</span> <span style="color: #859900;">self</span>.X[index]<span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.Y[index]
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__len__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span>:
+        <span style="color: #859900;">return</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span>.X<span style="color: #757575;">)</span>
+
+
+<span style="color: #268bd2;">training_set</span> = PlainDataset<span style="color: #757575;">()</span>
+<span style="color: #268bd2;">training_loader</span> = DataLoader<span style="color: #757575;">(</span>training_set<span style="color: #757575;">,</span> batch_size=100<span style="color: #757575;">,</span> shuffle=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">---------- helper ----------</span>
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">test</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">m</span> = model[0]
+    torch.manual_seed<span style="color: #757575;">(</span>1000<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x</span> = torch.randn<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">y_hat</span> = model<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"orig: "</span><span style="color: #757575;">,</span> x<span style="color: #757575;">,</span> <span style="color: #2aa198;">" new: "</span><span style="color: #757575;">,</span> y_hat<span style="color: #757575;">,</span> <span style="color: #2aa198;">"a:"</span><span style="color: #757575;">,</span> m<span style="color: #757575;">(</span>x<span style="color: #757575;">))</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">train</span><span style="color: #757575;">()</span>:
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>300<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">for</span> x<span style="color: #757575;">,</span> y <span style="color: #859900;">in</span> training_loader:
+            <span style="color: #268bd2;">loss</span> = criterion<span style="color: #757575;">(</span>model<span style="color: #757575;">(</span>x<span style="color: #757575;">),</span> y<span style="color: #757575;">)</span>
+            optimizer.zero_grad<span style="color: #757575;">()</span>
+            loss.backward<span style="color: #757575;">()</span>
+            optimizer.step<span style="color: #757575;">()</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">if i % 20 == 0:</span>
+        <span style="color: #586e75;">#     </span><span style="color: #586e75;">print("epoch #%d: loss: %f" % (i, loss.item()))</span>
+
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">---------- model ----------</span>
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>2<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">model</span> = nn.Sequential<span style="color: #757575;">(</span>nn.Linear<span style="color: #757575;">(</span>10<span style="color: #757575;">,</span> 10<span style="color: #757575;">),</span> nn.ReLU<span style="color: #757575;">(),</span> nn.Linear<span style="color: #757575;">(</span>10<span style="color: #757575;">,</span> 10<span style="color: #757575;">))</span>
+    <span style="color: #268bd2;">criterion</span> = nn.MSELoss<span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">optimizer</span> = optim.Adam<span style="color: #757575;">(</span>model.parameters<span style="color: #757575;">())</span>
+    train<span style="color: #757575;">()</span>
+    test<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<p>
+orig:  tensor()  new:  tensor() a: tensor()
+orig:  tensor()  new:  tensor() a: tensor()
+</p>
+
+<p>
+所以这种情况下 autoencoder 无法提取到有用的特征.
+</p>
+
+<p>
+sparse autoencoder 的做法是在 autoencoder 的基础上, 给损失函数加上了一个sparsity
+penalty, 这个 penalty 会限制不能有太多的非零的权重.
+</p>
+
+<p>
+具体实现的时候, 可以在训练时只保留最大的 K 个权重, 将剩余的权重清零 (类似于
+dropout), 或者根据计算 hidden layer 中 activation 的值, 通过 KL divergence (KL
+divergence 与 cross entropy 类似, 都是用来度量两个概率分布的相似性) penalty 限制每个 activation 的针对所有样本的均值不能过大
+</p>
+</div>
+</div>
+</div>
+<div id="footnotes">
+<h2 class="footnotes">Footnotes: </h2>
+<div id="text-footnotes">
+
+<div class="footdef"><sup><a id="fn.1" class="footnum" href="#fnr.1">1</a></sup> <div class="footpara"><p class="footpara">
+<a href="https://web.stanford.edu/class/cs294a/sparseAutoencoder_2011new.pdf">cs294a: sparse autoencoder</a> <a href="http://ufldl.stanford.edu/wiki/index.php/Autoencoders_and_Sparsity">UFLDL: Autoencoders and Sparsity</a>
+</p></div></div>
+
+
+</div>
+</div></div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

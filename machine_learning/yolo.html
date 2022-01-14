@@ -1,0 +1,575 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>YOLO</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">YOLO</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org09e80ca">1. YOLO</a>
+<ul>
+<li><a href="#org48dcec9">1.1. cell</a></li>
+<li><a href="#org38a168b">1.2. network</a></li>
+<li><a href="#org5c008ff">1.3. inference</a></li>
+<li><a href="#orgf3c5e58">1.4. loss</a></li>
+<li><a href="#org06559d0">1.5. IOU</a></li>
+<li><a href="#org3d566b9">1.6. NMS</a></li>
+<li><a href="#org4267f61">1.7. YOLOv3</a></li>
+<li><a href="#orgc6a1d89">1.8. Some Thoughts</a>
+<ul>
+<li><a href="#org33a85cc">1.8.1. Overlapping Ojbect</a></li>
+<li><a href="#org44d29e6">1.8.2. Why Cell/Anchor</a></li>
+<li><a href="#org7410f70">1.8.3. YOLO vs. SSD</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org09e80ca" class="outline-2">
+<h2 id="org09e80ca"><span class="section-number-2">1</span> YOLO</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="https://arxiv.org/pdf/1506.02640.pdf">You Only Look Once: Unified, Real-Time Object Detection</a> 2016/5
+</p>
+
+<p>
+<a href="https://github.com/hizhangp/yolo_tensorflow">https://github.com/hizhangp/yolo_tensorflow</a>
+</p>
+
+<p>
+<a href="https://github.com/solaris33/YOLO-v1-tf2">https://github.com/solaris33/YOLO-v1-tf2</a>
+</p>
+</div>
+
+<div id="outline-container-org48dcec9" class="outline-3">
+<h3 id="org48dcec9"><span class="section-number-3">1.1</span> cell</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+yolo 把图片分为 S * S 个 cell, 若某个 box 的中心点位于这个 cell, 则该 box 由这个
+cell 负责, 所谓 `负责` 主要是和 loss 的计算有关:
+</p>
+
+<ol class="org-ol">
+<li>对于某个 box, 找到负责这个 box 的 cell, 用这个 cell 的预测结果来计算 loss</li>
+
+<li>对于不负责任何 box 的 cell, 会通过 minimize (predict confidence, 或者叫
+objectness confidence) 来计算 loss</li>
+</ol>
+
+<p>
+这一点与 ssd 有些类似: 只有标签中的 pos_index 才会参与 loc_loss 的计算, 只不过
+pos_index 是通过计算 anchor 与 box 的 iou 来确定的, 而不是像 yolo 这样通过中心位置.
+</p>
+
+
+<div id="org3ce1916" class="figure">
+<p><img src="../extra/yolo.png" alt="yolo.png" />
+</p>
+</div>
+
+<p>
+上图 S = 7, 红色的 cell 负责汽车.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org38a168b" class="outline-3">
+<h3 id="org38a168b"><span class="section-number-3">1.2</span> network</h3>
+<div class="outline-text-3" id="text-1-2">
+
+<div id="org0db1c4b" class="figure">
+<p><img src="../extra/yolo_net.png" alt="yolo_net.png" />
+</p>
+</div>
+
+<p>
+yolo 使用的网络包含 24 个 conv layer 和两个 fc layer, 输出为 [S, S,(class, B*C, B*box)], 其中:
+</p>
+
+<ol class="org-ol">
+<li>S*S 个 cell</li>
+
+<li>class 是 class confidence, 大小为 20</li>
+
+<li>B*C 是 B 个 objectness confidence, 大小为 B*1</li>
+
+<li><p>
+B*box 是 B 个 bounding box 的坐标, 大小为 B*4
+</p>
+
+<p>
+后两项乘 B 是因为 inference 时每个 cell 会预测 B 个 box, 我们在计算 loss 或计算最终预测结果时会选择 B 个 box 中 C 最大的
+</p></li>
+</ol>
+
+<p>
+上面的图中, S=7, B=2, class=20, 所以输出为 [7, 7, 20+2+2*4]   
+</p>
+</div>
+</div>
+
+<div id="outline-container-org5c008ff" class="outline-3">
+<h3 id="org5c008ff"><span class="section-number-3">1.3</span> inference</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+模型输出的后处理过程:
+</p>
+
+<ol class="org-ol">
+<li>通过 argmax 找到 B 中 C 最大的 cell box, 输出变为 [S, S, (class, C, box)]</li>
+
+<li>对 S*S 个 cell box 做 NMS, 其中 score 为 argmax(class)*C, 即综合考虑 class
+confidence 和 predict confidence</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgf3c5e58" class="outline-3">
+<h3 id="orgf3c5e58"><span class="section-number-3">1.4</span> loss</h3>
+<div class="outline-text-3" id="text-1-4">
+
+<div id="orgcdc653e" class="figure">
+<p><img src="../extra/yolo_loss.png" alt="yolo_loss.png" />
+</p>
+</div>
+
+<p>
+yolo 最重要的部分是对 loss 的定义, 计算 loss 的步骤为:
+</p>
+
+<ol class="org-ol">
+<li><p>
+确定 box 属于哪个 cell
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #268bd2;">cell_mask</span> = np.zeros<span style="color: #757575;">(</span>[cell_size<span style="color: #757575;">,</span> cell_size<span style="color: #757575;">,</span> 1]<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">i</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">j</span> = <span style="color: #839496;">int</span><span style="color: #757575;">(</span>cell_size * ycenter / input_height<span style="color: #757575;">),</span> <span style="color: #839496;">int</span><span style="color: #757575;">(</span>cell_size * xcenter / input_width<span style="color: #757575;">)</span>
+cell_mask[i][j] = 1
+</pre>
+</div>
+
+<p>
+这个 cell_mask 相当于原论文中的 \(\mathds{1}_i\)
+</p></li>
+
+<li><p>
+先计算 S*S*B 个 cell box 与 box 的 iou, 并从 B 个 cell box 里找到 iou 最大的,
+得到一个 mask, 后续通过这个 mask 可以得到这些最大的 cell box
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #268bd2;">I</span> = iou<span style="color: #757575;">(</span>predict_boxes<span style="color: #757575;">,</span> label[0:4]<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">max_I</span> = tf.reduce_max<span style="color: #757575;">(</span>I<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> keepdims=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">best_box_mask</span> = tf.cast<span style="color: #757575;">((</span>I &gt;= max_I<span style="color: #757575;">),</span> tf.float32<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+cell_mask*best_box_mask 相当于原论文中的 \(\mathds{1}_{ij}\)
+</p></li>
+
+<li><p>
+object loss (C)
+</p>
+
+<p>
+如果 cell 负责一个 box, 则计算 cell 的 pred_C 与 iou 的 l2 loss, 即 yolo 把
+iou 做为 C 的 label, 这个 loss 意味着 iou 越大越好 (但感觉上这个 loss 和coord
+loss 有些重复?)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #268bd2;">object_loss</span> = tf.nn.l2_loss<span style="color: #757575;">(</span>cell_mask * best_box_mask * <span style="color: #757575;">(</span>pred_C - I<span style="color: #757575;">))</span> * alpha
+</pre>
+</div></li>
+
+<li><p>
+noobject loss (C)
+</p>
+
+<p>
+如果 cell 不负责任何 box, 则计算 cell 的 pred_C 与 0 的 l2 loos (则 pred_C 越小越好)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #268bd2;">noobject_loss</span> = tf.nn.l2_loss<span style="color: #757575;">((</span>1 - cell_mask<span style="color: #757575;">)</span> * <span style="color: #757575;">(</span>pred_C<span style="color: #757575;">))</span> * beta
+</pre>
+</div></li>
+
+<li><p>
+coord loss (x,y,w,h)
+</p>
+
+<p>
+如果 cell 负责一个 box, 则计算 pred_coord 与 box 的 coord 的  l2 loss
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #268bd2;">coord_loss</span> = <span style="color: #757575;">(</span>tf.nn.l2_loss<span style="color: #757575;">(</span>cell_mask * best_box_mask * <span style="color: #757575;">(</span>pred_xcenter - xcenter<span style="color: #757575;">)</span> / <span style="color: #757575;">(</span>input_width / cell_size<span style="color: #757575;">))</span> +
+              tf.nn.l2_loss<span style="color: #757575;">(</span>cell_mask * best_box_mask * <span style="color: #757575;">(</span>pred_ycenter - ycenter<span style="color: #757575;">)</span> / <span style="color: #757575;">(</span>input_height / cell_size<span style="color: #757575;">))</span> +
+              tf.nn.l2_loss<span style="color: #757575;">(</span>cell_mask * best_box_mask * <span style="color: #757575;">(</span>pred_sqrt_w - sqrt_w<span style="color: #757575;">))</span> / input_width +
+              tf.nn.l2_loss<span style="color: #757575;">(</span>cell_mask * best_box_mask * <span style="color: #757575;">(</span>pred_sqrt_h - sqrt_h<span style="color: #757575;">))</span> / input_height <span style="color: #757575;">)</span> * gamma
+</pre>
+</div></li>
+
+<li><p>
+class loss (p)
+</p>
+
+<p>
+如果 cell 负责一个 box, 则计算其 class loss
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #268bd2;">P</span> = tf.one_hot<span style="color: #757575;">(</span>tf.cast<span style="color: #757575;">(</span>label[4]<span style="color: #757575;">,</span> tf.int32<span style="color: #757575;">),</span> num_classes<span style="color: #757575;">,</span> dtype=tf.float32<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">pred_P</span> = predict[:<span style="color: #757575;">,</span> :<span style="color: #757575;">,</span> 0:num_classes]
+
+<span style="color: #268bd2;">class_loss</span> = tf.nn.l2_loss<span style="color: #757575;">(</span>cell_mask * <span style="color: #757575;">(</span>pred_P - P<span style="color: #757575;">))</span> * zeta
+</pre>
+</div></li>
+</ol>
+
+<p>
+实际上 yolo 的 ssd 的 loss 类似, 只是多了针对 predict confidence (C) 的 obj/noobj
+loss
+</p>
+</div>
+</div>
+
+<div id="outline-container-org06559d0" class="outline-3">
+<h3 id="org06559d0"><span class="section-number-3">1.5</span> IOU</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+IOU 即 Intersection Over Union, \(\frac{Intersection}{Union}\), yolo 把
+IOU(pred_box, box) 的结果看做是 pred_c 的 label
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">iou</span><span style="color: #757575;">(</span>box1<span style="color: #757575;">,</span> box2<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;"># </span>
+    <span style="color: #586e75;"># </span>
+    <span style="color: #586e75;">#               </span><span style="color: #586e75;">+--------------+</span>
+    <span style="color: #586e75;">#               </span><span style="color: #586e75;">|              |</span>
+    <span style="color: #586e75;">#               </span><span style="color: #586e75;">|              |</span>
+    <span style="color: #586e75;">#               </span><span style="color: #586e75;">|        +-----+-----+</span>
+    <span style="color: #586e75;">#               </span><span style="color: #586e75;">|        |     |     |</span>
+    <span style="color: #586e75;">#               </span><span style="color: #586e75;">+--------+-----+     |</span>
+    <span style="color: #586e75;">#                        </span><span style="color: #586e75;">|           |</span>
+    <span style="color: #586e75;">#                        </span><span style="color: #586e75;">+-----------+    </span>
+
+    <span style="color: #268bd2;">w</span> = <span style="color: #839496;">min</span><span style="color: #757575;">(</span>box1[0] + 0.5 * box1[2]<span style="color: #757575;">,</span> box2[0] + 0.5 * box2[2]<span style="color: #757575;">)</span> - <span style="color: #839496;">max</span><span style="color: #757575;">(</span>box1[0] - 0.5 * box1[2]<span style="color: #757575;">,</span> box2[0] - 0.5 * box2[2]<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">h</span> = <span style="color: #839496;">min</span><span style="color: #757575;">(</span>box1[1] + 0.5 * box1[3]<span style="color: #757575;">,</span> box2[1] + 0.5 * box2[3]<span style="color: #757575;">)</span> - <span style="color: #839496;">max</span><span style="color: #757575;">(</span>box1[1] - 0.5 * box1[3]<span style="color: #757575;">,</span> box2[1] - 0.5 * box2[3]<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">inter</span> = 0 <span style="color: #859900;">if</span> w &lt; 0 <span style="color: #859900;">or</span> h &lt; 0 <span style="color: #859900;">else</span> w * h
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"intersection:"</span><span style="color: #757575;">,</span> inter<span style="color: #757575;">)</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"union"</span><span style="color: #757575;">,</span> <span style="color: #757575;">(</span>box1[2] * box1[3] + box2[2] * box2[3] - inter<span style="color: #757575;">))</span>
+    <span style="color: #859900;">return</span> inter / <span style="color: #757575;">(</span>box1[2] * box1[3] + box2[2] * box2[3] - inter<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>iou<span style="color: #757575;">(</span>np.array<span style="color: #757575;">(</span>[0.5<span style="color: #757575;">,</span>0.5<span style="color: #757575;">,</span>1<span style="color: #757575;">,</span>1]<span style="color: #757575;">),</span>np.array<span style="color: #757575;">(</span>[1<span style="color: #757575;">,</span>1<span style="color: #757575;">,</span>1<span style="color: #757575;">,</span>1]<span style="color: #757575;">)))</span>
+</pre>
+</div>
+
+<p>
+intersection: 0.25
+union 1.75
+0.14285714285714285
+</p>
+</div>
+</div>
+
+<div id="outline-container-org3d566b9" class="outline-3">
+<h3 id="org3d566b9"><span class="section-number-3">1.6</span> NMS</h3>
+<div class="outline-text-3" id="text-1-6">
+<p>
+predict 时我们拿到的预测结果的格式是 [S,S,classes+C+box],针对每个 cell, 都会有许多可能的 object 和 box 信息,我们需要从中找到最可能的值
+</p>
+
+<p>
+NMS (Not Max Supression) 可能从这些结果中过滤掉那些=不好=的结果
+</p>
+
+
+<div id="orgb7fb887" class="figure">
+<p><img src="../extra/yolo_nms.png" alt="yolo_nms.png" />
+</p>
+</div>
+
+<p>
+NMS 的计算方法是:
+</p>
+
+<ol class="org-ol">
+<li>把所有 box 按 confidence (class_confidence*predict_confidence) 排序, 结果为集合 X</li>
+<li>输出 X 中 confidence 最大的 A, 并且 X.pop(A)</li>
+<li>计算 X 和 A 的 IOU, 所有超过 threshold(例如 0.5) 的 box (B) 被认为是与 A 重复,
+X.pop(B)</li>
+<li>重复 2</li>
+</ol>
+
+<p>
+nms 的实现:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span style="color: #b58900;">vector</span>&lt;Box&gt; <span style="color: #268bd2; font-weight: bold;">Detector</span>::<span style="color: #268bd2;">NMS</span><span style="color: #757575;">(</span><span style="color: #b58900;">vector</span>&lt;Box&gt; <span style="color: #268bd2;">boxes</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">vector</span>&lt;Box&gt; <span style="color: #268bd2;">picked</span>;
+    <span style="color: #268bd2; font-weight: bold;">std</span>::sort<span style="color: #757575;">(</span>
+        boxes.begin<span style="color: #757575;">(),</span> boxes.end<span style="color: #757575;">(),</span>
+        []<span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">Box</span> &amp;<span style="color: #268bd2;">a</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">Box</span> &amp;<span style="color: #268bd2;">b</span><span style="color: #757575;">)</span> -&gt; <span style="color: #b58900;">bool</span> <span style="color: #757575;">{</span> <span style="color: #859900;">return</span> a.score &gt; b.score; <span style="color: #757575;">})</span>;
+
+    <span style="color: #b58900;">bool</span> <span style="color: #268bd2;">supressed</span>[boxes.size<span style="color: #757575;">()</span>] = <span style="color: #757575;">{}</span>;
+    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">i</span> = 0; i &lt; boxes.size<span style="color: #757575;">()</span>; i++<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>supressed[i]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            <span style="color: #859900;">continue</span>;
+        <span style="color: #757575;">}</span>
+        <span style="color: #b58900;">Box</span> &amp;<span style="color: #268bd2;">best</span> = boxes[i];
+        picked.push_back<span style="color: #757575;">(</span>best<span style="color: #757575;">)</span>;
+        <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">j</span> = i + 1; j &lt; boxes.size<span style="color: #757575;">()</span>; j++<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            <span style="color: #b58900;">float</span> <span style="color: #268bd2;">iou</span> = IOU<span style="color: #757575;">(</span>best<span style="color: #757575;">,</span> boxes[j]<span style="color: #757575;">)</span>;
+            <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>iou &gt;= kNMSThresh<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+                supressed[j] = <span style="color: #268bd2; font-weight: bold;">true</span>;
+            <span style="color: #757575;">}</span>
+        <span style="color: #757575;">}</span>
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">return</span> picked;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">nms</span><span style="color: #757575;">(</span>boxes<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">if</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span>boxes<span style="color: #757575;">)</span> &lt;= 0:
+        <span style="color: #859900;">return</span> np.array<span style="color: #757575;">(</span>[]<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">box</span> = np.array<span style="color: #757575;">(</span>[[*<span style="color: #757575;">(</span>d.box<span style="color: #757575;">),</span> d.score] <span style="color: #859900;">for</span> d <span style="color: #859900;">in</span> boxes]<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">x1</span> = np.array<span style="color: #757575;">(</span>box[:<span style="color: #757575;">,</span> 0]<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">y1</span> = np.array<span style="color: #757575;">(</span>box[:<span style="color: #757575;">,</span> 1]<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">x2</span> = np.array<span style="color: #757575;">(</span>box[:<span style="color: #757575;">,</span> 2]<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">y2</span> = np.array<span style="color: #757575;">(</span>box[:<span style="color: #757575;">,</span> 3]<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">score</span> = np.array<span style="color: #757575;">(</span>box[:<span style="color: #757575;">,</span> 4]<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">area</span> = np.multiply<span style="color: #757575;">(</span>x2 - x1 + 1<span style="color: #757575;">,</span> y2 - y1 + 1<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">I</span> = np.array<span style="color: #757575;">(</span>score.argsort<span style="color: #757575;">())</span>
+    <span style="color: #268bd2;">pick</span> = []
+    <span style="color: #859900;">while</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span>I<span style="color: #757575;">)</span> &gt; 0:
+        <span style="color: #268bd2;">best</span> = I[-1]
+        pick.append<span style="color: #757575;">(</span>best<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">xx1</span> = np.maximum<span style="color: #757575;">(</span>x1[best]<span style="color: #757575;">,</span> x1[I[0:-1]]<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">yy1</span> = np.maximum<span style="color: #757575;">(</span>y1[best]<span style="color: #757575;">,</span> y1[I[0:-1]]<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">xx2</span> = np.minimum<span style="color: #757575;">(</span>x2[best]<span style="color: #757575;">,</span> x2[I[0:-1]]<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">yy2</span> = np.minimum<span style="color: #757575;">(</span>y2[best]<span style="color: #757575;">,</span> y2[I[0:-1]]<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">w</span> = np.maximum<span style="color: #757575;">(</span>0.0<span style="color: #757575;">,</span> xx2 - xx1 + 1<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">h</span> = np.maximum<span style="color: #757575;">(</span>0.0<span style="color: #757575;">,</span> yy2 - yy1 + 1<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">intersection</span> = w * h
+        <span style="color: #268bd2;">iou</span> = intersection / <span style="color: #757575;">(</span>area[best] + area[I[0:-1]] - intersection<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">I</span> = I[np.where<span style="color: #757575;">(</span>iou &lt;= 0.5<span style="color: #757575;">)</span>[0]]
+    <span style="color: #859900;">return</span> [boxes[i] <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> pick]
+
+</pre>
+</div>
+
+<p>
+由于 nms 相当耗时, 所以最好用 gpu 加速.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org4267f61" class="outline-3">
+<h3 id="org4267f61"><span class="section-number-3">1.7</span> YOLOv3</h3>
+<div class="outline-text-3" id="text-1-7">
+<p>
+<a href="https://arxiv.org/pdf/1804.02767.pdf">YOLOv3: An Incremental Improvement</a> 2018/4
+</p>
+
+<p>
+yolov3 和 ssd 非常相似:
+</p>
+
+<ol class="org-ol">
+<li>同样使用 anchor (prio box), 并使用 iou 而不是中心点来标记 anchor 标签, 只不过
+anchor 的大小是在数据集中用 k-mean 统计出来的</li>
+
+<li><p>
+特征提取去掉了 fc, 使用和 ssd 类似的 multiple scale 结构, 不过比 ssd 更复杂一些, 它实际上是参考的 FPN (Feature Pyramid Networks, <a href="https://arxiv.org/pdf/1612.03144.pdf">Feature Pyramid Networks for Object Detection</a> 2017/4)
+</p>
+
+
+<div id="org152ea62" class="figure">
+<p><img src="../extra/yolov3.png" alt="yolov3.png" />
+</p>
+</div></li>
+
+<li>yolov3 的 class 输出不是用的 softmax, 而是 N 个单独的 sigmoid, 所以它能处理一个 object 属于多个 class 的情况</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgc6a1d89" class="outline-3">
+<h3 id="orgc6a1d89"><span class="section-number-3">1.8</span> Some Thoughts</h3>
+<div class="outline-text-3" id="text-1-8">
+</div>
+<div id="outline-container-org33a85cc" class="outline-4">
+<h4 id="org33a85cc"><span class="section-number-4">1.8.1</span> Overlapping Ojbect</h4>
+<div class="outline-text-4" id="text-1-8-1">
+<p>
+yolo 无法处理中心落在同一个 cell 的多个 object.
+</p>
+
+<ol class="org-ol">
+<li>train 时同一张图片针对同一个 cell 的预测值会有多个不同的 label</li>
+
+<li>inference 时同一个 cell 只能输出一个 box</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org44d29e6" class="outline-4">
+<h4 id="org44d29e6"><span class="section-number-4">1.8.2</span> Why Cell/Anchor</h4>
+<div class="outline-text-4" id="text-1-8-2">
+<p>
+anchor 的思想来源到 rcnn.
+</p>
+
+<p>
+如果不用 anchor, 需要以不同的 window 扫描图片, 来确定任何区域是否有物体. 通过
+anchor, 可以方便的把这个扫描的过程并行化
+(<a href="https://www.mathworks.com/help/vision/ug/anchor-boxes-for-object-detection.html">https://www.mathworks.com/help/vision/ug/anchor-boxes-for-object-detection.html</a>)
+</p>
+
+<p>
+有点类似于计算卷积时 `naive` 和 `im2col` 两种方法的区别
+</p>
+</div>
+</div>
+
+<div id="outline-container-org7410f70" class="outline-4">
+<h4 id="org7410f70"><span class="section-number-4">1.8.3</span> YOLO vs. SSD</h4>
+<div class="outline-text-4" id="text-1-8-3">
+<ol class="org-ol">
+<li>cell box
+
+<ul class="org-ul">
+<li>yolo 的 cell 是在原始图片上均匀划分的, 使用中心点来确定 object 对应的 cell</li>
+
+<li>ssd 的 anchor 是金字塔形式的, 使用 iou 来确定 object 对应的 anchor</li>
+</ul></li>
+
+<li>输出层
+
+<ul class="org-ul">
+<li>yolo 直接使用两个 fc 层的输出</li>
+
+<li>ssd 则是通过 concat 多个 conv 的输出</li>
+</ul></li>
+
+<li>输出的 confidence
+
+<ul class="org-ul">
+<li>yolo 有一个 predict confidence, 还有一个 class confidence.</li>
+
+<li>ssd 只有一个 class confidence, 所以它需要定义一个 `unknown` 类别.</li>
+</ul></li>
+
+<li>性能
+
+<ul class="org-ul">
+<li>yolo 对小物体识别更好.</li>
+
+<li>ssd 对大物体识别较好.</li>
+</ul></li>
+
+<li>overlapping object
+
+<ul class="org-ul">
+<li>yolo 无法处理中心重叠的多个物体.</li>
+
+<li>ssd 可以减轻这个问题 (依赖于 anchor 的个数)</li>
+</ul></li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

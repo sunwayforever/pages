@@ -1,0 +1,784 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dagger</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Dagger</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org199c35d">1. Dagger</a>
+<ul>
+<li><a href="#org0b8d413">1.1. DI</a>
+<ul>
+<li><a href="#org086d823">1.1.1. 依赖</a></li>
+<li><a href="#orgcf547e8">1.1.2. DI</a></li>
+</ul>
+</li>
+<li><a href="#org3776b21">1.2. Dagger</a>
+<ul>
+<li><a href="#org998fce5">1.2.1. Inject</a></li>
+<li><a href="#org84a8bfa">1.2.2. Component</a></li>
+<li><a href="#org7c32e98">1.2.3. Module &amp; Provides</a></li>
+<li><a href="#org3fcf7f5">1.2.4. Scope 与单例</a></li>
+</ul>
+</li>
+<li><a href="#org5b90e4b">1.3. Dagger Internal</a>
+<ul>
+<li><a href="#org82d022a">1.3.1. 简单的 inject</a></li>
+<li><a href="#orgc9d520b">1.3.2. 使用 module</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org199c35d" class="outline-2">
+<h2 id="org199c35d"><span class="section-number-2">1</span> Dagger</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org0b8d413" class="outline-3">
+<h3 id="org0b8d413"><span class="section-number-3">1.1</span> DI</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-org086d823" class="outline-4">
+<h4 id="org086d823"><span class="section-number-4">1.1.1</span> 依赖</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+若 A 的功能依赖于 B, 则称为 A 对 B 有依赖, 没有使用 DI 时, 依赖通常有几种处理方式:
+</p>
+
+<ol class="org-ol">
+<li><p>
+在 A 的构造函数中初始化 B, 例如:
+</p>
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">public</span> <span style="color: #268bd2;">A</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">this</span>.b = <span style="color: #859900;">new</span> <span style="color: #b58900;">B</span><span style="color: #757575;">()</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div></li>
+
+<li><p>
+通过 A 的 setter 来初始化 B, 例如:
+</p>
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #b58900;">A</span> <span style="color: #268bd2;">a</span> = <span style="color: #859900;">new</span> <span style="color: #b58900;">A</span><span style="color: #757575;">()</span>;
+a.setB<span style="color: #757575;">(</span><span style="color: #859900;">new</span> <span style="color: #b58900;">B</span><span style="color: #757575;">())</span>;
+</pre>
+</div></li>
+</ol>
+</div>
+
+<div id="outline-container-orgd9556e1" class="outline-5">
+<h5 id="orgd9556e1"><span class="section-number-5">1.1.1.1</span> 构造函数</h5>
+<div class="outline-text-5" id="text-1-1-1-1">
+</div>
+<ol class="org-ol">
+<li><a id="org5db78fe"></a>优点<br />
+<div class="outline-text-6" id="text-1-1-1-1-1">
+<p>
+通过构造函数处理依赖的优点是容易处理复杂的依赖关系: 每个依赖自身的构造函数负责处理它自己的依赖,不需要外界的干预, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">class</span> <span style="color: #b58900;">A</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">public</span> <span style="color: #268bd2;">A</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">this</span>.b = <span style="color: #859900;">new</span> <span style="color: #b58900;">B</span><span style="color: #757575;">()</span>;
+        <span style="color: #859900;">this</span>.c = <span style="color: #859900;">new</span> <span style="color: #b58900;">C</span><span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">B</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">public</span> <span style="color: #268bd2;">B</span> <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">this</span>.d = <span style="color: #859900;">new</span> <span style="color: #b58900;">D</span><span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">C</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">public</span> <span style="color: #268bd2;">C</span> <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">this</span>.e = <span style="color: #859900;">new</span> <span style="color: #b58900;">E</span><span style="color: #757575;">()</span>;
+        <span style="color: #859900;">this</span>.f = <span style="color: #859900;">new</span> <span style="color: #b58900;">F</span><span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org919179b"></a>缺点<br />
+<div class="outline-text-6" id="text-1-1-1-1-2">
+<p>
+各个依赖耦合的一起, 每个依赖不容易替换. 这种耦合对扩展和测试都不利. 例如在单元测试时, 若要测试 A, 通常需要使用 MockB, MockC 来代替 B, C. 
+</p>
+</div>
+</li>
+</ol>
+</div>
+
+<div id="outline-container-org92eee9b" class="outline-5">
+<h5 id="org92eee9b"><span class="section-number-5">1.1.1.2</span> Setter</h5>
+<div class="outline-text-5" id="text-1-1-1-2">
+</div>
+<ol class="org-ol">
+<li><a id="orgc1c342d"></a>优点<br />
+<div class="outline-text-6" id="text-1-1-1-2-1">
+<p>
+容易在运行时替换单个依赖
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">class</span> <span style="color: #b58900;">A</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">B</span> <span style="color: #268bd2;">b</span>;
+    <span style="color: #b58900;">C</span> <span style="color: #268bd2;">c</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">B</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">D</span> <span style="color: #268bd2;">d</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">C</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">E</span> <span style="color: #268bd2;">e</span>;
+    <span style="color: #b58900;">F</span> <span style="color: #268bd2;">f</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #b58900;">A</span> <span style="color: #268bd2;">a</span> = <span style="color: #859900;">new</span> <span style="color: #b58900;">A</span><span style="color: #757575;">()</span>;
+<span style="color: #b58900;">B</span> <span style="color: #268bd2;">b</span> = <span style="color: #859900;">new</span> <span style="color: #b58900;">B</span><span style="color: #757575;">()</span>;
+<span style="color: #b58900;">C</span> <span style="color: #268bd2;">c</span> = <span style="color: #859900;">new</span> <span style="color: #b58900;">C</span><span style="color: #757575;">()</span>;
+<span style="color: #b58900;">D</span> <span style="color: #268bd2;">d</span> = <span style="color: #859900;">new</span> <span style="color: #b58900;">D</span><span style="color: #757575;">()</span>;
+<span style="color: #b58900;">E</span> <span style="color: #268bd2;">e</span> = <span style="color: #859900;">new</span> <span style="color: #b58900;">E</span><span style="color: #757575;">()</span>;
+<span style="color: #b58900;">F</span> <span style="color: #268bd2;">f</span> = <span style="color: #859900;">new</span> <span style="color: #b58900;">F</span><span style="color: #757575;">()</span>;
+a.setB<span style="color: #757575;">(</span>b<span style="color: #757575;">)</span>;
+a.setC<span style="color: #757575;">(</span>c<span style="color: #757575;">)</span>;
+b.setD<span style="color: #757575;">(</span>d<span style="color: #757575;">)</span>;
+c.setE<span style="color: #757575;">(</span>e<span style="color: #757575;">)</span>;
+c.setF<span style="color: #757575;">(</span>f<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org2b57fa6"></a>缺点<br />
+<div class="outline-text-6" id="text-1-1-1-2-2">
+<p>
+需要人为的分析依赖的顺序并提前生成所有的依赖, 耗时且易出错.
+</p>
+</div>
+</li>
+</ol>
+</div>
+
+<div id="outline-container-org161e45b" class="outline-5">
+<h5 id="org161e45b"><span class="section-number-5">1.1.1.3</span> Factory</h5>
+<div class="outline-text-5" id="text-1-1-1-3">
+<p>
+使用构造函数不必分析依赖关系, 使用 setter 可以灵活的修改依赖, 通过 Factory 可以结合两者的优点
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">class</span> <span style="color: #b58900;">A</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">B</span> <span style="color: #268bd2;">b</span>;
+    <span style="color: #859900;">public</span> <span style="color: #268bd2;">A</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        b = Factory.getB<span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">B</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">C</span> <span style="color: #268bd2;">c</span>;
+    <span style="color: #859900;">public</span> <span style="color: #268bd2;">B</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        c = Factory.getC<span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">Factory</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">B</span> <span style="color: #268bd2;">getB</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">return</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">B</span><span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+
+    <span style="color: #b58900;">C</span> <span style="color: #268bd2;">getC</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">return</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">C</span><span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">public</span> <span style="color: #859900;">class</span> <span style="color: #b58900;">Test</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">A</span> <span style="color: #268bd2;">a</span> = <span style="color: #859900;">new</span> <span style="color: #b58900;">A</span><span style="color: #757575;">()</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgcf547e8" class="outline-4">
+<h4 id="orgcf547e8"><span class="section-number-4">1.1.2</span> DI</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+Dependency Injection (DI) 的效果和 Factory 类似, 但不需要自己手写 Factory 的那些
+boilerplate 代码, 它的主要功能是:
+</p>
+
+<ol class="org-ol">
+<li>分析依赖关系</li>
+<li>自动生成对象并使它们满足依赖</li>
+</ol>
+</div>
+
+<div id="outline-container-orgd0074aa" class="outline-5">
+<h5 id="orgd0074aa"><span class="section-number-5">1.1.2.1</span> JSR-330</h5>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org3776b21" class="outline-3">
+<h3 id="org3776b21"><span class="section-number-3">1.2</span> Dagger</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+<a href="https://www.jianshu.com/p/24af4c102f62?utm_campaign=maleskine&amp;utm_content=note&amp;utm_medium=seo_notes&amp;utm_source=recommendation">dagger2 教程</a>
+</p>
+
+<p>
+
+</p>
+
+<p>
+Dagger 是编译时的 DI 框架: 它在编译时通过 annotation 分析依赖关系, 并生成相应的代码, 而不是在运行时通过反射及动态代码生成等方式.
+</p>
+
+<p>
+Dagger 主要定义是以下的 annotation:
+</p>
+
+<ol class="org-ol">
+<li>Inject</li>
+<li>Component</li>
+<li>Module</li>
+<li>Provides</li>
+<li>Singleton</li>
+</ol>
+</div>
+
+<div id="outline-container-org998fce5" class="outline-4">
+<h4 id="org998fce5"><span class="section-number-4">1.2.1</span> Inject</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+对于一个依赖 `A -&gt; B`, Inject annotation 有两个作用:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">class</span> <span style="color: #b58900;">A</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Inject</span>
+    <span style="color: #b58900;">B</span> <span style="color: #268bd2;">b</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">B</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Inject</span>
+    <span style="color: #859900;">public</span> <span style="color: #268bd2;">B</span><span style="color: #757575;">()</span> <span style="color: #757575;">{}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+对于 A 来说, 把成员 b 声明为 Inject, 表示 A 依赖 B, 需要 dagger 自动给 b 赋值对于 B 来说, 把构造函数声明为 Inject, 表示 dagger 可以通过这个构造函数给需要 b
+的地方 (例如 A.b) 提供一个 B 的对象.
+</p>
+
+<p>
+Inject 主要用来 inject 成员变量和构造函数, 除此以外, inject 也可以:
+</p>
+
+<ol class="org-ol">
+<li><p>
+Inject 构造函数时, 构造函数的参数自动构成一个依赖
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">class</span> <span style="color: #b58900;">A</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Inject</span>
+    <span style="color: #b58900;">B</span> <span style="color: #268bd2;">b</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">B</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Inject</span>
+    <span style="color: #859900;">public</span> <span style="color: #268bd2;">B</span><span style="color: #757575;">(</span><span style="color: #b58900;">C</span> <span style="color: #268bd2;">c</span><span style="color: #757575;">)</span> <span style="color: #757575;">{}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">C</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Inject</span>
+    <span style="color: #859900;">public</span> <span style="color: #268bd2;">C</span><span style="color: #757575;">()</span> <span style="color: #757575;">{}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div></li>
+
+<li>Inject 普通成员函数, 该成员函数会在 Inject 构造函数之后自动执行, 且其参数也自动构成一个依赖</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org84a8bfa" class="outline-4">
+<h4 id="org84a8bfa"><span class="section-number-4">1.2.2</span> Component</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<p>
+通过 Inject 声明了依赖关系后, 需要通过 Component 来实施真正的注入动作, 因为
+dagger 是编译时的 DI 框架, 期望 `new A` 时自动注入似乎并不可行.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">class</span> <span style="color: #b58900;">A</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Inject</span>
+    <span style="color: #b58900;">B</span> <span style="color: #268bd2;">b</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">B</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Inject</span>
+    <span style="color: #859900;">public</span> <span style="color: #268bd2;">B</span><span style="color: #757575;">()</span> <span style="color: #757575;">{}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #268bd2; font-weight: bold;">@Component</span>
+<span style="color: #859900;">interface</span> <span style="color: #b58900;">AInjector</span> <span style="color: #757575;">{</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">inject &#21487;&#20197;&#26159;&#20219;&#24847;&#21517;&#23383;</span>
+    <span style="color: #b58900;">void</span> <span style="color: #268bd2;">inject</span><span style="color: #757575;">(</span><span style="color: #b58900;">A</span> <span style="color: #268bd2;">a</span><span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">Test</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">public</span> <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">String</span>[] <span style="color: #268bd2;">args</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #b58900;">A</span> <span style="color: #268bd2;">a</span> = <span style="color: #859900;">new</span> <span style="color: #b58900;">A</span><span style="color: #757575;">()</span>;
+        DaggerAInjector.create<span style="color: #757575;">()</span>.inject<span style="color: #757575;">(</span>a<span style="color: #757575;">)</span>;
+        assert<span style="color: #757575;">(</span>a.b != <span style="color: #268bd2; font-weight: bold;">null</span><span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+dagger 要求 AInjector 是一个接口, 并且会自动生成一个 DaggerAInjector 的类, 通过
+DaggerAInjector.create().inject(a) 可以注入 a 的依赖.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org7c32e98" class="outline-4">
+<h4 id="org7c32e98"><span class="section-number-4">1.2.3</span> Module &amp; Provides</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<p>
+Inject 和 Component 能实现基本的依赖分析与注入, 但有三种情况无法完成:
+</p>
+
+<ol class="org-ol">
+<li>被依赖的是一个接口, dagger 无法对依赖进行实例化</li>
+
+<li>被依赖的类的构造函数需要用户提供参数</li>
+
+<li>被依赖的是第三方库, 无法给它的构造函数加个 Inject 注解</li>
+</ol>
+
+<p>
+通过 Module 和 Provides 可以处理这三种情况
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">class</span> <span style="color: #b58900;">A</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Inject</span>
+    <span style="color: #b58900;">IB</span> <span style="color: #268bd2;">b</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">B</span> <span style="color: #859900;">implements</span> <span style="color: #b58900;">IB</span> <span style="color: #757575;">{</span>
+
+<span style="color: #757575;">}</span>
+
+<span style="color: #268bd2; font-weight: bold;">@Module</span>
+<span style="color: #859900;">class</span> <span style="color: #b58900;">TestModule</span> <span style="color: #757575;">{</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">provideIB &#21487;&#20197;&#26159;&#20219;&#24847;&#21517;&#23383;, &#21482;&#35201;&#36820;&#22238;&#31867;&#22411;&#19968;&#33268;&#23601;&#21487;&#20197;</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25552;&#20379;&#25509;&#21475;&#30340;&#23454;&#29616;</span>
+    <span style="color: #268bd2; font-weight: bold;">@Provides</span>
+    <span style="color: #b58900;">IB</span> <span style="color: #268bd2;">provideIB</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">return</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">B</span><span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21487;&#20197; provide &#22810;&#20010;&#20381;&#36182;</span>
+    <span style="color: #268bd2; font-weight: bold;">@Provides</span>
+    <span style="color: #b58900;">C</span> <span style="color: #268bd2;">provideC</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">return</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">C</span><span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21487;&#20197;&#24102;&#21442;&#25968;</span>
+    <span style="color: #268bd2; font-weight: bold;">@Provides</span>
+    <span style="color: #b58900;">D</span> <span style="color: #268bd2;">provideD</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">return</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">D</span><span style="color: #757575;">(</span>1<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">provide &#31532;&#19977;&#26041;&#24211;&#20013;&#30340;&#23545;&#35937;</span>
+    <span style="color: #268bd2; font-weight: bold;">@Provides</span>
+    <span style="color: #b58900;">HttpClient</span> <span style="color: #268bd2;">provideHttpClient</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">return</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">HttpClient</span><span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">Component &#21487;&#20197;&#25351;&#23450;&#22810;&#20010; module, &#27599;&#20010; module &#23545;&#24212;&#19981;&#21516;&#30340;&#21151;&#33021;&#27169;&#22359;</span>
+<span style="color: #268bd2; font-weight: bold;">@Component</span> <span style="color: #757575;">(</span>module = <span style="color: #757575;">{</span>TestModule.<span style="color: #859900;">class</span><span style="color: #586e75;">/*</span><span style="color: #586e75;">, Test2Module.class</span><span style="color: #586e75;"> */</span><span style="color: #757575;">})</span>
+<span style="color: #859900;">interface</span> <span style="color: #b58900;">AInjector</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">void</span> <span style="color: #268bd2;">inject</span><span style="color: #757575;">(</span><span style="color: #b58900;">A</span> <span style="color: #268bd2;">target</span><span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">public</span> <span style="color: #859900;">class</span> <span style="color: #b58900;">Test</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">public</span> <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">String</span>[] <span style="color: #268bd2;">args</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #b58900;">A</span> <span style="color: #268bd2;">a</span>= <span style="color: #859900;">new</span> <span style="color: #b58900;">A</span><span style="color: #757575;">()</span>;
+        DaggerAInjector.create<span style="color: #757575;">()</span>.inject<span style="color: #757575;">(</span>a<span style="color: #757575;">)</span>;
+        assert<span style="color: #757575;">(</span>a.b <span style="color: #859900;">instanceof</span> B<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+通过修改 Component 使用的 Module, 可以很容易的实现测试时需要的 Mock Object:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #268bd2; font-weight: bold;">@Module</span>
+<span style="color: #859900;">class</span> <span style="color: #b58900;">MockBModule</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Provides</span>
+    <span style="color: #b58900;">IB</span> <span style="color: #268bd2;">provideIB</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">return</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">MockB</span><span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #268bd2; font-weight: bold;">@Component</span> <span style="color: #757575;">(</span>module = MockBModule.<span style="color: #859900;">class</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">interface</span> <span style="color: #b58900;">AUnitTestInjector</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">void</span> <span style="color: #268bd2;">inject</span><span style="color: #757575;">(</span><span style="color: #b58900;">A</span> <span style="color: #268bd2;">target</span><span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">public</span> <span style="color: #859900;">class</span> <span style="color: #b58900;">UnitTest</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">public</span> <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">String</span>[] <span style="color: #268bd2;">args</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #b58900;">A</span> <span style="color: #268bd2;">a</span>= <span style="color: #859900;">new</span> <span style="color: #b58900;">A</span><span style="color: #757575;">()</span>;
+        DaggerAUnitTestInjector.create<span style="color: #757575;">()</span>.inject<span style="color: #757575;">(</span>a<span style="color: #757575;">)</span>;
+        assert<span style="color: #757575;">(</span>a.b <span style="color: #859900;">instanceof</span> B<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org3fcf7f5" class="outline-4">
+<h4 id="org3fcf7f5"><span class="section-number-4">1.2.4</span> Scope 与单例</h4>
+<div class="outline-text-4" id="text-1-2-4">
+<p>
+依赖图是唯一的, 但默认情况下 dagger 每次使用 component 注入依赖时都会按初始化新的依赖对象.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">class</span> <span style="color: #b58900;">A</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Inject</span>
+    <span style="color: #b58900;">B</span> <span style="color: #268bd2;">b</span>;
+
+    <span style="color: #268bd2; font-weight: bold;">@Inject</span>
+    <span style="color: #b58900;">B</span> <span style="color: #268bd2;">b2</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">B</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Inject</span>
+    <span style="color: #859900;">public</span> <span style="color: #268bd2;">B</span><span style="color: #757575;">()</span> <span style="color: #757575;">{}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #268bd2; font-weight: bold;">@Component</span>
+<span style="color: #859900;">interface</span> <span style="color: #b58900;">AInjector</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">void</span> <span style="color: #268bd2;">inject</span><span style="color: #757575;">(</span><span style="color: #b58900;">A</span> <span style="color: #268bd2;">a</span><span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">Test</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">public</span> <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">String</span>[] <span style="color: #268bd2;">args</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #b58900;">A</span> <span style="color: #268bd2;">a</span> = <span style="color: #859900;">new</span> <span style="color: #b58900;">A</span><span style="color: #757575;">()</span>;
+        DaggerAInjector.create<span style="color: #757575;">()</span>.inject<span style="color: #757575;">(</span>a<span style="color: #757575;">)</span>;
+        assert<span style="color: #757575;">(</span>a.b != a.b2<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+</pre>
+</div>
+
+<p>
+有两种方式可以实现单例:
+</p>
+
+<ol class="org-ol">
+<li>通过自己控制 module 的 provideXXX 返回一个单例的对象</li>
+<li>通过 Scope</li>
+</ol>
+</div>
+
+<div id="outline-container-orgcc29963" class="outline-5">
+<h5 id="orgcc29963"><span class="section-number-5">1.2.4.1</span> Module 实现单例</h5>
+<div class="outline-text-5" id="text-1-2-4-1">
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">class</span> <span style="color: #b58900;">A</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Inject</span>
+    <span style="color: #b58900;">B</span> <span style="color: #268bd2;">b1</span>;
+
+    <span style="color: #268bd2; font-weight: bold;">@Inject</span>
+    <span style="color: #b58900;">B</span> <span style="color: #268bd2;">b2</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">B</span> <span style="color: #757575;">{}</span>
+
+<span style="color: #268bd2; font-weight: bold;">@Module</span>
+<span style="color: #859900;">class</span> <span style="color: #b58900;">TestModule</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">static</span> <span style="color: #b58900;">B</span> <span style="color: #268bd2;">sB</span> = <span style="color: #859900;">new</span> <span style="color: #b58900;">B</span><span style="color: #757575;">()</span>;
+    <span style="color: #268bd2; font-weight: bold;">@Provides</span>
+    <span style="color: #b58900;">B</span> <span style="color: #268bd2;">provideB</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">return</span> sB;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #268bd2; font-weight: bold;">@Component</span> <span style="color: #757575;">(</span>module = TestModule.<span style="color: #859900;">class</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">interface</span> <span style="color: #b58900;">AInjector</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">void</span> <span style="color: #268bd2;">inject</span><span style="color: #757575;">(</span><span style="color: #b58900;">A</span> <span style="color: #268bd2;">target</span><span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">public</span> <span style="color: #859900;">class</span> <span style="color: #b58900;">Test</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">public</span> <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">String</span>[] <span style="color: #268bd2;">args</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #b58900;">A</span> <span style="color: #268bd2;">a</span>= <span style="color: #859900;">new</span> <span style="color: #b58900;">A</span><span style="color: #757575;">()</span>;
+        DaggerAInjector.create<span style="color: #757575;">()</span>.inject<span style="color: #757575;">(</span>a<span style="color: #757575;">)</span>;
+        assert<span style="color: #757575;">(</span>a.b1 == a.b2<span style="color: #757575;">)</span>
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgb33b365" class="outline-5">
+<h5 id="orgb33b365"><span class="section-number-5">1.2.4.2</span> Scope 实现单例</h5>
+<div class="outline-text-5" id="text-1-2-4-2">
+<ol class="org-ol">
+<li>声明一个 Scope annotation</li>
+<li>声明 Component 属于这个 scope</li>
+<li>声明 Provides A 属于这个 scope</li>
+</ol>
+
+<p>
+则使用同一个 Component 注入的 A 都是重用的
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">class</span> <span style="color: #b58900;">A</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Inject</span>
+    <span style="color: #b58900;">B</span> <span style="color: #268bd2;">b1</span>;
+
+    <span style="color: #268bd2; font-weight: bold;">@Inject</span>
+    <span style="color: #b58900;">B</span> <span style="color: #268bd2;">b2</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #268bd2; font-weight: bold;">@Scope</span>
+<span style="color: #859900;">@interface</span> <span style="color: #b58900;">TestScope</span> <span style="color: #757575;">{}</span>
+
+<span style="color: #268bd2; font-weight: bold;">@Module</span>
+<span style="color: #859900;">class</span> <span style="color: #b58900;">TestModule</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Provides</span>
+    <span style="color: #268bd2; font-weight: bold;">@TestScope</span>
+    <span style="color: #b58900;">B</span> <span style="color: #268bd2;">provideB</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">return</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">B</span><span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #268bd2; font-weight: bold;">@TestScope</span>
+<span style="color: #268bd2; font-weight: bold;">@Component</span> <span style="color: #757575;">(</span>modules = TestModule.<span style="color: #859900;">class</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">interface</span> <span style="color: #b58900;">AInjector</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">void</span> <span style="color: #268bd2;">inject</span><span style="color: #757575;">(</span><span style="color: #b58900;">A</span> <span style="color: #268bd2;">target</span><span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">public</span> <span style="color: #859900;">class</span> <span style="color: #b58900;">Test</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">public</span> <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">String</span> <span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #b58900;">A</span> <span style="color: #268bd2;">a</span> = <span style="color: #859900;">new</span> <span style="color: #b58900;">A</span><span style="color: #757575;">()</span>;
+        <span style="color: #b58900;">AInjector</span> <span style="color: #268bd2;">injector</span> = DaggerAInjector.create<span style="color: #757575;">()</span>;
+        injector.inject<span style="color: #757575;">(</span>a<span style="color: #757575;">)</span>;
+        assert<span style="color: #757575;">(</span>a.b1 == a.b2<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org5b90e4b" class="outline-3">
+<h3 id="org5b90e4b"><span class="section-number-3">1.3</span> Dagger Internal</h3>
+<div class="outline-text-3" id="text-1-3">
+</div>
+<div id="outline-container-org82d022a" class="outline-4">
+<h4 id="org82d022a"><span class="section-number-4">1.3.1</span> 简单的 inject</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #586e75;">// </span><span style="color: #586e75;">--------------------------------</span>
+<span style="color: #859900;">class</span> <span style="color: #b58900;">BBB</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Inject</span>
+    <span style="color: #859900;">public</span> <span style="color: #268bd2;">BBB</span><span style="color: #757575;">()</span> <span style="color: #757575;">{}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #268bd2; font-weight: bold;">@Component</span>
+<span style="color: #859900;">interface</span> <span style="color: #b58900;">BasicComponent</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">void</span> <span style="color: #268bd2;">inject</span><span style="color: #757575;">(</span><span style="color: #b58900;">AAA</span> <span style="color: #268bd2;">target</span><span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">AAA</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Inject</span>
+    <span style="color: #b58900;">BBB</span> <span style="color: #268bd2;">bbb</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">---------------------------------</span>
+<span style="color: #859900;">public</span> <span style="color: #859900;">class</span> <span style="color: #b58900;">HelloDaggerSimple</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">testInjection</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #b58900;">AAA</span> <span style="color: #268bd2;">program</span> = <span style="color: #859900;">new</span> <span style="color: #b58900;">AAA</span><span style="color: #757575;">()</span>;
+        DaggerBasicComponent.create<span style="color: #757575;">()</span>.inject<span style="color: #757575;">(</span>program<span style="color: #757575;">)</span>;
+
+    <span style="color: #757575;">}</span>
+
+    <span style="color: #859900;">public</span> <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">String</span> <span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        testInjection<span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">&#33258;&#21160;&#29983;&#25104;&#30340;&#20195;&#30721;:</span>
+
+<span style="color: #268bd2; font-weight: bold;">DaggerBasicComponent</span>:
+
+<span style="color: #859900;">public</span> <span style="color: #859900;">static</span> <span style="color: #b58900;">BasicComponent</span> <span style="color: #268bd2;">create</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">return</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">Builder</span><span style="color: #757575;">()</span>.build<span style="color: #757575;">()</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">public</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">inject</span><span style="color: #757575;">(</span><span style="color: #b58900;">AAA</span> <span style="color: #268bd2;">target</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    injectAAA<span style="color: #757575;">(</span>target<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">private</span> <span style="color: #b58900;">AAA</span> <span style="color: #268bd2;">injectAAA</span><span style="color: #757575;">(</span><span style="color: #b58900;">AAA</span> <span style="color: #268bd2;">instance</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    AAA_MembersInjector.injectBbb<span style="color: #757575;">(</span>instance<span style="color: #757575;">,</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">BBB</span><span style="color: #757575;">())</span>;
+    <span style="color: #859900;">return</span> instance;
+<span style="color: #757575;">}</span>
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">AAAMembersInjector:</span>
+<span style="color: #859900;">public</span> <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">injectBbb</span><span style="color: #757575;">(</span><span style="color: #b58900;">Object</span> <span style="color: #268bd2;">instance</span><span style="color: #757575;">,</span> <span style="color: #b58900;">Object</span> <span style="color: #268bd2;">bbb</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #757575;">((</span><span style="color: #b58900;">AAA</span><span style="color: #757575;">)</span> instance<span style="color: #757575;">)</span>.bbb = <span style="color: #757575;">(</span><span style="color: #b58900;">BBB</span><span style="color: #757575;">)</span> bbb;
+<span style="color: #757575;">}</span>
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">&#25152;&#20197; DaggerBasicComponent.create().inject(program) &#23637;&#24320;&#21518;&#31561;&#20215;&#20026;:</span>
+program.bbb = <span style="color: #859900;">new</span> <span style="color: #b58900;">BBB</span><span style="color: #757575;">()</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgc9d520b" class="outline-4">
+<h4 id="orgc9d520b"><span class="section-number-4">1.3.2</span> 使用 module</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">class</span> <span style="color: #b58900;">BBB</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">public</span> <span style="color: #268bd2;">BBB</span><span style="color: #757575;">()</span> <span style="color: #757575;">{}</span>
+
+<span style="color: #757575;">}</span>
+
+<span style="color: #268bd2; font-weight: bold;">@Module</span>
+<span style="color: #859900;">class</span> <span style="color: #b58900;">TestModule</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Provides</span>
+    <span style="color: #b58900;">BBB</span> <span style="color: #268bd2;">provideBBB</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">return</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">BBB</span><span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #268bd2; font-weight: bold;">@Component</span><span style="color: #757575;">(</span>modules = TestModule.<span style="color: #859900;">class</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">interface</span> <span style="color: #b58900;">AAAComponent</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">void</span> <span style="color: #268bd2;">inject</span><span style="color: #757575;">(</span><span style="color: #b58900;">AAA</span> <span style="color: #268bd2;">aaa</span><span style="color: #757575;">)</span>;
+
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">AAA</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">@Inject</span>
+    <span style="color: #b58900;">BBB</span> <span style="color: #268bd2;">mClient</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">public</span> <span style="color: #859900;">class</span> <span style="color: #b58900;">HelloDaggerModule</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">testModule</span> <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #b58900;">AAA</span> <span style="color: #268bd2;">aaa</span> = <span style="color: #859900;">new</span> <span style="color: #b58900;">AAA</span><span style="color: #757575;">()</span>;
+        DaggerAAAComponent.create<span style="color: #757575;">()</span>.inject<span style="color: #757575;">(</span>aaa<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+
+    <span style="color: #859900;">public</span> <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">String</span> <span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        testModule<span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">DaggerAAAComponent.create()</span>
+<span style="color: #859900;">this</span>.testModule = <span style="color: #859900;">new</span> <span style="color: #b58900;">TestModule</span><span style="color: #757575;">()</span>;
+<span style="color: #859900;">return</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">DaggerAAAComponent</span><span style="color: #757575;">(</span><span style="color: #859900;">this</span><span style="color: #757575;">)</span>;
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">inject</span>
+AAA_MembersInjector.injectMClient<span style="color: #757575;">(</span>
+    instance<span style="color: #757575;">,</span> TestModule_ProvideBBBFactory.proxyProvideBBB<span style="color: #757575;">(</span>testModule<span style="color: #757575;">))</span>;
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">TestModule_ProvideBBBFactory.proxyProvideBBB</span>
+<span style="color: #859900;">return</span> instance.provideBBB<span style="color: #757575;">()</span>
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">AAAMembersInjector.injectMClient</span>
+<span style="color: #757575;">((</span><span style="color: #b58900;">AAA</span><span style="color: #757575;">)</span> instance<span style="color: #757575;">)</span>.mClient = <span style="color: #757575;">(</span><span style="color: #b58900;">BBB</span><span style="color: #757575;">)</span> mClient;
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">&#25152;&#20197;  DaggerAAAComponent.create().inject(aaa) &#23637;&#24320;&#20026;:</span>
+aaa.mClient = <span style="color: #757575;">(</span><span style="color: #859900;">new</span> <span style="color: #b58900;">TestModule</span><span style="color: #757575;">())</span>.provideBBB<span style="color: #757575;">()</span>;
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">TestModule &#30340;&#20316;&#29992;&#19982; Factory &#31867;&#20284;</span>
+
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

@@ -1,0 +1,1397 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:03 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sqlite Internal</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Sqlite Internal</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org525a998">1. SQlite: Internal</a>
+<ul>
+<li><a href="#orge0fea76">1.1. vdbe</a></li>
+<li><a href="#org3875ef1">1.2. btree (SQLite 文件格式)</a>
+<ul>
+<li><a href="#org55b0233">1.2.1. page</a></li>
+<li><a href="#org05e7e89">1.2.2. 前四种 page 的结构</a></li>
+<li><a href="#org9e2f13d">1.2.3. lock byte page</a></li>
+<li><a href="#org02ce3d9">1.2.4. trunk page 与 free page</a></li>
+<li><a href="#orgca2839c">1.2.5. page 1</a></li>
+<li><a href="#org0b1a4ee">1.2.6. 总结</a></li>
+</ul>
+</li>
+<li><a href="#org40de8bc">1.3. pager</a>
+<ul>
+<li><a href="#org5941c2e">1.3.1. sector_size, page_size, powersafe overwrite (PSOW) and zero-damage mode</a></li>
+</ul>
+</li>
+<li><a href="#org7bcb01d">1.4. lock</a>
+<ul>
+<li><a href="#org033edcf">1.4.1. shared cache mode lock</a></li>
+<li><a href="#org7504eaa">1.4.2. thread lock</a></li>
+<li><a href="#org30703a5">1.4.3. db file lock</a></li>
+<li><a href="#org65533c3">1.4.4. FAQ</a></li>
+</ul>
+</li>
+<li><a href="#orgfdad1a2">1.5. type system</a>
+<ul>
+<li><a href="#orgc8b0c90">1.5.1. 写数据库时的类型转换</a></li>
+<li><a href="#org05a1aa9">1.5.2. 读数据库时的类型转换</a></li>
+<li><a href="#org691bda5">1.5.3. 处理 NULL</a></li>
+<li><a href="#org925954f">1.5.4. 比较不同 storage type 的大小</a></li>
+<li><a href="#org6050f38">1.5.5. 关于类型系统的总结</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org525a998" class="outline-2">
+<h2 id="org525a998"><span class="section-number-2">1</span> SQlite: Internal</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-orge0fea76" class="outline-3">
+<h3 id="orge0fea76"><span class="section-number-3">1.1</span> vdbe</h3>
+</div>
+
+<div id="outline-container-org3875ef1" class="outline-3">
+<h3 id="org3875ef1"><span class="section-number-3">1.2</span> btree (SQLite 文件格式)</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-org55b0233" class="outline-4">
+<h4 id="org55b0233"><span class="section-number-4">1.2.1</span> page</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+SQLite 文件被分割为 page_size 大小的连续的 page (一般 page_size 为 1K, 在建立数据库时通过 pragma 可以修改, 这个值被保存在 sqlite 文件头中)
+</p>
+
+<p>
+page 1 是第一个 page, 这个 page 的格式与其他 page 都不同, 因为它的前
+100 bytes 用来保存 sqlite 文件头.
+</p>
+
+<p>
+sqlite 文件头中保存的信息主要有:
+</p>
+<ul class="org-ul">
+<li>magic number</li>
+<li>page size</li>
+<li>file change counter 每次对 sqlite 数据库的修改都会把这个值加 1</li>
+<li>free page list</li>
+</ul>
+
+<p>
+除去这 100 bytes, page 1 与其他 table interior page 格式相同
+</p>
+
+<p>
+一共有以下几种 page:
+</p>
+
+<ol class="org-ol">
+<li>table interior page</li>
+<li>table leaf page</li>
+<li>index interior page</li>
+<li>index leaf page</li>
+<li>trunk page</li>
+<li>free page</li>
+<li>lock byte page</li>
+<li>pointer map page</li>
+</ol>
+
+<p>
+前 4 种 page 因为是保存 table 和 index 内容的, 它们有类似的内部结构, 后
+4 种 page 不保存数据, 所以它们的结构是单独定义的.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org05e7e89" class="outline-4">
+<h4 id="org05e7e89"><span class="section-number-4">1.2.2</span> 前四种 page 的结构</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<p>
+page 结构包含 page 头和 cell content
+</p>
+
+<p>
+page 头包含以下信息:
+</p>
+<ol class="org-ol">
+<li>page type, 例如 0x0d 表示 table leaf page, 0x02 表示 index interior
+page 等. 不同的 page 的 cell content 格式略有不同.</li>
+<li>cell content 中 cell 的个数 N</li>
+<li>第一个 cell 在 page 中的偏移量</li>
+<li>cell pointer array, 这里连续的保存着 N 个偏移量, 对比 N 个 cell 的起始地址.</li>
+<li>第一个 free cell 的偏移量</li>
+<li>最后一个儿子 page 的 page 号 (只有 interior page 有)</li>
+</ol>
+
+<p>
+从 cell pointer array 可以找到各个 cell 在当前 page 的偏移量. 每个
+cell 对应于一条记录 (表记录或索引记录). cell 的格式根据 page 类型不同略有差别.
+</p>
+</div>
+
+<div id="outline-container-org454e1e1" class="outline-5">
+<h5 id="org454e1e1"><span class="section-number-5">1.2.2.1</span> table interior page</h5>
+<div class="outline-text-5" id="text-1-2-2-1">
+<p>
+table interior page 是用来保存 sqlite 表数据的 B+-tree 中间节点. 其
+cell 的格式为:
+</p>
+
+<p>
+[子 page 索引] [记录号]
+</p>
+
+<p>
+其中第一个字段是 page 号, 第二个字段是记录号, 所谓记录号, 就是 sqlite
+表中对应于每条记录的唯一标识 (rowid)
+</p>
+
+<p>
+因为 table interior page 是 B+-tree 中间节点, 所以它们只保存着索引信息
+(记录号和子节点 page 号),不包含 cell 对应的记录的详细信息.
+</p>
+
+<p>
+另外, sqlite 的 B-tree 或 B+-tree 并不是严格的 x 阶 B 树, 因为它每个节点可以包含的子节点个数是不定的, 由 cell 的大小决定, 例如, table
+interior page 中每个 cell 可能只占几个字节, 1K 的 page 除去 page 头和其它一些开销可能可以保存上百个 cell.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org7a656d0" class="outline-5">
+<h5 id="org7a656d0"><span class="section-number-5">1.2.2.2</span> table leaf page</h5>
+<div class="outline-text-5" id="text-1-2-2-2">
+<p>
+table leaf page 是用来保存表数据的 B+-tree 叶节点, 其 cell 格式为:
+[cell payload 大小][记录号][payload 内容][overflow page 索引]
+</p>
+
+<p>
+其中 payload 内容 保存着一个 record 的实际的数据. 若一个 record 的内容过多, 则会分配一个 overflow page 来保存过多的内容. 但要注意的是并不是
+record 大小超过  page_size 时才使用 overflow page, 实际上, sqlite 定义了一个常量, 使得 record 大小 page_size 的 1/4 时就会使用 overflow
+page, 并且只有 7/8 的内容会放在 overflow page 里, 剩下的 1/8 内容放在
+cell payload 中.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgacb3063" class="outline-5">
+<h5 id="orgacb3063"><span class="section-number-5">1.2.2.3</span> index interior page</h5>
+<div class="outline-text-5" id="text-1-2-2-3">
+<p>
+index interior page 用来保存 sqlite 索引的 B-tree 中间节点, 其 cell 格式为:
+</p>
+
+<p>
+[子 page 索引] [索引使用的 key] [索引记录本身]
+</p>
+
+<p>
+这里与 table interior page 的区别主要有两点:
+</p>
+<ol class="org-ol">
+<li><p>
+table interior page 使用记录号有标识 cell 本身的 key, 而 index
+interior page 使用的是建立索引时使用 key 字段, 例如:
+</p>
+
+<p>
+create index test_index on test(name), 则对于 test_index 的
+interior page, key 就是 name 字段的值
+</p></li>
+
+<li>index interior page 的 cell 中还保存着 cell 本身对应索引记录本身,
+因为 index interior page 是 B-tree 中间节点. 这样设计也是由 index
+的工作原理决定的.</li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-orgaa08852" class="outline-5">
+<h5 id="orgaa08852"><span class="section-number-5">1.2.2.4</span> index leaf page</h5>
+<div class="outline-text-5" id="text-1-2-2-4">
+<p>
+index leaf page 是 B-tree 叶节点, 和 table leaf page 基本相同, 只是
+B-tree 中间节点不包含在 B-tree 叶节点中.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org9e2f13d" class="outline-4">
+<h4 id="org9e2f13d"><span class="section-number-4">1.2.3</span> lock byte page</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<p>
+lock byte page 是非常特殊的一种 page:
+</p>
+
+<ol class="org-ol">
+<li>它的大小是固定的 512 bytes, 而不是 page size 大小</li>
+<li>对于小于 1G 的 sqlite 数据库, 并不包含这种 page, 对于大于 1G 的
+sqlite 数据库, 只包含一个, 并且固定的位于 1G bytes 的位置</li>
+</ol>
+
+<p>
+lock byte page 实际是用来实现文件锁的一个区域, 这个区域被设计为
+1G-1G+512 bytes 的一块区域, 因为文件锁对文件的某个区域进行锁定时并不需要该区域一定是存在的, 所以对于小于 1G 的文件, 这个 page 并不存在.
+</p>
+
+<p>
+之所以这个 page 规定为 512 字节, 是为了实现 sqlite 的多阶段文件锁,
+sqlite 把这个 512 字节的区域又分为 3 的区域, 其中一个字节用来支持一个
+reserved lock , 一个字段用来支持一个 pending lock , 剩下的 510 的字节用来支持多个 shared lock 和一个 exclusive lock. (注: 对于 linux/winnt,
+shared lock 是对 整个 510 个字节区域的 read lock, 可以有无数个,
+exclusive 是对这 510 个字节区域的 write lock, 只能有一个；对于 windows
+ce/95/98, 因为它只支持 write lock , 所以 shared lock 是对 510 个字节中的某一个字节的 write lock, 所以最多有 510 个(sqlite3 在 win98 上加
+shared lock 时是使用了一个随机的方法去随机的锁定 510 字节的某一个, 有可能与其它进程的 shared lock 冲突, 导致 shared lock 无法锁定, 参考这个函数: int getReadLock(winFile *pFile))
+</p>
+</div>
+</div>
+
+<div id="outline-container-org02ce3d9" class="outline-4">
+<h4 id="org02ce3d9"><span class="section-number-4">1.2.4</span> trunk page 与 free page</h4>
+<div class="outline-text-4" id="text-1-2-4">
+<p>
+在 sqlite 文件头中有一个 free page list 的指针, 指向第一个 trunk
+page.
+</p>
+
+<p>
+trunk page 和 free page 是 sqlite 用来缓存那些暂时不用的 page 的. 通过
+trunk page 和 free page, 构成一个简单的两级索引结构: trunk page 用来做索引, 真正缓存的 page 只是 free page.
+</p>
+
+<p>
+trunk page 与 free page 是和 vacuum 相关的. 实际上 vacuum 命令消除
+free page 的方法相当简单:
+</p>
+
+<p>
+insert into new_table select * from orig_table
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgca2839c" class="outline-4">
+<h4 id="orgca2839c"><span class="section-number-4">1.2.5</span> page 1</h4>
+<div class="outline-text-4" id="text-1-2-5">
+<p>
+page 1 是第一个 page, 一般来说它是一个 table leaf page, 除了保存着 100
+bytes 的 sqlite 文件头, 还保存着 sqlite_master 表的内容, 即数据库的
+schema.
+</p>
+
+<p>
+sqlite_master 表中最重要的一个信息应该算是每个表和索引的 root page
+number 了, 有了这个信息, 我们从某个表查询时, 才能找到对应的 root page
+number 进而查询整下 B-tree.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0b1a4ee" class="outline-4">
+<h4 id="org0b1a4ee"><span class="section-number-4">1.2.6</span> 总结</h4>
+<div class="outline-text-4" id="text-1-2-6">
+<p>
+sqlite 数据库由 N 个 page 组成, 但这些 page 有些构成一棵棵的 B-tree
+(index page), 有的构成 B+-tree (table page), 有的构成一个链表 (trunk
+page 与 free page), 有的只有孤零零一个在那儿 (lock byte page) &#x2026;
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org40de8bc" class="outline-3">
+<h3 id="org40de8bc"><span class="section-number-3">1.3</span> pager</h3>
+<div class="outline-text-3" id="text-1-3">
+<ol class="org-ol">
+<li>pager 即 page cache, 负责所有 IO 操作, 并使用 cache 加快 IO.</li>
+<li>pager 是 sqlite 实现 ACID 的核心, 除了数据库文件的 IO, pager 还负责
+journal 以及 lock 相关的操作.</li>
+</ol>
+</div>
+
+<div id="outline-container-org5941c2e" class="outline-4">
+<h4 id="org5941c2e"><span class="section-number-4">1.3.1</span> sector_size, page_size, powersafe overwrite (PSOW) and zero-damage mode</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<p>
+<a href="http://www.sqlite.org/psow.html">http://www.sqlite.org/psow.html</a>
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org7bcb01d" class="outline-3">
+<h3 id="org7bcb01d"><span class="section-number-3">1.4</span> lock</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+sqlite 在不同的层次上定义了三种锁
+</p>
+</div>
+
+<div id="outline-container-org033edcf" class="outline-4">
+<h4 id="org033edcf"><span class="section-number-4">1.4.1</span> shared cache mode lock</h4>
+<div class="outline-text-4" id="text-1-4-1">
+<p>
+shared cache mode 主要应用在嵌入式系统中, 可以使同一个进程的多个
+connection 共享 page cache, 以显著的降低内存和 io 的消耗. 但这需要引入额外的锁机制, 导致多个线程同时查询时速度非常慢
+</p>
+
+<p>
+shared cache mode 的比较:
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">MULTITHREAD, 三个线程同时查询</th>
+<th scope="col" class="org-left">每个线程的 rss</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">未使用 shared cache mode</td>
+<td class="org-left">8M</td>
+</tr>
+
+<tr>
+<td class="org-left">使用 shared cache mode</td>
+<td class="org-left">3.3M</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<div id="outline-container-org7504eaa" class="outline-4">
+<h4 id="org7504eaa"><span class="section-number-4">1.4.2</span> thread lock</h4>
+<div class="outline-text-4" id="text-1-4-2">
+<p>
+sqlite 内部使用两个 mutex 来实现三种不同的 thread lock 模型
+</p>
+<ul class="org-ul">
+<li>core mutex</li>
+<li>full mutex</li>
+</ul>
+
+<p>
+<a href="http://www.sqlite.org/threadsafe.html">http://www.sqlite.org/threadsafe.html</a>
+</p>
+
+<p>
+SQLite support three different threading modes:
+</p>
+
+<ul class="org-ul">
+<li>SINGLETHREAD</li>
+</ul>
+
+<p>
+In this mode, all mutexes are disabled and SQLite is unsafe to use in
+more than a single thread at once.
+</p>
+
+<p>
+同时只能有一个线程在使用 connection (相同或不同的), 否则出现段错误.
+</p>
+
+<ul class="org-ul">
+<li>MULTITHREAD</li>
+</ul>
+
+<p>
+In this mode, SQLite can be safely used by multiple threads provided
+that no single database connection is used simultaneously in two or
+more threads.
+</p>
+
+<p>
+同时可以有多个线程使用 connection (不同的), 否则段错误.
+</p>
+
+<ul class="org-ul">
+<li>SERIALIZED</li>
+</ul>
+
+<p>
+In serialized mode, SQLite can be safely used by multiple threads with
+no restriction.
+</p>
+
+<p>
+The threading mode can be selected at compile-time (when the SQLite
+library is being compiled from source code) or at start-time (when the
+application that intends to use SQLite is initializing) or at run-time
+(when a new SQLite database connection is being created). Generally
+speaking, run-time overrides start-time and start-time overrides
+compile-time. Except, single-thread mode cannot be overridden once
+selected.
+</p>
+
+<p>
+The default mode is serialized.
+</p>
+
+<p>
+在 android 4.0 上, 该配置在编译时设为 SERIALIZED, 在 android 4.1 变为 MULTITHREAD
+</p>
+
+<p>
+同时可以有多个线程使用 connection (相同或不同的)
+</p>
+</div>
+
+<div id="outline-container-org0832b40" class="outline-5">
+<h5 id="org0832b40"><span class="section-number-5">1.4.2.1</span> Benchmark</h5>
+<div class="outline-text-5" id="text-1-4-2-1">
+<p>
+查询 1600 W 条记录所耗的时间的比较
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">查询类型</th>
+<th scope="col" class="org-right">real</th>
+<th scope="col" class="org-right">user</th>
+<th scope="col" class="org-right">sys</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">使用 SINGLETHREAD 查询一次</td>
+<td class="org-right">3.5</td>
+<td class="org-right">3.5</td>
+<td class="org-right">0.4</td>
+</tr>
+
+<tr>
+<td class="org-left">使用 MULTITHREAD 查询一次</td>
+<td class="org-right">3.5</td>
+<td class="org-right">3.5</td>
+<td class="org-right">0.4</td>
+</tr>
+
+<tr>
+<td class="org-left">使用 SERIALZIED 查询一次</td>
+<td class="org-right">3.8</td>
+<td class="org-right">3.8</td>
+<td class="org-right">0.4</td>
+</tr>
+
+<tr>
+<td class="org-left">使用 MULTITHREAD 在两个线程使用不同的 connection 查询</td>
+<td class="org-right">7.3</td>
+<td class="org-right">4</td>
+<td class="org-right">0.4</td>
+</tr>
+
+<tr>
+<td class="org-left">使用 SERIALZIED 在两个线程使用不同的 connection 查询</td>
+<td class="org-right">7.8</td>
+<td class="org-right">4.2</td>
+<td class="org-right">0.4</td>
+</tr>
+
+<tr>
+<td class="org-left">使用 SERIALZIED 在两个线程使用相同的 connection 查询</td>
+<td class="org-right">27</td>
+<td class="org-right">28</td>
+<td class="org-right">9</td>
+</tr>
+
+<tr>
+<td class="org-left">使用 SHARED CACHE MODE 在两个线程中使用不同的 connection 查询</td>
+<td class="org-right">31</td>
+<td class="org-right">31</td>
+<td class="org-right">11</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+可见,
+</p>
+
+<ul class="org-ul">
+<li>不使用多线程的情况下, SINGLETHREAD 和 MULTITHREAD 差不多,SERIALZIED
+变慢</li>
+<li>使用多线程的情况下,
+<ul class="org-ul">
+<li>SINGLETHREAD 无法使用</li>
+<li>MULTITHREAD 可以利用多线程显著的降低 real time</li>
+<li>SERIALZIED 使用不同的线程时也比 MULTITHREAD 稍慢</li>
+<li>SERIALZIED 使用相同的线程时速度无法接受</li>
+</ul></li>
+</ul>
+
+<p>
+综上, 使用 MULTITHREAD 多线程使用不同的 connection 是最好的选择.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org7fa76ef" class="outline-5">
+<h5 id="org7fa76ef"><span class="section-number-5">1.4.2.2</span> Compile-time selection of threading mode</h5>
+<div class="outline-text-5" id="text-1-4-2-2">
+<p>
+Use the SQLITE_THREADSAFE compile-time parameter to selected the
+threading mode. If no SQLITE_THREADSAFE compile-time parameter is
+present, then serialized mode is used. This can be made explicit with
+-DSQLITE_THREADSAFE=1. With -DSQLITE_THREADSAFE=0 the threading mode
+is single-thread. With -DSQLITE_THREADSAFE=2 the threading mode is
+multi-thread.
+</p>
+
+<p>
+The return value of the sqlite3_threadsafe() interface is determined
+by the compile-time threading mode selection. If single-thread mode is
+selected at compile-time, then sqlite3_threadsafe() returns false. If
+either the multi-thread or serialized modes are selected, then
+sqlite3_threadsafe() returns true. The sqlite3_threadsafe() interface
+predates the multi-thread mode and start-time and run-time mode
+selection and so is unable to distinguish between multi-thread and
+serialized mode nor is it able to report start-time or run-time mode
+changes.
+</p>
+
+<p>
+If single-thread mode is selected at compile-time, then critical
+mutexing logic is omitted from the build and it is impossible to
+enable either multi-thread or serialized modes at start-time or
+run-time.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org3194a8d" class="outline-5">
+<h5 id="org3194a8d"><span class="section-number-5">1.4.2.3</span> Start-time selection of threading mode</h5>
+<div class="outline-text-5" id="text-1-4-2-3">
+<p>
+Assuming that the compile-time threading mode is not single-thread,
+then the threading mode can be changed during initialization using the
+sqlite3_config() interface. The SQLITE_CONFIG_SINGLETHREAD verb puts
+SQLite into single-thread mode, the SQLITE_CONFIG_MULTITHREAD verb
+sets multi-thread mode, and the SQLITE_CONFIG_SERIALIZED verb sets
+serialized mode.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org66d83d1" class="outline-5">
+<h5 id="org66d83d1"><span class="section-number-5">1.4.2.4</span> Run-time selection of threading mode</h5>
+<div class="outline-text-5" id="text-1-4-2-4">
+<p>
+If single-thread mode has not been selected at compile-time or
+start-time, then individual database connections can be created as
+either multi-thread or serialized. It is not possible to downgrade an
+individual database connection to single-thread mode. Nor is it
+possible to escalate an individual database connection if the
+compile-time or start-time mode is single-thread.
+</p>
+
+<p>
+The threading mode for an individual database connection is determined
+by flags given as the third argument to sqlite3_open_v2(). The
+SQLITE_OPEN_NOMUTEX flag causes the database connection to be in the
+multi-thread mode and the SQLITE_OPEN_FULLMUTEX flag causes the
+connection to be in serialized mode. If neither flag is specified or
+if sqlite3_open() or sqlite3_open16() are used instead of
+sqlite3_open_v2(), then the default mode determined by the
+compile-time and start-time settings is used.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org30703a5" class="outline-4">
+<h4 id="org30703a5"><span class="section-number-4">1.4.3</span> db file lock</h4>
+<div class="outline-text-4" id="text-1-4-3">
+</div>
+<div id="outline-container-org7c91e04" class="outline-5">
+<h5 id="org7c91e04"><span class="section-number-5">1.4.3.1</span> lock</h5>
+<div class="outline-text-5" id="text-1-4-3-1">
+<p>
+这里的 lock 是指数据库级别的文件锁, 这个锁是一个建议性锁 (advisory
+lock), 实际上, 为了实现这种多状态的锁, sqlite 针对 sqlite db 文件的三块区域(从 PENDING_BYTE 开始的 1+1+510=512 个字节)定义了三个读写锁, 通过对不同的区域的锁定实现不同的状态.
+</p>
+
+<p>
+PENDING_BYTE 目前定义为 0x40000000 (1G) 处, 需要注意的是 fcntl 对文件区域加锁时并不需要文件真的有那么大, 所以即时一个很小不到 1G 的数据库文件,也可以对 1G 处的"内容"进行锁定 &#x2026; 之所以设置 PENDING_BYTE 为 1G, 就是因为当数据库文件小于 1G 时可以节省这 512 字节, 因为 windows 只支持强制性文件锁, 为了避免 sqlite 读写这 512 字节的内容时因为强制锁出错, sqlite
+要求这 512 字节的空间不允许存储任何数据.
+</p>
+
+<p>
+当数据库文件大于 1G 时, 这 512 的字节被称为 lock-byte page.
+</p>
+
+<p>
+#+BEGIN_EXAMPLE
+                                           r
+                              -<del>------------------------------------</del>
+</p>
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+</colgroup>
+<tbody>
+<tr>
+<td class="org-left">exclusive</td>
+</tr>
+
+<tr>
+<td class="org-left">-<del>------------------------</del>---&#x2013;&#x2014;+</td>
+</tr>
+</tbody>
+</table>
+<p>
+-<del>---</del>   w    -<del>-</del>-+   w     | -<del>---</del>---<del>---</del>---<del>---</del>-v-<del>----</del> |
+</p>
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<tbody>
+<tr>
+<td class="org-left">-<del>---&#x2013;&#x2014;&gt;</del>  -<del>---&#x2013;&#x2014;&gt;</del>  +</td>
+<td class="org-left">&#xa0;</td>
+<td class="org-left">&#xa0;</td>
+<td class="org-left">&#xa0;</td>
+<td class="org-left">&#xa0;</td>
+<td class="org-left">&#xa0;</td>
+<td class="org-left">&#xa0;</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+</tbody>
+</table>
+<p>
+              -<del>-</del>-+        -<del>---</del>         | -<del>---</del>---<del>---</del>---<del>---</del>-<del>-</del>-&#x2014;+ |
+             rese|rved       pending       |          shared        |        |
+                 ^         (starting)     -<del>------------------------</del>---&#x2013;&#x2014;+
+                -<del>--------------------------------------------------</del>
+#+END_EXAMPLE                          w
+</p>
+
+<ul class="org-ul">
+<li>pending</li>
+<li>unlocked</li>
+<li>shared</li>
+</ul>
+<p>
+执行任何语句前要进行 shared 状态
+</p>
+<ul class="org-ul">
+<li><p>
+reserved
+执行任何写语句前需要首先进入 reserved 状态
+</p>
+
+<p>
+shared 想升级为 reserved, 必须保证当前没有任何 reserved 及 exclusive lock
+</p></li>
+<li><p>
+exclusive
+</p>
+<ul class="org-ul">
+<li><p>
+pending
+</p>
+
+<p>
+commit 前需要进行 pending 状态
+</p>
+
+<p>
+reserved 升级为 exclusive 时会先暂时的升级为 pending, pending lock 会禁止任何新的 lock 的获取, 包括 shared, 否则可以会因为不停的有新的 shared lock 进入而导致 reserved 永远无法升级为 exclusive.
+</p></li>
+</ul>
+
+<p>
+reserved 要想升级为 exclusive, 必须保证当前没有任何其他的 lock, 包含 shared
+</p></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgb04f5d2" class="outline-5">
+<h5 id="orgb04f5d2"><span class="section-number-5">1.4.3.2</span> dead lock example</h5>
+<div class="outline-text-5" id="text-1-4-3-2">
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">A connection</th>
+<th scope="col" class="org-left">B connection</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">BEGIN;</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-left">&#xa0;</td>
+<td class="org-left">BEGIN;</td>
+</tr>
+
+<tr>
+<td class="org-left">&#xa0;</td>
+<td class="org-left"># acquiring `reserved` lock ok</td>
+</tr>
+
+<tr>
+<td class="org-left">&#xa0;</td>
+<td class="org-left">INSERT INTO foo values("bar")</td>
+</tr>
+
+<tr>
+<td class="org-left"># acquiring `shared` lock ok</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-left">SELECT * from foo</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-left">&#xa0;</td>
+<td class="org-left"># acquiring `exclusive` lock failed</td>
+</tr>
+
+<tr>
+<td class="org-left">&#xa0;</td>
+<td class="org-left">COMMIT;</td>
+</tr>
+
+<tr>
+<td class="org-left">&#xa0;</td>
+<td class="org-left">SQL error: database is locked</td>
+</tr>
+
+<tr>
+<td class="org-left"># acquiring `reserved` lock failed</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-left">INSERT INTO foo values ("bar")</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-left">SQL error: database is locked</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+android framework 中采用了 ONE primary connection + N non-primary
+connections 的 connection pool 方案, 可能也是考虑到了这种死锁:
+</p>
+
+<p>
+primary connection 用于"可能"需要写操作的 transaction, 只有一个. 而
+non-primary connection 是用于读操作的 transaction, 可以有 N 个. 但这种做法仍然无法避免多个进程同时对同一个数据库写时的死锁, 如果要避免,可能需要要求所有写操作的 transaction 都以 begin reversed 开始.
+</p>
+
+<p>
+若程序中发生了这种死锁, sqlite 只能保证对相应的 statement 如 "insert
+inot foo values ('bar')" 返回 SQLITE3_BUSY, 应用应自己保证此时将
+transaction rollback, 而不是不断的去重试该语句. 
+</p>
+
+<p>
+另外, sqlite 本身有对于这个死锁的检测能力, 所以这时 sqlite 可能不会调用任何 busy handler 而是直接向上层返回 busy. 所以上层应用不应过多依赖
+busy handler 来处理 busy 状况. 
+</p>
+</div>
+</div>
+
+<div id="outline-container-orga076be5" class="outline-5">
+<h5 id="orga076be5"><span class="section-number-5">1.4.3.3</span> transaction</h5>
+<div class="outline-text-5" id="text-1-4-3-3">
+<ul class="org-ul">
+<li>begin [deferred]</li>
+<li>begin immediate</li>
+<li>begin exclusive</li>
+</ul>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org65533c3" class="outline-4">
+<h4 id="org65533c3"><span class="section-number-4">1.4.4</span> FAQ</h4>
+<div class="outline-text-4" id="text-1-4-4">
+</div>
+<div id="outline-container-org84b2285" class="outline-5">
+<h5 id="org84b2285"><span class="section-number-5">1.4.4.1</span> Can multiple applications or multiple instances of the same application access a single database file at the same time?</h5>
+<div class="outline-text-5" id="text-1-4-4-1">
+<p>
+<a href="http://www.sqlite.org/faq.html#q5">http://www.sqlite.org/faq.html#q5</a>
+</p>
+
+<p>
+Multiple processes can have the same database open at the same
+time. Multiple processes can be doing a SELECT at the same time. But
+only one process can be making changes to the database at any moment
+in time, however.
+</p>
+
+<p>
+SQLite uses reader/writer locks to control access to the
+database. (Under Win95/98/ME which lacks support for reader/writer
+locks, a probabilistic simulation is used instead.) But use caution:
+this locking mechanism might not work correctly if the database file
+is kept on an NFS filesystem. This is because fcntl() file locking is
+broken on many NFS implementations. You should avoid putting SQLite
+database files on NFS if multiple processes might try to access the
+file at the same time. On Windows, Microsoft's documentation says that
+locking may not work under FAT filesystems if you are not running the
+Share.exe daemon. People who have a lot of experience with Windows
+tell me that file locking of network files is very buggy and is not
+dependable. If what they say is true, sharing an SQLite database
+between two or more Windows machines might cause unexpected problems.
+</p>
+
+<p>
+We are aware of no other embedded SQL database engine that supports as
+much concurrency as SQLite. SQLite allows multiple processes to have
+the database file open at once, and for multiple processes to read the
+database at once. When any process wants to write, it must lock the
+entire database file for the duration of its update. But that normally
+only takes a few milliseconds. Other processes just wait on the writer
+to finish then continue about their business. Other embedded SQL
+database engines typically only allow a single process to connect to
+the database at once.
+</p>
+
+<p>
+However, client/server database engines (such as PostgreSQL, MySQL, or
+Oracle) usually support a higher level of concurrency and allow
+multiple processes to be writing to the same database at the same
+time. This is possible in a client/server database because there is
+always a single well-controlled server process available to coordinate
+access. If your application has a need for a lot of concurrency, then
+you should consider using a client/server database. But experience
+suggests that most applications need much less concurrency than their
+designers imagine.
+</p>
+
+<p>
+When SQLite tries to access a file that is locked by another process,
+the default behavior is to return SQLITE_BUSY. You can adjust this
+behavior from C code using the sqlite3_busy_handler() or
+sqlite3_busy_timeout() API functions.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org3be6234" class="outline-5">
+<h5 id="org3be6234"><span class="section-number-5">1.4.4.2</span> Is SQLite threadsafe?</h5>
+<div class="outline-text-5" id="text-1-4-4-2">
+<p>
+<a href="http://www.sqlite.org/faq.html#q6">http://www.sqlite.org/faq.html#q6</a>
+</p>
+
+<p>
+Threads are evil. Avoid them.
+</p>
+
+<p>
+SQLite is threadsafe. We make this concession since many users choose
+to ignore the advice given in the previous paragraph. But in order to
+be thread-safe, SQLite must be compiled with the SQLITE_THREADSAFE
+preprocessor macro set to 1. Both the Windows and Linux precompiled
+binaries in the distribution are compiled this way. If you are unsure
+if the SQLite library you are linking against is compiled to be
+threadsafe you can call the sqlite3_threadsafe() interface to find
+out.
+</p>
+
+<p>
+Prior to version 3.3.1, an sqlite3 structure could only be used in the
+same thread that called sqlite3_open() to create it. You could not
+open a database in one thread then pass the handle off to another
+thread for it to use. This was due to limitations (bugs?) in many
+common threading implementations such as on RedHat9. Specifically, an
+fcntl() lock created by one thread cannot be removed or modified by a
+different thread on the troublesome systems. And since SQLite uses
+fcntl() locks heavily for concurrency control, serious problems arose
+if you start moving database connections across threads.
+</p>
+
+<p>
+The restriction on moving database connections across threads was
+relaxed somewhat in version 3.3.1. With that and subsequent versions,
+it is safe to move a connection handle across threads as long as the
+connection is not holding any fcntl() locks. You can safely assume
+that no locks are being held if no transaction is pending and all
+statements have been finalized.
+</p>
+
+<p>
+Under Unix, you should not carry an open SQLite database across a
+fork() system call into the child process. Problems will result if you
+do.
+</p>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgfdad1a2" class="outline-3">
+<h3 id="orgfdad1a2"><span class="section-number-3">1.5</span> type system</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+sqlite 的类型系统被称为 manifest typing (或 latent typing, dynamic
+typing), 而不是其他 DBMS 采用的 static typing.
+</p>
+
+<p>
+所谓 manifest typing, 是指数据的类型不是由表定义时决定的, 而是由数据本身决定的. 通过观察 table leaf page 中 cell 的格式可以更清楚的认识这一点: 每个 cell 对应着一条记录, cell 的格式既包含记录的数据, 也包含记录中各个字段的类型&#x2026; 显然, 相对于 static typing, sqlite 的这种类型系统会占用更多的文件空间, 但也带来了一些灵活性. 
+</p>
+
+<p>
+由数据本身决定的类型信息,称之为 storage type, sqlite 定义了以下几种
+storage type:
+</p>
+
+<ul class="org-ul">
+<li>NULL</li>
+<li>INTEGER</li>
+<li>REAL</li>
+<li>TEXT</li>
+<li>BLOB</li>
+</ul>
+
+<p>
+为了与其他 DBMS 和 sql 标准尽量兼容, sqlite 在建表中也支持指定一些类型信息, 例如 VARCHAR, 这些类型称为 affinity type. 在读取和写入数据时,
+sqlite 会根据 storage type 与 affinity type 之间的一些规则进入类型转换.
+</p>
+
+<p>
+另外, storage type 也会影响一些和比较相关的操作, 如 order by, group by
+等.
+</p>
+
+<p>
+sqlite 定义几种 affinity type:
+</p>
+
+<ul class="org-ul">
+<li>INTEGER</li>
+<li>TEXT</li>
+<li>NONE</li>
+<li>REAL</li>
+<li>NUMERIC</li>
+</ul>
+
+<p>
+在建表时, sqlite 使用了如下的规则来确定 affinity type:
+</p>
+
+<ul class="org-ul">
+<li>若类型的名字包含 INT, 则该列的 affinity type 为 INTEGER</li>
+<li>若类型名字包含 CHAR, CLOB, TEXT, 则为 TEXT</li>
+<li>若类型名字包含 BLOB, 则为 NONE</li>
+<li>若类型名字包含 REAL,FLOA,DOUB,则为 REAL</li>
+<li>否则, 为 NUMERIC</li>
+</ul>
+
+<p>
+所以, create table test (num test) 是一个合法的语句&#x2026; create table
+test (name CHAR) 与 create table test (name VARCHAR) 是一样的&#x2026;
+</p>
+
+<pre class="example" id="orgd9364dd">
+
+      storage type A            storage type B
+           |                          ^
+           | insert                   | query
+           v                          |
+-----------|--------------------------|---------
+           |                          |
+           |                          |
+       conversion A            conversion B
+           |      (affinity type)     |
+          -+------storage type C------+
+
+</pre>
+
+<p>
+由上图所示, 使用 storage type 的有三个场合, 类型转换在读写数据库时都会发生.
+</p>
+</div>
+
+<div id="outline-container-orgc8b0c90" class="outline-4">
+<h4 id="orgc8b0c90"><span class="section-number-4">1.5.1</span> 写数据库时的类型转换</h4>
+<div class="outline-text-4" id="text-1-5-1">
+<p>
+当向数据库写入数据时, 在 conversion A 进行之前, sqlite 需要确定
+storage type A:
+</p>
+
+<ul class="org-ul">
+<li>若数据使用引号包起来, 则为 TEXT</li>
+<li>若没有包含小数点或 e 指数, 则为 INTEGER</li>
+<li>若包含小数点或 e, 则为 REAL</li>
+<li>若为 NULL, 则为 NULL</li>
+<li>若为 X"abcd"形式, 则为 BLOB</li>
+</ul>
+
+<p>
+若数据是通过 sqlite3_bind_* 指定的, 则 storage type 与不同的 bind 方法是对应的, 则 sqlite3_bind_blob 绑定的数据是 BLOB 类型. 
+</p>
+
+<p>
+确定 storage type A 后, sqlite 使用 affinity type 进行 conversion A:
+</p>
+<ol class="org-ol">
+<li>TEXT affinity type
+
+<ul class="org-ul">
+<li>BLOB, TEXT, NULL 三种 storage type 会被直接保存, 不进行转换, 则
+storage type C 是 BLOB, TEXT 和 NULL</li>
+<li>INTEGER, REAL 会被转换为相应的字符串, 即 123 -&gt; "123", 且 storage
+type C 会变为 TEXT</li>
+</ul></li>
+
+<li>NUMERIC affinity type
+
+<ul class="org-ul">
+<li>BLOB, NULL 不会被转换</li>
+<li>其他类型会尽量被转换为 INTEGER 或 REAL</li>
+</ul></li>
+
+<li><p>
+INTEGER affinity type
+</p>
+
+<p>
+与 NUMERIC 类似, 但是会尽量会转换为 INTEGER. 例如:
+insert into test values ("123"), 123 最终的 storage type 会是
+INTEGER 而不是 TEXT. 但 12.1 不会转换为 12, 因为会损失数据. 
+</p></li>
+
+<li><p>
+REAL affinity type
+</p>
+
+<p>
+与 NUMERIC 类似, 但整数会被转换为浮点数.
+</p></li>
+
+<li><p>
+NONE affinity type
+</p>
+
+<p>
+不做任何转换
+</p></li>
+</ol>
+
+<p>
+综上所述:
+</p>
+
+<ol class="org-ol">
+<li>conversion A 会将输入的数据从 storage type A 转换为 storage C, 在转换过程中决不会丢失数据 (例如不会把 12.1 转换为 12),</li>
+
+<li>NONE 不做任何转换,TEXT 尽量转换为 TEXT, NUMERIC 尽量转换为 INTEGER
+或 REAL, INTEGER 尽量转换为 INTEGER, REAL 尽量转换为 REAL</li>
+
+<li>以上所有的转换, 若失败, 则直接保存,不会发生数据无法插入的情况.</li>
+
+<li>BLOB, NULL 永远不会被转换.</li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-org05a1aa9" class="outline-4">
+<h4 id="org05a1aa9"><span class="section-number-4">1.5.2</span> 读数据库时的类型转换</h4>
+<div class="outline-text-4" id="text-1-5-2">
+<p>
+在读数据库时, 应用会使用 sqlite3_column_xxx 函数期望获取一个 xxx 类型的数据 (storage type B), 当与 storage type C 不一致时, conversion B 会起作用. 要注意的是 conversion B 并不需要 affinity type 参与, 它完全由
+storage type B 和 storage type C 决定.
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">storage type C</th>
+<th scope="col" class="org-left">storage type B</th>
+<th scope="col" class="org-left">conversion B</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">NULL</td>
+<td class="org-left">INTEGER</td>
+<td class="org-left">0</td>
+</tr>
+
+<tr>
+<td class="org-left">NULL</td>
+<td class="org-left">FLOAT</td>
+<td class="org-left">0</td>
+</tr>
+
+<tr>
+<td class="org-left">NULL</td>
+<td class="org-left">TEXT</td>
+<td class="org-left">null pointer</td>
+</tr>
+
+<tr>
+<td class="org-left">NULL</td>
+<td class="org-left">BLOB</td>
+<td class="org-left">null pointer</td>
+</tr>
+</tbody>
+<tbody>
+<tr>
+<td class="org-left">INTEGER</td>
+<td class="org-left">FLOAT</td>
+<td class="org-left">float(int a)</td>
+</tr>
+
+<tr>
+<td class="org-left">INTEGER</td>
+<td class="org-left">TEXT</td>
+<td class="org-left">sprintf("%d")</td>
+</tr>
+
+<tr>
+<td class="org-left">INTEGER</td>
+<td class="org-left">BLOB</td>
+<td class="org-left">sprintf("%d")</td>
+</tr>
+</tbody>
+<tbody>
+<tr>
+<td class="org-left">FLOAT</td>
+<td class="org-left">INTEGER</td>
+<td class="org-left">int(float a)</td>
+</tr>
+
+<tr>
+<td class="org-left">FLOAT</td>
+<td class="org-left">TEXT</td>
+<td class="org-left">sprintf("%f")</td>
+</tr>
+
+<tr>
+<td class="org-left">FLOAT</td>
+<td class="org-left">TEXT</td>
+<td class="org-left">sprintf("%f")</td>
+</tr>
+</tbody>
+<tbody>
+<tr>
+<td class="org-left">TEXT</td>
+<td class="org-left">INTEGER</td>
+<td class="org-left">atoi</td>
+</tr>
+
+<tr>
+<td class="org-left">TEXT</td>
+<td class="org-left">FLOAT</td>
+<td class="org-left">atof</td>
+</tr>
+
+<tr>
+<td class="org-left">TEXT</td>
+<td class="org-left">BLOB</td>
+<td class="org-left">no change</td>
+</tr>
+</tbody>
+<tbody>
+<tr>
+<td class="org-left">BLOB</td>
+<td class="org-left">INTEGER</td>
+<td class="org-left">atoi</td>
+</tr>
+
+<tr>
+<td class="org-left">BLOB</td>
+<td class="org-left">FLOAT</td>
+<td class="org-left">atof</td>
+</tr>
+
+<tr>
+<td class="org-left">BLOB</td>
+<td class="org-left">TEXT</td>
+<td class="org-left">no change</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+由此可见, conversion B 有可能丢失数据, 例如 int(float a) 或者
+atoi("abc")
+</p>
+</div>
+</div>
+
+<div id="outline-container-org691bda5" class="outline-4">
+<h4 id="org691bda5"><span class="section-number-4">1.5.3</span> 处理 NULL</h4>
+</div>
+
+<div id="outline-container-org925954f" class="outline-4">
+<h4 id="org925954f"><span class="section-number-4">1.5.4</span> 比较不同 storage type 的大小</h4>
+<div class="outline-text-4" id="text-1-5-4">
+<ul class="org-ul">
+<li>若比较的双方来自两个列, 则使用以下的规则
+null &lt; integer, real &lt; text &lt; blob</li>
+<li>若一方来自一列, 另一方来自输入或另一个查询或表达式的结果, 则另一个结果会先经过 conversion A 的转换 (使用第一方的 affinity type) 再应用第一条规则</li>
+<li>若双方都来自输入或中间结果, 则不做转换, 直接应用第一条规则</li>
+<li>以上规则不仅适用于 &lt;, between, in 等, 也适用于 order by, group by 等</li>
+</ul>
+
+<p>
+例如:
+</p>
+<div class="org-src-container">
+<pre class="src src-sql"><span style="color: #859900;">create</span> <span style="color: #859900;">table</span> <span style="color: #268bd2;">test</span> <span style="color: #757575;">(</span><span style="color: #859900;">name</span> <span style="color: #b58900;">INTEGER</span><span style="color: #757575;">)</span>;
+<span style="color: #859900;">insert</span> <span style="color: #859900;">into</span> test <span style="color: #859900;">values</span> <span style="color: #757575;">(</span>1<span style="color: #757575;">)</span>;
+<span style="color: #859900;">insert</span> <span style="color: #859900;">into</span> test <span style="color: #859900;">values</span> <span style="color: #757575;">(</span>"abc"<span style="color: #757575;">)</span>;
+<span style="color: #859900;">insert</span> <span style="color: #859900;">into</span> test <span style="color: #859900;">values</span> <span style="color: #757575;">(</span>"2.1"<span style="color: #757575;">)</span>;
+<span style="color: #859900;">insert</span> <span style="color: #859900;">into</span> test <span style="color: #859900;">values</span> <span style="color: #757575;">(</span>3<span style="color: #757575;">)</span>;
+</pre>
+</div>
+<p>
+输出为:
+</p>
+<pre class="example" id="orge4f400d">
+sqlite&gt; select typeof(name),name from test order by name desc;
+text|abc
+integer|3
+real|2.1
+integer|1
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org6050f38" class="outline-4">
+<h4 id="org6050f38"><span class="section-number-4">1.5.5</span> 关于类型系统的总结</h4>
+<div class="outline-text-4" id="text-1-5-5">
+<ul class="org-ul">
+<li>不同的 storage type C 一起排序时是分段排序的</li>
+<li>conversion A 不会损失数据精度, 但 conversion B 会</li>
+<li>conversion A 使用 affinity type 来参与转换, conversion B 不使用</li>
+<li>在比较不同的 storage type C 的大小时, 可能会使用到 conversion A</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

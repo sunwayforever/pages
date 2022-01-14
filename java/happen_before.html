@@ -1,0 +1,698 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Happen Before</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Happen Before</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org9ce8e18">1. Happen Before</a>
+<ul>
+<li><a href="#org6cfbd0d">1.1. Overview</a></li>
+<li><a href="#orgf7a6a64">1.2. volatile</a>
+<ul>
+<li><a href="#org16004b2">1.2.1. volatile 的实现</a></li>
+<li><a href="#org762089e">1.2.2. barrier</a></li>
+<li><a href="#org751dcdf">1.2.3. barrier 不仅指单个对象的可见性</a></li>
+<li><a href="#org967364d">1.2.4. volatile 与寄存器</a></li>
+</ul>
+</li>
+<li><a href="#orgfc397b8">1.3. synchronized</a></li>
+<li><a href="#org303542b">1.4. Thread</a></li>
+<li><a href="#orgcc897c5">1.5. final field</a></li>
+<li><a href="#orgeaaa902">1.6. finalizer</a></li>
+<li><a href="#org848c8bc">1.7. MESI 与 barrier</a>
+<ul>
+<li><a href="#orgd94e2c0">1.7.1. Store Buffer</a></li>
+<li><a href="#org4c2b29d">1.7.2. Invalidate Queue</a></li>
+<li><a href="#orgc565b6e">1.7.3. Barrier</a></li>
+</ul>
+</li>
+<li><a href="#org507efe1">1.8. 其它</a>
+<ul>
+<li><a href="#org27dd6f7">1.8.1. happen-before 与 safe construction</a></li>
+<li><a href="#orgf976fba">1.8.2. AtomicInteger</a></li>
+<li><a href="#org4cb3d36">1.8.3. LockSupport</a></li>
+<li><a href="#orgb97c08c">1.8.4. pthread</a></li>
+</ul>
+</li>
+<li><a href="#org7849db9">1.9. Ref</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org9ce8e18" class="outline-2">
+<h2 id="org9ce8e18"><span class="section-number-2">1</span> Happen Before</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org6cfbd0d" class="outline-3">
+<h3 id="org6cfbd0d"><span class="section-number-3">1.1</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+<a href="https://web.archive.org/web/20190512022934/https://docs.oracle.com/javase/specs/jls/se7/html/jls-17.html#jls-17.4.5">https://web.archive.org/web/20190512022934/https://docs.oracle.com/javase/specs/jls/se7/html/jls-17.html#jls-17.4.5</a>
+</p>
+
+<p>
+Happen Before 可以看作是 java 规定了 JVM 需要在哪些地方需要插入 barrier, barrier
+有两个作用:
+</p>
+
+<ol class="org-ol">
+<li>指令重排 (编译器或 CPU) 无法跨过这些 barrier</li>
+
+<li>barrier 要保证可见性, 即 barrier 之前的数据改动需要对 barrier 之后是可见的</li>
+</ol>
+
+<p>
+JLS 定义的 happend-before 包括:
+</p>
+
+<ol class="org-ol">
+<li><p>
+monitor
+</p>
+
+<p>
+hb (monitor unlock, monitor enter)
+</p></li>
+
+<li><p>
+volatile
+</p>
+
+<p>
+hb (volatile write, volatile read)
+</p></li>
+
+<li><p>
+thread
+</p>
+
+<p>
+hb (default value initialization, action in thread)
+</p>
+
+<p>
+hb (start thread, action in the started thread)
+</p>
+
+<p>
+hb (action in thread, joining on the thread)
+</p></li>
+
+<li><p>
+&lt;init&gt;
+</p>
+
+<p>
+hb (final field write, final field read)
+</p>
+
+<p>
+hb (&lt;init&gt;, finalizer)
+</p></li>
+</ol>
+
+<p>
+在实现上, 需要 jvm 在适合的地方插入一些硬件的 barrier 指令, 例如 arm 的 DMB 指令
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf7a6a64" class="outline-3">
+<h3 id="orgf7a6a64"><span class="section-number-3">1.2</span> volatile</h3>
+<div class="outline-text-3" id="text-1-2">
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">public</span> <span style="color: #859900;">class</span> <span style="color: #b58900;">playground</span> <span style="color: #757575;">{</span>
+
+    <span style="color: #859900;">private</span> <span style="color: #859900;">static</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">sGlobalValue</span> = 0;
+
+    <span style="color: #859900;">public</span> <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">String</span>[] <span style="color: #268bd2;">args</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">new</span> <span style="color: #b58900;">Thread</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+            <span style="color: #268bd2; font-weight: bold;">@Override</span>
+            <span style="color: #859900;">public</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">run</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+                <span style="color: #b58900;">int</span> <span style="color: #268bd2;">local_value</span> = sGlobalValue;
+                <span style="color: #859900;">while</span> <span style="color: #757575;">(</span>local_value &lt; 5<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+                    <span style="color: #859900;">if</span><span style="color: #757575;">(</span>local_value != sGlobalValue<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+                        System.out.println<span style="color: #757575;">(</span><span style="color: #2aa198;">"Got sGlobalValue: "</span> + sGlobalValue<span style="color: #757575;">)</span>;
+                        local_value= sGlobalValue;
+                    <span style="color: #757575;">}</span>
+                <span style="color: #757575;">}</span>
+            <span style="color: #757575;">}</span>
+        <span style="color: #757575;">}</span>.start<span style="color: #757575;">()</span>;
+
+        <span style="color: #859900;">new</span> <span style="color: #b58900;">Thread</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+            <span style="color: #268bd2; font-weight: bold;">@Override</span>
+            <span style="color: #859900;">public</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">run</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+                <span style="color: #b58900;">int</span> <span style="color: #268bd2;">local_value</span> = sGlobalValue;
+                <span style="color: #859900;">while</span> <span style="color: #757575;">(</span>sGlobalValue &lt;5<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+                    sGlobalValue = ++local_value;
+                    System.out.println<span style="color: #757575;">(</span><span style="color: #2aa198;">"Set sGlobalValue: "</span> + sGlobalValue<span style="color: #757575;">)</span>;
+                    <span style="color: #859900;">try</span> <span style="color: #757575;">{</span>
+                        Thread.sleep<span style="color: #757575;">(</span>500<span style="color: #757575;">)</span>;
+                    <span style="color: #757575;">}</span> <span style="color: #859900;">catch</span> <span style="color: #757575;">(</span><span style="color: #b58900;">InterruptedException</span> <span style="color: #268bd2;">e</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+                        e.printStackTrace<span style="color: #757575;">()</span>;
+                    <span style="color: #757575;">}</span>
+                <span style="color: #757575;">}</span>
+            <span style="color: #757575;">}</span>
+        <span style="color: #757575;">}</span>.start<span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org16004b2" class="outline-4">
+<h4 id="org16004b2"><span class="section-number-4">1.2.1</span> volatile 的实现</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+byte code 中只会把变量标记为 volatile, 不会生成特殊的代码
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">volatile</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">x</span> = 1;
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">x</span> = 1;
+</pre>
+</div>
+
+<p>
+两者会生成相当的 IPUT 指令, 只不过 x 会被标记为 volatile, jvm 在处理 IPUT 时会针对 volatile 有特殊处理
+</p>
+
+<ol class="org-ol">
+<li><p>
+jvm 打开 dex 文件时, 会把针对 volatile 的变量的 IPUT 替换为内部的
+IPUT_VOLATILE 指令
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java">openDexFile
+  dvmRawDexFileOpenArray
+    dvmPrepareDexInMemory
+      rewriteDex
+        verifyAndOptimizeClasses
+          verifyAndOptimizeClass
+            dvmOptimizeClass
+              <span style="color: #b58900;">optimizeMethod</span>
+
+<span style="color: #268bd2;">optimizeMethod</span>
+  <span style="color: #859900;">case</span> OP_IPUT:
+  quickOpc = OP_IPUT_QUICK;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#22810;&#26680;&#26102;&#25165;&#38656;&#35201;&#32771;&#34385; volatile</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>forSmp<span style="color: #757575;">)</span>:
+      volatileOpc = OP_IPUT_VOLATILE;
+  <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">rewrite_inst_field</span>;
+
+<span style="color: #268bd2; font-weight: bold;">rewrite_inst_field</span>:
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>volatileOpc != OP_NOP &amp;&amp; dvmIsVolatileField<span style="color: #757575;">(</span>instField<span style="color: #757575;">))</span>:
+    updateOpcode<span style="color: #757575;">(</span>method<span style="color: #757575;">,</span> insns<span style="color: #757575;">,</span> volatileOpc<span style="color: #757575;">)</span>;
+
+</pre>
+</div></li>
+
+<li><p>
+OP_IPUT_VOLATILE 与 OP_IPUT
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #b58900;">void</span> <span style="color: #268bd2;">dvmSetFieldInt</span><span style="color: #757575;">(</span>Object* obj<span style="color: #757575;">,</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">offset</span><span style="color: #757575;">,</span> <span style="color: #b58900;">s4</span> <span style="color: #268bd2;">val</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #757575;">((</span>JValue*<span style="color: #757575;">)</span>BYTE_OFFSET<span style="color: #757575;">(</span>obj<span style="color: #757575;">,</span> offset<span style="color: #757575;">))</span>-&gt;i = val;
+<span style="color: #757575;">}</span>
+
+
+<span style="color: #b58900;">void</span> <span style="color: #268bd2;">dvmSetFieldIntVolatile</span><span style="color: #757575;">(</span>Object* obj<span style="color: #757575;">,</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">offset</span><span style="color: #757575;">,</span> <span style="color: #b58900;">s4</span> <span style="color: #268bd2;">val</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    s4* ptr = &amp;<span style="color: #757575;">((</span>JValue*<span style="color: #757575;">)</span>BYTE_OFFSET<span style="color: #757575;">(</span>obj<span style="color: #757575;">,</span> offset<span style="color: #757575;">))</span>-&gt;i;
+    ANDROID_MEMBAR_STORE<span style="color: #757575;">()</span>;
+    *ptr = val;
+    ANDROID_MEMBAR_FULL<span style="color: #757575;">()</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+对于 OP_IPUT, 直接把相当的内存赋值即可, 对于 OP_IPUT_VOLATILE, 在赋值前后多了一些 memory barrier 操作
+</p></li>
+
+<li><p>
+ANDROID_MEMBAR_STORE &amp; ANDROID_MEMBAR_FULL
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">#if</span> ANDROID_SMP == 0
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">ANDROID_MEMBAR_STORE</span> android_compiler_barrier
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">ANDROID_MEMBAR_FULL</span> android_compiler_barrier
+<span style="color: #268bd2;">#else</span>
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">ANDROID_MEMBAR_STORE</span> android_memory_store_barrier
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">ANDROID_MEMBAR_FULL</span> android_memory_barrier
+<span style="color: #268bd2;">#endif</span>
+</pre>
+</div>
+
+<p>
+单核时不需要 cpu memory barrier, 只需要 compiler barrier
+</p>
+
+<ol class="org-ol">
+<li><p>
+android_compiler_barrier
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">__asm__</span> __volatile__ <span style="color: #757575;">(</span><span style="color: #2aa198;">""</span> : : : <span style="color: #2aa198;">"memory"</span><span style="color: #757575;">)</span>;
+</pre>
+</div></li>
+
+<li><p>
+android_memory_store_barrier
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">__asm__</span> __volatile__ <span style="color: #757575;">(</span><span style="color: #2aa198;">"dmb st"</span> : : : <span style="color: #2aa198;">"memory"</span><span style="color: #757575;">)</span>;
+</pre>
+</div></li>
+
+<li><p>
+android_memory_barrier
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">__asm__</span> __volatile__ <span style="color: #757575;">(</span><span style="color: #2aa198;">"dmb"</span> : : : <span style="color: #2aa198;">"memory"</span><span style="color: #757575;">)</span>;
+</pre>
+</div></li>
+</ol></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org762089e" class="outline-4">
+<h4 id="org762089e"><span class="section-number-4">1.2.2</span> barrier</h4>
+<div class="outline-text-4" id="text-1-2-2">
+</div>
+<div id="outline-container-org47f5257" class="outline-5">
+<h5 id="org47f5257"><span class="section-number-5">1.2.2.1</span> compiler barrier</h5>
+<div class="outline-text-5" id="text-1-2-2-1">
+<p>
+只是给 compiler 的提示, 要求它在进行编译时的指令重排不允许跨过这个 barrier
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf8ff0c0" class="outline-5">
+<h5 id="orgf8ff0c0"><span class="section-number-5">1.2.2.2</span> cpu barrier</h5>
+<div class="outline-text-5" id="text-1-2-2-2">
+<p>
+cpu barrier 可以控制 CPU 级别的指令重排和 cache 一致性
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org751dcdf" class="outline-4">
+<h4 id="org751dcdf"><span class="section-number-4">1.2.3</span> barrier 不仅指单个对象的可见性</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">public</span> <span style="color: #859900;">class</span> <span style="color: #b58900;">Test</span> <span style="color: #757575;">{</span>
+
+    <span style="color: #859900;">private</span> <span style="color: #859900;">static</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">sGlobalValue</span> = 0;
+    <span style="color: #859900;">private</span> <span style="color: #859900;">static</span> <span style="color: #859900;">volatile</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">mark</span> = 0;
+
+    <span style="color: #859900;">public</span> <span style="color: #859900;">static</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">String</span>[] <span style="color: #268bd2;">args</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">new</span> <span style="color: #b58900;">Thread</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+            <span style="color: #268bd2; font-weight: bold;">@Override</span>
+            <span style="color: #859900;">public</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">run</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+                <span style="color: #b58900;">int</span> <span style="color: #268bd2;">local_value</span> = sGlobalValue;
+                <span style="color: #859900;">while</span> <span style="color: #757575;">(</span>local_value &lt; 5<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+                    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">tmp</span> = mark;
+                    <span style="color: #859900;">if</span><span style="color: #757575;">(</span>local_value != sGlobalValue<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+                        System.out.println<span style="color: #757575;">(</span><span style="color: #2aa198;">"Got sGlobalValue: "</span> + sGlobalValue<span style="color: #757575;">)</span>;
+                        local_value= sGlobalValue;
+                    <span style="color: #757575;">}</span>
+                <span style="color: #757575;">}</span>
+            <span style="color: #757575;">}</span>
+        <span style="color: #757575;">}</span> .start<span style="color: #757575;">()</span>;
+
+        <span style="color: #859900;">new</span> <span style="color: #b58900;">Thread</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+            <span style="color: #268bd2; font-weight: bold;">@Override</span>
+            <span style="color: #859900;">public</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">run</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+                <span style="color: #b58900;">int</span> <span style="color: #268bd2;">local_value</span> = sGlobalValue;
+                <span style="color: #859900;">while</span> <span style="color: #757575;">(</span>sGlobalValue &lt;5<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+                    sGlobalValue = ++local_value;
+                    mark = 1;
+                    System.out.println<span style="color: #757575;">(</span><span style="color: #2aa198;">"Set sGlobalValue: "</span> + sGlobalValue<span style="color: #757575;">)</span>;
+                    <span style="color: #859900;">try</span> <span style="color: #757575;">{</span>
+                        Thread.sleep<span style="color: #757575;">(</span>500<span style="color: #757575;">)</span>;
+                    <span style="color: #757575;">}</span> <span style="color: #859900;">catch</span> <span style="color: #757575;">(</span><span style="color: #b58900;">InterruptedException</span> <span style="color: #268bd2;">e</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+                        e.printStackTrace<span style="color: #757575;">()</span>;
+                    <span style="color: #757575;">}</span>
+                <span style="color: #757575;">}</span>
+            <span style="color: #757575;">}</span>
+        <span style="color: #757575;">}</span> .start<span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+上面的例子是正常运行的, 虽然 sGlobalValue 不是 volatile, 但对 mark 的读写导致的
+barrier 间接导致 sGlobalValue 也被同步了.
+</p>
+
+<p>
+所以 happen-before 重点是 barrier, 而不仅仅是涉及对象本身 (一个引用) 的可见性.
+例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">class</span> <span style="color: #b58900;">Test</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">a</span>;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">b</span>;
+    <span style="color: #859900;">public</span> <span style="color: #268bd2;">Test</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">this</span>.a = 1;
+        <span style="color: #859900;">this</span>.b = 1;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">volatile</span> <span style="color: #b58900;">Test</span> <span style="color: #268bd2;">mTest</span>;
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">thread1:</span>
+mTest = <span style="color: #859900;">new</span> <span style="color: #b58900;">Test</span><span style="color: #757575;">()</span>;
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">thread2:</span>
+<span style="color: #859900;">if</span> <span style="color: #757575;">(</span>mTest != <span style="color: #268bd2; font-weight: bold;">null</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    assert<span style="color: #757575;">(</span>mTest.a == 1<span style="color: #757575;">)</span>;
+    assert<span style="color: #757575;">(</span>mTest.b == 1<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+不仅 mTest 能保存可见, 而且 mTest 的成员也是可见的, 因为成员的初始化发生在对
+mTest 的赋值之前.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org967364d" class="outline-4">
+<h4 id="org967364d"><span class="section-number-4">1.2.4</span> volatile 与寄存器</h4>
+<div class="outline-text-4" id="text-1-2-4">
+<p>
+gcc 在处理 c 语言的 volatile 关键字时, 会考虑不把它放在寄存器中. Java 的 JIT 也许也会有同样的考虑. 但 dalvik 的 JIT 并没有考虑这一点:
+</p>
+
+<p>
+所有的 store 相关的操作: IPUT, SPUT, &#x2026; 每个 MIR 最终都会生成一条把临时寄存器的值写入内存的 HIR (参考 dalvik::storeBaseIndexed)
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgfc397b8" class="outline-3">
+<h3 id="orgfc397b8"><span class="section-number-3">1.3</span> synchronized</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+synchronized (即 MonitorEnter 和 MonitorExit) 也是一个 barrier
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #b58900;">OP_MONITOR_ENTER</span>
+  <span style="color: #268bd2;">dvmLockObject</span><span style="color: #757575;">(</span><span style="color: #b58900;">self</span><span style="color: #757575;">,</span> <span style="color: #b58900;">obj</span><span style="color: #757575;">)</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>LW_SHAPE<span style="color: #757575;">(</span>thin<span style="color: #757575;">)</span> == LW_SHAPE_THIN<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>LW_LOCK_OWNER<span style="color: #757575;">(</span>thin<span style="color: #757575;">)</span> == threadId<span style="color: #757575;">)</span>:
+           <span style="color: #586e75;">// </span><span style="color: #586e75;">&#24403;&#21069;&#32447;&#31243;&#24050;&#32463;&#25345;&#38145;, &#19981;&#20877;&#22788;&#29702;</span>
+        <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>LW_LOCK_OWNER<span style="color: #757575;">(</span>thin<span style="color: #757575;">)</span> == 0<span style="color: #757575;">)</span>:
+            android_atomic_acquire_cas<span style="color: #757575;">(</span>thin<span style="color: #757575;">,</span> newThin<span style="color: #757575;">,</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int32_t</span>*<span style="color: #757575;">)</span>thinp<span style="color: #757575;">)</span>
+              <span style="color: #b58900;">int</span> <span style="color: #268bd2;">status</span> = android_atomic_cas<span style="color: #757575;">(</span>old_value<span style="color: #757575;">,</span> new_value<span style="color: #757575;">,</span> ptr<span style="color: #757575;">)</span>;
+              <span style="color: #586e75;">// </span><span style="color: #586e75;">barrier!</span>
+              <span style="color: #268bd2;">android_memory_barrier</span><span style="color: #757575;">()</span>;
+        <span style="color: #859900;">else</span>:
+           <span style="color: #586e75;">// </span><span style="color: #586e75;">spin to acquire the THIN lock</span>
+          <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>;;<span style="color: #757575;">)</span>:
+            android_atomic_acquire_cas<span style="color: #757575;">(</span>thin<span style="color: #757575;">,</span> newThin<span style="color: #757575;">,</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int32_t</span> *<span style="color: #757575;">)</span>thinp<span style="color: #757575;">)</span>
+
+     <span style="color: #859900;">else</span>:
+       <span style="color: #586e75;">// </span><span style="color: #586e75;">FAT</span>
+       lockMonitor<span style="color: #757575;">(</span>self<span style="color: #757575;">,</span> LW_MONITOR<span style="color: #757575;">(</span>obj-&gt;lock<span style="color: #757575;">))</span>;
+         dvmLockMutex<span style="color: #757575;">(</span>&amp;mon-&gt;lock<span style="color: #757575;">)</span>;
+           <span style="color: #586e75;">// </span><span style="color: #586e75;">pthread &#20250;&#36127;&#36131;&#35843;&#29992; barrier</span>
+           <span style="color: #268bd2;">pthread_lock_mutex</span><span style="color: #757575;">()</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org303542b" class="outline-3">
+<h3 id="org303542b"><span class="section-number-3">1.4</span> Thread</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+Java thread 的入口也相当于一个 barrier, 这是通过 pthread_create 来保证的
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java">pthread_create
+  <span style="color: #b58900;">ScopedPthreadMutexLocker</span> <span style="color: #268bd2;">start_locker</span><span style="color: #757575;">(</span><span style="color: #b58900;">start_mutex</span><span style="color: #757575;">)</span>;
+    pthread_mutex_lock<span style="color: #757575;">(</span>mu_<span style="color: #757575;">)</span>;
+      ANDROID_MEMBAR_FULL<span style="color: #757575;">()</span>;
+  __pthread_clone<span style="color: #757575;">(</span>start_routine<span style="color: #757575;">,</span> child_stack<span style="color: #757575;">,</span> flags<span style="color: #757575;">,</span> arg<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgcc897c5" class="outline-3">
+<h3 id="orgcc897c5"><span class="section-number-3">1.5</span> final field</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+通过构造函数对 final field 进行初次赋值时也需要插入一个 barrier
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #b58900;">optimizeMethod</span>
+  <span style="color: #268bd2;">needRetBar</span> = needsReturnBarrier<span style="color: #757575;">(</span>method<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">switch</span> <span style="color: #757575;">(</span>opc<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">final &#21482;&#33021;&#22312;&#26500;&#36896;&#20989;&#25968;&#20013;&#34987;&#36171;&#20540;, &#25152;&#20197; OPC &#20026; OP_RETURN_VOID</span>
+    <span style="color: #859900;">case</span> OP_RETURN_VOID:
+      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>needRetBar<span style="color: #757575;">)</span>:
+          rewriteReturnVoid<span style="color: #757575;">(</span>method<span style="color: #757575;">,</span> insns<span style="color: #757575;">)</span>;
+
+<span style="color: #268bd2; font-weight: bold;">needsReturnBarrier</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#24517;&#39035;&#26159;&#26500;&#36896;&#20989;&#25968;</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>strcmp<span style="color: #757575;">(</span>method-&gt;name<span style="color: #757575;">,</span> <span style="color: #2aa198;">"&lt;init&gt;"</span><span style="color: #757575;">)</span> != 0<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">return</span> <span style="color: #268bd2; font-weight: bold;">false</span>;
+  <span style="color: #b58900;">int</span> <span style="color: #268bd2;">idx</span> = clazz-&gt;ifieldCount;
+  <span style="color: #859900;">while</span> <span style="color: #757575;">(</span>--idx &gt;= 0<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">class &#23384;&#22312; final field</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>dvmIsFinalField<span style="color: #757575;">(</span>&amp;clazz-&gt;ifields[idx]<span style="color: #757575;">))</span>
+      <span style="color: #859900;">return</span> <span style="color: #268bd2; font-weight: bold;">true</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgeaaa902" class="outline-3">
+<h3 id="orgeaaa902"><span class="section-number-3">1.6</span> finalizer</h3>
+<div class="outline-text-3" id="text-1-6">
+<p>
+构造函数与 finalizer 之间需要有一个 barrier
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #268bd2; font-weight: bold;">needsReturnBarrier</span>:
+<span style="color: #586e75;">// </span><span style="color: #586e75;">&#24517;&#39035;&#26159;&#26500;&#36896;&#20989;&#25968;</span>
+<span style="color: #859900;">if</span> <span style="color: #757575;">(</span>strcmp<span style="color: #757575;">(</span>method-&gt;name<span style="color: #757575;">,</span> <span style="color: #2aa198;">"&lt;init&gt;"</span><span style="color: #757575;">)</span> != 0<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">return</span> <span style="color: #268bd2; font-weight: bold;">false</span>;
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">&#23384;&#22312; finalizer</span>
+<span style="color: #859900;">if</span> <span style="color: #757575;">(</span>IS_CLASS_FLAG_SET<span style="color: #757575;">(</span>clazz<span style="color: #757575;">,</span> CLASS_ISFINALIZABLE<span style="color: #757575;">))</span>
+    <span style="color: #859900;">return</span> <span style="color: #268bd2; font-weight: bold;">true</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org848c8bc" class="outline-3">
+<h3 id="org848c8bc"><span class="section-number-3">1.7</span> MESI 与 barrier</h3>
+<div class="outline-text-3" id="text-1-7">
+<p>
+<a href="https://en.wikipedia.org/wiki/MESI_protocol">https://en.wikipedia.org/wiki/MESI_protocol</a>
+<a href="https://www.scss.tcd.ie/Jeremy.Jones/vivio/caches/MESIHelp.htm">https://www.scss.tcd.ie/Jeremy.Jones/vivio/caches/MESIHelp.htm</a>
+</p>
+
+<p>
+MESI (Modified, Exclusive, Shared, Invalid) 是一个 cache 一致性协议, 它能保存各个 CPU 的 cache 是一致的. 若 SMP 使用原始的 MESI, 可以保证各个 CPU 不需其它措施就能读到最新的值.
+</p>
+
+<p>
+但是 MESI 的 invalidate 有较大的时间开销, 因为在 MESI 之上又加入了 Store Buffer
+和 Invalidate Queue.
+</p>
+</div>
+
+<div id="outline-container-orgd94e2c0" class="outline-4">
+<h4 id="orgd94e2c0"><span class="section-number-4">1.7.1</span> Store Buffer</h4>
+<div class="outline-text-4" id="text-1-7-1">
+<p>
+对于写的一方, 写操作不会直接通过 MESI 写到 cache (以及内存), 而上先放在一个本地的 store buffer 中
+</p>
+</div>
+</div>
+
+<div id="outline-container-org4c2b29d" class="outline-4">
+<h4 id="org4c2b29d"><span class="section-number-4">1.7.2</span> Invalidate Queue</h4>
+<div class="outline-text-4" id="text-1-7-2">
+<p>
+对于读的一方, invalidate 消息不会直接导致 cache invalid, 而是放在 invalidate
+queue 中慢慢处理
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgc565b6e" class="outline-4">
+<h4 id="orgc565b6e"><span class="section-number-4">1.7.3</span> Barrier</h4>
+<div class="outline-text-4" id="text-1-7-3">
+<p>
+由于 Store Buffer 的存在, 需要一个 write barrier, 能够把 store buffer 提交到
+MESI, 避免的修改没有提交.
+</p>
+
+<p>
+由于 Invalidate Queue 的存在, 需要一个 read barrier, 能够从 MESI 读到所有的
+invalid 请求, 避免没有看到外部的修改.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org507efe1" class="outline-3">
+<h3 id="org507efe1"><span class="section-number-3">1.8</span> 其它</h3>
+<div class="outline-text-3" id="text-1-8">
+</div>
+<div id="outline-container-org27dd6f7" class="outline-4">
+<h4 id="org27dd6f7"><span class="section-number-4">1.8.1</span> happen-before 与 safe construction</h4>
+<div class="outline-text-4" id="text-1-8-1">
+<p>
+所谓 safe construction, 是指不要在构造函数返回之前把 this `逃逸` 出去, 例如:
+</p>
+
+<ol class="org-ol">
+<li>不要在构造函数中把 this 赋值给 static 变量</li>
+
+<li>不要在构造函数中把 this 注册为 listener</li>
+
+<li>&#x2026;</li>
+</ol>
+
+<p>
+这样做的一个原因是构造函数返回之前, 该对象的 final 成员的值对其它线程是不可见的,
+因为final 的 happen-before 是通过在构造函数返回时插入 barrier 实现的, 所以即使把
+`逃逸` 的操作放在构造函数的最后也是不安全的:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">class</span> <span style="color: #b58900;">Test</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">a</span>;
+    <span style="color: #859900;">final</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">b</span>;
+    <span style="color: #859900;">public</span> <span style="color: #268bd2;">Test</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        a = 1;
+        b = 2;
+        sTest = <span style="color: #859900;">this</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgf976fba" class="outline-4">
+<h4 id="orgf976fba"><span class="section-number-4">1.8.2</span> AtomicInteger</h4>
+<div class="outline-text-4" id="text-1-8-2">
+<ol class="org-ol">
+<li>AtomicInteger 的 value 本身声明为 volatile, 所以对它的 get 和 set 都是自带
+barrier</li>
+
+<li>除此之外, AtomicInteger 通过 CAS 提供了 getAndIncrement 等方法, 提供了原子性</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org4cb3d36" class="outline-4">
+<h4 id="org4cb3d36"><span class="section-number-4">1.8.3</span> LockSupport</h4>
+<div class="outline-text-4" id="text-1-8-3">
+<p>
+LockSupport 的 park 方法为 java concurrent 库提供了 lock 原语, 最终 park 会依赖于 futex 或 pthread
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgb97c08c" class="outline-4">
+<h4 id="orgb97c08c"><span class="section-number-4">1.8.4</span> pthread</h4>
+<div class="outline-text-4" id="text-1-8-4">
+<p>
+pthread_mutex_lock 等函数都有 barrier
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org7849db9" class="outline-3">
+<h3 id="org7849db9"><span class="section-number-3">1.9</span> Ref</h3>
+<div class="outline-text-3" id="text-1-9">
+<ul class="org-ul">
+<li><a href="https://web.archive.org/web/20181205051050/http://gee.cs.oswego.edu/dl/jmm/cookbook.html">jsr133 cookbook</a></li>
+<li><a href="https://web.archive.org/web/20190201055016/https://www.cs.umd.edu/~pugh/java/memoryModel/jsr-133-faq.html">jsr133-faq</a></li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

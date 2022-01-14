@@ -1,0 +1,583 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gemmlowp Quantization</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Gemmlowp Quantization</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org3f4e311">1. Gemmlowp Quantization</a>
+<ul>
+<li><a href="#org1c1ba75">1.1. Overview</a></li>
+<li><a href="#orgd563102">1.2. Quantization as an affine map.</a></li>
+<li><a href="#orgde58224">1.3. Domain-specific constraint: the real value 0 must be exactly representable.</a></li>
+<li><a href="#org4861e1e">1.4. The final form of the quantization equation</a></li>
+<li><a href="#org07c4b56">1.5. Quantizing a matrix multiplication</a></li>
+<li><a href="#org32f1d9e">1.6. Implementation of quantized matrix multiplication</a></li>
+<li><a href="#orgd9c4bf8">1.7. How this is implemented in gemmlowp</a></li>
+<li><a href="#org9c8f9e0">1.8. How this differs from the older legacy gemmlowp quantization paradigm</a></li>
+<li><a href="#org0aa96df">1.9. Example code illustrating the new quantization paradigm</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org3f4e311" class="outline-2">
+<h2 id="org3f4e311"><span class="section-number-2">1</span> Gemmlowp Quantization</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+gemmlowp 是 tflite 底层 optimized kernel 使用的 gemm 库 (General Matrix
+Multiply), 它支持对量化过的矩阵的运算, 但需要调用者 (tflite) 提供相应的量化参数,
+如 scale, zero_point 等
+</p>
+
+<p>
+<a href="file:///home/sunway/source/tensorflow/tensorflow/lite/micro/tools/make/downloads/gemmlowp/eight_bit_int_gemm/eight_bit_int_gemm.cc#org17b370b">file:///home/sunway/source/tensorflow/tensorflow/lite/micro/tools/make/downloads/gemmlowp/eight_bit_int_gemm/eight_bit_int_gemm.cc#org17b370b</a>
+</p>
+
+<p>
+<a href="https://github.com/google/gemmlowp/blob/master/doc/quantization.md">https://github.com/google/gemmlowp/blob/master/doc/quantization.md</a>
+</p>
+
+<p>
+<b>TLDR:</b> If you prefer example code over theory, look at
+<a href="quantization_example.cc">doc/quantization_example.cc</a>.
+</p>
+</div>
+
+<div id="outline-container-org1c1ba75" class="outline-3">
+<h3 id="org1c1ba75"><span class="section-number-3">1.1</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+gemmlowp allows to perform calculations on matrices on uint8 values, but
+these matrices are only useful insofar as they somehow approximate
+matrices of real numbers. By a <i>quantization paradigm</i> we mean a
+correspondence between matrices of quantized 8bit values and matrices of
+real numbers. The choice of a quantization paradigm affects the
+calculations that gemmlowp itself needs to perform, specifically, it
+affects how one goes from internal 32bit accumulator to final 8bit
+outputs.
+</p>
+
+<p>
+The part of gemmlowp transforming internal 32bit accumulator to final
+8bit outputs is the "output pipeline" described in <a href="output.md">output.md</a>.
+</p>
+
+<p>
+gemmlowp's <code>GemmWithOutputPipeline</code> entry point allows specifying an
+arbitrary output pipeline, allowing the user to implement their own
+preferred quantized arithmetic paradigm.
+</p>
+
+<p>
+In the present document, our purpose is to show how, reasoning from
+first principles and some domain-specific knowledge of neural networks,
+we can arrive naturally at some specific quantization paradigm, and how
+that can be implemented using a specific output pipeline.
+</p>
+
+<p>
+We also aim to show how that differs from the older, legacy quantization
+paradigm implemented by gemmlowp's legacy interfaces and why the change
+to the newer quantization paradigm described in this document was useful
+as far as some applications of gemmlowp were concerned.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgd563102" class="outline-3">
+<h3 id="orgd563102"><span class="section-number-3">1.2</span> Quantization as an affine map.</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+In order for arithmetic on real values to map directly to arithmetic on
+quantized uint8 values, the mapping between real and quantized uint8
+values must be affine, which means it must be of the form
+</p>
+
+<pre class="example" id="org4695125">
+real_value = A * quantized_value + B             (1)
+</pre>
+
+<p>
+for some constants A, B, or equivalently, of the form
+</p>
+
+<pre class="example" id="org883ccfa">
+real_value = C * (quantized_value + D)           (2)
+</pre>
+
+<p>
+for some constants C, D. Indeed, anything else than such an affine map
+would mean that the result of the quantized calculations do no longer
+readily provide an approximation to the result of the real-numbers
+calculation.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgde58224" class="outline-3">
+<h3 id="orgde58224"><span class="section-number-3">1.3</span> Domain-specific constraint: the real value 0 must be exactly representable.</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+Here a domain-specific constrain from neural networks appears: for some
+neural network layers, it is very useful for optimized implementations
+that the real-value 0 be exactly representable.
+</p>
+
+<p>
+For instance, in a Convolutional or Pooling layer with padding, it is
+useful to be able to implement the padding by zero-padding the input
+array, so that optimized loops do not need to become more complex to
+avoid overrunning the array bounds.
+</p>
+
+<p>
+In order for such zero-padding to be feasible in a quantized
+implementation of such layers, it is important that the real value '0'
+be exactly representable in quantized form, i.e. that it correspond
+exactly to some quantized value, which we call the <i>zero-point</i>.
+</p>
+
+<p>
+Indeed, if '0' were not exactly representable, then we would have to use
+some quantized value for padding, that does not exactly correspond to
+the real value '0'. That would typically introduce inaccuracy in the
+result. In fact, using always the same such value would be worse: it
+would introduce <i>bias</i> in the result.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org4861e1e" class="outline-3">
+<h3 id="org4861e1e"><span class="section-number-3">1.4</span> The final form of the quantization equation</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+Now let us phrase what this constraint &#x2014; that the real value 0 be
+exactly representable &#x2014; means in either quantization equations, (1)
+and (2).
+</p>
+
+<p>
+In equation (1), plugging <code>real_value = 0</code> and
+<code>quantized_value = zero_point</code>, we get:
+</p>
+
+<pre class="example" id="org7e79bc1">
+0 = A * zero_point + B
+</pre>
+
+<p>
+equivalently:
+</p>
+
+<pre class="example" id="org1ac1e84">
+zero_point = -B / A
+</pre>
+
+<p>
+We are thus left with a rather awkward constraint: the real number
+<code>-B / A</code> must somehow be guaranteed to be exactly integral, so that the
+special uint8 value <code>zero_point</code> can be exactly equal to it. Quite
+awkward!
+</p>
+
+<p>
+Now let us look at equation (2). Plugging <code>real_value = 0</code> and
+<code>quantized_value = zero_point</code>, we get:
+</p>
+
+<pre class="example" id="orgd3dc80d">
+0 = C * (zero_point + D)
+</pre>
+
+<p>
+Conveniently, the constant <code>C</code> plays no role anymore, so this equation
+simplifies to:
+</p>
+
+<pre class="example" id="org1f006d7">
+0 = zero_point + D
+</pre>
+
+<p>
+In other words, <code>D = -zero_point</code>. This suggests rewriting the
+quantization equation (2) into the following form (3), which will be the
+final form that we will consistently use:
+</p>
+
+<pre class="example" id="orgb0e7752">
+real_value = scale * (quantized_value - zero_point)        (3)
+</pre>
+
+<p>
+To go from (2) to (3), we merely renamed <code>C</code> to <code>scale</code> and <code>D</code> to
+<code>-zero_point</code>.
+</p>
+
+<p>
+With this quantization equation (3), the condition that 0 be exactly
+representable is vacuously satisfied: <code>zero_point</code> is by definition one
+of the possible <code>quantized_value</code>'s, and equation (3) maps it to a
+<code>real_value</code> of exactly 0.
+</p>
+
+<p>
+Note that the final quantizaton equation (3) depends on two constants,
+one integral, the other an arbitrary positive real number:
+</p>
+
+<ul class="org-ul">
+<li><code>zero_point</code> is integral, more specifically is one of the possible
+quantized values (i.e. typically is a uint8 value).</li>
+<li><code>scale</code> is a positive real number. Thus at this stage we have not yet
+shown how to eliminate all usage of floating-point arithmetic. That
+will come below.</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org07c4b56" class="outline-3">
+<h3 id="org07c4b56"><span class="section-number-3">1.5</span> Quantizing a matrix multiplication</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+Now that we know &#x2014; equation (3) &#x2014; how real numbers are to correspond
+to quantized values (typically uint8), we turn to applying this
+knowledge to rewriting a multiplication of matrices of real numbers, by
+the equivalent multiplication of matrices of quantized values.
+</p>
+
+<p>
+Say that we have two matrices of real values <code>lhs_real_matrix</code>,
+<code>rhs_real_matrix</code>. Each entry of their product is the sum (accumulation)
+of many products of individual matrix entries, say
+<code>lhs_real_value * rhs_real_value</code>.
+</p>
+
+<p>
+Now suppose that we have already quantized these two matrices according
+to the above equation (3), with some already-known quantization
+parameters <code>lhs_scale</code>, <code>rhs_scale</code>, <code>lhs_zero_point</code>, <code>rhs_zero_point</code>,
+so that their matrix entries are quantized as
+</p>
+
+<pre class="example" id="org1a75576">
+lhs_real_value[i] = lhs_scale * (lhs_quantized_value[i] - lhs_zero_point)
+rhs_real_value[i] = rhs_scale * (rhs_quantized_value[i] - rhs_zero_point)
+</pre>
+
+<p>
+We then rewrite the matrix product accumulator accordingly:
+</p>
+
+<pre class="example" id="orga2efedc">
+result_real_value
+  = Sum_over_i(lhs_real_value[i] * rhs_real_value[i])
+  = Sum_over_i(
+        lhs_scale * (lhs_quantized_value[i] - lhs_zero_point) *
+        rhs_scale * (rhs_quantized_value[i] - rhs_zero_point)
+    )
+  = lhs_scale * rhs_scale * Sum_over_i(
+        (lhs_quantized_value[i] - lhs_zero_point) *
+        (rhs_quantized_value[i] - rhs_zero_point)
+    )                                                      (4)
+</pre>
+
+<p>
+Now our goal is to represent this result itself as a quantized matrix,
+i.e. still according to equation (3), for some pre-established
+quantization parameters <code>result_scale</code> and <code>result_zero_point</code>, as
+</p>
+
+<pre class="example" id="orgab0c5f4">
+result_real_value = result_scale *
+    (result_quantized_value - result_zero_point)
+</pre>
+
+<p>
+Here we need to keep in mind that our goal is to specify what the
+quantized matrix multiplication should do, i.e. how to compute
+<code>result_quantized_value</code>. The last equation above is equivalent to
+</p>
+
+<pre class="example" id="org064b4b6">
+result_quantized_value = result_zero_point +
+    result_real_value / result_scale
+</pre>
+
+<p>
+Now we can use equation (4) above to plug into this the expression of
+result_real_value in terms of the quantized operands, and we obtain:
+</p>
+
+<pre class="example" id="org020790b">
+result_quantized_value = result_zero_point +
+    (lhs_scale * rhs_scale / result_scale) *
+        Sum_over_i(
+            (lhs_quantized_value[i] - lhs_zero_point) *
+            (rhs_quantized_value[i] - rhs_zero_point)
+        )                                                  (5)
+</pre>
+
+<p>
+Equation (5) is the conclusion of this general discussion of how to
+specify what "quantized matrix multiplication" should actually compute,
+in order to be able to replace real matrix multiplications.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org32f1d9e" class="outline-3">
+<h3 id="org32f1d9e"><span class="section-number-3">1.6</span> Implementation of quantized matrix multiplication</h3>
+<div class="outline-text-3" id="text-1-6">
+<p>
+Having obtained the mathematical form (5) of quantized matrix
+multiplication, we now turn to its actual implementation.
+</p>
+
+<p>
+The inner-most part of (5),
+</p>
+
+<pre class="example" id="org3fc9aaa">
+int32_accumulator =
+    Sum_over_i(
+        (lhs_quantized_value[i] - lhs_zero_point) *
+        (rhs_quantized_value[i] - rhs_zero_point)
+)
+</pre>
+
+<p>
+is the "kernel" accumulation loop. It is where the bulk of the
+computational cost goes. Luckily, it only involves integers: the
+quantized operands matrix entries, and their <code>zero_point</code> quantization
+parameters. Typically, all of these values are uint8. Typically, the
+above differences of uint8 values would be represented as signed int16;
+their products as signed int32.
+</p>
+
+<p>
+It is out of scope of the present doc to discuss how to avoid the
+overhead of having to subtract these <code>zero_point</code> constants in this
+inner loop; refer to
+<a href="low-precision.md#efficient-handling-of-offsets">this section of
+low-precision.md</a> for that. The gist of it is that a mathematical trick
+allows us to take the handling of these <code>zero_point</code> constants out of
+this accumulation loop, so that it simplifies to
+</p>
+
+<pre class="example" id="org2059408">
+int32_accumulator =
+    Sum_over_i(
+      lhs_quantized_value[i] *
+      rhs_quantized_value[i]
+    )                                                      (6)
+</pre>
+
+<p>
+Anyway, the result is a <code>int32_accumulator</code> that we now plug back into
+the rest of (5):
+</p>
+
+<pre class="example" id="org79a3cba">
+result_quantized_value = result_zero_point +
+    (lhs_scale * rhs_scale / result_scale) * int32_accumulator       (7)
+</pre>
+
+<p>
+The difficulty here is of course that
+<code>(lhs_scale * rhs_scale / result_scale)</code> is a positive real number, not
+an integer in general. It is a constant, though. So what we have to
+implement here is the (approximate) scaling of a int32 value by some
+arbitrary positive constant multiplier.
+</p>
+
+<p>
+Moreover, it is safe to assume that this positive constant multiplier is
+smaller than one &#x2014; each of the <code>scale</code> values here is typically
+smaller than one, as we are typically mapping the <code>[0..255]</code> quantized
+uint8 value range to an interval of real values that is much narrower
+than that, typically within <code>[-10,10]</code> in most neural networks. For
+example, a neural network using Relu6 activation functions will
+typically have real activation values in the interval [0,6].
+</p>
+
+<p>
+So how do we implement the multiplication of a int32 value by a positive
+real constant that is smaller than one? Typically, by multiplying by a
+fixed-point constant multiplier in the normalized interval <code>[1/2,1)</code>,
+and right-shifting the result to achieve the correct multiplier.
+</p>
+
+<p>
+At this point we have obtained the int32 value of the product
+</p>
+
+<pre class="example" id="orgafa0e6a">
+(lhs_scale * rhs_scale / result_scale) * int32_accumulator
+</pre>
+
+<p>
+Looking at (7), it only remains to add to it the integral value
+<code>result_zero_point</code>, and we are done.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgd9c4bf8" class="outline-3">
+<h3 id="orgd9c4bf8"><span class="section-number-3">1.7</span> How this is implemented in gemmlowp</h3>
+<div class="outline-text-3" id="text-1-7">
+<p>
+The different parts of gemmlowp implementing aspects of the above
+discussion are:
+</p>
+
+<ul class="org-ul">
+<li>The packing stage (see <a href="packing.md">packing.md</a>) implements the special
+mathematical trick to handle <code>lhs_offset</code>, <code>rhs_offset</code> that we
+alluded to above, see
+<a href="low-precision.md#efficient-handling-of-offsets">this section of
+low-precision.md</a> for details. Thanks to is, the rest of the
+calculation can proceed as if <code>lhs_offset</code>, <code>rhs_offset</code> were 0.</li>
+
+<li>The compute/kernel stage (see <a href="kernel.md">kernel.md</a>) performs the core
+accumulation loop producing the <code>int32_accumulator</code>, see equation (6)
+above.</li>
+
+<li>The unpacking stage feeds into the output pipeline (see
+<a href="output.md">output.md</a>), which implements the rest of the evaluation of
+the above equation (5), that we discussed in the previous section.</li>
+</ul>
+
+<p>
+Now, the point of gemmlowp's flexible output-pipelines mechanism (see
+<a href="output.md">output.md</a>) is to support different quantization paradigms, so
+we now have to specify which particular flavor of output pipeline
+corresponds to the particular quantization paradigm that we detailed
+above in this document.
+</p>
+
+<p>
+The specific output pipeline stage implementing the present quantization
+paradigm, i.e. implementing the precise computation detailed in the
+previous section (equation (5)), is
+<code>OutputStageQuantizeDownInt32ByFixedPoint</code>.
+</p>
+
+<p>
+Please refer to the comment explaining it in
+<a href="../public/output_stages.h">public/output_stages.h</a>.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org9c8f9e0" class="outline-3">
+<h3 id="org9c8f9e0"><span class="section-number-3">1.8</span> How this differs from the older legacy gemmlowp quantization paradigm</h3>
+<div class="outline-text-3" id="text-1-8">
+<p>
+The difference between the older legacy quantization paradigm described
+in <a href="low-precision.md">low-precision.md</a> and the newer one described in this
+document boils down to the difference between the legacy output stage
+implementing it, <code>OutputStageQuantizeDownInt32ToUint8Scale</code>, and the new
+output stage implementing the new paradigm,
+<code>OutputStageQuantizeDownInt32ByFixedPoint</code>.
+</p>
+
+<p>
+Please refer to the comments in
+<a href="../public/output_stages.h">public/output_stages.h</a> for details about
+these two output stages and how they differ.
+</p>
+
+<p>
+Issues with the old output stage
+<code>OutputStageQuantizeDownInt32ToUint8Scale</code> are:
+</p>
+
+<ol class="org-ol">
+<li>The int32 accumulators (inputs to the output stage) undergo a plain
+int32 multiplication with a int32 multiplier, which may overflow. By
+contrast, in the newer <code>OutputStageQuantizeDownInt32ByFixedPoint</code>,
+this integer multiplication becomes a fixed-point multiplication and
+cannot overflow.
+
+<ul class="org-ul">
+<li>In practice, to limit the risk of overflow, this pushes users to
+choose smaller values for this integer multiplier, which means
+limited multiplicative accuracy, which may cause multiplicative
+bias depending on how it is used.</li>
+</ul></li>
+
+<li>Note how the order of multiplying by the multipler and adding the
+<code>result_offset</code> are swapped. This reflects a quantizatin equation of
+the form (1) above, as opposed to the form (2)/(3) that the new
+quantization paradigm uses. As a result, it is essentially impossible
+to guarantee that 0 is an exactly-representable value, which as
+discussed above is an issue at least in some convolutional neural
+network applications.</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0aa96df" class="outline-3">
+<h3 id="org0aa96df"><span class="section-number-3">1.9</span> Example code illustrating the new quantization paradigm</h3>
+<div class="outline-text-3" id="text-1-9">
+<p>
+Example code showing how to perfom a quantized matrix multiplication in
+the quantization paradigm discussed here is in
+<a href="quantization_example.cc">doc/quantization_example.cc</a>.
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

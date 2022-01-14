@@ -1,0 +1,948 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TVM BYOC Codegen</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">TVM BYOC Codegen</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org3b09f42">1. <span class="done DONE">DONE</span> <span class="priority">[B]</span> TVM BYOC Codegen</a>
+<ul>
+<li><a href="#orgda5526a">1.1. DNNL BYOC Example</a>
+<ul>
+<li><a href="#org9eea9ba">1.1.1. 不使用 DNNL</a></li>
+<li><a href="#org6701b5e">1.1.2. 使用 DNNL</a></li>
+</ul>
+</li>
+<li><a href="#org82e7fbc">1.2. BYOC Impl</a>
+<ul>
+<li><a href="#org3e5bab2">1.2.1. Runtime</a></li>
+<li><a href="#orgc3953d7">1.2.2. Relay Codegen</a></li>
+<li><a href="#org992e01c">1.2.3. To Summarize</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org3b09f42" class="outline-2">
+<h2 id="org3b09f42"><span class="section-number-2">1</span> <span class="done DONE">DONE</span> <span class="priority">[B]</span> TVM BYOC Codegen</h2>
+<div class="outline-text-2" id="text-1">
+<ul class="org-ul">
+<li>State "DONE"       from "TODO"       <span class="timestamp-wrapper"><span class="timestamp">[2021-08-04 三 19:54]</span></span></li>
+</ul>
+<p>
+<a href="https://tvm.apache.org/2020/07/15/how-to-bring-your-own-codegen-to-tvm">https://tvm.apache.org/2020/07/15/how-to-bring-your-own-codegen-to-tvm</a>
+</p>
+
+<p>
+<a href="https://gist.github.com/SrivastavaKshitij/9341a414147fbc290eff4a92b8e73acd">https://gist.github.com/SrivastavaKshitij/9341a414147fbc290eff4a92b8e73acd</a>
+</p>
+
+<p>
+BYOC 与 有些类似
+</p>
+
+<p>
+<a href="file:///home/sunway/source/tvm/docs/dev/relay_bring_your_own_codegen.rst">file:~/source/tvm/docs/dev/relay_bring_your_own_codegen.rst</a>
+</p>
+</div>
+
+<div id="outline-container-orgda5526a" class="outline-3">
+<h3 id="orgda5526a"><span class="section-number-3">1.1</span> DNNL BYOC Example</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-org9eea9ba" class="outline-4">
+<h4 id="org9eea9ba"><span class="section-number-4">1.1.1</span> 不使用 DNNL</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">get_demo_mod</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">d1</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"d1"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 32<span style="color: #757575;">,</span> 56<span style="color: #757575;">,</span> 56<span style="color: #757575;">),</span> dtype=<span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">w1</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"w1"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>32<span style="color: #757575;">,</span> 32<span style="color: #757575;">,</span> 3<span style="color: #757575;">,</span> 3<span style="color: #757575;">),</span> dtype=<span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">b1</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"b1"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>32<span style="color: #757575;">,),</span> dtype=<span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">conv</span> = relay.nn.conv2d<span style="color: #757575;">(</span>d1<span style="color: #757575;">,</span> w1<span style="color: #757575;">,</span> strides=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 1<span style="color: #757575;">),</span> padding=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 1<span style="color: #757575;">))</span>
+    <span style="color: #268bd2;">bias</span> = relay.nn.bias_add<span style="color: #757575;">(</span>conv<span style="color: #757575;">,</span> b1<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">relu</span> = relay.nn.relu<span style="color: #757575;">(</span>bias<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">func</span> = relay.Function<span style="color: #757575;">(</span>[d1<span style="color: #757575;">,</span> w1<span style="color: #757575;">,</span> b1]<span style="color: #757575;">,</span> relu<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">mod</span> = tvm.IRModule.from_expr<span style="color: #757575;">(</span>func<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">mod</span> = relay.transform.InferType<span style="color: #757575;">()(</span>mod<span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> mod
+
+
+<span style="color: #268bd2;">mod</span> = get_demo_mod<span style="color: #757575;">()</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+def @main(%d1: Tensor[(1, 32, 56, 56), float32], %w1: Tensor[(32, 32, 3, 3), float32], %b1: Tensor[(32), float32]) -&gt; Tensor[(1, 32, 56, 56), float32] {
+  %0 = nn.conv2d(%d1, %w1, padding=[1, 1, 1, 1]) <i>* ty=Tensor[(1, 32, 56, 56), float32] *</i>;
+  %1 = nn.bias_add(%0, %b1) <i>* ty=Tensor[(1, 32, 56, 56), float32] *</i>;
+  nn.relu(%1) <i>* ty=Tensor[(1, 32, 56, 56), float32] *</i>
+}
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>opt_level=2<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> target=<span style="color: #2aa198;">"c"</span><span style="color: #757575;">,</span> params=<span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>graph<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+One or more operators have not been tuned. Please tune your model for better performance. Use DEBUG logging level to see more details.
+{
+  "nodes": [
+    {
+      "op": "null", 
+      "name": "d1", 
+      "inputs": []
+    }, 
+    {
+      "op": "null", 
+      "name": "w1", 
+      "inputs": []
+    }, 
+    {
+      "op": "null", 
+      "name": "b1", 
+      "inputs": []
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "tvmgen_default_fused_nn_conv2d_nn_bias_add_nn_relu", 
+      "attrs": {
+        "num_outputs": "1", 
+        "flatten_data": "0", 
+        "out_layout": "", 
+        "func_name": "tvmgen_default_fused_nn_conv2d_nn_bias_add_nn_relu", 
+        "hash": "45f3f3bf6ba0201f", 
+        "num_inputs": "3", 
+        "kernel_layout": "OIHW", 
+        "data_layout": "NCHW"
+      }, 
+      "inputs": [
+        [
+          0, 
+          0, 
+          0
+        ], 
+        [
+          1, 
+          0, 
+          0
+        ], 
+        [
+          2, 
+          0, 
+          0
+        ]
+      ]
+    }
+  ], 
+  "arg_nodes": [0, 1, 2], 
+  "heads": [
+    [
+      3, 
+      0, 
+      0
+    ]
+  ], 
+  "attrs": {
+    "dltype": [
+      "list_str", 
+      [
+        "float32", 
+        "float32", 
+        "float32", 
+        "float32"
+      ]
+    ], 
+    "shape": [
+      "list_shape", 
+      [
+        [1, 32, 56, 56], 
+        [32, 32, 3, 3], 
+        [32], 
+        [1, 32, 56, 56]
+      ]
+    ], 
+    "storage_id": [
+      "list_int", 
+      [0, 1, 2, 3]
+    ]
+  }, 
+  "node_row_ptr": [0, 1, 2, 3, 4]
+}
+/tmp/ipykernel_8688/48896817.py:2: DeprecationWarning: legacy graph executor behavior of producing json / lib / params will be removed in the next release. Please see documents of tvm.contrib.graph_executor.GraphModule for the  new recommended usage.
+  graph, lib, params = relay.build(mod, target="c", params=None)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">print</span><span style="color: #757575;">(</span>lib.get_source<span style="color: #757575;">())</span>
+</pre>
+</div>
+
+<p>
+// tvm target: c -keys=cpu -link-params=0
+#define TVM_EXPORTS
+#include "tvm/runtime/c_runtime_api.h"
+#include "tvm/runtime/c_backend_api.h"
+#include &lt;math.h&gt;
+#ifdef __cplusplus
+extern "C"
+#endif
+TVM_DLL int32_t tvmgen_default_fused_nn_conv2d_nn_bias_add_nn_relu(void* args, void* arg_type_ids, int32_t num_args, void* out_ret_value, void* out_ret_tcode, void* resource_handle) {
+  void* arg0 = (((TVMValue*)args)[0].v_handle);
+  int32_t arg0_code = ((int32_t*)arg_type_ids)[(0)];
+  void* arg1 = (((TVMValue*)args)[1].v_handle);
+  int32_t arg1_code = ((int32_t*)arg_type_ids)[(1)];
+  void* arg2 = (((TVMValue*)args)[2].v_handle);
+  int32_t arg2_code = ((int32_t*)arg_type_ids)[(2)];
+  void* arg3 = (((TVMValue*)args)[3].v_handle);
+  int32_t arg3_code = ((int32_t*)arg_type_ids)[(3)];
+  void* placeholder = (((DLTensor*)arg0)[0].data);
+  void* arg0_shape = (((DLTensor*)arg0)[0].shape);
+  void* arg0_strides = (((DLTensor*)arg0)[0].strides);
+  int32_t dev_id = (((DLTensor*)arg0)[0].device.device_id);
+  void* placeholder1 = (((DLTensor*)arg1)[0].data);
+  void* arg1_shape = (((DLTensor*)arg1)[0].shape);
+  void* arg1_strides = (((DLTensor*)arg1)[0].strides);
+  void* placeholder2 = (((DLTensor*)arg2)[0].data);
+  void* arg2_shape = (((DLTensor*)arg2)[0].shape);
+  void* arg2_strides = (((DLTensor*)arg2)[0].strides);
+  void* T_relu = (((DLTensor*)arg3)[0].data);
+  void* arg3_shape = (((DLTensor*)arg3)[0].shape);
+  void* arg3_strides = (((DLTensor*)arg3)[0].strides);
+  if (!(arg0_strides == NULL)) {
+  }
+  if (!(arg1_strides == NULL)) {
+  }
+  if (!(arg2_strides == NULL)) {
+  }
+  if (!(arg3_strides == NULL)) {
+  }
+  void* data_vec = TVMBackendAllocWorkspace(1, dev_id, (uint64_t)401408, 2, 32);
+  if (data_vec == NULL) {
+    return -1;
+  }
+  void* data_pad = TVMBackendAllocWorkspace(1, dev_id, (uint64_t)430592, 2, 32);
+  if (data_pad == NULL) {
+    return -1;
+  }
+  for (int32_t bs_c_fused_h_fused = 0; bs_c_fused_h_fused &lt; 224; ++bs_c_fused_h_fused) {
+    for (int32_t w = 0; w &lt; 56; ++w) {
+      for (int32_t vc = 0; vc &lt; 8; ++vc) {
+        ((float*)data_vec)[((((bs_c_fused_h_fused * 448) + (w * 8)) + vc))] = ((float*)placeholder)[((((((bs_c_fused_h_fused / 56) * 25088) + (vc * 3136)) + ((bs_c_fused_h_fused % 56) * 56)) + w))];
+      }
+    }
+  }
+  for (int32_t i0_i1_fused_i2_fused = 0; i0_i1_fused_i2_fused &lt; 232; ++i0_i1_fused_i2_fused) {
+    for (int32_t i3 = 0; i3 &lt; 58; ++i3) {
+      ((float8*)((float*)data_pad + (((i0_i1_fused_i2_fused * 464) + (i3 * 8)))))[0] = (((((1 &lt;= (i0_i1_fused_i2_fused % 58)) &amp;&amp; ((i0_i1_fused_i2_fused % 58) &lt; 57)) &amp;&amp; (1 &lt;= i3)) &amp;&amp; (i3 &lt; 57)) ? ((float8*)((float*)data_vec + ((((((i0_i1_fused_i2_fused / 58) * 25088) + ((i0_i1_fused_i2_fused % 58) * 448)) + (i3 * 8)) - 456))))[0] : ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f)));
+    }
+  }
+  for (int32_t occ_k_h_fused = 0; occ_k_h_fused &lt; 12; ++occ_k_h_fused) {
+    for (int32_t icc = 0; icc &lt; 4; ++icc) {
+      for (int32_t k_w = 0; k_w &lt; 3; ++k_w) {
+        for (int32_t icb = 0; icb &lt; 8; ++icb) {
+          int32_t8 _1 = (int8)((((((((occ_k_h_fused / 3) * 2304) + (icc * 72)) + (icb * 9)) + ((occ_k_h_fused % 3) * 3)) + k_w))+(288*0), (((((((occ_k_h_fused / 3) * 2304) + (icc * 72)) + (icb * 9)) + ((occ_k_h_fused % 3) * 3)) + k_w))+(288*1), (((((((occ_k_h_fused / 3) * 2304) + (icc * 72)) + (icb * 9)) + ((occ_k_h_fused % 3) * 3)) + k_w))+(288*2), (((((((occ_k_h_fused / 3) * 2304) + (icc * 72)) + (icb * 9)) + ((occ_k_h_fused % 3) * 3)) + k_w))+(288*3), (((((((occ_k_h_fused / 3) * 2304) + (icc * 72)) + (icb * 9)) + ((occ_k_h_fused % 3) * 3)) + k_w))+(288*4), (((((((occ_k_h_fused / 3) * 2304) + (icc * 72)) + (icb * 9)) + ((occ_k_h_fused % 3) * 3)) + k_w))+(288*5), (((((((occ_k_h_fused / 3) * 2304) + (icc * 72)) + (icb * 9)) + ((occ_k_h_fused % 3) * 3)) + k_w))+(288*6), (((((((occ_k_h_fused / 3) * 2304) + (icc * 72)) + (icb * 9)) + ((occ_k_h_fused % 3) * 3)) + k_w))+(288*7));
+          ((float8*)((float*)data_vec + (((((((occ_k_h_fused / 3) * 2304) + (icc * 576)) + ((occ_k_h_fused % 3) * 192)) + (k_w * 64)) + (icb * 8)))))[0] = ((float8)(((float*)placeholder1)[_1.s0],((float*)placeholder1)[_1.s1],((float*)placeholder1)[_1.s2],((float*)placeholder1)[_1.s3],((float*)placeholder1)[_1.s4],((float*)placeholder1)[_1.s5],((float*)placeholder1)[_1.s6],((float*)placeholder1)[_1.s7]));
+        }
+      }
+    }
+  }
+  for (int32_t ax0_ax1_outer_fused_ax2_fused = 0; ax0_ax1_outer_fused_ax2_fused &lt; 224; ++ax0_ax1_outer_fused_ax2_fused) {
+    void* conv2d_NCHWc = TVMBackendAllocWorkspace(1, dev_id, (uint64_t)1792, 2, 32);
+    if (conv2d_NCHWc == NULL) {
+      return -1;
+    }
+    void* conv2d_NCHWc_global = TVMBackendAllocWorkspace(1, dev_id, (uint64_t)896, 2, 32);
+    if (conv2d_NCHWc_global == NULL) {
+      return -1;
+    }
+    for (int32_t ow_outer = 0; ow_outer &lt; 2; ++ow_outer) {
+      ((float8*)((float*)conv2d_NCHWc_global + (0)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (8)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (16)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (24)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (32)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (40)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (48)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (56)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (64)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (72)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (80)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (88)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (96)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (104)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (112)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (120)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (128)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (136)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (144)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (152)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (160)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (168)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (176)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (184)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (192)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (200)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (208)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      ((float8*)((float*)conv2d_NCHWc_global + (216)))[0] = ((float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f));
+      for (int32_t ic_outer = 0; ic_outer &lt; 4; ++ic_outer) {
+        for (int32_t kh = 0; kh &lt; 3; ++kh) {
+          for (int32_t kw = 0; kw &lt; 3; ++kw) {
+            for (int32_t ic_inner = 0; ic_inner &lt; 8; ++ic_inner) {
+              ((float8*)((float*)conv2d_NCHWc_global + (0)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (0)))[0] + (((float8)(((float*)data_pad)[(((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner))], ((float*)data_pad)[(((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner))], ((float*)data_pad)[(((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner))], ((float*)data_pad)[(((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner))], ((float*)data_pad)[(((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner))], ((float*)data_pad)[(((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner))], ((float*)data_pad)[(((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner))], ((float*)data_pad)[(((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (8)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (8)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 8))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 8))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 8))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 8))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 8))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 8))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 8))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 8))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (16)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (16)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 16))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 16))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 16))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 16))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 16))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 16))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 16))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 16))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (24)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (24)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 24))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 24))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 24))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 24))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 24))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 24))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 24))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 24))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (32)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (32)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 32))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 32))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 32))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 32))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 32))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 32))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 32))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 32))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (40)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (40)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 40))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 40))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 40))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 40))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 40))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 40))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 40))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 40))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (48)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (48)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 48))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 48))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 48))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 48))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 48))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 48))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 48))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 48))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (56)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (56)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 56))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 56))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 56))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 56))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 56))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 56))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 56))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 56))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (64)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (64)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 64))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 64))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 64))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 64))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 64))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 64))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 64))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 64))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (72)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (72)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 72))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 72))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 72))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 72))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 72))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 72))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 72))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 72))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (80)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (80)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 80))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 80))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 80))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 80))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 80))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 80))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 80))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 80))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (88)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (88)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 88))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 88))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 88))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 88))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 88))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 88))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 88))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 88))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (96)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (96)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 96))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 96))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 96))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 96))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 96))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 96))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 96))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 96))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (104)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (104)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 104))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 104))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 104))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 104))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 104))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 104))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 104))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 104))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (112)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (112)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 112))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 112))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 112))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 112))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 112))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 112))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 112))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 112))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (120)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (120)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 120))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 120))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 120))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 120))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 120))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 120))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 120))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 120))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (128)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (128)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 128))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 128))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 128))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 128))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 128))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 128))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 128))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 128))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (136)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (136)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 136))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 136))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 136))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 136))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 136))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 136))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 136))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 136))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (144)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (144)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 144))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 144))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 144))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 144))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 144))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 144))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 144))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 144))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (152)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (152)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 152))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 152))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 152))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 152))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 152))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 152))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 152))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 152))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (160)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (160)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 160))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 160))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 160))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 160))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 160))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 160))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 160))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 160))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (168)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (168)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 168))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 168))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 168))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 168))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 168))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 168))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 168))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 168))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (176)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (176)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 176))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 176))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 176))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 176))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 176))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 176))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 176))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 176))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (184)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (184)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 184))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 184))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 184))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 184))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 184))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 184))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 184))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 184))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (192)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (192)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 192))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 192))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 192))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 192))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 192))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 192))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 192))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 192))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (200)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (200)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 200))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 200))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 200))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 200))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 200))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 200))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 200))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 200))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (208)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (208)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 208))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 208))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 208))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 208))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 208))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 208))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 208))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 208))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+              ((float8*)((float*)conv2d_NCHWc_global + (216)))[0] = (((float8*)((float*)conv2d_NCHWc_global + (216)))[0] + (((float8)(((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 216))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 216))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 216))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 216))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 216))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 216))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 216))], ((float*)data_pad)[((((((((ic_outer * 26912) + (kh * 464)) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 464)) + (ow_outer * 224)) + (kw * 8)) + ic_inner) + 216))])) * ((float8*)((float*)data_vec + (((((((ax0_ax1_outer_fused_ax2_fused / 56) * 2304) + (ic_outer * 576)) + (kh * 192)) + (kw * 64)) + (ic_inner * 8)))))[0]));
+            }
+          }
+        }
+      }
+      for (int32_t ow_inner = 0; ow_inner &lt; 28; ++ow_inner) {
+        ((float8*)((float*)conv2d_NCHWc + (((ow_outer * 224) + (ow_inner * 8)))))[0] = ((float8*)((float*)conv2d_NCHWc_global + ((ow_inner * 8))))[0];
+      }
+    }
+    for (int32_t ax3_outer = 0; ax3_outer &lt; 2; ++ax3_outer) {
+      for (int32_t ax3_inner = 0; ax3_inner &lt; 28; ++ax3_inner) {
+          int32_t8 _2 = (int8)(((((((ax0_ax1_outer_fused_ax2_fused / 56) * 25088) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 56)) + (ax3_outer * 28)) + ax3_inner))+(3136*0), ((((((ax0_ax1_outer_fused_ax2_fused / 56) * 25088) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 56)) + (ax3_outer * 28)) + ax3_inner))+(3136*1), ((((((ax0_ax1_outer_fused_ax2_fused / 56) * 25088) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 56)) + (ax3_outer * 28)) + ax3_inner))+(3136*2), ((((((ax0_ax1_outer_fused_ax2_fused / 56) * 25088) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 56)) + (ax3_outer * 28)) + ax3_inner))+(3136*3), ((((((ax0_ax1_outer_fused_ax2_fused / 56) * 25088) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 56)) + (ax3_outer * 28)) + ax3_inner))+(3136*4), ((((((ax0_ax1_outer_fused_ax2_fused / 56) * 25088) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 56)) + (ax3_outer * 28)) + ax3_inner))+(3136*5), ((((((ax0_ax1_outer_fused_ax2_fused / 56) * 25088) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 56)) + (ax3_outer * 28)) + ax3_inner))+(3136*6), ((((((ax0_ax1_outer_fused_ax2_fused / 56) * 25088) + ((ax0_ax1_outer_fused_ax2_fused % 56) * 56)) + (ax3_outer * 28)) + ax3_inner))+(3136*7));
+          float8 _3 = ((float8*)((float*)conv2d_NCHWc + (((ax3_outer * 224) + (ax3_inner * 8)))))[0] + ((float8*)((float*)placeholder2 + (((ax0_ax1_outer_fused_ax2_fused / 56) * 8))))[0];
+          float8 _4 = (float8)(0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f, 0.000000e+00f);
+          float8 _5 = (_3) &gt; (_4) ? (_3) : (_4);
+          ((float*)T_relu)[_2.s0] = _5.s0;
+          ((float*)T_relu)[_2.s1] = _5.s1;
+          ((float*)T_relu)[_2.s2] = _5.s2;
+          ((float*)T_relu)[_2.s3] = _5.s3;
+          ((float*)T_relu)[_2.s4] = _5.s4;
+          ((float*)T_relu)[_2.s5] = _5.s5;
+          ((float*)T_relu)[_2.s6] = _5.s6;
+          ((float*)T_relu)[_2.s7] = _5.s7;
+      }
+    }
+    if (TVMBackendFreeWorkspace(1, dev_id, conv2d_NCHWc_global) != 0) {
+      return -1;
+    }
+    if (TVMBackendFreeWorkspace(1, dev_id, conv2d_NCHWc) != 0) {
+      return -1;
+    }
+  }
+  if (TVMBackendFreeWorkspace(1, dev_id, data_pad) != 0) {
+    return -1;
+  }
+  if (TVMBackendFreeWorkspace(1, dev_id, data_vec) != 0) {
+    return -1;
+  }
+  return 0;
+}
+</p>
+</div>
+</div>
+
+<div id="outline-container-org6701b5e" class="outline-4">
+<h4 id="org6701b5e"><span class="section-number-4">1.1.2</span> 使用 DNNL</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">if</span> <span style="color: #859900;">not</span> tvm.get_global_func<span style="color: #757575;">(</span><span style="color: #2aa198;">"relay.ext.dnnl"</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>:
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"skip because DNNL codegen is not available"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">mod</span> = get_demo_mod<span style="color: #757575;">()</span>
+<span style="color: #268bd2;">mod</span> = relay.transform.AnnotateTarget<span style="color: #757575;">(</span><span style="color: #2aa198;">"dnnl"</span><span style="color: #757575;">)(</span>mod<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span> = relay.transform.PartitionGraph<span style="color: #757575;">()(</span>mod<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+
+</pre>
+</div>
+
+<p>
+def @main(%d1: Tensor[(1, 32, 56, 56), float32], %w1: Tensor[(32, 32, 3, 3), float32], %b1: Tensor[(32), float32]) -&gt; Tensor[(1, 32, 56, 56), float32] {
+  %0 = @tvmgen_default_dnnl_main_0(%d1, %w1) <i>* ty=Tensor[(1, 32, 56, 56), float32] *</i>;
+  %1 = nn.bias_add(%0, %b1) <i>* ty=Tensor[(1, 32, 56, 56), float32] *</i>;
+  @tvmgen_default_dnnl_main_2(%1) <i>* ty=Tensor[(1, 32, 56, 56), float32] *</i>
+}
+</p>
+
+<p>
+def @tvmgen_default_dnnl_main_0(%dnnl_0_i0: Tensor[(1, 32, 56, 56), float32], %dnnl_0_i1: Tensor[(32, 32, 3, 3), float32], Inline=1, Compiler="dnnl", global_symbol="tvmgen_default_dnnl_main_0", Primitive=1) -&gt; Tensor[(1, 32, 56, 56), float32] {
+  nn.conv2d(%dnnl_0_i0, %dnnl_0_i1, padding=[1, 1, 1, 1]) <i>* ty=Tensor[(1, 32, 56, 56), float32] *</i>
+}
+</p>
+
+<p>
+def @tvmgen_default_dnnl_main_2(%dnnl_2_i0: Tensor[(1, 32, 56, 56), float32], Inline=1, Compiler="dnnl", global_symbol="tvmgen_default_dnnl_main_2", Primitive=1) -&gt; Tensor[(1, 32, 56, 56), float32] {
+  nn.relu(%dnnl_2_i0) <i>* ty=Tensor[(1, 32, 56, 56), float32] *</i>
+}
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>opt_level=2<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> target=<span style="color: #2aa198;">"c"</span><span style="color: #757575;">,</span> params=<span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">)</span>
+
+lib.export_library<span style="color: #757575;">(</span><span style="color: #2aa198;">"/tmp/liba.so"</span><span style="color: #757575;">)</span>    
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>lib.imported_modules[0].get_source<span style="color: #757575;">())</span>
+</pre>
+</div>
+
+<p>
+// tvm target: c -keys=cpu -link-params=0
+#define TVM_EXPORTS
+#include "tvm/runtime/c_runtime_api.h"
+#include "tvm/runtime/c_backend_api.h"
+#include &lt;math.h&gt;
+#ifdef __cplusplus
+extern "C"
+#endif
+TVM_DLL int32_t tvmgen_default_fused_nn_bias_add(void* args, void* arg_type_ids, int32_t num_args, void* out_ret_value, void* out_ret_tcode, void* resource_handle) {
+  void* arg0 = (((TVMValue*)args)[0].v_handle);
+  int32_t arg0_code = ((int32_t*)arg_type_ids)[(0)];
+  void* arg1 = (((TVMValue*)args)[1].v_handle);
+  int32_t arg1_code = ((int32_t*)arg_type_ids)[(1)];
+  void* arg2 = (((TVMValue*)args)[2].v_handle);
+  int32_t arg2_code = ((int32_t*)arg_type_ids)[(2)];
+  void* placeholder = (((DLTensor*)arg0)[0].data);
+  void* arg0_shape = (((DLTensor*)arg0)[0].shape);
+  void* arg0_strides = (((DLTensor*)arg0)[0].strides);
+  int32_t dev_id = (((DLTensor*)arg0)[0].device.device_id);
+  void* placeholder1 = (((DLTensor*)arg1)[0].data);
+  void* arg1_shape = (((DLTensor*)arg1)[0].shape);
+  void* arg1_strides = (((DLTensor*)arg1)[0].strides);
+  void* T_add = (((DLTensor*)arg2)[0].data);
+  void* arg2_shape = (((DLTensor*)arg2)[0].shape);
+  void* arg2_strides = (((DLTensor*)arg2)[0].strides);
+  if (!(arg0_strides == NULL)) {
+  }
+  if (!(arg1_strides == NULL)) {
+  }
+  if (!(arg2_strides == NULL)) {
+  }
+  for (int32_t ax0_ax1_fused = 0; ax0_ax1_fused &lt; 32; ++ax0_ax1_fused) {
+    for (int32_t ax2 = 0; ax2 &lt; 56; ++ax2) {
+      for (int32_t ax3_outer = 0; ax3_outer &lt; 4; ++ax3_outer) {
+        for (int32_t ax3_inner_s = 0; ax3_inner_s &lt; 16; ++ax3_inner_s) {
+          if (((ax3_outer * 16) + ax3_inner_s) &lt; 56) {
+            ((float*)T_add)[(((((ax0_ax1_fused * 3136) + (ax2 * 56)) + (ax3_outer * 16)) + ax3_inner_s))] = (((float*)placeholder)[(((((ax0_ax1_fused * 3136) + (ax2 * 56)) + (ax3_outer * 16)) + ax3_inner_s))] + ((float*)placeholder1)[(ax0_ax1_fused)]);
+          }
+        }
+      }
+    }
+  }
+  return 0;
+}
+</p>
+
+
+<p>
+/tmp/ipykernel_38953/3957980515.py:2: DeprecationWarning: legacy graph executor behavior of producing json / lib / params will be removed in the next release. Please see documents of tvm.contrib.graph_executor.GraphModule for the  new recommended usage.
+  graph, lib, params = relay.build(mod, target="c", params=None)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">print</span><span style="color: #757575;">(</span>lib.imported_modules[1].get_source<span style="color: #757575;">())</span>
+</pre>
+</div>
+
+<p>
+{
+  "nodes": [
+    {
+      "op": "input", 
+      "name": "dnnl_2_i0", 
+      "attrs": {
+        "dtype": [
+          [
+            "float32"
+          ]
+        ], 
+        "shape": [
+          [
+            [1, 32, 56, 56]
+          ]
+        ]
+      }
+    }, 
+    {
+      "op": "kernel", 
+      "name": "nn.relu", 
+      "inputs": , 
+      "attrs": {
+        "num_outputs": "1", 
+        "shape": [
+          [
+            [1, 32, 56, 56]
+          ]
+        ], 
+        "num_inputs": "1", 
+        "dtype": [
+          [
+            "float32"
+          ]
+        ]
+      }
+    }
+  ], 
+  "arg_nodes": [0], 
+  "heads": , 
+  "node_row_ptr": [0, 1, 2]
+}
+</p>
+
+<div class="org-src-container">
+<pre class="src src-shell">readelf -p .rodata /tmp/liba.so
+</pre>
+</div>
+
+<p>
+
+</p>
+
+<p>
+String dump of section '.rodata':
+  [    18]  metadata
+  [    40]  tvmgen_default_dnnl_main_0^Z
+  [    62]  tvmgen_default_dnnl_main_2^B
+  [    9c]  dnnl_json^Z
+  [    ad]  tvmgen_default_dnnl_main_0L^G
+  [    cf]  {^J  "nodes": [^J    {^J      "op": "input", ^J      "name": "dnnl_0_i0", ^J      "attrs": {^J        "dtype": [^J          [^J            "float32"^J          ]^J        ], ^J        "shape": [^J          [^J            [1, 32, 56, 56]^J          ]^J        ]^J      }^J    }, ^J    {^J      "op": "input", ^J      "name": "dnnl_0_i1", ^J      "attrs": {^J        "dtype": [^J          [^J            "float32"^J          ]^J        ], ^J        "shape": [^J          [^J            [32, 32, 3, 3]^J          ]^J        ]^J      }^J    }, ^J    {^J      "op": "kernel", ^J      "name": "nn.conv2d", ^J      "inputs": [[^J          0, ^J          0, ^J          0], [^J          1, ^J          0, ^J          0]], ^J      "attrs": {^J        "num_outputs": "1", ^J        "num_inputs": "2", ^J        "channels": [^J          [^J            ""^J          ]^J        ], ^J        "out_layout": [^J          [^J            ""^J          ]^J        ], ^J        "groups": [^J          [^J            "1"^J          ]^J        ], ^J        "padding": [^J          [^J            "1", ^J            "1", ^J            "1", ^J            "1"^J          ]^J        ], ^J        "kernel_layout": [^J          [^J            "OIHW"^J          ]^J        ], ^J        "strides": [^J          [^J            "1", ^J            "1"^J          ]^J        ], ^J        "dilation": [^J          [^J            "1", ^J            "1"^J          ]^J        ], ^J        "dtype": [^J          [^J            "float32"^J          ]^J        ], ^J        "kernel_size": [^J          [^J            ""^J          ]^J        ], ^J        "data_layout": [^J          [^J            "NCHW"^J          ]^J        ], ^J        "out_dtype": [^J          [^J            ""^J          ]^J        ], ^J        "shape": [^J          [^J            [1, 32, 56, 56]^J          ]^J        ]^J      }^J    }^J  ], ^J  "arg_nodes": [0, 1], ^J  "heads": , ^J  "node_row_ptr": [0, 1, 2, 3]^J}
+  [   82b]  dnnl_json^Z
+  [   83c]  tvmgen_default_dnnl_main_2^B
+  [   85e]  {^J  "nodes": [^J    {^J      "op": "input", ^J      "name": "dnnl_2_i0", ^J      "attrs": {^J        "dtype": [^J          [^J            "float32"^J          ]^J        ], ^J        "shape": [^J          [^J            [1, 32, 56, 56]^J          ]^J        ]^J      }^J    }, ^J    {^J      "op": "kernel", ^J      "name": "nn.relu", ^J      "inputs": , ^J      "attrs": {^J        "num_outputs": "1", ^J        "shape": [^J          [^J            [1, 32, 56, 56]^J          ]^J        ], ^J        "num_inputs": "1", ^J        "dtype": [^J          [^J            "float32"^J          ]^J        ]^J      }^J    }^J  ], ^J  "arg_nodes": [0], ^J  "heads": , ^J  "node_row_ptr": [0, 1, 2]^J}
+  [   b46]  _lib^L
+  [   b52]  _import_tree^E
+</p>
+
+<p>
+由于生成的 lib 中只能看到 dnnl 相应的 json 数据, 但找不到使用这段 json 的代码,
+所以 lib 本身并非 self-contained, 需要 runtime 里也需要有 dnnl 对应的代码
+</p>
+
+<p>
+<a href="file:///home/sunway/Gitbox/code/hello_world/hello_tvm/graph_runner">file:~/Gitbox/code/hello_world/hello_tvm/graph_runner</a>
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org82e7fbc" class="outline-3">
+<h3 id="org82e7fbc"><span class="section-number-3">1.2</span> BYOC Impl</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-org3e5bab2" class="outline-4">
+<h4 id="org3e5bab2"><span class="section-number-4">1.2.1</span> Runtime</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+runtime 主要的任务是:
+</p>
+
+<ul class="org-ul">
+<li>根据某些信息定位到 target runtime</li>
+<li>target runtime 找到 op 对应的 target codegen 的结果 (例如 json 文件) 并执行它</li>
+</ul>
+
+<p>
+<a href="https://stackoverflow.com/questions/3900549/what-is-runtime">what is runtime</a>
+</p>
+</div>
+
+<div id="outline-container-orgca9584e" class="outline-5">
+<h5 id="orgca9584e"><span class="section-number-5">1.2.1.1</span> load module</h5>
+<div class="outline-text-5" id="text-1-2-1-1">
+<p>
+runtime 第一步是用 LoadFromFile 加载 so, 这个 elf 有一个 __tvm_dev_mblob 符号,它的地址中保存的信息会导致不同的 target runtime 被加载进来 (除了 LoadFromFile 外,
+还有 system-lib 方式: <a href="micro_tvm.html#orgae93fdc">Micro TVM &amp; BYOC</a>)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #268bd2;">LoadFromFile</span><span style="color: #757575;">(</span>name<span style="color: #757575;">,</span> fmt<span style="color: #757575;">)</span>:
+  <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">string</span> <span style="color: #268bd2;">fmt</span> = GetFileFormat<span style="color: #757575;">(</span>file_name<span style="color: #757575;">,</span> format<span style="color: #757575;">)</span>;
+  <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">string</span> <span style="color: #268bd2;">load_f_name</span> = <span style="color: #2aa198;">"runtime.module.loadfile_"</span> + fmt;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20551;&#35774; fmt &#20026; so</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">dso_library.cc</span>
+    TVM_REGISTER_GLOBAL<span style="color: #757575;">(</span><span style="color: #2aa198;">"runtime.module.loadfile_so"</span><span style="color: #757575;">)</span>
+      .set_body<span style="color: #757575;">(</span>[]<span style="color: #757575;">(</span><span style="color: #b58900;">TVMArgs</span> <span style="color: #268bd2;">args</span><span style="color: #757575;">,</span> <span style="color: #b58900;">TVMRetValue</span>* <span style="color: #268bd2;">rv</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">auto</span> <span style="color: #268bd2;">n</span> = make_object&lt;DSOLibrary&gt;<span style="color: #757575;">()</span>;
+        n-&gt;Init<span style="color: #757575;">(</span>args[0]<span style="color: #757575;">)</span>;
+        *rv = CreateModuleFromLibrary<span style="color: #757575;">(</span>n<span style="color: #757575;">)</span>;
+      <span style="color: #757575;">})</span>;
+
+<span style="color: #268bd2; font-weight: bold;">CreateModuleFromLibrary</span> :
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">tvm_dev_mblob &#20026; __tvm_dev_mblob, build &#29983;&#25104;&#30340; elf &#20013;&#26377;&#36825;&#20010;&#31526;&#21495;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#23454;&#38469;&#19978;&#36825;&#20010;&#31526;&#21495;&#19982; .rodata &#30340;&#22320;&#22336;&#30456;&#21516;, &#25152;&#20197;&#21069;&#38754;&#29992; readelf -p .rodata</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">liba.so &#33021;&#30475;&#21040;&#35768;&#22810; json &#25968;&#25454;:</span>
+  <span style="color: #859900;">const</span> <span style="color: #b58900;">char</span>* <span style="color: #268bd2;">dev_mblob</span> = <span style="color: #859900;">reinterpret_cast</span>&lt;<span style="color: #859900;">const</span> <span style="color: #b58900;">char</span>*&gt;<span style="color: #757575;">(</span>
+        lib-&gt;GetSymbol<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">runtime</span>::<span style="color: #268bd2; font-weight: bold;">symbol</span>::tvm_dev_mblob<span style="color: #757575;">))</span>;
+  ProcessModuleBlob<span style="color: #757575;">(</span>dev_mblob<span style="color: #757575;">,</span> lib<span style="color: #757575;">,</span> &amp;root_mod<span style="color: #757575;">,</span> &amp;dso_ctx_addr<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">uint64_t</span> <span style="color: #268bd2;">i</span> = 0; i &lt; size; ++i<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#23545; dnnl &#26469;&#35828;, tkey &#20026; dnnl_json</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">blob &#20013;&#21487;&#20197;&#21253;&#21547;&#22810;&#20010;&#19981;&#21516;&#30340; tkey, &#23548;&#33268;&#21487;&#20197;&#26377;&#22810;&#20010;&#19981;&#21516;&#30340; target runtime</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#34987;&#21152;&#36733;, &#27599;&#20010; tkey (&#25110; function name) &#23545;&#24212;&#19968;&#20010;&#21333;&#29420;&#30340; Module (&#25110;&#32773;&#21483; target</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">runtime)</span>
+      <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">string</span> <span style="color: #268bd2;">tkey</span>;
+      ICHECK<span style="color: #757575;">(</span>stream-&gt;Read<span style="color: #757575;">(</span>&amp;tkey<span style="color: #757575;">))</span>;
+      <span style="color: #859900;">auto</span> <span style="color: #268bd2;">m</span> = LoadModuleFromBinary<span style="color: #757575;">(</span>tkey<span style="color: #757575;">,</span> stream<span style="color: #757575;">)</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#26368;&#32456;&#21487;&#33021;&#20250;&#36820;&#22238;&#19968;&#20010;&#21253;&#21547;&#22810;&#20010; module &#30340; root_module, &#27599;&#20010; module &#37117;&#21482;&#20250;&#21253;</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21547;&#19968;&#20010; symbol &#30340;&#23454;&#29616;</span>
+      modules.emplace_back<span style="color: #757575;">(</span>m<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+
+LoadModuleFromBinary<span style="color: #757575;">(</span><span style="color: #2aa198;">"dnnl_json"</span><span style="color: #757575;">,</span> stream<span style="color: #757575;">)</span>:
+  <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">string</span> <span style="color: #268bd2;">loadkey</span> = <span style="color: #2aa198;">"runtime.module.loadbinary_"</span>;
+  <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">string</span> <span style="color: #268bd2;">fkey</span> = loadkey + type_key;
+  <span style="color: #859900;">const</span> <span style="color: #b58900;">PackedFunc</span>* <span style="color: #268bd2;">f</span> = <span style="color: #268bd2; font-weight: bold;">Registry</span>::Get<span style="color: #757575;">(</span>fkey<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25340;&#25104;&#30340;&#20989;&#25968;&#26159; runtime.module.loadbinary_dnnl_json, &#36825;&#20010;&#20989;&#25968;&#22312;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">dnnl_json_runtime.cc &#20013;&#23450;&#20041;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36825;&#37324;&#30340; symbol &#21517;&#19982; graph &#20013;&#30340;&#21517;&#23383;&#26159;&#19968;&#33268;&#30340;, &#20363;&#22914; tvmgen_default_dnnl_main_0,</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">graph_json &#20013;&#30340; json &#25968;&#25454;&#21017;&#26159; dnnl &#23454;&#29616; tvmgen_default_dnnl_main_0 &#38656;&#35201;&#30340; json &#25968;&#25454;</span>
+    TVM_REGISTER_GLOBAL<span style="color: #757575;">(</span><span style="color: #2aa198;">"runtime.module.loadbinary_dnnl_json"</span><span style="color: #757575;">)</span>
+      .set_body_typed<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">JSONRuntimeBase</span>::<span style="color: #b58900;">LoadFromBinary</span>&lt;DNNLJSONRuntime&gt;<span style="color: #757575;">)</span>;
+      ICHECK<span style="color: #757575;">(</span>stream-&gt;Read<span style="color: #757575;">(</span>&amp;symbol<span style="color: #757575;">))</span> &lt;&lt; <span style="color: #2aa198;">"Loading symbol name failed"</span>;
+      ICHECK<span style="color: #757575;">(</span>stream-&gt;Read<span style="color: #757575;">(</span>&amp;graph_json<span style="color: #757575;">))</span> &lt;&lt; <span style="color: #2aa198;">"Loading graph json failed"</span>;
+      ICHECK<span style="color: #757575;">(</span>stream-&gt;Read<span style="color: #757575;">(</span>&amp;consts<span style="color: #757575;">))</span> &lt;&lt; <span style="color: #2aa198;">"Loading the const name list failed"</span>;
+      <span style="color: #859900;">auto</span> <span style="color: #268bd2;">n</span> = make_object&lt;T&gt;<span style="color: #757575;">(</span>symbol<span style="color: #757575;">,</span> graph_json<span style="color: #757575;">,</span> const_names<span style="color: #757575;">)</span>;
+      <span style="color: #859900;">return</span> Module<span style="color: #757575;">(</span>n<span style="color: #757575;">)</span>;
+
+</pre>
+</div>
+</div>
+
+<ol class="org-ol">
+<li><a id="orgdce8d38"></a>run the module<br />
+<div class="outline-text-6" id="text-1-2-1-1-1">
+<p>
+LoadFromFile 返回的 module 已经是一个可以实现运行的模型: 例如通过
+module.GetFunction("tvmgen_default_dnnl_main_0") 就能通过 dnnl 执行
+tvmgen_default_dnnl_main_0 这个 symbol 对应的 graph
+</p>
+
+<p>
+不同的 module 有不同的 GetFunction 实现, 例如:
+</p>
+
+<ul class="org-ul">
+<li>对于 LibraryModuleNode, GetFunction 实际就是对 dlsym 的封装</li>
+
+<li><p>
+对于 DNNLJSONRuntime, GetFunction 的实现是对比一下 symbol 与自己的 symbol 是否相同, 因为每个 dnnl symbol_name_ 对应一个 DNNLJSONRuntime
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #b58900;">PackedFunc</span> <span style="color: #268bd2;">GetFunction</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">string</span>&amp; <span style="color: #268bd2;">name</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">ObjectPtr</span>&lt;Object&gt;&amp; <span style="color: #268bd2;">sptr_to_self</span><span style="color: #757575;">)</span> <span style="color: #859900;">override</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>name == <span style="color: #2aa198;">"get_symbol"</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+      <span style="color: #859900;">return</span> PackedFunc<span style="color: #757575;">(</span>
+          [<span style="color: #268bd2; font-weight: bold;">sptr_to_self</span><span style="color: #757575;">,</span> <span style="color: #859900;">this</span>]<span style="color: #757575;">(</span><span style="color: #b58900;">TVMArgs</span> <span style="color: #268bd2;">args</span><span style="color: #757575;">,</span> <span style="color: #b58900;">TVMRetValue</span>* <span style="color: #268bd2;">rv</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span> *rv = <span style="color: #859900;">this</span>-&gt;symbol_name_; <span style="color: #757575;">})</span>;
+    <span style="color: #757575;">}</span> <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #859900;">this</span>-&gt;symbol_name_ == name<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+      <span style="color: #859900;">return</span> PackedFunc<span style="color: #757575;">(</span>[<span style="color: #268bd2; font-weight: bold;">sptr_to_self</span><span style="color: #757575;">,</span> <span style="color: #859900;">this</span>]<span style="color: #757575;">(</span><span style="color: #b58900;">TVMArgs</span> <span style="color: #268bd2;">args</span><span style="color: #757575;">,</span> <span style="color: #b58900;">TVMRetValue</span>* <span style="color: #268bd2;">rv</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        ICHECK<span style="color: #757575;">(</span><span style="color: #859900;">this</span>-&gt;initialized_<span style="color: #757575;">)</span> &lt;&lt; <span style="color: #2aa198;">"The module has not been initialized"</span>;
+
+        <span style="color: #859900;">this</span>-&gt;SetInputOutputBuffers<span style="color: #757575;">(</span>args<span style="color: #757575;">)</span>;
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">!! &#36825;&#37324;&#30340; Run &#23601;&#26159;&#30495;&#27491;&#19982; dnnl &#20132;&#20114;&#30340;&#22320;&#26041;&#20102;</span>
+        <span style="color: #859900;">this</span>-&gt;Run<span style="color: #757575;">()</span>;
+      <span style="color: #757575;">})</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">....</span>
+  <span style="color: #757575;">}</span>
+
+</pre>
+</div></li>
+</ul>
+</div>
+</li>
+</ol>
+</div>
+
+<div id="outline-container-org3fea0cf" class="outline-5">
+<h5 id="org3fea0cf"><span class="section-number-5">1.2.1.2</span> <a href="tvm_graph_executor.html#orge348008">TVM Graph Executor</a></h5>
+</div>
+
+<div id="outline-container-org62a061e" class="outline-5">
+<h5 id="org62a061e"><span class="section-number-5">1.2.1.3</span> To Summarize</h5>
+<div class="outline-text-5" id="text-1-2-1-3">
+<p>
+codegen 时生成的 lib 里包含了 __tvm_dev_mblob 信息, 其中 type_key (例如 dnnl_json) 用来指示
+symbol 需要由哪个 target runtime 来处理
+</p>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-orgc3953d7" class="outline-4">
+<h4 id="orgc3953d7"><span class="section-number-4">1.2.2</span> Relay Codegen</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<p>
+relay codegen 主要的任务:
+</p>
+
+<ul class="org-ul">
+<li>注册 target codegen</li>
+<li>根据 target 支持的 op 对 graph 进行 partition 和 annotate</li>
+<li>保存 target codegen 的结果 (例如 __tvm_dev_mblob) 以便 target runtime 使用</li>
+</ul>
+</div>
+
+
+<div id="outline-container-org21c8091" class="outline-5">
+<h5 id="org21c8091"><span class="section-number-5">1.2.2.1</span> AnnotateTarget</h5>
+<div class="outline-text-5" id="text-1-2-2-1">
+<p>
+AnnotateTarget 的目的是:
+</p>
+
+<ol class="org-ol">
+<li>根据 Relay Codegen 支持哪些 op 来修改 Relay IR 上各个 IR 的信息, 例如加上
+Compiler=xxx 的 tag</li>
+<li>根据 Relay Codegen 的要求合并某些 IR</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #268bd2;">mod</span> = get_demo_mod<span style="color: #757575;">()</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+def @main(%d1: Tensor[(1, 32, 56, 56), float32], %w1: Tensor[(32, 32, 3, 3), float32], %b1: Tensor[(32), float32]) -&gt; Tensor[(1, 32, 56, 56), float32] {
+  %0 = nn.conv2d(%d1, %w1, padding=[1, 1, 1, 1]) <i>* ty=Tensor[(1, 32, 56, 56), float32] *</i>;
+  %1 = nn.bias_add(%0, %b1) <i>* ty=Tensor[(1, 32, 56, 56), float32] *</i>;
+  nn.relu(%1) <i>* ty=Tensor[(1, 32, 56, 56), float32] *</i>
+}
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #b58900;">@tvm.ir.register_op_attr</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"nn.conv2d"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"target.my"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">_my_conv2d_wrapper</span><span style="color: #757575;">(</span>expr<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">return</span> <span style="color: #268bd2; font-weight: bold;">True</span>
+
+<span style="color: #268bd2;">mod</span> = relay.transform.AnnotateTarget<span style="color: #757575;">(</span><span style="color: #2aa198;">"my"</span><span style="color: #757575;">)(</span>mod<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span> = relay.transform.PartitionGraph<span style="color: #757575;">()(</span>mod<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+def @main(%d1: Tensor[(1, 32, 56, 56), float32], %w1: Tensor[(32, 32, 3, 3), float32], %b1: Tensor[(32), float32]) -&gt; Tensor[(1, 32, 56, 56), float32] {
+  %0 = @tvmgen_default_my_main_0(%d1, %w1) <i>* ty=Tensor[(1, 32, 56, 56), float32] *</i>;
+  %1 = nn.bias_add(%0, %b1) <i>* ty=Tensor[(1, 32, 56, 56), float32] *</i>;
+  nn.relu(%1) <i>* ty=Tensor[(1, 32, 56, 56), float32] *</i>
+}
+</p>
+
+<p>
+def @tvmgen_default_my_main_0(%my_0_i0: Tensor[(1, 32, 56, 56), float32], %my_0_i1: Tensor[(32, 32, 3, 3), float32], Inline=1, Compiler="my", global_symbol="tvmgen_default_my_main_0", Primitive=1) -&gt; Tensor[(1, 32, 56, 56), float32] {
+  nn.conv2d(%my_0_i0, %my_0_i1, padding=[1, 1, 1, 1]) <i>* ty=Tensor[(1, 32, 56, 56), float32] *</i>
+}
+</p>
+</div>
+</div>
+
+<div id="outline-container-org84f9429" class="outline-5">
+<h5 id="org84f9429"><span class="section-number-5">1.2.2.2</span> 注册 codegen</h5>
+<div class="outline-text-5" id="text-1-2-2-2">
+<div class="org-src-container">
+<pre class="src src-c++">TVM_REGISTER_GLOBAL<span style="color: #757575;">(</span><span style="color: #2aa198;">"relay.ext.dnnl"</span><span style="color: #757575;">)</span>.set_body_typed<span style="color: #757575;">(</span>DNNLCompiler<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgbe096d4" class="outline-5">
+<h5 id="orgbe096d4"><span class="section-number-5">1.2.2.3</span> 编译 external functions</h5>
+<div class="outline-text-5" id="text-1-2-2-3">
+<p>
+relay.transform.AnnotateTarget 之后 (<a href="#org6701b5e">使用 DNNL</a>), 生成的 relay 针对 external
+functions (如 dnnl) 会有一个额外的 Compiler="dnnl" 信息, 编译时 LowerExternalFunctions
+函数会根据这个信息调用对应的 compiler 来编译对应的 function
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #586e75;">// </span><span style="color: #586e75;">te_compiler.cc</span>
+<span style="color: #b58900;">Array</span>&lt;<span style="color: #268bd2; font-weight: bold;">tvm</span>::<span style="color: #268bd2; font-weight: bold;">runtime</span>::Module&gt; <span style="color: #268bd2;">LowerExternalFunctions</span><span style="color: #757575;">()</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">Compiler=xxx</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>src_func-&gt;GetAttr&lt;String&gt;<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">attr</span>::kCompiler<span style="color: #757575;">)</span>.defined<span style="color: #757575;">())</span> <span style="color: #757575;">{</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">code_gen="dnnl"</span>
+    <span style="color: #859900;">auto</span> <span style="color: #268bd2;">code_gen</span> = src_func-&gt;GetAttr&lt;String&gt;<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">attr</span>::kCompiler<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">"relay.ext.dnnl"</span>
+    <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">string</span> <span style="color: #268bd2;">ext_name</span> = <span style="color: #2aa198;">"relay.ext."</span> + code_gen_name;
+    <span style="color: #859900;">auto</span> <span style="color: #268bd2;">pf</span> = <span style="color: #268bd2; font-weight: bold;">tvm</span>::<span style="color: #268bd2; font-weight: bold;">runtime</span>::<span style="color: #268bd2; font-weight: bold;">Registry</span>::Get<span style="color: #757575;">(</span>ext_name<span style="color: #757575;">)</span>;
+    <span style="color: #268bd2; font-weight: bold;">runtime</span>::<span style="color: #b58900;">Module</span> <span style="color: #268bd2;">ext_mod</span> = <span style="color: #757575;">(</span>*pf<span style="color: #757575;">)(</span>src_func<span style="color: #757575;">)</span>;
+    ret.push_back<span style="color: #757575;">(</span>ext_mod<span style="color: #757575;">)</span>;
+
+TVM_REGISTER_GLOBAL<span style="color: #757575;">(</span><span style="color: #2aa198;">"relay.ext.dnnl"</span><span style="color: #757575;">)</span>.set_body_typed<span style="color: #757575;">(</span>DNNLCompiler<span style="color: #757575;">)</span>;
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">ref &#21363; src_func</span>
+<span style="color: #268bd2; font-weight: bold;">runtime</span>::<span style="color: #b58900;">Module</span> <span style="color: #268bd2;">DNNLCompiler</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> ObjectRef&amp; ref<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+  ICHECK<span style="color: #757575;">(</span>ref-&gt;IsInstance&lt;FunctionNode&gt;<span style="color: #757575;">())</span>;
+  <span style="color: #859900;">auto</span> <span style="color: #268bd2;">func</span> = Downcast&lt;Function&gt;<span style="color: #757575;">(</span>ref<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">auto</span> <span style="color: #268bd2;">func_name</span> = GetExtSymbol<span style="color: #757575;">(</span>func<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">!! serializer &#26159;&#30495;&#27491;&#20570;&#32534;&#35793;&#30340;&#20195;&#30721;, &#23427;&#20250;&#25226; function &#36716;&#25442;&#20026; dnnl json, &#32467;&#26524;&#20026;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#19979;&#38754;&#30340; graph_json</span>
+  <span style="color: #b58900;">DNNLJSONSerializer</span> <span style="color: #268bd2;">serializer</span><span style="color: #757575;">(</span>func_name<span style="color: #757575;">,</span> func<span style="color: #757575;">)</span>;
+  serializer.serialize<span style="color: #757575;">()</span>;
+  <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">string</span> <span style="color: #268bd2;">graph_json</span> = serializer.GetJSON<span style="color: #757575;">()</span>;
+  <span style="color: #859900;">auto</span> <span style="color: #268bd2;">params</span> = serializer.GetParams<span style="color: #757575;">()</span>;
+
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36825;&#37324;&#29992; graph_json &#29983;&#25104;&#20102;&#19968;&#20010; dnnl runtime, &#20294;&#24182;&#19981;&#26159;&#35201;&#29992;&#26469; run, &#32780;&#21482;&#26159;&#21033;&#29992;&#19968;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#19979; dnnl runtime &#30340; SaveToBinary</span>
+  <span style="color: #859900;">const</span> <span style="color: #859900;">auto</span>* <span style="color: #268bd2;">pf</span> = <span style="color: #268bd2; font-weight: bold;">runtime</span>::<span style="color: #268bd2; font-weight: bold;">Registry</span>::Get<span style="color: #757575;">(</span><span style="color: #2aa198;">"runtime.DNNLJSONRuntimeCreate"</span><span style="color: #757575;">)</span>;
+  ICHECK<span style="color: #757575;">(</span>pf != <span style="color: #268bd2; font-weight: bold;">nullptr</span><span style="color: #757575;">)</span> &lt;&lt; <span style="color: #2aa198;">"Cannot find JSON runtime module to create"</span>;
+  <span style="color: #859900;">auto</span> <span style="color: #268bd2;">mod</span> = <span style="color: #757575;">(</span>*pf<span style="color: #757575;">)(</span>func_name<span style="color: #757575;">,</span> graph_json<span style="color: #757575;">,</span> params<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">return</span> mod;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org50ef190" class="outline-5">
+<h5 id="org50ef190"><span class="section-number-5">1.2.2.4</span> SaveToBinary</h5>
+<div class="outline-text-5" id="text-1-2-2-4">
+<p>
+<a href="file:///home/sunway/source/tvm/docs/dev/introduction_to_module_serialization.rst">file:~/source/tvm/docs/dev/introduction_to_module_serialization.rst</a>
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #268bd2;">SerializeModule</span><span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">dmlc</span>::<span style="color: #b58900;">Stream</span>* <span style="color: #268bd2;">stream</span><span style="color: #757575;">)</span>:
+  <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #859900;">auto</span>&amp; <span style="color: #268bd2;">group</span> : mod_group_vec_<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">type_key &#21363; elf &#20013;&#30340; tkey, &#20363;&#22914; dnnl_json</span>
+    <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">string</span> <span style="color: #268bd2;">mod_type_key</span> = group[0]-&gt;type_key<span style="color: #757575;">()</span>;
+    stream-&gt;Write<span style="color: #757575;">(</span>mod_type_key<span style="color: #757575;">)</span>;
+    group[0]-&gt;SaveToBinary<span style="color: #757575;">(</span>stream<span style="color: #757575;">)</span>;
+
+<span style="color: #268bd2; font-weight: bold;">JSONRuntimeBase</span>::SaveToBinary<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">dmlc</span>::<span style="color: #b58900;">Stream</span>* <span style="color: #268bd2;">stream</span><span style="color: #757575;">)</span> <span style="color: #859900;">override</span> <span style="color: #757575;">{</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">Save the symbol</span>
+  stream-&gt;Write<span style="color: #757575;">(</span>symbol_name_<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">Save the graph</span>
+  stream-&gt;Write<span style="color: #757575;">(</span>graph_json_<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">Save the required const names</span>
+  <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">vector</span>&lt;<span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">string</span>&gt; <span style="color: #268bd2;">consts</span>;
+  <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #859900;">auto</span>&amp; <span style="color: #268bd2;">it</span> : const_names_<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    consts.push_back<span style="color: #757575;">(</span>it<span style="color: #757575;">)</span>;
+  <span style="color: #757575;">}</span>
+  stream-&gt;Write<span style="color: #757575;">(</span>consts<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>    
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org992e01c" class="outline-4">
+<h4 id="org992e01c"><span class="section-number-4">1.2.3</span> To Summarize</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<p>
+实现一个 BYOC 需要:
+</p>
+
+<ol class="org-ol">
+<li><p>
+在 python 中通过 tvm.ir.register_op_attr 和 register_pattern_table 两个
+annotation 来定义 codegen 支持某些 op, 后续编译时 compile_engine 会据此去找对应的 codegen
+</p>
+
+<p>
+<a href="file:///home/sunway/source/tvm/python/tvm/relay/op/contrib/dnnl.py#org649c307">file:///home/sunway/source/tvm/python/tvm/relay/op/contrib/dnnl.py#org649c307</a>
+</p></li>
+
+<li><p>
+实现一个 codegen, 并通过 relay.ext.xxx 注册
+</p>
+
+<p>
+<a href="file:///home/sunway/source/tvm/src/relay/backend/contrib/dnnl/codegen.cc#org3bb1f91">file:///home/sunway/source/tvm/src/relay/backend/contrib/dnnl/codegen.cc#org3bb1f91</a>
+</p></li>
+
+<li><p>
+实现一个 runtime, 主要的函数是 LoadFromBinary, SaveToBinary, GetFunction
+</p>
+
+<p>
+<a href="file:///home/sunway/source/tvm/src/runtime/contrib/dnnl/dnnl_json_runtime.cc#orgc86dd8a">file:///home/sunway/source/tvm/src/runtime/contrib/dnnl/dnnl_json_runtime.cc#orgc86dd8a</a>
+</p></li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

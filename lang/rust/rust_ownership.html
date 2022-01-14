@@ -1,0 +1,545 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rust Ownership</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Rust Ownership</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgf4383f6">1. Rust Ownership</a>
+<ul>
+<li><a href="#org38b912f">1.1. move</a></li>
+<li><a href="#org38a09c8">1.2. clone</a></li>
+<li><a href="#org9455a6f">1.3. copy</a></li>
+<li><a href="#orgfd8887d">1.4. borrow</a></li>
+<li><a href="#orgb995f0a">1.5. ownership</a></li>
+<li><a href="#orgd062ba6">1.6. slice</a></li>
+<li><a href="#orga256b25">1.7. mutable borrow</a></li>
+<li><a href="#orge3d9492">1.8. 关于 borrow</a></li>
+<li><a href="#orgb0c11d7">1.9. 总结</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgf4383f6" class="outline-2">
+<h2 id="orgf4383f6"><span class="section-number-2">1</span> Rust Ownership</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org38b912f" class="outline-3">
+<h3 id="org38b912f"><span class="section-number-3">1.1</span> move</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+三种和 ownership 有关的变量传递方法:
+</p>
+
+<ol class="org-ol">
+<li>move</li>
+<li>copy</li>
+<li>borrow</li>
+</ol>
+
+<p>
+move 和 copy 都属于传值, borrow 属于传引用. 其中 move 对应着 bitwise copy, copy
+对应 deep copy
+</p>
+
+<p>
+rust 不会自动实现 copy, 所以默认情况都是使用 move, 即 bitwise copy
+</p>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #268bd2;">#[derive</span><span style="color: #757575;">(</span><span style="color: #268bd2;">Debug</span><span style="color: #757575;">)</span><span style="color: #268bd2;">]</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">Test &#40664;&#35748;&#20026; move &#35821;&#20041;</span>
+<span style="color: #859900;">struct</span> <span style="color: #b58900;">Test</span><span style="color: #757575;">(</span><span style="color: #b58900;">i32</span><span style="color: #757575;">,</span> <span style="color: #b58900;">String</span><span style="color: #757575;">)</span>;
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">get_data</span><span style="color: #757575;">()</span> -&gt; <span style="color: #b58900;">Test</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">ret</span> = <span style="color: #b58900;">Test</span><span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> <span style="color: #2aa198;">"hello"</span>.to_owned<span style="color: #757575;">())</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">px</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>ret <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">p1</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>ret.1 <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _ <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">u64</span>; 3];
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">test &#32467;&#26500;&#20307;&#22312;&#26632;&#19978;, i32 &#25104;&#21592;&#22312;0x7ffc2ed2a280,string &#32467;&#26500;&#20307;&#22312;</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">0x7ffc2ed2a298, &#25152;&#20197; string &#32467;&#26500;&#20307;&#30340;&#22823;&#23567;&#20026; 0x18 (24), &#22240;&#20026; string &#26377;&#19977;&#20010;</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">i64&#25104;&#21592; (pointer_to_heap, size, capacity), &#22823;&#23567;&#21018;&#22909;&#26159; 24</span>
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"get_data"</span><span style="color: #757575;">)</span>;
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #757575;">(</span>px<span style="color: #757575;">,</span> p1<span style="color: #757575;">))</span>;
+    <span style="color: #cb4b16; font-weight: bold;">unsafe</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> *p1<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">string &#20540;&#20026; [140450239479816, 5, 5], &#20854;&#20013; 140450239479816 &#26159;&#22534;&#19978;&#30340;&#22320;&#22336;, 5, 5 &#26159; size &#21644; capacity</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36820;&#22238;&#26102;&#21457;&#29983;&#20102; move, &#21363; bitwise copy</span>
+    <span style="color: #859900;">return</span> ret;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">x</span> = get_data<span style="color: #757575;">()</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">px</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>x <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">p1</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>x.1 <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _ <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">u64</span>; 3];
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">(0x7ffc2ed2a3e0, 0x7ffc2ed2a3e0)</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#30001;&#20110; bitwise copy, px, p1 &#30340;&#22336;&#22336;&#37117;&#21464;&#21270;&#20102;</span>
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"after return"</span><span style="color: #757575;">)</span>;
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #757575;">(</span>px<span style="color: #757575;">,</span> p1<span style="color: #757575;">))</span>;
+    <span style="color: #cb4b16; font-weight: bold;">unsafe</span> <span style="color: #757575;">{</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20294; p1 &#30340;&#20540;&#27809;&#26377;&#21464;, &#22240;&#20026; bitwise copy &#26102; copy &#20102; p1 &#30340;&#20540; (string &#19977;&#20803;&#32452;)</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> *p1<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">(0x7ffc2ed2a280, 0x7ffc2ed2a298, 0x7ffc2ed2a280)</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">[140450239479816, 5, 5]</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">(0x7ffc2ed2a3e0, 0x7ffc2ed2a3e0)</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">[140450239479816, 5, 5]</span>
+</pre>
+</div>
+
+<p>
+get_data
+(0x7ffedf5864d0, 0x7ffedf5864d0)
+[94802672278336, 5, 5]
+after return
+(0x7ffedf586638, 0x7ffedf586638)
+[94802672278336, 5, 5]
+</p>
+
+<p>
+即使对于简单的赋值, move 也是 bitwise copy, 而不是简单的 alias
+</p>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #859900;">struct</span> <span style="color: #b58900;">Test</span><span style="color: #757575;">(</span><span style="color: #b58900;">i32</span><span style="color: #757575;">)</span>;
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">t</span> = <span style="color: #b58900;">Test</span><span style="color: #757575;">(</span>10<span style="color: #757575;">)</span>;
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #839496; background-color: #002b36;">&amp;</span>t <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">pt</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>t <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _ <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">i32</span>; 1];
+    <span style="color: #cb4b16; font-weight: bold;">unsafe</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> *pt<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">t2</span> = t;
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #839496; background-color: #002b36;">&amp;</span>t2 <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">pt2</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>t2 <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _ <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">i32</span>; 1];
+    <span style="color: #cb4b16; font-weight: bold;">unsafe</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> *pt2<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+0x7ffc44202e8c
+[10]
+0x7ffc44202f44
+[10]
+</p>
+</div>
+</div>
+
+<div id="outline-container-org38a09c8" class="outline-3">
+<h3 id="org38a09c8"><span class="section-number-3">1.2</span> clone</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+clone trait 实现了 deep copy, 对 string 来说, 它的 clone 实现会复现堆上的
+string, 而不仅仅是 string 三元组.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #268bd2;">#[derive</span><span style="color: #757575;">(</span><span style="color: #268bd2;">Debug</span><span style="color: #757575;">,</span><span style="color: #268bd2;"> Clone</span><span style="color: #757575;">)</span><span style="color: #268bd2;">]</span>
+<span style="color: #859900;">struct</span> <span style="color: #b58900;">Test</span><span style="color: #757575;">(</span><span style="color: #b58900;">i32</span><span style="color: #757575;">,</span> <span style="color: #b58900;">String</span><span style="color: #757575;">)</span>;
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">get_data</span><span style="color: #757575;">()</span> -&gt; <span style="color: #b58900;">Test</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">ret</span> = <span style="color: #b58900;">Test</span><span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> <span style="color: #2aa198;">"hello"</span>.to_owned<span style="color: #757575;">())</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">px</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>ret <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">p0</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>ret.0 <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">p1</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>ret.1 <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _ <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">u64</span>; 3];
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #757575;">(</span>px<span style="color: #757575;">,</span> p0<span style="color: #757575;">,</span> p1<span style="color: #757575;">))</span>;
+    <span style="color: #cb4b16; font-weight: bold;">unsafe</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> *p1<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+
+    <span style="color: #859900;">return</span> ret.clone<span style="color: #757575;">()</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">x</span> = get_data<span style="color: #757575;">()</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">px</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>x <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">p1</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>x.1 <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _ <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">u64</span>; 3];
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #757575;">(</span>px<span style="color: #757575;">,</span> p1<span style="color: #757575;">))</span>;
+    <span style="color: #cb4b16; font-weight: bold;">unsafe</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> *p1<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+(0x7fff82a253c0, 0x7fff82a253d8, 0x7fff82a253c0)
+[139752097583112, 5, 5]
+(0x7fff82a25508, 0x7fff82a25508)
+[139752097583136, 5, 5]
+</p>
+
+<p>
+由于 string 实现了 clone trait, ret.clone() 返回的变量被 move 到调用者的 x 后,
+看到的 string 在 heap 上的位置变化了.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org9455a6f" class="outline-3">
+<h3 id="org9455a6f"><span class="section-number-3">1.3</span> copy</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+copy 相当于`自动 clone`, 即对应于实现了 copy trait 的变量 x, y=x 时相当于
+y=x.clone()
+</p>
+
+<p>
+实现 copy trait 会在不注意的情况下引用性能开销, 因为 string 只是实现了 clone, 并没有实现 copy.
+</p>
+
+<p>
+需要注意的是, Copy trait 依赖于 Clone trait, 但 derive(Copy) 时使用的是 bit-wise
+clone, 即使有实现自定义的 clone
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgfd8887d" class="outline-3">
+<h3 id="orgfd8887d"><span class="section-number-3">1.4</span> borrow</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+move, copy 即传值, borrow 即传引用.
+</p>
+
+<p>
+shared reference 存在时原变量无法再被修改, 以避免 `concurrent modification`, 另外, reference 必须始终引用到有效的值, 被 borrow 的资源也无法被 move
+</p>
+
+<ul class="org-ul">
+<li><p>
+无法 move:
+</p>
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #268bd2;">#[derive</span><span style="color: #757575;">(</span><span style="color: #268bd2;">Debug</span><span style="color: #757575;">)</span><span style="color: #268bd2;">]</span>
+<span style="color: #859900;">struct</span> <span style="color: #b58900;">Test</span><span style="color: #757575;">(</span><span style="color: #b58900;">String</span><span style="color: #757575;">)</span>;
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">t</span> = <span style="color: #b58900;">Test</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"hello"</span>.to_owned<span style="color: #757575;">())</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">pt</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>t;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">x</span> = pt.0;
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> x<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">--&gt; quickrun:7:13</span>
+<span style="color: #586e75;">//  </span><span style="color: #586e75;">|</span>
+<span style="color: #586e75;">//</span><span style="color: #586e75;">7 |     let x = pt.0;</span>
+<span style="color: #586e75;">//  </span><span style="color: #586e75;">|             ^^^^</span>
+<span style="color: #586e75;">//  </span><span style="color: #586e75;">|             |</span>
+<span style="color: #586e75;">//  </span><span style="color: #586e75;">|             cannot move out of borrowed content</span>
+<span style="color: #586e75;">//  </span><span style="color: #586e75;">|             help: consider borrowing here: `&amp;pt.0`</span>
+<span style="color: #586e75;">//</span>
+<span style="color: #586e75;">//</span><span style="color: #586e75;">error[E0507]: cannot move out of `pt.0` which is behind a `&amp;` reference</span>
+</pre>
+</div></li>
+
+<li><p>
+无法修改:
+</p>
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #268bd2;">#[derive</span><span style="color: #757575;">(</span><span style="color: #268bd2;">Debug</span><span style="color: #757575;">)</span><span style="color: #268bd2;">]</span>
+<span style="color: #859900;">struct</span> <span style="color: #b58900;">Test</span><span style="color: #757575;">(</span><span style="color: #b58900;">String</span><span style="color: #757575;">)</span>;
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #859900;">mut</span> <span style="color: #268bd2;">t</span> = <span style="color: #b58900;">Test</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"hello"</span>.to_owned<span style="color: #757575;">())</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">pt</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>t;
+    t.0 = <span style="color: #2aa198;">"world"</span>.to_owned<span style="color: #757575;">()</span>;
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> pt<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">error[E0506]: cannot assign to `t.0` because it is borrowed</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">--&gt; quickrun:7:5</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">|</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">6 |     let pt = &amp;t;</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">|              -- borrow of `t.0` occurs here</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">7 |     t.0 = "world".to_owned();</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">|     ^^^ assignment to borrowed `t.0` occurs here</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">8 |     println!("{:?}", pt);</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">|                      -- borrow later used here</span>
+<span style="color: #586e75;">// </span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">error: aborting due to previous error</span>
+<span style="color: #586e75;">// </span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">For more information about this error, try `rustc --explain E0506`.</span>
+</pre>
+</div></li>
+</ul>
+</div>
+</div>
+
+
+<div id="outline-container-orgb995f0a" class="outline-3">
+<h3 id="orgb995f0a"><span class="section-number-3">1.5</span> ownership</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+上面提到的 move, copy, borrow 与传统的变量传递方法没有什么区别. rust 的独特之处是在这之上的 ownership 机制:
+</p>
+
+<ol class="org-ol">
+<li>owner 是指变量所引用的资源的 owner</li>
+
+<li>owner 离开作用域时负责其资源的释放</li>
+
+<li>为防止 double free, 每个资源只有一个 owner.</li>
+
+<li>bitwise copy 会共享相同的资源, 因此 bitwise copy 时 owner 会 move 到新的变量上</li>
+
+<li><p>
+borrow 不会拥有资源, 也就不会释放资源, 但 rust 编译器会保证被 borrow 的资源是有效的, 例如:
+</p>
+
+<ul class="org-ul">
+<li>owner 的 life time 大于 borrow 的 life time, 防止 borrow 引用了已经释放的资源</li>
+
+<li>被 borrow 的资源无法被 move</li>
+
+<li>被 borrow 的资源无法被修改</li>
+</ul>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">y</span>: <span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #b58900;">String</span>;
+    <span style="color: #757575;">{</span>
+        <span style="color: #859900;">let</span> <span style="color: #268bd2;">x</span> = <span style="color: #2aa198;">"hello"</span>.to_owned<span style="color: #757575;">()</span>;
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">y &#24182;&#19981;&#26159; x &#30340; owner, &#20294;&#23427;&#30340; life time &#32473; owner x &#35201;&#38271;, &#25152;&#20197;&#32534;&#35793;&#20986;&#38169;</span>
+        y = <span style="color: #839496; background-color: #002b36;">&amp;</span>x;
+    <span style="color: #757575;">}</span>
+
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #586e75;">//   </span><span style="color: #586e75;">error[E0597]: `x` does not live long enough</span>
+<span style="color: #586e75;">//   </span><span style="color: #586e75;">--&gt; quickrun:6:13</span>
+<span style="color: #586e75;">//   </span><span style="color: #586e75;">|</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">6 |         y = &amp;x;</span>
+<span style="color: #586e75;">//   </span><span style="color: #586e75;">|             ^^ borrowed value does not live long enough</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">7 |     }</span>
+<span style="color: #586e75;">//   </span><span style="color: #586e75;">|     - `x` dropped here while still borrowed</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">8 | </span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">9 |     println!("{:?}", y);</span>
+<span style="color: #586e75;">//   </span><span style="color: #586e75;">|                      - borrow later used here</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">// error: aborting due to previous error</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">// For more information about this error, try `rustc --explain E0597`.</span>
+</pre>
+</div></li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-orgd062ba6" class="outline-3">
+<h3 id="orgd062ba6"><span class="section-number-3">1.6</span> slice</h3>
+<div class="outline-text-3" id="text-1-6">
+<ol class="org-ol">
+<li><p>
+slice 是 reference, 它们本身就是 borrow 
+</p>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">t</span> = <span style="color: #2aa198;">"hello"</span>.to_owned<span style="color: #757575;">()</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">pt</span>:<span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #b58900;">str</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>t[1..2];
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">t &#26080;&#27861;&#34987; mov, &#22240;&#20026;&#23427;&#24050;&#32463;&#34987; pt borrow</span>
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">_t2</span> = t;
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> pt<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div></li>
+
+<li><p>
+slice 实现上包含了额外信息: slice 的 ptr 指向原始数据中的起始位置, 另一个 len
+成员表示 slice 的长度
+</p>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">t</span> = <span style="color: #2aa198;">"hello"</span>.to_owned<span style="color: #757575;">()</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">p1</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>t <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _ <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">u64</span>; 3];
+    <span style="color: #cb4b16; font-weight: bold;">unsafe</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> *p1<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">pt</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>t[1..];
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> pt<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">p2</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>pt <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _ <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">u64</span>; 2];
+    <span style="color: #cb4b16; font-weight: bold;">unsafe</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> *p2<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">pt</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>t[2..];
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> pt<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">p2</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>pt <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _ <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">u64</span>; 2];
+    <span style="color: #cb4b16; font-weight: bold;">unsafe</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> *p2<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>    
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+[140332914315272, 5, 5]
+"ello"
+[140332914315273, 4]
+"llo"
+[140332914315274, 3]
+</p></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orga256b25" class="outline-3">
+<h3 id="orga256b25"><span class="section-number-3">1.7</span> mutable borrow</h3>
+<div class="outline-text-3" id="text-1-7">
+<p>
+mutable borrow 的规则与读写锁类似:
+</p>
+
+<ol class="org-ol">
+<li>mutable borrow 只能有一个</li>
+<li>mutable borrow 不能与非 mutable borrow 共存</li>
+<li>多个非 mutable borrow 可以共存</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #859900;">mut</span> <span style="color: #268bd2;">x</span> = 10;
+
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">y1</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">mut</span> x;
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> y1<span style="color: #757575;">)</span>;
+
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20004;&#20010; &amp;mut &#19981;&#33021;&#21516;&#26102;&#26377;&#25928;</span>
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">y2</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">mut</span> x;
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> y2<span style="color: #757575;">)</span>;
+
+    *y1 = 1;
+    *y2 = 2;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orge3d9492" class="outline-3">
+<h3 id="orge3d9492"><span class="section-number-3">1.8</span> 关于 borrow</h3>
+<div class="outline-text-3" id="text-1-8">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">extern</span> <span style="color: #b58900;">void</span> *<span style="color: #268bd2;">get_buff</span><span style="color: #757575;">()</span>;
+
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">void</span> *<span style="color: #268bd2;">buff</span> = get_buff<span style="color: #757575;">()</span>;
+    <span style="color: #859900;">return</span> 0;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+谁负责 get_buff 释放 get_buff 返回的资源?
+</p>
+
+<p>
+rust 的 borrow 规则决定了调用者不是资源的 owner, 所以对 rust 来说, 总是被调用者负责释放资源
+</p>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #859900;">fn</span> <span style="color: #268bd2;">get_buff</span><span style="color: #757575;">()</span> -&gt; <span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #b58900;">str</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #859900;">mut</span> <span style="color: #268bd2;">s</span> = <span style="color: #b58900;">String</span>::new<span style="color: #757575;">()</span>;
+    s.push_str<span style="color: #757575;">(</span><span style="color: #2aa198;">"hello"</span><span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> <span style="color: #839496; background-color: #002b36;">&amp;</span>s;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+以上代码无法编译, 因为 get_buff 返回后 s 即被释放. 需要给返回的引用找一个
+lifetime 足够长的 owner, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #859900;">fn</span> <span style="color: #268bd2;">get_buff2</span><span style="color: #757575;">()</span> -&gt; <span style="color: #839496; background-color: #002b36;">&amp;</span>'<span style="color: #859900;">static</span> <span style="color: #b58900;">str</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">s</span> = <span style="color: #2aa198;">"hello"</span>;
+    <span style="color: #859900;">return</span> s;
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">get_buff</span>&lt;'<span style="color: #268bd2;">a</span>&gt;<span style="color: #757575;">(</span><span style="color: #268bd2;">s</span>: <span style="color: #839496; background-color: #002b36;">&amp;</span>'<span style="color: #268bd2;">a</span> <span style="color: #b58900;">str</span><span style="color: #757575;">)</span> -&gt; <span style="color: #839496; background-color: #002b36;">&amp;</span>'<span style="color: #268bd2;">a</span> <span style="color: #b58900;">str</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">return</span> s;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgb0c11d7" class="outline-3">
+<h3 id="orgb0c11d7"><span class="section-number-3">1.9</span> 总结</h3>
+<div class="outline-text-3" id="text-1-9">
+<ol class="org-ol">
+<li>move 即 bitwise copy</li>
+
+<li>copy 即 deep copy</li>
+
+<li>borrow 即 reference</li>
+
+<li>move 导致 owner 改变</li>
+
+<li>borrow 不改变 owner, 但需要确保被 borrow 的数据有效: life time 足够长, 不能被
+move</li>
+
+<li>mutable borrow 的规则类似于读写锁</li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

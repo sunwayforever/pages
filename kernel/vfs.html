@@ -1,0 +1,2750 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Linux Kernel: VFS</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Linux Kernel: VFS</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org4f42d46">1. Linux Kernel: VFS</a>
+<ul>
+<li><a href="#orga26023e">1.1. Data Structure</a>
+<ul>
+<li><a href="#orgfafe97c">1.1.1. file_system_type</a></li>
+<li><a href="#orged426e6">1.1.2. super_block</a></li>
+<li><a href="#org26b2d77">1.1.3. inode</a></li>
+<li><a href="#org9335eac">1.1.4. dentry</a></li>
+<li><a href="#org074a129">1.1.5. file</a></li>
+<li><a href="#orgc4e32ab">1.1.6. vfsmount</a></li>
+<li><a href="#org80ac093">1.1.7. nameidata</a></li>
+<li><a href="#orgf5d88bf">1.1.8. task_struct</a></li>
+<li><a href="#orgcd0155a">1.1.9. address_space</a></li>
+</ul>
+</li>
+<li><a href="#org26515c3">1.2. Operations</a>
+<ul>
+<li><a href="#orge4b9073">1.2.1. super_operations</a></li>
+<li><a href="#orgca93283">1.2.2. inode_operations</a></li>
+<li><a href="#orge2cd793">1.2.3. file_operations</a></li>
+<li><a href="#org1eac1ea">1.2.4. address_space_operations</a></li>
+<li><a href="#org1787009">1.2.5. 总结</a></li>
+</ul>
+</li>
+<li><a href="#orgd37a9b2">1.3. Details</a>
+<ul>
+<li><a href="#org57984f8">1.3.1. sys_mount</a></li>
+<li><a href="#orgc250d6c">1.3.2. mount the root</a></li>
+<li><a href="#org1f9e0d7">1.3.3. path_lookup</a></li>
+<li><a href="#org3ff30cd">1.3.4. open</a></li>
+<li><a href="#org2dd00aa">1.3.5. readdir</a></li>
+<li><a href="#orgcee581d">1.3.6. write</a></li>
+<li><a href="#org13a8d38">1.3.7. read</a></li>
+<li><a href="#org7231cde">1.3.8. permission</a></li>
+<li><a href="#orgec3ede3">1.3.9. dentry cache</a></li>
+<li><a href="#orgf940945">1.3.10. page cache</a></li>
+</ul>
+</li>
+<li><a href="#org97d2d59">1.4. File Systems</a>
+<ul>
+<li><a href="#org6b7f4bc">1.4.1. procfs</a></li>
+<li><a href="#org295c258">1.4.2. debugfs</a></li>
+<li><a href="#org729de84">1.4.3. ramfs</a></li>
+<li><a href="#org4a6ffa6">1.4.4. ext2</a></li>
+</ul>
+</li>
+<li><a href="#org0427bf5">1.5. Appendix</a>
+<ul>
+<li><a href="#org8d91b8f">1.5.1. special inode</a></li>
+<li><a href="#org01f0a94">1.5.2. inode-&gt;i_size</a></li>
+<li><a href="#orgcd1c237">1.5.3. .(single dot) 与 ..(double dots)</a></li>
+<li><a href="#orge6b4ec2">1.5.4. atime / mtime</a></li>
+<li><a href="#org3da1676">1.5.5. ramfs, rootfs, initramfs</a></li>
+<li><a href="#org313323b">1.5.6. getcwd</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org4f42d46" class="outline-2">
+<h2 id="org4f42d46"><span class="section-number-2">1</span> Linux Kernel: VFS</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-orga26023e" class="outline-3">
+<h3 id="orga26023e"><span class="section-number-3">1.1</span> Data Structure</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-orgfafe97c" class="outline-4">
+<h4 id="orgfafe97c"><span class="section-number-4">1.1.1</span> file_system_type</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">struct</span> <span style="color: #b58900;">file_system_type</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">name</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">super_block</span> *<span style="color: #757575;">(</span>*<span style="color: #268bd2;">get_sb</span><span style="color: #757575;">)</span> <span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">file_system_type</span> *<span style="color: #757575;">,</span> <span style="color: #b58900;">int</span><span style="color: #757575;">,</span>
+                                   <span style="color: #859900;">const</span> <span style="color: #b58900;">char</span> *<span style="color: #757575;">,</span> <span style="color: #b58900;">void</span> *<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orged426e6" class="outline-4">
+<h4 id="orged426e6"><span class="section-number-4">1.1.2</span> super_block</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">struct</span> <span style="color: #b58900;">super_block</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">long</span>            <span style="color: #268bd2;">s_blocksize</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">super_operations</span>     *<span style="color: #268bd2;">s_op</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">dentry</span>           *<span style="color: #268bd2;">s_root</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">list_head</span>             <span style="color: #268bd2;">s_inodes</span>;  
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">list_head</span>             <span style="color: #268bd2;">s_dirty</span>;   
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">block_device</span>         *<span style="color: #268bd2;">s_bdev</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org26b2d77" class="outline-4">
+<h4 id="org26b2d77"><span class="section-number-4">1.1.3</span> inode</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">struct</span> <span style="color: #b58900;">inode</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">long</span>        <span style="color: #268bd2;">i_ino</span>;
+    <span style="color: #b58900;">umode_t</span>          <span style="color: #268bd2;">i_mode</span>;
+    <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">int</span>         <span style="color: #268bd2;">i_nlink</span>;
+    <span style="color: #b58900;">uid_t</span>            <span style="color: #268bd2;">i_uid</span>;
+    <span style="color: #b58900;">gid_t</span>            <span style="color: #268bd2;">i_gid</span>;
+    <span style="color: #b58900;">loff_t</span>           <span style="color: #268bd2;">i_size</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">timespec</span>      <span style="color: #268bd2;">i_atime</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">timespec</span>      <span style="color: #268bd2;">i_mtime</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">timespec</span>      <span style="color: #268bd2;">i_ctime</span>;
+    <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">long</span>        <span style="color: #268bd2;">i_blocks</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">inode_operations</span> *<span style="color: #268bd2;">i_op</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">file_operations</span>  *<span style="color: #268bd2;">i_fop</span>; 
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">super_block</span>      *<span style="color: #268bd2;">i_sb</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">address_space</span>    *<span style="color: #268bd2;">i_mapping</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org9335eac" class="outline-4">
+<h4 id="org9335eac"><span class="section-number-4">1.1.4</span> dentry</h4>
+<div class="outline-text-4" id="text-1-1-4">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">struct</span> <span style="color: #b58900;">dentry</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">atomic_t</span>                  <span style="color: #268bd2;">d_count</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">inode</span>             *<span style="color: #268bd2;">d_inode</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">dentry</span>            *<span style="color: #268bd2;">d_parent</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">qstr</span>               <span style="color: #268bd2;">d_name</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">list_head</span>          <span style="color: #268bd2;">d_child</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">list_head</span>          <span style="color: #268bd2;">d_subdirs</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">dentry_operations</span> *<span style="color: #268bd2;">d_op</span>;
+    <span style="color: #b58900;">int</span>                       <span style="color: #268bd2;">d_mounted</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org074a129" class="outline-4">
+<h4 id="org074a129"><span class="section-number-4">1.1.5</span> file</h4>
+<div class="outline-text-4" id="text-1-1-5">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">struct</span> <span style="color: #b58900;">file</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">dentry</span>      *<span style="color: #268bd2;">f_dentry</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">vfsmount</span>        *<span style="color: #268bd2;">f_vfsmnt</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">file_operations</span> *<span style="color: #268bd2;">f_op</span>;
+    <span style="color: #b58900;">loff_t</span>          <span style="color: #268bd2;">f_pos</span>;
+    <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">int</span>        <span style="color: #268bd2;">f_uid</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">f_gid</span>;
+    <span style="color: #b58900;">void</span>           *<span style="color: #268bd2;">private_data</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">address_space</span>   *<span style="color: #268bd2;">f_mapping</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgc4e32ab" class="outline-4">
+<h4 id="orgc4e32ab"><span class="section-number-4">1.1.6</span> vfsmount</h4>
+<div class="outline-text-4" id="text-1-1-6">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">struct</span> <span style="color: #b58900;">vfsmount</span>
+<span style="color: #757575;">{</span>
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">vfsmount</span>    *<span style="color: #268bd2;">mnt_parent</span>; 
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">dentry</span>      *<span style="color: #268bd2;">mnt_mountpoint</span>; 
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">dentry</span>      *<span style="color: #268bd2;">mnt_root</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">super_block</span> *<span style="color: #268bd2;">mnt_sb</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org80ac093" class="outline-4">
+<h4 id="org80ac093"><span class="section-number-4">1.1.7</span> nameidata</h4>
+<div class="outline-text-4" id="text-1-1-7">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">struct</span> <span style="color: #b58900;">nameidata</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">dentry</span>   *<span style="color: #268bd2;">dentry</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">vfsmount</span> *<span style="color: #268bd2;">mnt</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">qstr</span>      <span style="color: #268bd2;">last</span>;
+    <span style="color: #b58900;">unsigned</span>         <span style="color: #268bd2;">depth</span>;
+    <span style="color: #b58900;">char</span>            *<span style="color: #268bd2;">saved_names</span>[MAX_NESTED_LINKS + 1];
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgf5d88bf" class="outline-4">
+<h4 id="orgf5d88bf"><span class="section-number-4">1.1.8</span> task_struct</h4>
+<div class="outline-text-4" id="text-1-1-8">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">struct</span> <span style="color: #b58900;">task_struct</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">fs_struct</span> *<span style="color: #268bd2;">fs</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">files_struct</span> *<span style="color: #268bd2;">files</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgcd0155a" class="outline-4">
+<h4 id="orgcd0155a"><span class="section-number-4">1.1.9</span> address_space</h4>
+</div>
+</div>
+
+<div id="outline-container-org26515c3" class="outline-3">
+<h3 id="org26515c3"><span class="section-number-3">1.2</span> Operations</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-orge4b9073" class="outline-4">
+<h4 id="orge4b9073"><span class="section-number-4">1.2.1</span> super_operations</h4>
+<div class="outline-text-4" id="text-1-2-1">
+</div>
+<div id="outline-container-orgcdc67a1" class="outline-5">
+<h5 id="orgcdc67a1"><span class="section-number-5">1.2.1.1</span> alloc_inode</h5>
+<div class="outline-text-5" id="text-1-2-1-1">
+<p>
+alloc_inode 分配一个 struct inode, 并做一些简单的初始化,后续的
+read_inode 负责真正从磁盘加载 inode 信息.
+</p>
+
+<p>
+alloc_inode 典型的调用栈:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">xxx_lookup</span>:
+  <span style="color: #268bd2;">iget</span><span style="color: #757575;">(</span><span style="color: #b58900;">ino</span><span style="color: #757575;">)</span>
+    inode = ifind_fast<span style="color: #757575;">(</span>sb<span style="color: #757575;">,</span> head<span style="color: #757575;">,</span> ino<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">if</span> not found:
+      inode = alloc_inode<span style="color: #757575;">(</span>sb<span style="color: #757575;">)</span>;
+    sb-&gt;s_op-&gt;read_inode<span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span>;
+</pre>
+</div>
+
+<p>
+具体文件系统一般会实现自己的 alloc_inode:
+</p>
+
+<p>
+例如 ext2 的 ext2_alloc_inode:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">static</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">inode</span> *<span style="color: #268bd2;">ext2_alloc_inode</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">super_block</span> *<span style="color: #268bd2;">sb</span><span style="color: #757575;">)</span>:
+  <span style="color: #859900;">struct</span> ext2_inode_info *ei;
+  ei = <span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">ext2_inode_info</span> *<span style="color: #757575;">)</span><span style="color: #268bd2;">kmem_cache_alloc</span><span style="color: #757575;">(</span><span style="color: #b58900;">ext2_inode_cachep</span><span style="color: #757575;">,</span> <span style="color: #b58900;">SLAB_KERNEL</span><span style="color: #757575;">)</span>;
+  ei-&gt;vfs_inode.i_version = 1;
+  <span style="color: #859900;">return</span> &amp;ei-&gt;vfs_inode;
+</pre>
+</div>
+
+<p>
+主要都是通过一个 ei 来保存和具体文件系统的 inode 相关的信息.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org2b6aa66" class="outline-5">
+<h5 id="org2b6aa66"><span class="section-number-5">1.2.1.2</span> read_inode</h5>
+<div class="outline-text-5" id="text-1-2-1-2">
+<p>
+read_inode 是从具体文件系统加载数据对 alloc_inode 分配的 inode 进行填充. 它典型的调用栈如上面 "alloc_inode 的调用栈" 所示: alloc_inode 后会紧接一个 read_inode.
+</p>
+
+<p>
+与 alloc_inode 不同的是, vfs 并没有 read_inode 的 wrapper function,
+read_inode 的行为完全由文件系统的 i_op-&gt;read_inode 决定. 
+</p>
+
+<p>
+以 ext2_read_inode 为例:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #b58900;">void</span> <span style="color: #268bd2;">ext2_read_inode</span> <span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">inode</span> * <span style="color: #268bd2;">inode</span><span style="color: #757575;">)</span>:
+  <span style="color: #859900;">struct</span> ext2_inode_info *ei = EXT2_I<span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">read_inode &#35843;&#29992;&#36890;&#24120;&#26469;&#33258; lookup, &#32780; lookup &#22312;&#35843;&#29992; read_inode &#21069;&#20250;&#36127;&#36131;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25214;&#21040; name &#23545;&#24212;&#30340; inode-&gt;ino</span>
+  <span style="color: #b58900;">ino_t</span> <span style="color: #268bd2;">ino</span> = inode-&gt;i_ino;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20174;&#30913;&#30424;&#35835;&#21462;&#25968;&#25454;</span>
+  <span style="color: #859900;">struct</span> <span style="color: #b58900;">ext2_inode</span> * <span style="color: #268bd2;">raw_inode</span> = ext2_get_inode<span style="color: #757575;">(</span>inode-&gt;i_sb<span style="color: #757575;">,</span> ino<span style="color: #757575;">,</span> &amp;bh<span style="color: #757575;">)</span>;
+  inode-&gt;i_mode = le16_to_cpu<span style="color: #757575;">(</span>raw_inode-&gt;i_mode<span style="color: #757575;">)</span>;
+  inode-&gt;i_uid = <span style="color: #757575;">(</span><span style="color: #b58900;">uid_t</span><span style="color: #757575;">)</span><span style="color: #268bd2;">le16_to_cpu</span><span style="color: #757575;">(</span>raw_inode-&gt;i_uid_low<span style="color: #757575;">)</span>;
+  inode-&gt;i_gid = <span style="color: #757575;">(</span><span style="color: #b58900;">gid_t</span><span style="color: #757575;">)</span><span style="color: #268bd2;">le16_to_cpu</span><span style="color: #757575;">(</span>raw_inode-&gt;i_gid_low<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orga99f216" class="outline-5">
+<h5 id="orga99f216"><span class="section-number-5">1.2.1.3</span> write_inode</h5>
+<div class="outline-text-5" id="text-1-2-1-3">
+</div>
+<ol class="org-ol">
+<li><a id="org57d1bf8"></a>fsync 导致的 write_inode<br />
+<div class="outline-text-6" id="text-1-2-1-3-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">sys_fsync</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">fd</span><span style="color: #757575;">)</span>:
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>file-&gt;f_op || <span style="color: #b58900; font-weight: bold;">!</span>file-&gt;f_op-&gt;fsync<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;">/* </span><span style="color: #586e75;">Why?  We can still call filemap_fdatawrite</span><span style="color: #586e75;"> */</span>
+    <span style="color: #859900;">return</span>
+  mapping = file-&gt;f_mapping;
+  <span style="color: #268bd2;">filemap_fdatawrite</span><span style="color: #757575;">(</span><span style="color: #b58900;">mapping</span><span style="color: #757575;">)</span>;
+  file-&gt;f_op-&gt;fsync<span style="color: #757575;">(</span>file<span style="color: #757575;">,</span> file-&gt;f_dentry<span style="color: #757575;">,</span> 0<span style="color: #757575;">)</span>;
+    ext2_sync_file
+      sync_mapping_buffers
+      ext2_sync_inode
+        sync_inode
+          __writeback_single_inode
+            __sync_single_inode
+              do_writepages
+              <span style="color: #b58900;">write_inode</span>
+                <span style="color: #268bd2;">inode</span>-&gt;i_sb-&gt;s_op-&gt;write_inode<span style="color: #757575;">(</span>inode<span style="color: #757575;">,</span> sync<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org12100c2"></a>dirty page balance 导致的 write_inode (vm_dirty_ratio)<br />
+<div class="outline-text-6" id="text-1-2-1-3-2">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">generic_file_buffered_write</span>:
+  balance_dirty_pages
+    writeback_inodes
+      <span style="color: #b58900;">sync_sb_inodes</span>
+        <span style="color: #268bd2;">__writeback_single_inode</span>
+</pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgca93283" class="outline-4">
+<h4 id="orgca93283"><span class="section-number-4">1.2.2</span> inode_operations</h4>
+<div class="outline-text-4" id="text-1-2-2">
+</div>
+<div id="outline-container-org43a9f48" class="outline-5">
+<h5 id="org43a9f48"><span class="section-number-5">1.2.2.1</span> lookup</h5>
+<div class="outline-text-5" id="text-1-2-2-1">
+<p>
+lookup 是 i_op 中非常重要的一个回调函数, 它负责将路径名转换为相应的
+inode, 例如, open, mkdir, stat, rename 等都需要先通过 lookup 获得对应的 inode.
+</p>
+
+<p>
+以 open 为例, lookup 的调用链为:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">filp_open</span><span style="color: #757575;">()</span>:
+  error = open_namei<span style="color: #757575;">(</span>filename<span style="color: #757575;">,</span> namei_flags<span style="color: #757575;">,</span> mode<span style="color: #757575;">,</span> &amp;nd<span style="color: #757575;">)</span>;
+    <span style="color: #268bd2;">path_lookup</span><span style="color: #757575;">(</span><span style="color: #b58900;">pathname</span><span style="color: #757575;">,</span> LOOKUP_PARENT|LOOKUP_OPEN|LOOKUP_CREATE<span style="color: #757575;">,</span> <span style="color: #b58900;">nd</span><span style="color: #757575;">)</span>;
+      retval = link_path_walk<span style="color: #757575;">(</span>name<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+        err = do_lookup<span style="color: #757575;">(</span>nd<span style="color: #757575;">,</span> &amp;this<span style="color: #757575;">,</span> &amp;next<span style="color: #757575;">)</span>;
+          dentry = real_lookup<span style="color: #757575;">(</span>nd-&gt;dentry<span style="color: #757575;">,</span> name<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36825;&#37324;&#30340; dentry &#31216;&#20026; negative dentry, &#22240;&#20026;&#23427;&#30340; d-&gt;d_inode &#20026;&#31354;</span>
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36820;&#22238; negative dentry &#34920;&#31034; dentry &#23545;&#24212;&#30340; inode &#19981;&#23384;&#22312;, &#20294;&#24182;&#19981;&#26159;&#38169;&#35823;:</span>
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20363;&#22914; open(O_CREAT) </span>
+            <span style="color: #859900;">struct</span> <span style="color: #b58900;">dentry</span> * <span style="color: #268bd2;">dentry</span> = d_alloc<span style="color: #757575;">(</span>parent<span style="color: #757575;">,</span> name<span style="color: #757575;">)</span>;
+            result = dir-&gt;i_op-&gt;lookup<span style="color: #757575;">(</span>dir<span style="color: #757575;">,</span> dentry<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">result &#19981;&#20026; 0, &#20998;&#20004;&#31181;&#24773;&#20917;:</span>
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">1. lookup &#25104;&#21151;</span>
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">2. lookup &#22833;&#36133;, result &#20026;&#36127;&#25968;, &#20363;&#22914; -ENOENT</span>
+            <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>result<span style="color: #757575;">)</span>:
+                <span style="color: #859900;">return</span> result;
+            <span style="color: #859900;">else</span>:
+                <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36820;&#22238;&#20043;&#21069;&#30340; negative dentry, open_namei &#20381;&#36182; negative dentry &#26469;&#21028;&#26029;</span>
+                <span style="color: #586e75;">// </span><span style="color: #586e75;">"dentry &#23545;&#24212;&#30340; inode &#19981;&#23384;&#22312;&#20294;&#26377;&#25928;" &#36825;&#31181;&#24773;&#20917;</span>
+                result = dentry;
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">link_path_walk</span>
+        <span style="color: #268bd2;">dput</span><span style="color: #757575;">(</span>next.dentry<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">open_namei</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509;&#20043;&#21069;&#30340; lookup &#25104;&#21151; (&#26080;&#35770; inode &#23384;&#22312;&#25110;&#19981;&#23384;&#22312;)</span>
+    dentry = __lookup_hash<span style="color: #757575;">(</span>&amp;nd-&gt;last<span style="color: #757575;">,</span> nd-&gt;dentry<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>dentry-&gt;d_inode<span style="color: #757575;">)</span>:
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">negative dentry</span>
+      vfs_create<span style="color: #757575;">(</span>dir-&gt;d_inode<span style="color: #757575;">,</span> dentry<span style="color: #757575;">,</span> mode<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+        inode-&gt;i_op-&gt;create<span style="color: #757575;">()</span>
+      <span style="color: #268bd2;">dput</span><span style="color: #757575;">(</span>nd-&gt;dentry<span style="color: #757575;">)</span>;
+</pre>
+</div>
+
+<p>
+总之, i_op-&gt;lookup 有三种返回值:
+</p>
+
+<ol class="org-ol">
+<li>正常的 dentry 指针</li>
+
+<li>- ENOENT 这种负值, 表示异常情况</li>
+
+<li>NULL, 表示 negative dentry, 表示 dentry 有效但 inode 不存在</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org78450ae" class="outline-5">
+<h5 id="org78450ae"><span class="section-number-5">1.2.2.2</span> permission</h5>
+<div class="outline-text-5" id="text-1-2-2-2">
+<p>
+vfs 对许多行为会进行 permission 检查, 并且会调用到 i_op-&gt;permission 函数.
+</p>
+
+<p>
+以 open 为例, permission 的调用链为:
+</p>
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">filp_open</span><span style="color: #757575;">()</span>:
+  open_namei<span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">path_lookup</span><span style="color: #757575;">()</span>
+      <span style="color: #268bd2;">link_path_walk</span><span style="color: #757575;">()</span>
+        <span style="color: #859900;">for</span><span style="color: #757575;">(</span>;;<span style="color: #757575;">)</span>:
+          <span style="color: #586e75;">// </span><span style="color: #586e75;">&#23545; lookup &#30340;&#27599;&#19968;&#32423;&#37117;&#36827;&#34892; permission &#26816;&#26597;</span>
+          err = permission<span style="color: #757575;">(</span>inode<span style="color: #757575;">,</span> MAY_EXEC<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+          <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>err<span style="color: #757575;">)</span>:
+            <span style="color: #859900;">break</span>;
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #b58900;">int</span> <span style="color: #268bd2;">permission</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">inode</span> *<span style="color: #268bd2;">inode</span><span style="color: #757575;">,</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">mask</span><span style="color: #757575;">,</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">nameidata</span> *<span style="color: #268bd2;">nd</span><span style="color: #757575;">)</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">inode &#34920;&#31034;&#35201;&#26816;&#26597;&#30340; inode</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">mask &#34920;&#31034;&#38656;&#35201;&#30340;&#26435;&#38480;</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>inode-&gt;i_op &amp;&amp; inode-&gt;i_op-&gt;permission<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">i_op &#20013;&#21644; fs &#30456;&#20851;&#30340;&#23454;&#29616;</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#30001;&#20110; i_op-&gt;permission &#19982; generic_permission &#26159;&#24182;&#21015;&#30340;, &#25152;&#20197; inode &#21487;&#20197;&#23436;&#20840;&#23450;&#21046;&#33258;&#24049;</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#30340;&#26435;&#38480;, &#27604;&#22914;&#31105;&#27490; root &#35775;&#38382;</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20294;&#19968;&#33324;&#24773;&#20917;&#19979;, inode &#20351;&#29992; generic_permission &#23601;&#21487;&#20197;&#20102;,</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21482;&#35201;&#35774;&#32622;&#22909; inode-&gt;fsuid, inode-&gt;i_gid &#21450; inode-&gt;i_mode &#21363;&#21487;</span>
+    retval = inode-&gt;i_op-&gt;permission<span style="color: #757575;">(</span>inode<span style="color: #757575;">,</span> submask<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">else</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">generic &#23454;&#29616;</span>
+    retval = generic_permission<span style="color: #757575;">(</span>inode<span style="color: #757575;">,</span> submask<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org6231e18" class="outline-5">
+<h5 id="org6231e18"><span class="section-number-5">1.2.2.3</span> getattr / setattr</h5>
+<div class="outline-text-5" id="text-1-2-2-3">
+<p>
+getattr 和 stat 系统调用有关, 大多数涉及到修改 inode 的系统调用例如
+chmod, utime 等和 setattr 的关.
+</p>
+</div>
+
+<ol class="org-ol">
+<li><a id="orga3f9a69"></a>getattr<br />
+<div class="outline-text-6" id="text-1-2-2-3-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">vfs_stat</span>:
+  <span style="color: #268bd2;">user_path_walk</span><span style="color: #757575;">(</span><span style="color: #b58900;">name</span><span style="color: #757575;">,</span> &amp;nd<span style="color: #757575;">)</span>;
+  <span style="color: #268bd2;">vfs_getattr</span><span style="color: #757575;">(</span>nd.mnt<span style="color: #757575;">,</span> nd.dentry<span style="color: #757575;">,</span> <span style="color: #b58900;">stat</span><span style="color: #757575;">)</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>inode-&gt;i_op-&gt;getattr<span style="color: #757575;">)</span>:
+      <span style="color: #859900;">return</span> inode-&gt;i_op-&gt;getattr<span style="color: #757575;">(</span>mnt<span style="color: #757575;">,</span> dentry<span style="color: #757575;">,</span> stat<span style="color: #757575;">)</span>;
+    <span style="color: #268bd2;">generic_fillattr</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">,</span> <span style="color: #b58900;">stat</span><span style="color: #757575;">)</span>;
+      stat-&gt;dev = inode-&gt;i_sb-&gt;s_dev;
+      stat-&gt;ino = inode-&gt;i_ino;
+      stat-&gt;mode = inode-&gt;i_mode;
+      stat-&gt;nlink = inode-&gt;i_nlink;
+      stat-&gt;uid = inode-&gt;i_uid;
+      stat-&gt;gid = inode-&gt;i_gid;
+      stat-&gt;rdev = inode-&gt;i_rdev;
+      stat-&gt;atime = inode-&gt;i_atime;
+      stat-&gt;mtime = inode-&gt;i_mtime;
+      stat-&gt;ctime = inode-&gt;i_ctime;
+      stat-&gt;size = i_size_read<span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span>;
+      stat-&gt;blocks = inode-&gt;i_blocks;
+      stat-&gt;blksize = inode-&gt;i_blksize;
+</pre>
+</div>
+
+<p>
+若 i_op 没有实现 getattr, 则 generic_fillattr 会用 inode 的信息填充返回结果.
+</p>
+</div>
+
+<ol class="org-ol">
+<li><a id="org04713eb"></a>关于文件大小<br />
+<div class="outline-text-7" id="text-1-2-2-3-1-1">
+<p>
+stat 返回的信息中, 有两个和文件大小相关的值: stat-&gt;size 和
+stat-&gt;blocks
+</p>
+
+<p>
+其中 stat-&gt;size 被称为 apparent size, stat-&gt;blocks 称为 disk usage
+</p>
+
+<pre class="example" id="org01469e1">
+$&gt; truncate --size +10M a
+
+$&gt; stat a
+  File: 'a'
+  Size: 31457280        Blocks: 0          IO Block: 4096   regular file
+Device: 802h/2050d      Inode: 21500388    Links: 1
+
+$&gt; du -k a
+0       a
+
+$&gt; du --apparent-size -k a
+30720   a
+
+</pre>
+</div>
+</li>
+</ol>
+</li>
+
+<li><a id="orgd964446"></a>setattr<br />
+<ol class="org-ol">
+<li><a id="org803ce07"></a>UID<br />
+<div class="outline-text-7" id="text-1-2-2-3-2-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">sys_chmod</span>:
+  <span style="color: #268bd2;">notify_change</span><span style="color: #757575;">(</span>nd.dentry<span style="color: #757575;">,</span> &amp;newattrs<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>inode-&gt;i_op &amp;&amp; inode-&gt;i_op-&gt;setattr<span style="color: #757575;">)</span>:
+      inode-&gt;i_op-&gt;setattr<span style="color: #757575;">(</span>dentry<span style="color: #757575;">,</span> attr<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">else</span>:
+      inode_setattr<span style="color: #757575;">(</span>inode<span style="color: #757575;">,</span> attr<span style="color: #757575;">)</span>;
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>ia_valid &amp; ATTR_UID<span style="color: #757575;">)</span>:
+          inode-&gt;i_uid = attr-&gt;ia_uid;
+        <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> xxx:
+          <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+        mark_inode_dirty<span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org5f2cbf4"></a>ATIME / MTIME<br />
+<div class="outline-text-7" id="text-1-2-2-3-2-2">
+<p>
+读写文件时 atime/mtime 会相应变化, vfs 在 generic_file_read / write 处做了实现, 如果某个 fs 的文件读写不是通过 generic_file_read / write, 需要自己处理 ATIME/MTIME
+</p>
+</div>
+</li>
+</ol>
+</li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-orge2cd793" class="outline-4">
+<h4 id="orge2cd793"><span class="section-number-4">1.2.3</span> file_operations</h4>
+<div class="outline-text-4" id="text-1-2-3">
+</div>
+<div id="outline-container-orgf72abc8" class="outline-5">
+<h5 id="orgf72abc8"><span class="section-number-5">1.2.3.1</span> read</h5>
+</div>
+
+<div id="outline-container-org527062e" class="outline-5">
+<h5 id="org527062e"><span class="section-number-5">1.2.3.2</span> write</h5>
+</div>
+
+<div id="outline-container-org630c5b4" class="outline-5">
+<h5 id="org630c5b4"><span class="section-number-5">1.2.3.3</span> readdir</h5>
+</div>
+</div>
+
+<div id="outline-container-org1eac1ea" class="outline-4">
+<h4 id="org1eac1ea"><span class="section-number-4">1.2.4</span> address_space_operations</h4>
+</div>
+
+<div id="outline-container-org1787009" class="outline-4">
+<h4 id="org1787009"><span class="section-number-4">1.2.5</span> 总结</h4>
+<div class="outline-text-4" id="text-1-2-5">
+<p>
+四种 ops 的区别与联系:
+</p>
+
+<ol class="org-ol">
+<li>s_op 代表对底层文件系统的真正的读写操作, 包括读写 inode,
+super_block 等. 以 inode 为例, 当上层修改了 inode 时, inode 被标记为 dirty, 最终在 sync 时通过 s_op 中的 write_inode 写回到设备上.</li>
+
+<li><p>
+f_op 需要从 i_op 中分离出来, 可能有两方面原因:
+</p>
+
+<ol class="org-ol">
+<li>file (fd) 不仅仅是文件 (inode) 的抽象, 也是 socket, timer 等的抽象, 它们共同的 "数据流读写" 部分被抽象为 file, 比如 read, write,
+mmap</li>
+
+<li>由于同一个 inode 可以通过多次打开对应多个 file, 和 file-&gt;f_pos
+相关的操作必须分离到 f_op 中, 例如 read, write, readdir 等</li>
+</ol>
+
+<p>
+f_op 可能主要代表上层对数据 (而非元数据) 的操作.
+</p></li>
+
+<li><p>
+i_op 代表对单个 inode 的元数据的操作, 例如 lookup, create, permission,
+readlink, getattr &#x2026;
+</p>
+
+<p>
+f_op 中的 open, readdir, create, 以及 f_op 工作时用到的 permission
+检查, path_lookup 等需要 i_op 去实现
+</p>
+
+<p>
+另外, f_op 之外大量和文件相关的 syscall 例如 unlink, symlink,
+rename, getattr 等都需要 i_op 去实现.
+</p>
+
+<p>
+i_op 中关于 inode 修改的操作都只针对内存中的数据, 真正的读写需要由
+s_op 去实现. 
+</p></li>
+
+<li><p>
+a_op 可以看做是 "file 数据流抽象" 的一种通用实现.
+</p>
+
+<p>
+若 f_op 中 read, write, mmap 等使用 generic 的实现 (例如
+generic_file_read), 则 a_op 中相应的 readpage, writepage 等会被调用.
+</p>
+
+<p>
+文件系统要支持 read, write 可以有两种选择:
+</p>
+<ol class="org-ol">
+<li>在 f_op 中实现自己的 read, write.</li>
+<li>使用 generic_file_read/write, 在 a_op 中实现 readpage, writepage</li>
+</ol>
+
+<p>
+一般选择后者, 因为可以利用 pagecache.
+</p></li>
+</ol>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-orgd37a9b2" class="outline-3">
+<h3 id="orgd37a9b2"><span class="section-number-3">1.3</span> Details</h3>
+<div class="outline-text-3" id="text-1-3">
+</div>
+<div id="outline-container-org57984f8" class="outline-4">
+<h4 id="org57984f8"><span class="section-number-4">1.3.1</span> sys_mount</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<p>
+sys_mount 的主要功能是:
+</p>
+
+<ol class="org-ol">
+<li>kern_mount
+<ol class="org-ol">
+<li>通过 fs 注册的 get_sb 生成对应的 super_block</li>
+<li>super_block 包含 fs 对应的 root dentry</li>
+<li>生成 vfmount, 并把上一步生成的 root dentry 设置 vfsmount 的
+mnt_root</li>
+</ol></li>
+
+<li>do_add_mount
+<ol class="org-ol">
+<li>将 vfsmount 与某个 dentry 关联 (通过 vfsmount-&gt;mnt_mountpoint)</li>
+</ol></li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-c">kern_mount
+  do_kern_mount
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#29983;&#25104; vfsmount</span>
+    <span style="color: #b58900;">file_system_type</span> *<span style="color: #268bd2;">type</span> = get_fs_type<span style="color: #757575;">(</span>fstype<span style="color: #757575;">)</span>;
+    mnt = alloc_vfsmnt<span style="color: #757575;">(</span>name<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#35843;&#29992; get_sb, &#20854;&#20013; name &#26159; dev_name, sb-&gt;s_bdev &#30001; device</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">name &#20915;&#23450;, &#21518;&#32493;&#20855;&#20307;&#25991;&#20214;&#31995;&#32479;&#30340;&#22823;&#37096;&#20998;&#25805;&#20316;&#37117;&#38656;&#35201;&#36890;&#36807; block device</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">driver &#21644; sb-&gt;s_bdev &#25171;&#20132;&#36947;</span>
+    sb = type-&gt;get_sb<span style="color: #757575;">(</span>type<span style="color: #757575;">,</span> flags<span style="color: #757575;">,</span> name<span style="color: #757575;">,</span> data<span style="color: #757575;">)</span>;
+    mnt-&gt;mnt_sb = sb;
+    mnt-&gt;mnt_root = dget<span style="color: #757575;">(</span>sb-&gt;s_root<span style="color: #757575;">)</span>;
+    mnt-&gt;mnt_mountpoint = sb-&gt;s_root;
+    mnt-&gt;mnt_parent = mnt;
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">sys_mount</span>:
+  <span style="color: #268bd2;">do_mount</span><span style="color: #757575;">(</span><span style="color: #b58900;">dev_name</span><span style="color: #757575;">,</span> <span style="color: #b58900;">dir_name</span><span style="color: #757575;">,</span> ...<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">path_lookup</span><span style="color: #757575;">(</span><span style="color: #b58900;">dir_name</span><span style="color: #757575;">,</span> <span style="color: #b58900;">LOOKUP_FOLLOW</span><span style="color: #757575;">,</span> &amp;nd<span style="color: #757575;">)</span>;
+    do_new_mount<span style="color: #757575;">(</span>&amp;nd<span style="color: #757575;">,</span> type_page<span style="color: #757575;">,</span> flags<span style="color: #757575;">,</span> mnt_flags<span style="color: #757575;">,</span>dev_name<span style="color: #757575;">)</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">do_kern_mount &#26102;&#19981;&#38656;&#35201; nd</span>
+      <span style="color: #268bd2;">do_kern_mount</span><span style="color: #757575;">(</span><span style="color: #b58900;">type</span><span style="color: #757575;">,</span> <span style="color: #b58900;">flags</span><span style="color: #757575;">,</span> <span style="color: #b58900;">dev_name</span><span style="color: #757575;">,</span> <span style="color: #b58900;">data</span><span style="color: #757575;">)</span>;
+      <span style="color: #268bd2;">do_add_mount</span><span style="color: #757575;">(</span><span style="color: #b58900;">mnt</span><span style="color: #757575;">,</span> <span style="color: #b58900;">nd</span><span style="color: #757575;">,</span> <span style="color: #b58900;">mnt_flags</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>;
+        <span style="color: #268bd2;">graft_tree</span><span style="color: #757575;">(</span><span style="color: #b58900;">mnt</span><span style="color: #757575;">,</span> <span style="color: #b58900;">nd</span><span style="color: #757575;">)</span>
+          <span style="color: #268bd2;">attach_mnt</span><span style="color: #757575;">(</span><span style="color: #b58900;">mnt</span><span style="color: #757575;">,</span> <span style="color: #b58900;">nd</span><span style="color: #757575;">)</span>
+            mnt-&gt;mnt_parent = mntget<span style="color: #757575;">(</span>nd-&gt;mnt<span style="color: #757575;">)</span>;
+            mnt-&gt;mnt_mountpoint = dget<span style="color: #757575;">(</span>nd-&gt;dentry<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgc250d6c" class="outline-4">
+<h4 id="orgc250d6c"><span class="section-number-4">1.3.2</span> mount the root</h4>
+<div class="outline-text-4" id="text-1-3-2">
+</div>
+<div id="outline-container-org0cdecc3" class="outline-5">
+<h5 id="org0cdecc3"><span class="section-number-5">1.3.2.1</span> Stage 1: mount rootfs</h5>
+<div class="outline-text-5" id="text-1-3-2-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">start_kernel</span>:
+  vfs_caches_init
+    <span style="color: #b58900;">mnt_init</span>
+      <span style="color: #268bd2;">init_rootfs</span><span style="color: #757575;">()</span>;
+      <span style="color: #268bd2;">init_mount_tree</span><span style="color: #757575;">()</span>;
+
+<span style="color: #268bd2; font-weight: bold;">init_rootfs</span>:
+  register_filesystem<span style="color: #757575;">(</span>&amp;rootfs_fs_type<span style="color: #757575;">)</span>;
+
+<span style="color: #268bd2; font-weight: bold;">init_mount_tree</span>:
+  mnt = do_kern_mount<span style="color: #757575;">(</span><span style="color: #2aa198;">"rootfs"</span><span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> <span style="color: #2aa198;">"rootfs"</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>;
+    rootfs_get_sb
+      <span style="color: #b58900;">ramfs_fill_super</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21021;&#22987;&#30340; / &#26159;&#30446;&#24405; (S_IFDIR)</span>
+        <span style="color: #268bd2;">inode</span> = ramfs_get_inode<span style="color: #757575;">(</span>sb<span style="color: #757575;">,</span> S_IFDIR | 0755<span style="color: #757575;">,</span> 0<span style="color: #757575;">)</span>;
+        root = d_alloc_root<span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span>;
+        sb-&gt;s_root = root;
+  namespace-&gt;root = mnt;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">fs-&gt;root &#35774;&#32622;&#20026; mnt_root, &#27492;&#21518;&#38024;&#23545; "/" &#30340; lookup &#20250;&#25214;&#21040; mnt_root</span>
+  <span style="color: #268bd2;">set_fs_pwd</span><span style="color: #757575;">(</span>current-&gt;fs<span style="color: #757575;">,</span> namespace-&gt;root<span style="color: #757575;">,</span> namespace-&gt;root-&gt;mnt_root<span style="color: #757575;">)</span>;
+  <span style="color: #268bd2;">set_fs_root</span><span style="color: #757575;">(</span>current-&gt;fs<span style="color: #757575;">,</span> namespace-&gt;root<span style="color: #757575;">,</span> namespace-&gt;root-&gt;mnt_root<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org2820a3b" class="outline-5">
+<h5 id="org2820a3b"><span class="section-number-5">1.3.2.2</span> Stage 2: mount real root</h5>
+<div class="outline-text-5" id="text-1-3-2-2">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #586e75;">// </span><span style="color: #586e75;">kernel space `init`</span>
+<span style="color: #268bd2; font-weight: bold;">init</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#23581;&#35797;&#20351;&#29992; initramfs</span>
+  <span style="color: #268bd2;">populate_rootfs</span><span style="color: #757575;">()</span>;
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>sys_access<span style="color: #757575;">((</span><span style="color: #859900;">const</span> <span style="color: #b58900;">char</span> <span style="color: #268bd2;">__user</span> *<span style="color: #757575;">)</span> <span style="color: #2aa198;">"/init"</span><span style="color: #757575;">,</span> 0<span style="color: #757575;">)</span> == 0<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">android &#20013; /init &#30340;&#26469;&#28304;</span>
+    execute_command = <span style="color: #2aa198;">"/init"</span>;
+  <span style="color: #859900;">else</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#23581;&#35797;&#20351;&#29992;&#29289;&#29702;&#35774;&#22791;</span>
+    prepare_namespace<span style="color: #757575;">()</span>;
+</pre>
+</div>
+</div>
+
+<ol class="org-ol">
+<li><a id="org090a5f8"></a>populate_rootfs<br />
+<div class="outline-text-6" id="text-1-3-2-2-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">populate_rootfs</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">__initramfs_start &#26159; initramfs &#38236;&#20687;&#25552;&#21069;&#34987;&#21152;&#36733;&#21040;&#30340;&#20869;&#23384;&#20301;&#32622;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">unpack_to_rootfs &#38656;&#35201;&#20570;&#20004;&#20214;&#20107;:</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">1. &#23545; __initramfs_start &#20301;&#32622;&#30340;&#20869;&#23481;&#36827;&#34892; gunzip</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">2. &#23558;&#23545;&#24212;&#30340; cpio &#20869;&#23481;&#21152;&#36733;&#21040; rootfs &#20013;, &#25152;&#35859;&#30340; "&#21152;&#36733;", &#23454;&#38469;&#23601;&#26159;&#36890;&#36807; sys_open, sys_mkdir &#31561;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#22312; / &#19979;&#20020;&#26102;&#29983;&#25104;&#25991;&#20214;&#21644;&#30446;&#24405;, &#24182;&#36890;&#36807; sys_chmod &#31561;&#20462;&#25913; owner &#21644;&#26435;&#38480;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21442;&#32771;: http://ieroot.com/2014/04/21/1534.html or  http://tinyurl.com/gslj9hf</span>
+  <span style="color: #268bd2;">unpack_to_rootfs</span><span style="color: #757575;">(</span><span style="color: #b58900;">__initramfs_start</span><span style="color: #757575;">,</span> __initramfs_end - __initramfs_start<span style="color: #757575;">,</span> 0<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#35299;&#26512; initramfs &#20869;&#23481;, &#26368;&#21518;&#35843;&#29992; do_name &#22312;&#21021;&#22987;&#30340; rootfs &#20013;&#29983;&#25104;&#30456;&#24212;&#30340;&#25991;&#20214;</span>
+    write_buffer
+      do_start
+      <span style="color: #b58900;">do_header</span>
+      <span style="color: #268bd2;">do_name</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">cpio &#30340;&#26411;&#23614;&#26159; TRAILER!!!</span>
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>strcmp<span style="color: #757575;">(</span>collected<span style="color: #757575;">,</span> <span style="color: #2aa198;">"TRAILER!!!"</span><span style="color: #757575;">)</span> == 0<span style="color: #757575;">)</span>:
+          <span style="color: #859900;">return</span>;
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>S_ISREG<span style="color: #757575;">(</span>mode<span style="color: #757575;">))</span>:
+          sys_open<span style="color: #757575;">(</span>collected<span style="color: #757575;">,</span> O_WRONLY|O_CREAT<span style="color: #757575;">,</span> mode<span style="color: #757575;">)</span>;
+          <span style="color: #268bd2;">sys_fchown</span><span style="color: #757575;">(</span><span style="color: #b58900;">wfd</span><span style="color: #757575;">,</span> <span style="color: #b58900;">uid</span><span style="color: #757575;">,</span> <span style="color: #b58900;">gid</span><span style="color: #757575;">)</span>;
+          <span style="color: #268bd2;">sys_fchmod</span><span style="color: #757575;">(</span><span style="color: #b58900;">wfd</span><span style="color: #757575;">,</span> <span style="color: #b58900;">mode</span><span style="color: #757575;">)</span>;
+          do_copy
+        <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>S_ISDIR<span style="color: #757575;">(</span>mode<span style="color: #757575;">))</span>:
+          <span style="color: #586e75;">// </span><span style="color: #586e75;">xxx</span>
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org49c5970"></a>prepare_namespace<br />
+<div class="outline-text-6" id="text-1-3-2-2-2">
+<p>
+若:
+</p>
+<ol class="org-ol">
+<li>存在 initramfs, 且成功加载到 rootfs</li>
+
+<li>initramfs 中包含 /init</li>
+</ol>
+
+<p>
+则执行 userpsace 的 init, 后者会负责 mount root 等动作, 否则, 执行 prepare_namespace
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">prepare_namespace</span>:
+  sys_mount<span style="color: #757575;">(</span><span style="color: #2aa198;">"devfs"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"/dev"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"devfs"</span><span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">root_device_name &#26159; boot &#26102;&#25351;&#23450;&#30340; kernel &#21442;&#25968;</span>
+  ROOT_DEV = name_to_dev_t<span style="color: #757575;">(</span>root_device_name<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>initrd_load<span style="color: #757575;">())</span>:
+    <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">out</span>;  
+  <span style="color: #268bd2;">mount_root</span><span style="color: #757575;">()</span>
+    create_dev<span style="color: #757575;">(</span><span style="color: #2aa198;">"/dev/root"</span><span style="color: #757575;">,</span> ROOT_DEV<span style="color: #757575;">,</span> root_device_name<span style="color: #757575;">)</span>;
+    mount_block_root<span style="color: #757575;">(</span><span style="color: #2aa198;">"/dev/root"</span><span style="color: #757575;">,</span> root_mountflags<span style="color: #757575;">)</span>;
+      <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">fs_names</span> = __getname<span style="color: #757575;">()</span>;
+      <span style="color: #268bd2;">get_fs_names</span><span style="color: #757575;">(</span><span style="color: #b58900;">fs_names</span><span style="color: #757575;">)</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#23581;&#35797;&#25152;&#26377;&#25903;&#25345;&#30340; fstype</span>
+      <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>p = fs_names; *p; p += strlen<span style="color: #757575;">(</span>p<span style="color: #757575;">)</span>+1<span style="color: #757575;">)</span>:
+        err = do_mount_root<span style="color: #757575;">(</span>name<span style="color: #757575;">,</span> p<span style="color: #757575;">,</span> flags<span style="color: #757575;">,</span> root_mount_data<span style="color: #757575;">)</span>;
+        <span style="color: #859900;">if</span> error == 0:
+          <span style="color: #859900;">break</span>;
+  <span style="color: #268bd2; font-weight: bold;">out</span>:
+  sys_mount<span style="color: #757575;">(</span><span style="color: #2aa198;">"."</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"/"</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">,</span> MS_MOVE<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>;
+  sys_chroot<span style="color: #757575;">(</span><span style="color: #2aa198;">"."</span><span style="color: #757575;">)</span>;
+    <span style="color: #268bd2;">set_fs_root</span><span style="color: #757575;">(</span>current-&gt;fs<span style="color: #757575;">,</span> nd.mnt<span style="color: #757575;">,</span> nd.dentry<span style="color: #757575;">)</span>;
+
+<span style="color: #268bd2; font-weight: bold;">do_mount_root</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25226; /dev/root mount &#21040; /root</span>
+  <span style="color: #268bd2;">sys_mount</span><span style="color: #757575;">(</span><span style="color: #b58900;">name</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"/root"</span><span style="color: #757575;">,</span> <span style="color: #b58900;">fs</span><span style="color: #757575;">,</span> <span style="color: #b58900;">flags</span><span style="color: #757575;">,</span> <span style="color: #b58900;">data</span><span style="color: #757575;">)</span>;
+  sys_chdir<span style="color: #757575;">(</span><span style="color: #2aa198;">"/root"</span><span style="color: #757575;">)</span>;
+
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org2e5f923"></a>initrd_load<br />
+<div class="outline-text-6" id="text-1-3-2-2-3">
+<p>
+initrd (initialized RAM disk) 与 initramfs 类似, 都是一种镜像文件, 通过将镜像文件加载到内存做为基本的 root fs.
+</p>
+
+<p>
+两者的主要区别是:
+</p>
+
+<ol class="org-ol">
+<li>initramfs 本质是一个 gzip 压缩的 cpio 文件, 创建和读取都比较简单,
+而且 kernel 读取 initramfs 时不必通过 page cache</li>
+
+<li>initrd 是一个 ext2 的镜像文件, 需要 kernel 支持 ext2, 而且 ext2 的读取需要通过 page cache, 导致内存浪费.</li>
+</ol>
+</div>
+</li>
+
+<li><a id="orgc569eb5"></a>为什么需要 initrd / initramfs<br />
+<div class="outline-text-6" id="text-1-3-2-2-4">
+<ol class="org-ol">
+<li>可以提供一个只读的基本 root fs (比如 android 的作法)</li>
+
+<li>将 kernel 中许多功能编译成模块打包到 initrd 并按需加载中减小 kernel
+的大小和内存占用</li>
+
+<li>linux 安装时可以通过硬件检测将必要的模块打包到 initrd 中</li>
+
+<li><p>
+initramfs 中的 /init 可以接管 prepare_namespace 中关于 mount real
+fs 的工作, 而 mount real fs 越来越复杂, 放在 userspace 更合理一些.
+</p>
+
+<p>
+Quote from:
+<a href="https://www.kernel.org/doc/Documentation/filesystems/ramfs-rootfs-initramfs.txt">https://www.kernel.org/doc/Documentation/filesystems/ramfs-rootfs-initramfs.txt</a>
+</p>
+
+<blockquote>
+<p>
+
+The move to early userspace is necessary because finding and
+mounting the real root device is complex.  Root partitions can span
+multiple devices (raid or separate journal).  They can be out on
+the network (requiring dhcp, setting a specific MAC address,
+logging into a server, etc).  They can live on removable media,
+with dynamically allocated major/minor numbers and persistent
+naming issues requiring a full udev implementation to sort
+out. They can be compressed, encrypted, copy-on-write, loopback
+mounted, strangely partitioned, and so on.
+</p>
+
+<p>
+This kind of complexity (which inevitably includes policy) is
+rightly handled in userspace.
+</p>
+</blockquote></li>
+</ol>
+</div>
+</li>
+
+
+<li><a id="org02dc7cb"></a>为什么需要先 mount 一个 rootfs<br />
+<div class="outline-text-6" id="text-1-3-2-2-5">
+<ol class="org-ol">
+<li>对于需要使用 initramfs 或 initrd 的情形, rootfs 显然是必要的</li>
+
+<li>即使不需要 initramfs, rootfs 也使得后续所有的 mount 相关操作都是一致的, 不需要考虑 "/" 是否存在的情况, 比如 userspace 要 mount 新的
+root 在逻辑上会变的非常简单.</li>
+</ol>
+</div>
+</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org1f9e0d7" class="outline-4">
+<h4 id="org1f9e0d7"><span class="section-number-4">1.3.3</span> path_lookup</h4>
+<div class="outline-text-4" id="text-1-3-3">
+</div>
+<div id="outline-container-orgb8f3e3a" class="outline-5">
+<h5 id="orgb8f3e3a"><span class="section-number-5">1.3.3.1</span> path_lookup</h5>
+<div class="outline-text-5" id="text-1-3-3-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">path_lookup</span>:
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>*name==<span style="color: #2aa198;">'/'</span><span style="color: #757575;">)</span>:
+    nd-&gt;mnt = current-&gt;fs-&gt;rootmnt;
+    nd-&gt;dentry = current-&gt;fs-&gt;root;
+  <span style="color: #859900;">else</span>:
+    nd-&gt;mnt = current-&gt;fs-&gt;pwdmnt;
+    nd-&gt;dentry = current-&gt;fs-&gt;pwd;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#35760;&#24405; symlink &#23618;&#25968;, &#38450;&#27490; follow_link &#26102;&#27515;&#24490;&#29615;</span>
+  current-&gt;total_link_count = 0;
+  <span style="color: #268bd2;">link_path_walk</span><span style="color: #757575;">(</span><span style="color: #b58900;">name</span><span style="color: #757575;">,</span> <span style="color: #b58900;">nd</span><span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgdedaa03" class="outline-5">
+<h5 id="orgdedaa03"><span class="section-number-5">1.3.3.2</span> link_path_walk</h5>
+<div class="outline-text-5" id="text-1-3-3-2">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">link_path_walk</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">ignore leading '/'</span>
+  <span style="color: #859900;">while</span> <span style="color: #757575;">(</span>*name==<span style="color: #2aa198;">'/'</span><span style="color: #757575;">)</span>:
+    name++;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#22914;&#26524; name &#21482;&#21253;&#21547; '/', &#30452;&#25509;&#36820;&#22238;, nd &#20026; path_lookup &#36171;&#20104;&#30340;&#21021;&#20540;</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>*name<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">return</span>
+  inode = nd-&gt;dentry-&gt;d_inode;
+  <span style="color: #859900;">for</span><span style="color: #757575;">(</span>;;<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#38024;&#23545;&#24403;&#21069; path component &#30340;&#26435;&#38480;&#26816;&#26597; (&#21482;&#38656;&#35201; exec &#26435;&#38480;)</span>
+    err = exec_permission_lite<span style="color: #757575;">(</span>inode<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509; inode &#23454;&#29616;&#20102;&#33258;&#24049;&#30340; permission, &#36820;&#22238; -EAGAIN, &#26399;&#26395;</span>
+      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>inode-&gt;i_op &amp;&amp; inode-&gt;i_op-&gt;permission<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">return</span> -EAGAIN;
+      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>current-&gt;fsuid == inode-&gt;i_uid<span style="color: #757575;">)</span>:
+        mode &gt;&gt;= 6;
+      <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>in_group_p<span style="color: #757575;">(</span>inode-&gt;i_gid<span style="color: #757575;">))</span>:
+        mode &gt;&gt;= 3;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">lookup &#26102;&#21482;&#38656;&#35201; exec &#26435;&#38480;</span>
+      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>mode &amp; MAY_EXEC<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">ok</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>err == -EAGAIN<span style="color: #757575;">)</span>:
+      err = permission<span style="color: #757575;">(</span>inode<span style="color: #757575;">,</span> MAY_EXEC<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">if</span> err:
+      <span style="color: #859900;">return</span> err
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20174; name &#20013;&#33719;&#24471;&#19979;&#19968;&#20010; compopent name, &#24182;&#19988;&#22522;&#20110; component name &#35745;&#31639;&#20854; hash</span>
+    <span style="color: #859900;">struct</span> qstr this;
+    hash = init_name_hash<span style="color: #757575;">()</span>;
+    <span style="color: #859900;">do</span> <span style="color: #757575;">{</span>
+      name++;
+      hash = partial_name_hash<span style="color: #757575;">(</span>c<span style="color: #757575;">,</span> hash<span style="color: #757575;">)</span>;
+      c = *<span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">char</span> *<span style="color: #757575;">)</span>name;
+    <span style="color: #757575;">}</span> <span style="color: #859900;">while</span> <span style="color: #757575;">(</span>c &amp;&amp; <span style="color: #757575;">(</span>c != <span style="color: #2aa198;">'/'</span><span style="color: #757575;">))</span>;
+    this.len = name - <span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">char</span> *<span style="color: #757575;">)</span> this.name;
+    this.hash = end_name_hash<span style="color: #757575;">(</span>hash<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span> c<span style="color: #757575;">)</span>:
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#26368;&#21518;&#19968;&#20010; component</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">last_component &#30340;&#20195;&#30721;&#21644;&#38543;&#21518;&#30340;&#20195;&#30721;&#22522;&#26412;&#30456;&#21516;, &#21482;&#26159; lookup &#23436;&#21518;&#20250;&#36820;&#22238;, &#19981;&#20250;&#32487;&#32493;&#24490;&#29615;</span>
+      <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">last_component</span>  
+
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#24320;&#22987; lookup</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#23545;&#20110; . &#19982; .. &#30340;&#22788;&#29702;</span>
+    <span style="color: #859900;">if</span> name == <span style="color: #2aa198;">"."</span>:
+      <span style="color: #859900;">continue</span>
+    <span style="color: #859900;">if</span> name == <span style="color: #2aa198;">".."</span>:
+      follow_dotdot<span style="color: #757575;">(</span>&amp;nd-&gt;mnt<span style="color: #757575;">,</span> &amp;nd-&gt;dentry<span style="color: #757575;">)</span>;
+      inode = nd-&gt;dentry-&gt;d_inode;
+      <span style="color: #859900;">continue</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#30495;&#27491;&#30340; lookup</span>
+    do_lookup<span style="color: #757575;">(</span>nd<span style="color: #757575;">,</span> &amp;this<span style="color: #757575;">,</span> &amp;next<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">next &#20445;&#23384;&#26412;&#27425; lookup &#30340;&#32467;&#26524;</span>
+    follow_mount<span style="color: #757575;">(</span>&amp;next.mnt<span style="color: #757575;">,</span> &amp;next.dentry<span style="color: #757575;">)</span>;
+    inode = next.dentry-&gt;d_inode;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>inode-&gt;i_op-&gt;follow_link<span style="color: #757575;">)</span>:
+      do_follow_link<span style="color: #757575;">(</span>next.dentry<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+      inode = nd-&gt;dentry-&gt;d_inode;
+    <span style="color: #859900;">else</span>:
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#38024;&#23545;&#26412;&#27425; component &#30340; lookup &#23436;&#25104;, &#26356;&#26032; nd</span>
+      nd-&gt;mnt = next.mnt;
+      nd-&gt;dentry = next.dentry;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>inode-&gt;i_op-&gt;lookup<span style="color: #757575;">)</span>:
+      <span style="color: #859900;">break</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgf19cf6e" class="outline-5">
+<h5 id="orgf19cf6e"><span class="section-number-5">1.3.3.3</span> follow_dotdot</h5>
+<div class="outline-text-5" id="text-1-3-3-3">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">follow_dotdot</span>: <span style="color: #757575;">(</span>mnt<span style="color: #757575;">,</span> dentry<span style="color: #757575;">)</span>
+  <span style="color: #859900;">while</span> <span style="color: #757575;">(</span>1<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#24403;&#21069; dentry &#26159; root fs &#30340;&#26681;&#30446;&#24405;</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>*dentry == current-&gt;fs-&gt;root &amp;&amp; *mnt == current-&gt;fs-&gt;rootmnt<span style="color: #757575;">)</span>:
+      <span style="color: #859900;">break</span>                    <span style="color: #586e75;">/* </span><span style="color: #586e75;">ONE</span><span style="color: #586e75;"> */</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#24403;&#21069; dentry &#19981;&#26159;&#20854;&#25152;&#22312;&#30340; fs &#30340;&#26681;&#30446;&#24405;</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>*dentry != <span style="color: #757575;">(</span>*mnt<span style="color: #757575;">)</span>-&gt;mnt_root<span style="color: #757575;">)</span>:
+      *dentry = <span style="color: #757575;">(</span>*dentry<span style="color: #757575;">)</span>-&gt;d_parent;
+      <span style="color: #859900;">break</span>                     <span style="color: #586e75;">/* </span><span style="color: #586e75;">TWO</span><span style="color: #586e75;"> */</span>
+    parent = <span style="color: #757575;">(</span>*mnt<span style="color: #757575;">)</span>-&gt;mnt_parent;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#24403;&#21069; dentry &#25152;&#22312; fs &#26159; root fs</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>parent == *mnt<span style="color: #757575;">)</span>:
+      <span style="color: #859900;">break</span>                     <span style="color: #586e75;">/* </span><span style="color: #586e75;">THREE</span><span style="color: #586e75;"> */</span>
+    *dentry = <span style="color: #757575;">(</span>*mnt<span style="color: #757575;">)</span>-&gt;mnt_mountpoint;
+    *mnt = parent;
+
+  <span style="color: #268bd2;">follow_mount</span><span style="color: #757575;">(</span><span style="color: #b58900;">mnt</span><span style="color: #757575;">,</span> <span style="color: #b58900;">dentry</span><span style="color: #757575;">)</span>;
+</pre>
+</div>
+
+<pre class="example" id="orgc2b1e00">
+1. cd /..
+   在 ONE 处返回
+2. cd /a/b/.., 其中 b 不是 mount point
+   在 TWO 处返回
+3. cd /a/b/.., 其中 b 是 mount point
+   首次进入循环时, mnt 被设置为其 parent, dentry 被设置为 parent-&gt;mnt_mountpoint,
+   即 parent mnt 中真正的 /a/b. 第二次进入循环时, 在 TWO 返回
+</pre>
+</div>
+
+<ol class="org-ol">
+<li><a id="orgede14b7"></a>关于 follow_dotdot 最后的 follow_mount<br />
+<div class="outline-text-6" id="text-1-3-3-3-1">
+<p>
+一般情况下, follow_mount 是无意义的操作: 上面提到的三个例子都不需要使用 follow_mount. 但考虑下面的例子:
+</p>
+
+<pre class="example" id="org61866c5">
+$&gt; mkdir -p a/b
+$&gt; mkdir c
+$&gt; mkdir d
+$&gt; sudo mount -o bind c a/b
+
+$&gt; cd a/b
+$&gt; stat ..
+  File: '..'
+  Size: 4096            Blocks: 8          IO Block: 4096   directory
+Device: 802h/2050d      Inode: 21717951    Links: 3
+
+$&gt; sudo mount -o bind ~/d ~/a
+
+$&gt; stat ..
+~/a/b@dell-work&gt; stat ..
+  File: '..'
+  Size: 4096            Blocks: 8          IO Block: 4096   directory
+Device: 802h/2050d      Inode: 21725293    Links: 2
+</pre>
+
+<p>
+如果没有上面那句 follow_mount, 最后一次 stat 的结果会是 21717951 (a)
+而不是 21725293 (d)
+</p>
+</div>
+</li>
+</ol>
+</div>
+
+<div id="outline-container-orgbceeb3e" class="outline-5">
+<h5 id="orgbceeb3e"><span class="section-number-5">1.3.3.4</span> do_lookup</h5>
+<div class="outline-text-5" id="text-1-3-3-4">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">do_lookup</span>:
+  <span style="color: #859900;">struct</span> <span style="color: #b58900;">vfsmount</span> *<span style="color: #268bd2;">mnt</span> = nd-&gt;mnt;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#26597;&#25214; dcache, &#20854;&#20013; dentry+qstr &#26500;&#25104; hash key</span>
+  <span style="color: #859900;">struct</span> <span style="color: #b58900;">dentry</span> *<span style="color: #268bd2;">dentry</span> = __d_lookup<span style="color: #757575;">(</span>nd-&gt;dentry<span style="color: #757575;">,</span> name<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>dentry<span style="color: #757575;">)</span>:
+    dentry = real_lookup<span style="color: #757575;">(</span>nd-&gt;dentry<span style="color: #757575;">,</span> name<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+      result = dir-&gt;i_op-&gt;lookup<span style="color: #757575;">(</span>dir<span style="color: #757575;">,</span> dentry<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org7df4960" class="outline-5">
+<h5 id="org7df4960"><span class="section-number-5">1.3.3.5</span> follow_mount</h5>
+<div class="outline-text-5" id="text-1-3-3-5">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">follow_mount</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36825;&#37324;&#26159;&#19968;&#20010;&#24490;&#29615;, &#22240;&#20026;&#21487;&#33021;&#26377;&#22810;&#20010; fs &#34987;&#20808;&#21518; mount &#21040;&#21516;&#19968;&#20010;&#30446;&#24405;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36890;&#36807;&#36825;&#20010;&#24490;&#29615;, follow_mount &#20250;&#36820;&#22238;&#26368;&#21518;&#19968;&#27425; mount &#23545;&#24212;&#30340; mnt &#21644; dentry</span>
+  <span style="color: #859900;">while</span> <span style="color: #757575;">(</span>d_mountpoint<span style="color: #757575;">(</span>*dentry<span style="color: #757575;">))</span>:
+           <span style="color: #859900;">return</span> dentry-&gt;d_mounted;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">vfsmount</span> *<span style="color: #268bd2;">mounted</span> = lookup_mnt<span style="color: #757575;">(</span>*mnt<span style="color: #757575;">,</span> *dentry<span style="color: #757575;">)</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">lookup_mnt &#20174;&#19968;&#20010;&#20840;&#23616;&#30340; mount_hashtable &#26597;&#25214;&#23545;&#24212;&#30340; vfsmount</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20854;&#20013; hash key &#20026; mnt+dentry</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">mounted &#20026;&#25214;&#21040;&#30340; vfsmount, mounted &#30340; parent &#24517;&#23450;&#26159; mnt, &#19988;</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">mounted &#30340; mnt_point &#24517;&#23450;&#26159; dentry</span>
+    *mnt = mounted;
+    *dentry = mounted-&gt;mnt_root;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgd810770" class="outline-5">
+<h5 id="orgd810770"><span class="section-number-5">1.3.3.6</span> do_follow_link</h5>
+<div class="outline-text-5" id="text-1-3-3-6">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">do_follow_link</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">total_link_count &#38480;&#21046;&#20102;&#19968;&#20010;&#23436;&#25972;&#30340; link_path_walk &#26368;&#22810;&#33021;&#22788;&#29702; 40 &#27425; symlink</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>current-&gt;total_link_count &gt;= 40<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">return</span> -ELOOP
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">current-&gt;link_count &#29992;&#26469;&#38480;&#21046; nested symlink, &#22240;&#20026; do_follow_link &#20250;&#36882;&#24402;&#30340;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#30340;&#35843;&#29992; link_path_walk, &#21518;&#32773;&#21487;&#33021;&#20250;&#20877;&#27425;&#35843;&#29992;&#21040; do_follow_link</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>current-&gt;link_count &gt;= 5<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">return</span> -ELOOP
+  current-&gt;link_count++;
+  current-&gt;total_link_count++;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">i_op-&gt;follow_link &#38656;&#35201;&#23558; link &#30340;&#32467;&#26524;&#36890;&#36807; nd_set_link &#20445;&#23384;&#36215;&#26469;,</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21518;&#32493;&#30340; nd_get_link &#21487;&#20197;&#35835;&#21040;&#36825;&#20010;&#32467;&#26524;</span>
+  dentry-&gt;d_inode-&gt;i_op-&gt;follow_link<span style="color: #757575;">(</span>dentry<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+  <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">link</span> = nd_get_link<span style="color: #757575;">(</span>nd<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">follow_link &#25343;&#21040;&#23545;&#24212;&#30340; link &#21518;, &#36882;&#24402;&#30340;&#35843;&#29992; link_path_walk</span>
+  <span style="color: #268bd2;">link_path_walk</span><span style="color: #757575;">(</span><span style="color: #b58900;">link</span><span style="color: #757575;">,</span> <span style="color: #b58900;">nd</span><span style="color: #757575;">)</span>;
+  current-&gt;link_count--;
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org3ff30cd" class="outline-4">
+<h4 id="org3ff30cd"><span class="section-number-4">1.3.4</span> open</h4>
+<div class="outline-text-4" id="text-1-3-4">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">sys_open</span>:
+  fd = get_unused_fd<span style="color: #757575;">()</span>;
+  <span style="color: #859900;">struct</span> <span style="color: #b58900;">file</span> *<span style="color: #268bd2;">f</span> = filp_open<span style="color: #757575;">(</span>tmp<span style="color: #757575;">,</span> flags<span style="color: #757575;">,</span> mode<span style="color: #757575;">)</span>;
+    <span style="color: #268bd2;">open_namei</span><span style="color: #757575;">(</span><span style="color: #b58900;">filename</span><span style="color: #757575;">,</span> <span style="color: #b58900;">namei_flags</span><span style="color: #757575;">,</span> <span style="color: #b58900;">mode</span><span style="color: #757575;">,</span> &amp;nd<span style="color: #757575;">)</span>;
+      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span><span style="color: #757575;">(</span>flag &amp; O_CREAT<span style="color: #757575;">))</span>:
+        path_lookup<span style="color: #757575;">(</span>pathname<span style="color: #757575;">,</span> lookup_flags<span style="color: #757575;">(</span>flag<span style="color: #757575;">)</span>|LOOKUP_OPEN<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+        <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">ok</span>;
+      <span style="color: #859900;">else</span>:
+        path_lookup<span style="color: #757575;">(</span>pathname<span style="color: #757575;">,</span> LOOKUP_PARENT|LOOKUP_OPEN|LOOKUP_CREATE<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+        <span style="color: #268bd2;">vfs_create</span><span style="color: #757575;">(</span>dir-&gt;d_inode<span style="color: #757575;">,</span> <span style="color: #b58900;">dentry</span><span style="color: #757575;">,</span> <span style="color: #b58900;">mode</span><span style="color: #757575;">,</span> <span style="color: #b58900;">nd</span><span style="color: #757575;">)</span>;
+          <span style="color: #268bd2;">may_create</span><span style="color: #757575;">(</span><span style="color: #b58900;">dir</span><span style="color: #757575;">,</span> <span style="color: #b58900;">dentry</span><span style="color: #757575;">,</span> <span style="color: #b58900;">nd</span><span style="color: #757575;">)</span>;
+          <span style="color: #586e75;">// </span><span style="color: #586e75;">i_op-&gt;create &#38656;&#35201;&#26377;&#23450;&#20041;</span>
+          <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>dir-&gt;i_op || <span style="color: #b58900; font-weight: bold;">!</span>dir-&gt;i_op-&gt;create<span style="color: #757575;">)</span>:
+            <span style="color: #859900;">return</span> -EACCES;
+          dir-&gt;i_op-&gt;create<span style="color: #757575;">(</span>dir<span style="color: #757575;">,</span> dentry<span style="color: #757575;">,</span> mode<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+          <span style="color: #586e75;">// </span><span style="color: #586e75;">for dnotify</span>
+          <span style="color: #268bd2;">inode_dir_notify</span><span style="color: #757575;">(</span><span style="color: #b58900;">dir</span><span style="color: #757575;">,</span> <span style="color: #b58900;">DN_CREATE</span><span style="color: #757575;">)</span>;
+      <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">ok</span>:
+    ok:
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">check permissions </span>
+      may_open<span style="color: #757575;">()</span>
+        <span style="color: #268bd2;">permission</span><span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">dentry_open</span><span style="color: #757575;">(</span>nd.dentry<span style="color: #757575;">,</span> nd.mnt<span style="color: #757575;">,</span> <span style="color: #b58900;">flags</span><span style="color: #757575;">)</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#26681;&#25454; dentry &#29983;&#25104; file</span>
+      f = get_empty_filp<span style="color: #757575;">()</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">f-&gt;f_mapping &#26469;&#33258; inode-&gt;i_mapping</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">f_mapping &#30340;&#31867;&#22411;&#26159; address_space, f_mapping-&gt;a_ops</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21253;&#25324;&#30495;&#27491;&#30340;&#20174;&#35774;&#22791;&#35835;&#20889;&#25968;&#25454;&#30340;&#20989;&#25968;: &#20363;&#22914; readpage, writepage, direct_IO &#31561;</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20855;&#20307;&#21442;&#32771; pagecache &#21450; address_space_operations</span>
+      f-&gt;f_mapping = inode-&gt;i_mapping;
+      f-&gt;f_dentry = dentry;
+      f-&gt;f_vfsmnt = mnt;
+      f-&gt;f_pos = 0;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">f-&gt;f_op &#26469;&#33258; inode-&gt;i_fop</span>
+      f-&gt;f_op = fops_get<span style="color: #757575;">(</span>inode-&gt;i_fop<span style="color: #757575;">)</span>;
+      f-&gt;f_op-&gt;open<span style="color: #757575;">(</span>inode<span style="color: #757575;">,</span>f<span style="color: #757575;">)</span>;
+
+  <span style="color: #268bd2;">fd_install</span><span style="color: #757575;">(</span><span style="color: #b58900;">fd</span><span style="color: #757575;">,</span> <span style="color: #b58900;">f</span><span style="color: #757575;">)</span>;
+    files-&gt;fd[fd] = file;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org2dd00aa" class="outline-4">
+<h4 id="org2dd00aa"><span class="section-number-4">1.3.5</span> readdir</h4>
+</div>
+
+<div id="outline-container-orgcee581d" class="outline-4">
+<h4 id="orgcee581d"><span class="section-number-4">1.3.6</span> write</h4>
+<div class="outline-text-4" id="text-1-3-6">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">sys_write</span>:
+  file = fget_light<span style="color: #757575;">(</span>fd<span style="color: #757575;">,</span> &amp;fput_needed<span style="color: #757575;">)</span>;
+    file = files-&gt;fd[fd];
+  <span style="color: #b58900;">loff_t</span> <span style="color: #268bd2;">pos</span> = file_pos_read<span style="color: #757575;">(</span>file<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> file-&gt;f_pos;
+  ret = vfs_write<span style="color: #757575;">(</span>file<span style="color: #757575;">,</span> buf<span style="color: #757575;">,</span> count<span style="color: #757575;">,</span> &amp;pos<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span><span style="color: #757575;">(</span>file-&gt;f_mode &amp; FMODE_WRITE<span style="color: #757575;">))</span>:
+      <span style="color: #859900;">return</span> -EBADF;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">f_op-&gt;write &#38656;&#35201;&#26377;&#23450;&#20041;</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>file-&gt;f_op || <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>file-&gt;f_op-&gt;write &amp;&amp; <span style="color: #b58900; font-weight: bold;">!</span>file-&gt;f_op-&gt;aio_write<span style="color: #757575;">))</span>:
+      <span style="color: #859900;">return</span> -EINVAL;
+    ret = security_file_permission <span style="color: #757575;">(</span>file<span style="color: #757575;">,</span> MAY_WRITE<span style="color: #757575;">)</span>;
+    ret = file-&gt;f_op-&gt;write<span style="color: #757575;">(</span>file<span style="color: #757575;">,</span> buf<span style="color: #757575;">,</span> count<span style="color: #757575;">,</span> pos<span style="color: #757575;">)</span>;
+  <span style="color: #268bd2;">file_pos_write</span><span style="color: #757575;">(</span><span style="color: #b58900;">file</span><span style="color: #757575;">,</span> <span style="color: #b58900;">pos</span><span style="color: #757575;">)</span>;
+    file-&gt;f_pos = pos;
+</pre>
+</div>
+
+<p>
+write 时并没有像 open 那样有类似 permission() 的权限检查. 但会有
+security_file_permission 的检查, 例如 selinux
+</p>
+
+<p>
+f_op-&gt;write 一般情况下为 generic_file_write, 后者会考虑 pagecache, 并最终调用到 a_ops 中的 writepage 等回调函数. 
+</p>
+</div>
+</div>
+
+<div id="outline-container-org13a8d38" class="outline-4">
+<h4 id="org13a8d38"><span class="section-number-4">1.3.7</span> read</h4>
+<div class="outline-text-4" id="text-1-3-7">
+<p>
+read 与 write 几乎完全一样, 只是把 f_op-&gt;write 换成 f_op-&gt;read
+</p>
+</div>
+</div>
+
+<div id="outline-container-org7231cde" class="outline-4">
+<h4 id="org7231cde"><span class="section-number-4">1.3.8</span> permission</h4>
+<div class="outline-text-4" id="text-1-3-8">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">permission</span><span style="color: #757575;">()</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>inode-&gt;i_op &amp;&amp; inode-&gt;i_op-&gt;permission<span style="color: #757575;">)</span>:
+    inode-&gt;i_op-&gt;permission<span style="color: #757575;">()</span>
+  <span style="color: #859900;">else</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">generic permission check for owner, group, other, ...</span>
+    generic_permission<span style="color: #757575;">()</span>  
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">generic_permission</span>:
+  retval = generic_permission<span style="color: #757575;">(</span>inode<span style="color: #757575;">,</span> submask<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">666 &#25110; 751 &#31561;</span>
+  <span style="color: #b58900;">umode_t</span> <span style="color: #268bd2;">mode</span> = inode-&gt;i_mode;
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>current-&gt;fsuid == inode-&gt;i_uid<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">current &#36827;&#31243;&#26159;&#25991;&#20214;&#30340; owner, &#21482;&#21462; mode &#20013;&#21644; owner &#30456;&#20851;&#30340;&#37096;&#20998;</span>
+    mode &gt;&gt;= 6;
+  <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>in_group_p<span style="color: #757575;">(</span>inode-&gt;i_gid<span style="color: #757575;">))</span>:
+    mode &gt;&gt;= 3;
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(((</span>mode &amp; mask &amp; <span style="color: #757575;">(</span>MAY_READ|MAY_WRITE|MAY_EXEC<span style="color: #757575;">))</span> == mask<span style="color: #757575;">))</span>:
+    <span style="color: #859900;">return</span> 0;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21363;&#20351;&#21069;&#38754;&#30340;&#26816;&#26597;&#22833;&#36133;, capability &#20063;&#21487;&#20197; override &#21069;&#38754;&#30340;&#32467;&#26524; (&#27604;&#22914; root &#29992;&#25143;)</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span><span style="color: #757575;">(</span>mask &amp; MAY_EXEC<span style="color: #757575;">)</span> || <span style="color: #757575;">(</span>inode-&gt;i_mode &amp; S_IXUGO<span style="color: #757575;">)</span> || S_ISDIR<span style="color: #757575;">(</span>inode-&gt;i_mode<span style="color: #757575;">))</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>capable<span style="color: #757575;">(</span>CAP_DAC_OVERRIDE<span style="color: #757575;">))</span>
+      <span style="color: #859900;">return</span> 0;
+
+  <span style="color: #859900;">return</span> -EACCES
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509; i_op-&gt;permission &#25110; generic_permission &#27809;&#36890;&#36807;, &#21017;&#30452;&#25509;&#25253;&#38169;</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>retval<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">return</span> retval;  
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509;&#19978;&#38754;&#30340;&#26816;&#26597;&#36890;&#36807;, &#36827;&#34892;&#36827;&#19968;&#27493;&#30340;&#26816;&#26597; (&#20363;&#22914; selinux)</span>
+  <span style="color: #859900;">return</span> security_inode_permission<span style="color: #757575;">(</span>inode<span style="color: #757575;">,</span> mask<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgec3ede3" class="outline-4">
+<h4 id="orgec3ede3"><span class="section-number-4">1.3.9</span> dentry cache</h4>
+<div class="outline-text-4" id="text-1-3-9">
+</div>
+<div id="outline-container-org877e71d" class="outline-5">
+<h5 id="org877e71d"><span class="section-number-5">1.3.9.1</span> dentry_operations</h5>
+<div class="outline-text-5" id="text-1-3-9-1">
+</div>
+<ol class="org-ol">
+<li><a id="org8b75524"></a>d_revalidate<br />
+<div class="outline-text-6" id="text-1-3-9-1-1">
+<p>
+若 dcache 中的某个 dentry 实现了 d_op-&gt;d_revalidate, 则每次要重用
+dcache 中的该 dentry 之前, 都需要调用 d_revalidate, 以确认该 dentry 是
+valid (或 updated)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">do_lookup</span>:
+  <span style="color: #859900;">struct</span> <span style="color: #b58900;">dentry</span> *<span style="color: #268bd2;">dentry</span> = __d_lookup<span style="color: #757575;">(</span>nd-&gt;dentry<span style="color: #757575;">,</span> name<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>dentry-&gt;d_op &amp;&amp; dentry-&gt;d_op-&gt;d_revalidate<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">need_revalidate</span>;
+
+<span style="color: #268bd2; font-weight: bold;">need_revalidate</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">d_revalidate &#36820;&#22238; 1 &#34920;&#31034; valid, &#36820;&#22238; 0 &#34920;&#31034; dentry &#24050;&#32463;&#26080;&#25928;, &#38656;&#35201; real_lookup</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>dentry-&gt;d_op-&gt;d_revalidate<span style="color: #757575;">(</span>dentry<span style="color: #757575;">,</span> nd<span style="color: #757575;">))</span>:
+    <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">done</span>;
+  <span style="color: #268bd2;">d_invalidate</span><span style="color: #757575;">(</span><span style="color: #b58900;">dentry</span><span style="color: #757575;">)</span>
+  <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">need_lookup</span>;
+
+<span style="color: #268bd2; font-weight: bold;">need_lookup</span>:
+  dentry = real_lookup<span style="color: #757575;">(</span>nd-&gt;dentry<span style="color: #757575;">,</span> name<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+</pre>
+</div>
+
+<p>
+d_revalidate 一个例子是 procfs 中的 proc_pid_lookup 返回的对应 pid 的
+dentry, 这些 dentry 需要通过 pid_revalidate 进行 revalidate
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">pid_revalidate</span>:
+  <span style="color: #859900;">struct</span> <span style="color: #b58900;">inode</span> *<span style="color: #268bd2;">inode</span> = dentry-&gt;d_inode;
+  <span style="color: #859900;">struct</span> <span style="color: #b58900;">task_struct</span> *<span style="color: #268bd2;">task</span> = proc_task<span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>pid_alive<span style="color: #757575;">(</span>task<span style="color: #757575;">))</span>:
+    <span style="color: #859900;">return</span> 1
+  <span style="color: #859900;">else</span>:
+    <span style="color: #859900;">return</span> 0
+</pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgf940945" class="outline-4">
+<h4 id="orgf940945"><span class="section-number-4">1.3.10</span> page cache</h4>
+<div class="outline-text-4" id="text-1-3-10">
+<p>
+如果一个文件系统想要使用 page cache, 则必须使用 generic_file_read 做为其 f_op-&gt;read.
+</p>
+
+<p>
+generic_file_read 是大部分文件系统中默认的 f_op-&gt;read 的实现. 这个函数涉及到 IO 的大部分概念, 比如 page cache, specific file system, io
+scheduler 及 blk device driver
+</p>
+
+<p>
+从 vfs 的角度出发, 只讨论 generic_file_read 和 page cache 相关的部分,
+其它的主要是 IO 的概念 (比如 page 与 blocknr 的映射, bio, io_scheduler).
+</p>
+</div>
+
+<div id="outline-container-org7d57228" class="outline-5">
+<h5 id="org7d57228"><span class="section-number-5">1.3.10.1</span> generic_file_read 如何使用 page cache?</h5>
+<div class="outline-text-5" id="text-1-3-10-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">generic_file_read</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">file</span> *<span style="color: #268bd2;">filp</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> <span style="color: #268bd2;">__user</span> *buf<span style="color: #757575;">,</span> <span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">count</span><span style="color: #757575;">,</span> <span style="color: #b58900;">loff_t</span> *<span style="color: #268bd2;">ppos</span><span style="color: #757575;">)</span>:
+  <span style="color: #859900;">struct</span> iovec local_iov = <span style="color: #757575;">{</span> .iov_base = buf<span style="color: #757575;">,</span> .iov_len = count <span style="color: #757575;">}</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">1 &#34920;&#31034;&#21482;&#26377;&#19968;&#20010; iovec</span>
+  __generic_file_aio_read<span style="color: #757575;">(</span>&amp;kiocb<span style="color: #757575;">,</span> &amp;local_iov<span style="color: #757575;">,</span> 1<span style="color: #757575;">,</span> ppos<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">nr_segs &#20026; 1</span>
+  <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>seg = 0; seg &lt; nr_segs; seg++<span style="color: #757575;">)</span>:
+    read_descriptor_t desc;
+    desc.written = 0;
+    desc.arg.buf = iov[seg].iov_base;
+    desc.count = iov[seg].iov_len;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">file_read_actor &#26159;&#19968;&#20010;&#20989;&#25968;&#25351;&#38024;, &#36127;&#36131;&#25214;&#21040;&#25968;&#25454;&#21518;&#23558;&#25968;&#25454;&#22797;&#21046;&#21040; desc.arg.buf</span>
+    <span style="color: #268bd2;">do_generic_file_read</span><span style="color: #757575;">(</span><span style="color: #b58900;">filp</span><span style="color: #757575;">,</span><span style="color: #b58900;">ppos</span><span style="color: #757575;">,</span>&amp;desc<span style="color: #757575;">,</span><span style="color: #b58900;">file_read_actor</span><span style="color: #757575;">)</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">mapping &#20013;&#25214;&#21040; page cache &#23545;&#24212;&#30340; radix tree, filp &#25214;&#21040;&#35201;&#35835;&#30340;&#25991;&#20214;, desc &#25214;&#21040;&#30446;&#30340; buf</span>
+      <span style="color: #268bd2;">do_generic_mapping_read</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">address_space</span> *<span style="color: #268bd2;">mapping</span><span style="color: #757575;">,</span>
+                        <span style="color: #859900;">struct</span> <span style="color: #b58900;">file_ra_state</span> *<span style="color: #268bd2;">_ra</span><span style="color: #757575;">,</span>
+                        <span style="color: #859900;">struct</span> <span style="color: #b58900;">file</span> *<span style="color: #268bd2;">filp</span><span style="color: #757575;">,</span>
+                        <span style="color: #b58900;">loff_t</span> *<span style="color: #268bd2;">ppos</span><span style="color: #757575;">,</span>
+                        <span style="color: #b58900;">read_descriptor_t</span> *<span style="color: #268bd2;">desc</span><span style="color: #757575;">,</span>
+                        <span style="color: #b58900;">read_actor_t</span> <span style="color: #268bd2;">actor</span><span style="color: #757575;">)</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">&#26681;&#25454; ppos &#31639;&#20986;&#23545;&#24212;&#30340; page &#30340; index, page cache &#26159;&#20197; page &#32452;&#32455;&#30340; (4K)</span>
+        index = *ppos &gt;&gt; PAGE_CACHE_SHIFT;
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">&#22312; address_space &#20013;&#26597;&#25214; page</span>
+        page = find_get_page<span style="color: #757575;">(</span>mapping<span style="color: #757575;">,</span> index<span style="color: #757575;">)</span>;
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>page<span style="color: #757575;">)</span>:
+          <span style="color: #586e75;">// </span><span style="color: #586e75;">&#35843;&#29992; file_read_actor &#22797;&#21046;&#25968;&#25454;&#21040; desc.arg.buf, &#23436;&#25104;&#27492;&#27425; read</span>
+          actor<span style="color: #757575;">(</span>desc<span style="color: #757575;">,</span> page<span style="color: #757575;">,</span> offset<span style="color: #757575;">,</span> nr<span style="color: #757575;">)</span>;
+          <span style="color: #859900;">return</span>
+        <span style="color: #859900;">else</span>:
+          <span style="color: #586e75;">// </span><span style="color: #586e75;">page cache miss, &#35843;&#29992; a_ops-&gt;readpage, &#36825;&#20010;&#20989;&#25968;&#26159;&#21644;&#20855;&#20307;&#25991;</span>
+          <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20214;&#31995;&#32479;&#30456;&#20851;&#25991;&#20214;&#31995;&#32479;&#30340;&#20027;&#35201;&#21151;&#33021;&#26159;&#25214;&#21040; page &#19982; dlk device</span>
+          <span style="color: #586e75;">// </span><span style="color: #586e75;">driver &#30340; local block number &#30340;&#23545;&#24212;&#20851;&#31995;(&#25152;&#35859;&#30340; mapping</span>
+          <span style="color: #586e75;">// </span><span style="color: #586e75;">layer), &#20854;&#23427;&#30340;&#24037;&#20316;&#30001;&#36890;&#29992;&#30340; mpage_readpage &#23436;&#25104;. refers to</span>
+          <span style="color: #586e75;">// </span><span style="color: #586e75;">[[IO.org]]</span>
+          mapping-&gt;a_ops-&gt;readpage<span style="color: #757575;">(</span>filp<span style="color: #757575;">,</span> page<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgc3f1866" class="outline-5">
+<h5 id="orgc3f1866"><span class="section-number-5">1.3.10.2</span> radix tree</h5>
+<div class="outline-text-5" id="text-1-3-10-2">
+<p>
+page cache 使用 radix tree 来组织, 目的是根据 page index 可以很快的找到内存中对应的 page.
+</p>
+
+<p>
+这个 radix tree 每级有 64 个 slots (2^6), 初始情况下 radix tree 高度为
+1 (只有 64 个 slot), 高度随着 page index 的变大而变大, 32 位的 page
+index 最多需要一个 6 层的 radix tree (2+6*5)
+</p>
+
+<p>
+radix tree 的 leaf node 保存着 page 的指针 (intermediate node 不保存),
+所以 1 层的 radix tree 能表示的最大文件大小是 64*4k=256K, 2 层可以表示
+256k*64=16M, 以此类推, 最大为 16T
+</p>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org97d2d59" class="outline-3">
+<h3 id="org97d2d59"><span class="section-number-3">1.4</span> File Systems</h3>
+<div class="outline-text-3" id="text-1-4">
+</div>
+<div id="outline-container-org6b7f4bc" class="outline-4">
+<h4 id="org6b7f4bc"><span class="section-number-4">1.4.1</span> procfs</h4>
+<div class="outline-text-4" id="text-1-4-1">
+</div>
+<div id="outline-container-org0b6587c" class="outline-5">
+<h5 id="org0b6587c"><span class="section-number-5">1.4.1.1</span> init</h5>
+<div class="outline-text-5" id="text-1-4-1-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">proc_root_init</span>:
+  register_filesystem<span style="color: #757575;">(</span>&amp;proc_fs_type<span style="color: #757575;">)</span>;
+  kern_mount<span style="color: #757575;">(</span>&amp;proc_fs_type<span style="color: #757575;">)</span>;
+  <span style="color: #268bd2;">proc_misc_init</span><span style="color: #757575;">()</span>;
+  proc_mkdir<span style="color: #757575;">(</span><span style="color: #2aa198;">"net"</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>;
+  <span style="color: #268bd2;">proc_mkdir</span><span style="color: #757575;">(</span><span style="color: #b58900;">xxx</span><span style="color: #757575;">)</span>
+  ...
+</pre>
+</div>
+</div>
+
+<ol class="org-ol">
+<li><a id="org62da248"></a>kern_mount<br />
+<div class="outline-text-6" id="text-1-4-1-1-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">proc_get_sb</span>:
+  sb = type-&gt;get_sb<span style="color: #757575;">(</span>type<span style="color: #757575;">,</span> flags<span style="color: #757575;">,</span> name<span style="color: #757575;">,</span> data<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">sb &#30340; root inode &#26159;&#19968;&#20010;&#23545;&#24212;&#30340; proc_root &#36825;&#20010; proc_dir_entry &#30340; inode</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20027;&#35201;&#30340;, &#23427;&#30340; i_op &#21644; i_fop &#30452;&#25509;&#26469;&#33258; proc_root</span>
+  sb-&gt;s_root = proc_get_inode<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> PROC_ROOT_INO<span style="color: #757575;">,</span> &amp;proc_root<span style="color: #757575;">)</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">iget &#20174; inodecache &#26102;&#26597;&#25214;, &#33509;&#27809;&#25214;&#21040;, &#35843;&#29992; alloc_inode</span>
+  inode = iget<span style="color: #757575;">(</span>sb<span style="color: #757575;">,</span> ino<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>de-&gt;proc_iops<span style="color: #757575;">)</span>:
+    inode-&gt;i_op = de-&gt;proc_iops;
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>de-&gt;proc_fops<span style="color: #757575;">)</span>:
+    inode-&gt;i_fop = de-&gt;proc_fops;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org63aa11c"></a>proc_misc_init<br />
+<div class="outline-text-6" id="text-1-4-1-1-2">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #b58900;">proc_misc_init</span>
+  <span style="color: #268bd2;">create_proc_read_entry</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"loadavg"</span><span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">,</span> <span style="color: #b58900;">loadavg_read_proc</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+  proc_symlink<span style="color: #757575;">(</span><span style="color: #2aa198;">"mounts"</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"self/mounts"</span><span style="color: #757575;">)</span>;
+  create_seq_entry<span style="color: #757575;">(</span><span style="color: #2aa198;">"cpuinfo"</span><span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> &amp;proc_cpuinfo_operations<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+  entry = create_proc_entry<span style="color: #757575;">(</span><span style="color: #2aa198;">"kmsg"</span><span style="color: #757575;">,</span> S_IRUSR<span style="color: #757575;">,</span> &amp;proc_root<span style="color: #757575;">)</span>;
+  entry-&gt;proc_fops = &amp;proc_kmsg_operations;
+</pre>
+</div>
+</div>
+
+<ol class="org-ol">
+<li><a id="org3f48e6e"></a>proc_dir_entry<br />
+<div class="outline-text-7" id="text-1-4-1-1-2-1">
+<p>
+proc_dir_entry 相当于虚拟的 /proc 目录树中的结点
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">struct</span> <span style="color: #b58900;">proc_dir_entry</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">low_ino</span>;
+    <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">short</span> <span style="color: #268bd2;">namelen</span>;
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">name</span>;
+    <span style="color: #b58900;">mode_t</span> <span style="color: #268bd2;">mode</span>;
+    <span style="color: #b58900;">nlink_t</span> <span style="color: #268bd2;">nlink</span>;
+    <span style="color: #b58900;">uid_t</span> <span style="color: #268bd2;">uid</span>;
+    <span style="color: #b58900;">gid_t</span> <span style="color: #268bd2;">gid</span>;
+    <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">long</span> <span style="color: #268bd2;">size</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">inode_operations</span> * <span style="color: #268bd2;">proc_iops</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">file_operations</span> * <span style="color: #268bd2;">proc_fops</span>;
+    <span style="color: #b58900;">get_info_t</span> *<span style="color: #268bd2;">get_info</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">module</span> *<span style="color: #268bd2;">owner</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">proc_dir_entry</span> *<span style="color: #268bd2;">next</span><span style="color: #757575;">,</span> *<span style="color: #268bd2;">parent</span><span style="color: #757575;">,</span> *<span style="color: #268bd2;">subdir</span>;
+    <span style="color: #b58900;">void</span> *<span style="color: #268bd2;">data</span>;
+    <span style="color: #b58900;">read_proc_t</span> *<span style="color: #268bd2;">read_proc</span>;
+    <span style="color: #b58900;">write_proc_t</span> *<span style="color: #268bd2;">write_proc</span>;
+    <span style="color: #b58900;">atomic_t</span> <span style="color: #268bd2;">count</span>;     <span style="color: #586e75;">/* </span><span style="color: #586e75;">use count</span><span style="color: #586e75;"> */</span>
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">deleted</span>;        <span style="color: #586e75;">/* </span><span style="color: #586e75;">delete flag</span><span style="color: #586e75;"> */</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+</div>
+
+<ol class="org-ol">
+<li><a id="org981662e"></a>proc_root<br />
+<div class="outline-text-8" id="text-1-4-1-1-2-1-1">
+<p>
+proc_root 这个特殊的 proc_dir_entry 对应于 "/proc":
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">struct</span> <span style="color: #b58900;">proc_dir_entry</span> <span style="color: #268bd2;">proc_root</span> = <span style="color: #757575;">{</span>
+    .low_ino    = PROC_ROOT_INO<span style="color: #757575;">,</span> 
+    .namelen    = 5<span style="color: #757575;">,</span> 
+    .name       = <span style="color: #2aa198;">"/proc"</span><span style="color: #757575;">,</span>
+    .mode       = S_IFDIR | S_IRUGO | S_IXUGO<span style="color: #757575;">,</span> 
+    .nlink      = 2<span style="color: #757575;">,</span> 
+    .proc_iops  = &amp;proc_root_inode_operations<span style="color: #757575;">,</span> 
+    .proc_fops  = &amp;proc_root_operations<span style="color: #757575;">,</span>
+    .parent     = &amp;proc_root<span style="color: #757575;">,</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+
+<p>
+上面的 do_kern_mount 可以看到, sb-&gt;mnt_root 这个 root inode 的主要信息都来自 proc_root
+</p>
+</div>
+</li>
+</ol>
+</li>
+
+<li><a id="orgc75b6a0"></a>create_proc_entry<br />
+<div class="outline-text-7" id="text-1-4-1-1-2-2">
+<p>
+create_proc_entry, 可以简单理解为: 以 hard code 的形式在内存中建立
+/proc 目录树.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">create_proc_entry</span>:
+  ent = proc_create<span style="color: #757575;">(</span>&amp;parent<span style="color: #757575;">,</span>name<span style="color: #757575;">,</span>mode<span style="color: #757575;">,</span>nlink<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>S_ISDIR<span style="color: #757575;">(</span>mode<span style="color: #757575;">))</span>:
+    ent-&gt;proc_fops = &amp;proc_dir_operations;
+    ent-&gt;proc_iops = &amp;proc_dir_inode_operations;
+  <span style="color: #268bd2;">proc_register</span><span style="color: #757575;">(</span><span style="color: #b58900;">parent</span><span style="color: #757575;">,</span> <span style="color: #b58900;">ent</span><span style="color: #757575;">)</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">inode number &#26159;&#20020;&#26102;&#20998;&#37197;&#30340;</span>
+    i = get_inode_number<span style="color: #757575;">()</span>;
+    dp-&gt;low_ino = i;
+    dp-&gt;next = dir-&gt;subdir;
+    dp-&gt;parent = dir;
+    dir-&gt;subdir = dp;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>S_ISDIR<span style="color: #757575;">(</span>dp-&gt;mode<span style="color: #757575;">))</span>:
+      dp-&gt;proc_fops = &amp;proc_dir_operations;
+      dp-&gt;proc_iops = &amp;proc_dir_inode_operations;
+      dir-&gt;nlink++;
+    <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>S_ISLNK<span style="color: #757575;">(</span>dp-&gt;mode<span style="color: #757575;">))</span>:
+      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>dp-&gt;proc_iops == <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>:
+        dp-&gt;proc_iops = &amp;proc_link_inode_operations;
+    <span style="color: #859900;">else</span> <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>S_ISREG<span style="color: #757575;">(</span>dp-&gt;mode<span style="color: #757575;">))</span>:
+      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>dp-&gt;proc_fops == <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>:
+        dp-&gt;proc_fops = &amp;proc_file_operations;
+      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>dp-&gt;proc_iops == <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>:
+        dp-&gt;proc_iops = &amp;proc_file_inode_operations;
+</pre>
+</div>
+
+<p>
+create_proc_read_entry 和 create_seq_entry 都是对 create_proc_entry 的简单封装. 
+</p>
+</div>
+
+<ol class="org-ol">
+<li><a id="org545f598"></a>proc_symlink<br />
+<div class="outline-text-8" id="text-1-4-1-1-2-2-1">
+<p>
+proc_symlink 在 create_proc_entry 基础上, 将 symlink 的信息写到了
+proc_dir_entry 的 data 部分
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">struct</span> <span style="color: #b58900;">proc_dir_entry</span> *<span style="color: #268bd2;">proc_symlink</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">name</span><span style="color: #757575;">,</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">proc_dir_entry</span> *<span style="color: #268bd2;">parent</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">dest</span><span style="color: #757575;">)</span>:
+  <span style="color: #859900;">struct</span> proc_dir_entry *ent;
+  ent = proc_create<span style="color: #757575;">(</span>&amp;parent<span style="color: #757575;">,</span>name<span style="color: #757575;">,(</span>S_IFLNK | S_IRUGO | S_IWUGO | S_IXUGO<span style="color: #757575;">),</span>1<span style="color: #757575;">)</span>;
+  ent-&gt;data = kmalloc<span style="color: #757575;">((</span>ent-&gt;size=strlen<span style="color: #757575;">(</span>dest<span style="color: #757575;">))</span>+1<span style="color: #757575;">,</span> GFP_KERNEL<span style="color: #757575;">)</span>;
+  <span style="color: #268bd2;">strcpy</span><span style="color: #757575;">((</span><span style="color: #b58900;">char</span>*<span style="color: #757575;">)</span>ent-&gt;data<span style="color: #757575;">,</span><span style="color: #b58900;">dest</span><span style="color: #757575;">)</span>;
+  <span style="color: #268bd2;">proc_register</span><span style="color: #757575;">(</span><span style="color: #b58900;">parent</span><span style="color: #757575;">,</span> <span style="color: #b58900;">ent</span><span style="color: #757575;">)</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>S_ISLNK<span style="color: #757575;">(</span>dp-&gt;mode<span style="color: #757575;">))</span>:
+      dp-&gt;proc_iops = &amp;proc_link_inode_operations;
+
+</pre>
+</div>
+</div>
+</li>
+</ol>
+</li>
+
+<li><a id="org6bbc418"></a>xlate_proc_name<br />
+<div class="outline-text-7" id="text-1-4-1-1-2-3">
+<p>
+通过 xlate_proc_name("/xxx/yyy") 可以找到 "/proc/xxx/yyy" 对应的
+proc_dir_entry, 在 create_proc_entry 或后面的 proc_mkdir 时, 都会使用
+xlate_proc_name
+</p>
+</div>
+</li>
+</ol>
+</li>
+
+<li><a id="orged7ee9a"></a>proc_mkdir<br />
+<div class="outline-text-6" id="text-1-4-1-1-3">
+<p>
+proc_mkdir 与 create_proc_entry 基本类似
+</p>
+</div>
+</li>
+
+<li><a id="orgd67e5f4"></a>总结<br />
+<div class="outline-text-6" id="text-1-4-1-1-4">
+<p>
+proc_root_init 所做的:
+</p>
+
+<ol class="org-ol">
+<li>注册 proc 文件系统</li>
+
+<li>do_kern_mount, 主要是生成 vfsmount 和 mnt_root 相关的信息, 其中
+mnt_root 这个 inode 主要是根据 proc_root 中的信息生成的, 注意
+do_kern_mount 并没有完成真正的 mount 的动作 (并没有与 mountpoint 关联), 真正的 mount 需要由 init 主动通过 mount 系统调用来完成.</li>
+
+<li>通过 proc_create 之类的函数建立起一个由 proc_dir_entry 构成的虚拟的
+/proc 目录树, proc_dir_entry 的数据和 inode 需要填充的数据基本一致.</li>
+
+<li>另外, proc_root_init 时通过 proc_dir_entry 构造的目录树并不是 /proc
+的全部数据: 其它模块或 proc 自身可能会动态的生成数据</li>
+</ol>
+</div>
+</li>
+</ol>
+</div>
+
+<div id="outline-container-org3a17122" class="outline-5">
+<h5 id="org3a17122"><span class="section-number-5">1.4.1.2</span> xx_op</h5>
+<div class="outline-text-5" id="text-1-4-1-2">
+</div>
+<ol class="org-ol">
+<li><a id="org1f3263d"></a>file_system_type<br />
+<div class="outline-text-6" id="text-1-4-1-2-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">static</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">file_system_type</span> <span style="color: #268bd2;">proc_fs_type</span> = <span style="color: #757575;">{</span>
+    .name       = <span style="color: #2aa198;">"proc"</span><span style="color: #757575;">,</span>
+    .get_sb     = proc_get_sb<span style="color: #757575;">,</span>
+    .kill_sb    = kill_anon_super<span style="color: #757575;">,</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org9bf0843"></a>file_system_type.get_sb<br />
+<div class="outline-text-6" id="text-1-4-1-2-2">
+<p>
+proc_get_sb:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #b58900;">super_block</span> *<span style="color: #268bd2;">proc_get_sb</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">file_system_type</span> *<span style="color: #268bd2;">fs_type</span><span style="color: #757575;">,</span>...<span style="color: #757575;">)</span>
+  <span style="color: #859900;">return</span> get_sb_single<span style="color: #757575;">(</span>fs_type<span style="color: #757575;">,</span> flags<span style="color: #757575;">,</span> data<span style="color: #757575;">,</span> proc_fill_super<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="orga5c0e37"></a>fill_super<br />
+<div class="outline-text-6" id="text-1-4-1-2-3">
+<p>
+proc_fill_super:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #b58900;">int</span> <span style="color: #268bd2;">proc_fill_super</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">super_block</span> *<span style="color: #268bd2;">s</span><span style="color: #757575;">,</span> <span style="color: #b58900;">void</span> *<span style="color: #268bd2;">data</span><span style="color: #757575;">,</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">silent</span><span style="color: #757575;">)</span>
+  ...  
+  s-&gt;s_magic = PROC_SUPER_MAGIC;
+  s-&gt;s_op = &amp;proc_sops;
+  root_inode = proc_get_inode<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> PROC_ROOT_INO<span style="color: #757575;">,</span> &amp;proc_root<span style="color: #757575;">)</span>;
+  s-&gt;s_root = d_alloc_root<span style="color: #757575;">(</span>root_inode<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org20d66c0"></a>super_operations<br />
+<div class="outline-text-6" id="text-1-4-1-2-4">
+<p>
+proc_sops:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">static</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">super_operations</span> <span style="color: #268bd2;">proc_sops</span> = <span style="color: #757575;">{</span> 
+    .alloc_inode    = proc_alloc_inode<span style="color: #757575;">,</span>
+    .destroy_inode  = proc_destroy_inode<span style="color: #757575;">,</span>
+    .read_inode = proc_read_inode<span style="color: #757575;">,</span>
+    .drop_inode = generic_delete_inode<span style="color: #757575;">,</span>
+    .delete_inode   = proc_delete_inode<span style="color: #757575;">,</span>
+    .statfs     = simple_statfs<span style="color: #757575;">,</span>
+    .remount_fs = proc_remount<span style="color: #757575;">,</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org4e5cd47"></a>i_op for /proc root<br />
+<div class="outline-text-6" id="text-1-4-1-2-5">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">static</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">inode_operations</span> <span style="color: #268bd2;">proc_root_inode_operations</span> = <span style="color: #757575;">{</span>
+    .lookup     = proc_root_lookup<span style="color: #757575;">,</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org0829159"></a>i_fop for /proc root<br />
+<div class="outline-text-6" id="text-1-4-1-2-6">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">static</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">file_operations</span> <span style="color: #268bd2;">proc_root_operations</span> = <span style="color: #757575;">{</span>
+.read        = generic_read_dir<span style="color: #757575;">,</span>
+    .readdir     = proc_root_readdir<span style="color: #757575;">,</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org5346420"></a>i_fop for generic proc dir<br />
+<div class="outline-text-6" id="text-1-4-1-2-7">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">static</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">file_operations</span> <span style="color: #268bd2;">proc_dir_operations</span> = <span style="color: #757575;">{</span>
+    .read           = generic_read_dir<span style="color: #757575;">,</span>
+    .readdir        = proc_readdir<span style="color: #757575;">,</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="orgcf45892"></a>i_op for generic proc dir<br />
+<div class="outline-text-6" id="text-1-4-1-2-8">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">static</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">inode_operations</span> <span style="color: #268bd2;">proc_dir_inode_operations</span> = <span style="color: #757575;">{</span>
+    .lookup     = proc_lookup<span style="color: #757575;">,</span>
+    .setattr    = proc_notify_change<span style="color: #757575;">,</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="orgbde675b"></a>i_fop for generic proc file<br />
+<div class="outline-text-6" id="text-1-4-1-2-9">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">static</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">file_operations</span> <span style="color: #268bd2;">proc_file_operations</span> = <span style="color: #757575;">{</span>
+    .llseek     = proc_file_lseek<span style="color: #757575;">,</span>
+    .read       = proc_file_read<span style="color: #757575;">,</span>
+    .write      = proc_file_write<span style="color: #757575;">,</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="orgc5f4d2c"></a>i_op for generic proc file<br />
+<div class="outline-text-6" id="text-1-4-1-2-10">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">static</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">inode_operations</span> <span style="color: #268bd2;">proc_file_inode_operations</span> = <span style="color: #757575;">{</span>
+    .setattr    = proc_notify_change<span style="color: #757575;">,</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org21f5ef4"></a>和 /proc/&lt;pid&gt; 相关的 i_op/i_fop<br />
+<div class="outline-text-6" id="text-1-4-1-2-11">
+<p>
+/proc/&lt;pid&gt; 下的许多 inode , 都有其独立的 i_op 和 i_fop
+</p>
+</div>
+</li>
+</ol>
+</div>
+
+
+<div id="outline-container-org47c4d37" class="outline-5">
+<h5 id="org47c4d37"><span class="section-number-5">1.4.1.3</span> super_operations</h5>
+<div class="outline-text-5" id="text-1-4-1-3">
+</div>
+<ol class="org-ol">
+<li><a id="orge73a974"></a>alloc_inode<br />
+<div class="outline-text-6" id="text-1-4-1-3-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">static</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">inode</span> *<span style="color: #268bd2;">proc_alloc_inode</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">super_block</span> *<span style="color: #268bd2;">sb</span><span style="color: #757575;">)</span>:
+  <span style="color: #859900;">struct</span> proc_inode *ei;
+  <span style="color: #859900;">struct</span> <span style="color: #b58900;">inode</span> *<span style="color: #268bd2;">inode</span>;
+  ei = <span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">proc_inode</span> *<span style="color: #757575;">)</span><span style="color: #268bd2;">kmem_cache_alloc</span><span style="color: #757575;">(</span><span style="color: #b58900;">proc_inode_cachep</span><span style="color: #757575;">,</span> <span style="color: #b58900;">SLAB_KERNEL</span><span style="color: #757575;">)</span>;
+  ei-&gt;task = <span style="color: #268bd2; font-weight: bold;">NULL</span>;
+  ei-&gt;type = 0;
+  ei-&gt;op.proc_get_link = <span style="color: #268bd2; font-weight: bold;">NULL</span>;
+  ei-&gt;pde = <span style="color: #268bd2; font-weight: bold;">NULL</span>;
+  inode = &amp;ei-&gt;vfs_inode;
+  inode-&gt;i_mtime = inode-&gt;i_atime = inode-&gt;i_ctime = CURRENT_TIME;
+  <span style="color: #859900;">return</span> inode;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org4cc684f"></a>read_inode<br />
+<div class="outline-text-6" id="text-1-4-1-3-2">
+<p>
+procfs 的 proc_read_inode 并没有做太多工作, 因为 inode 信息的填充主要在上层的 proc_get_inode 中完成. 
+</p>
+</div>
+</li>
+
+<li><a id="orgda7a615"></a>statfs<br /></li>
+</ol>
+</div>
+
+<div id="outline-container-org58aeef5" class="outline-5">
+<h5 id="org58aeef5"><span class="section-number-5">1.4.1.4</span> inode_operations</h5>
+<div class="outline-text-5" id="text-1-4-1-4">
+</div>
+<ol class="org-ol">
+<li><a id="orgd14d7eb"></a>lookup<br />
+<div class="outline-text-6" id="text-1-4-1-4-1">
+<p>
+对于 proc 来说, /proc 下许多目录都有其独立的 lookup 函数
+</p>
+</div>
+
+<ol class="org-ol">
+<li><a id="org3e66bd6"></a>proc_root_lookup<br />
+<div class="outline-text-7" id="text-1-4-1-4-1-1">
+<p>
+/proc 根目录下本身的 lookup 函数
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c">proc_root_lookup
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#39318;&#20808;&#26597;&#25214;&#38750; &lt;pid&gt; &#20043;&#31867;&#30340; inode</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>proc_lookup<span style="color: #757575;">(</span>dir<span style="color: #757575;">,</span> dentry<span style="color: #757575;">,</span> nd<span style="color: #757575;">))</span>:
+    <span style="color: #859900;">return</span> null
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509;&#27809;&#26377;&#25214;&#21040;, &#26597;&#25214; &lt;pid&gt; &#31867;&#22411;&#30340; inode</span>
+  <span style="color: #859900;">return</span> proc_pid_lookup<span style="color: #757575;">(</span>dir<span style="color: #757575;">,</span> dentry<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+
+<ol class="org-ol">
+<li><a id="org91f6369"></a>proc_lookup<br />
+<div class="outline-text-8" id="text-1-4-1-4-1-1-1">
+<p>
+/proc 一级目录下所有非 &lt;pid&gt; 的 inode 都是通过 proc_lookup 查找的. 具体的, 通过遍历之前通过 create_proc_entry 创建虚拟目录树来查找. 
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">proc_lookup</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">inode</span> * <span style="color: #268bd2;">dir</span><span style="color: #757575;">,</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">dentry</span> *<span style="color: #268bd2;">dentry</span><span style="color: #757575;">,</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">nameidata</span> *<span style="color: #268bd2;">nd</span><span style="color: #757575;">)</span>:
+  <span style="color: #b58900;">int</span> error = -ENOENT;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">dir &#26159; mnt_root, dentry &#21253;&#25324;&#35201;&#26597;&#25214;&#30340;&#21517;&#23383;, nd &#29992;&#26469;&#20445;&#23384;&#26597;&#25214;&#32467;&#26524;</span>
+  de = PDE<span style="color: #757575;">(</span>dir<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>de = de-&gt;subdir; de ; de = de-&gt;next<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>memcmp<span style="color: #757575;">(</span>dentry-&gt;d_name.name<span style="color: #757575;">,</span> de-&gt;name<span style="color: #757575;">,</span> de-&gt;namelen<span style="color: #757575;">))</span>:
+      <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">int</span> ino = de-&gt;low_ino;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">proc_get_inode &#22522;&#26412;&#23601;&#26159;&#23558; proc_dir_entry &#36716;&#25442;&#20026;&#30456;&#24212;&#30340; inode</span>
+      inode = proc_get_inode<span style="color: #757575;">(</span>dir-&gt;i_sb<span style="color: #757575;">,</span> ino<span style="color: #757575;">,</span> de<span style="color: #757575;">)</span>;
+      <span style="color: #859900;">break</span>;
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#28155;&#21152; &lt;dentry, inode&gt; &#21040; dcache,&#26377;&#20102; dcache, &#19979;&#27425; lookup &#26102;&#23558;&#19981;&#20250;&#20877;&#35843;&#29992; proc_lookup</span>
+    d_add<span style="color: #757575;">(</span>dentry<span style="color: #757575;">,</span> inode<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> null;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509; lookup &#22833;&#36133;, &#36820;&#22238; -ENOENT, &#32780;&#19981;&#26159;&#36820;&#22238; null</span>
+  <span style="color: #859900;">return</span> error; 
+</pre>
+</div>
+
+<p>
+因为 proc_lookup 时, 对于不存在的 inode 会返回 -ENOENT, 所以 /proc 根目录无法新建文件. 
+</p>
+
+<pre class="example" id="orga97fef6">
+/proc@dell-work&gt; touch a
+touch: cannot touch 'a': No such file or directory
+</pre>
+</div>
+</li>
+
+<li><a id="org50fe7e9"></a>proc_pid_lookup<br />
+<div class="outline-text-8" id="text-1-4-1-4-1-1-2">
+<p>
+因为 /proc 下的 &lt;pid&gt; 之类的 inode 是动态变化的, 无法通过
+create_proc_entry 添加到虚拟的 /proc 目录树中, 所以需要通过
+proc_pid_lookup 动态去查找
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c">proc_pid_lookup
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>dentry-&gt;d_name.len == 4 &amp;&amp; <span style="color: #b58900; font-weight: bold;">!</span>memcmp<span style="color: #757575;">(</span>dentry-&gt;d_name.name<span style="color: #757575;">,</span><span style="color: #2aa198;">"self"</span><span style="color: #757575;">,</span>4<span style="color: #757575;">))</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">inode &#30340; ino &#20026; last_ino++ </span>
+    inode = new_inode<span style="color: #757575;">(</span>dir-&gt;i_sb<span style="color: #757575;">)</span>;
+    inode-&gt;i_op = &amp;proc_self_inode_operations;
+    <span style="color: #268bd2;">d_add</span><span style="color: #757575;">(</span><span style="color: #b58900;">dentry</span><span style="color: #757575;">,</span> <span style="color: #b58900;">inode</span><span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> null;
+  tgid = name_to_int<span style="color: #757575;">(</span>dentry<span style="color: #757575;">)</span>;
+  task = find_task_by_pid<span style="color: #757575;">(</span>tgid<span style="color: #757575;">)</span>;
+  inode = proc_pid_make_inode<span style="color: #757575;">(</span>dir-&gt;i_sb<span style="color: #757575;">,</span> task<span style="color: #757575;">,</span> PROC_TGID_INO<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">new_inode &#26159; vfs &#36890;&#29992;&#25509;&#21475;, &#20294;&#23427;&#20250;&#35843;&#29992;&#21040; sb &#20013;&#30340; alloc_inode, &#20855;&#20307;&#30340;</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">proc_alloc_inode &#20250;&#29983;&#25104;&#19968;&#20010; proc_inode, &#24182;&#36820;&#22238;&#20854;&#20013;&#30340; vfs_inode,</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36825;&#20063;&#23601;&#26159;&#19979;&#38754; PROC_I &#30340;&#24847;&#20041;: proc_inode &#22312; inode &#22522;&#30784;&#19978;&#38468;&#21152;&#20102;&#19968;&#20123;&#21644;</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">proc &#33258;&#36523;&#30456;&#20851;&#30340;&#20449;&#24687;, &#20363;&#22914; task</span>
+    inode = new_inode<span style="color: #757575;">(</span>sb<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">proc_inode</span> <span style="color: #268bd2;">ei</span> = PROC_I<span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span>;
+      <span style="color: #268bd2;">container_of</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">,</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">proc_inode</span><span style="color: #757575;">,</span> <span style="color: #b58900;">vfs_inode</span><span style="color: #757575;">)</span>;
+  inode-&gt;i_op = &amp;proc_tgid_base_inode_operations;
+  inode-&gt;i_fop = &amp;proc_tgid_base_operations;
+  <span style="color: #268bd2;">d_add</span><span style="color: #757575;">(</span><span style="color: #b58900;">dentry</span><span style="color: #757575;">,</span> <span style="color: #b58900;">inode</span><span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</li>
+</ol>
+</li>
+
+<li><a id="org410eb24"></a>proc_tgid_base_lookup<br />
+<div class="outline-text-7" id="text-1-4-1-4-1-2">
+<p>
+/proc/&lt;pid&gt; 目录的 lookup 函数
+</p>
+
+<p>
+上一步的 proc_pid_lookup 函数负责将 /proc/&lt;pid&gt; inode 的 i_op 赋值为
+proc_tgid_base_inode_operations, 后者的定义为:
+</p>
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">static</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">inode_operations</span> <span style="color: #268bd2;">proc_tgid_base_inode_operations</span> = <span style="color: #757575;">{</span>
+    .lookup     = proc_tgid_base_lookup<span style="color: #757575;">,</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+
+<p>
+其中 proc_tgid_base_lookup 是 /proc/&lt;pid&gt; 的 lookup 函数
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">static</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">pid_entry</span> <span style="color: #268bd2;">tgid_base_stuff</span>[] = <span style="color: #757575;">{</span>
+    E<span style="color: #757575;">(</span>PROC_TGID_TASK<span style="color: #757575;">,</span>      <span style="color: #2aa198;">"task"</span><span style="color: #757575;">,</span>    S_IFDIR|S_IRUGO|S_IXUGO<span style="color: #757575;">),</span>
+    E<span style="color: #757575;">(</span>PROC_TGID_FD<span style="color: #757575;">,</span>        <span style="color: #2aa198;">"fd"</span><span style="color: #757575;">,</span>      S_IFDIR|S_IRUSR|S_IXUSR<span style="color: #757575;">),</span>
+    E<span style="color: #757575;">(</span>PROC_TGID_ENVIRON<span style="color: #757575;">,</span>   <span style="color: #2aa198;">"environ"</span><span style="color: #757575;">,</span> S_IFREG|S_IRUSR<span style="color: #757575;">),</span>
+    E<span style="color: #757575;">(</span>PROC_TGID_AUXV<span style="color: #757575;">,</span>      <span style="color: #2aa198;">"auxv"</span><span style="color: #757575;">,</span>    S_IFREG|S_IRUSR<span style="color: #757575;">),</span>
+    E<span style="color: #757575;">(</span>PROC_TGID_STATUS<span style="color: #757575;">,</span>    <span style="color: #2aa198;">"status"</span><span style="color: #757575;">,</span>  S_IFREG|S_IRUGO<span style="color: #757575;">),</span>
+    E<span style="color: #757575;">(</span>PROC_TGID_CMDLINE<span style="color: #757575;">,</span>   <span style="color: #2aa198;">"cmdline"</span><span style="color: #757575;">,</span> S_IFREG|S_IRUGO<span style="color: #757575;">),</span>
+    E<span style="color: #757575;">(</span>PROC_TGID_STAT<span style="color: #757575;">,</span>      <span style="color: #2aa198;">"stat"</span><span style="color: #757575;">,</span>    S_IFREG|S_IRUGO<span style="color: #757575;">),</span>
+    E<span style="color: #757575;">(</span>PROC_TGID_STATM<span style="color: #757575;">,</span>     <span style="color: #2aa198;">"statm"</span><span style="color: #757575;">,</span>   S_IFREG|S_IRUGO<span style="color: #757575;">),</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">struct</span> <span style="color: #b58900;">dentry</span> *<span style="color: #268bd2;">proc_tgid_base_lookup</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span> *<span style="color: #268bd2;">dir</span><span style="color: #757575;">,</span> <span style="color: #b58900;">dentry</span> *<span style="color: #268bd2;">dentry</span><span style="color: #757575;">,</span> <span style="color: #b58900;">nameidata</span> *<span style="color: #268bd2;">nd</span><span style="color: #757575;">)</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">dir &#20195;&#34920; /proc/&lt;pid&gt; &#36825;&#20010; inode, &#20854;&#23545;&#24212;&#30340; proc_inode &#21253;&#25324;&#23545;&#24212;&#30340; task</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21487;&#20197;&#23545;&#24212;&#21040;&#19968;&#20010;&#36827;&#31243;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">dentry &#21253;&#25324;&#35201;&#26597;&#25214;&#30340;&#21517;&#23383;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">nd &#36820;&#22238;&#26597;&#25214;&#32467;&#26524;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">tgid_base_stuff &#26159;&#19968;&#20010; hard code &#30340;&#25968;&#32452;  </span>
+  proc_pident_lookup<span style="color: #757575;">(</span>dir<span style="color: #757575;">,</span> dentry<span style="color: #757575;">,</span> tgid_base_stuff<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">task_struct</span> *<span style="color: #268bd2;">task</span> = proc_task<span style="color: #757575;">(</span>dir<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">ents &#21363; tgid_base_stuff</span>
+    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>p = ents; p-&gt;name; p++<span style="color: #757575;">)</span>:
+      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>memcmp<span style="color: #757575;">(</span>dentry-&gt;d_name.name<span style="color: #757575;">,</span> p-&gt;name<span style="color: #757575;">,</span> p-&gt;len<span style="color: #757575;">))</span>:
+        <span style="color: #859900;">break</span>;
+    inode = proc_pid_make_inode<span style="color: #757575;">(</span>dir-&gt;i_sb<span style="color: #757575;">,</span> task<span style="color: #757575;">,</span> p-&gt;type<span style="color: #757575;">)</span>;
+      inode = new_inode<span style="color: #757575;">(</span>sb<span style="color: #757575;">)</span>;
+      inode-&gt;i_mtime = inode-&gt;i_atime = inode-&gt;i_ctime = CURRENT_TIME;
+      inode-&gt;i_ino = fake_ino<span style="color: #757575;">(</span>task-&gt;pid<span style="color: #757575;">,</span> ino<span style="color: #757575;">)</span>;
+      ei = PROC_I<span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36825;&#37324;&#30340; task &#36171;&#20540;&#24456;&#37325;&#35201;, &#23427;&#26631;&#35782;&#20102;&#36825;&#20010; inode, &#21518;&#38754;&#38024;&#23545;&#36825;&#20010; inode &#30340;&#22238;&#35843;</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#19968;&#33324;&#37117;&#38656;&#35201;&#36825;&#20010; task, &#27604;&#22914; proc_lookupfd </span>
+      ei-&gt;task = task;
+      ei-&gt;type = ino;
+      inode-&gt;i_uid = 0;
+      inode-&gt;i_gid = 0;
+    <span style="color: #859900;">switch</span><span style="color: #757575;">(</span>p-&gt;type<span style="color: #757575;">)</span>:
+      <span style="color: #859900;">case</span> PROC_TGID_TASK:
+        inode-&gt;i_op = &amp;proc_task_inode_operations;
+        inode-&gt;i_fop = &amp;proc_task_operations;
+      <span style="color: #859900;">case</span> PROC_TID_FD:
+        inode-&gt;i_op = &amp;proc_fd_inode_operations;
+        inode-&gt;i_fop = &amp;proc_fd_operations;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+    <span style="color: #268bd2;">d_add</span><span style="color: #757575;">(</span><span style="color: #b58900;">dentry</span><span style="color: #757575;">,</span> <span style="color: #b58900;">inode</span><span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</li>
+</ol>
+</li>
+
+<li><a id="org671594e"></a>permission<br />
+<div class="outline-text-6" id="text-1-4-1-4-2">
+<p>
+procfs 实现了自己的 permission 实现: proc_permission
+</p>
+</div>
+</li>
+
+<li><a id="orgd62baa4"></a>readlink<br />
+<div class="outline-text-6" id="text-1-4-1-4-3">
+<p>
+/proc 中至少有三个地方用到了 symlink: 
+</p>
+
+<ol class="org-ol">
+<li>/proc/self</li>
+
+<li>/proc/&lt;pid&gt;/fd/&lt;fd&gt;</li>
+
+<li>/proc/mounts</li>
+</ol>
+
+<p>
+在具体的文件系统中(例如 ext2), symlink 的路径是直接保存在 raw inode 中的,
+不需要单独的 data block, proc 处理 symlink 时与 ext2 不太一样.
+</p>
+</div>
+
+<ol class="org-ol">
+<li><a id="orge94b43d"></a>/proc/self<br />
+<div class="outline-text-7" id="text-1-4-1-4-3-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">struct</span> <span style="color: #b58900;">dentry</span> * <span style="color: #268bd2;">proc_pid_lookup</span>:
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>dentry-&gt;d_name.len == 4 &amp;&amp; <span style="color: #b58900; font-weight: bold;">!</span>memcmp<span style="color: #757575;">(</span>dentry-&gt;d_name.name<span style="color: #757575;">,</span><span style="color: #2aa198;">"self"</span><span style="color: #757575;">,</span>4<span style="color: #757575;">))</span>:
+    inode = new_inode<span style="color: #757575;">(</span>dir-&gt;i_sb<span style="color: #757575;">)</span>;
+    inode-&gt;i_mode = S_IFLNK|S_IRWXUGO;
+    inode-&gt;i_op = &amp;proc_self_inode_operations;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">proc_self_readlink</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">dentry</span> *<span style="color: #268bd2;">dentry</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> <span style="color: #268bd2;">__user</span> *buffer<span style="color: #757575;">,</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">buflen</span><span style="color: #757575;">)</span>:
+    <span style="color: #b58900;">char</span> tmp[30];
+    <span style="color: #268bd2;">sprintf</span><span style="color: #757575;">(</span><span style="color: #b58900;">tmp</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"%d"</span><span style="color: #757575;">,</span> current-&gt;tgid<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> vfs_readlink<span style="color: #757575;">(</span>dentry<span style="color: #757575;">,</span>buffer<span style="color: #757575;">,</span>buflen<span style="color: #757575;">,</span>tmp<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="orgd889bf6"></a>/proc/&lt;pid&gt;/fd/&lt;fd&gt;<br />
+<div class="outline-text-7" id="text-1-4-1-4-3-2">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">proc_lookupfd</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#35813; inode &#23545;&#24212; /proc/&lt;pid&gt;/fd/&lt;fd&gt;, &#20854;&#23545;&#24212;&#30340; fd &#34987;&#32534;&#30721;&#21040; proc_inode-&gt;type &#20013;</span>
+  inode = proc_pid_make_inode<span style="color: #757575;">(</span>dir-&gt;i_sb<span style="color: #757575;">,</span> task<span style="color: #757575;">,</span> PROC_TID_FD_DIR+fd<span style="color: #757575;">)</span>;
+  inode-&gt;i_mode = S_IFLNK;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21518;&#32493; proc_pid_link_inode_operations-&gt;readlink &#20250;&#35843;&#29992; proc_fd_link &#24471;&#21040; symlink &#30340;&#25968;&#25454;</span>
+  inode-&gt;i_op = &amp;proc_pid_link_inode_operations;
+  ei-&gt;op.proc_get_link = proc_fd_link;
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">proc_fd_link</span>:
+  <span style="color: #859900;">struct</span> <span style="color: #b58900;">task_struct</span> *<span style="color: #268bd2;">task</span> = proc_task<span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span>;
+  <span style="color: #b58900;">int</span> <span style="color: #268bd2;">fd</span> = proc_type<span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span> - PROC_TID_FD_DIR;
+  files = get_files_struct<span style="color: #757575;">(</span>task<span style="color: #757575;">)</span>;
+  file = fcheck_files<span style="color: #757575;">(</span>files<span style="color: #757575;">,</span> fd<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> files-&gt;fd[fd];
+  *mnt = mntget<span style="color: #757575;">(</span>file-&gt;f_vfsmnt<span style="color: #757575;">)</span>;
+  *dentry = dget<span style="color: #757575;">(</span>file-&gt;f_dentry<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="orgb37ad0a"></a>/proc/mounts<br />
+<div class="outline-text-7" id="text-1-4-1-4-3-3">
+<p>
+proc_root_init 时, 通过 proc_symlink 建立了一个  proc_dir_entry , 这个
+entry 是 /proc/mounts 到 /proc/self/mounts 的 symlink, 具体参考前面
+proc_symlink
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">proc_follow_link</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">symlink &#30340; target &#20445;&#23384;&#22312; proc_inode-&gt;data &#20013;</span>
+  <span style="color: #268bd2;">nd_set_link</span><span style="color: #757575;">(</span><span style="color: #b58900;">nd</span><span style="color: #757575;">,</span> PDE<span style="color: #757575;">(</span>dentry-&gt;d_inode<span style="color: #757575;">)</span>-&gt;data<span style="color: #757575;">)</span>;
+    nd-&gt;saved_names[nd-&gt;depth] = path;
+
+<span style="color: #268bd2; font-weight: bold;">generic_readlink</span>:
+  res = dentry-&gt;d_inode-&gt;i_op-&gt;follow_link<span style="color: #757575;">(</span>dentry<span style="color: #757575;">,</span> &amp;nd<span style="color: #757575;">)</span>;
+  res = vfs_readlink<span style="color: #757575;">(</span>dentry<span style="color: #757575;">,</span> buffer<span style="color: #757575;">,</span> buflen<span style="color: #757575;">,</span> nd_get_link<span style="color: #757575;">(</span>&amp;nd<span style="color: #757575;">))</span>;
+    <span style="color: #859900;">return</span> nd-&gt;saved_names[nd-&gt;depth];
+</pre>
+</div>
+</div>
+</li>
+</ol>
+</li>
+</ol>
+</div>
+
+<div id="outline-container-org4c3914c" class="outline-5">
+<h5 id="org4c3914c"><span class="section-number-5">1.4.1.5</span> file_operations</h5>
+<div class="outline-text-5" id="text-1-4-1-5">
+</div>
+<ol class="org-ol">
+<li><a id="org006b7b7"></a>readdir<br />
+<div class="outline-text-6" id="text-1-4-1-5-1">
+<p>
+readdir 的过程和 lookup 的过程类似, 根据不同的 inode 调用不同的
+i_fop-&gt;readdir, 且 readdir 依据的数据的来源与 lookup 也是类似的:
+</p>
+
+<ol class="org-ol">
+<li>proc_root_readdir 依赖 pid 列表和 create_proc_entry 构造的目录树</li>
+
+<li>proc_tgid_base_readdir 依赖于 tgid_base_stuff 数组</li>
+
+<li>&#x2026;</li>
+</ol>
+</div>
+</li>
+</ol>
+</div>
+
+
+<div id="outline-container-orge564869" class="outline-5">
+<h5 id="orge564869"><span class="section-number-5">1.4.1.6</span> 总结</h5>
+<div class="outline-text-5" id="text-1-4-1-6">
+<ol class="org-ol">
+<li>vfs 由一系列的回调函数构成, 由最初的 file_system_type 到
+super_operations 再到 inode_operations 和 file_operations</li>
+
+<li>vfs 中最重要的一个回调可能要算 lookup 了, 因为最重要的 inode 结构体是由它生成的.</li>
+
+<li>procfs 实现上使用多个 iop 和 fop 来处理不同的 inode, 这样扩展性好但比较繁琐, 另一种实现方案可能是提供统一的 iop 和 fop, 但这个 iop/fop
+内部可能需要大量的 switch-case 来区别不同的 inode</li>
+</ol>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org295c258" class="outline-4">
+<h4 id="org295c258"><span class="section-number-4">1.4.2</span> debugfs</h4>
+</div>
+
+<div id="outline-container-org729de84" class="outline-4">
+<h4 id="org729de84"><span class="section-number-4">1.4.3</span> ramfs</h4>
+<div class="outline-text-4" id="text-1-4-3">
+<p>
+ramfs 是基于内存的文件系统, 因为 kernel 本身有 dcache 和 page cache,
+所以实现 ramfs 并不需要很多代码: ramfs 中大部分 x_op 都是直接操作
+dcache 和 pagecache.
+</p>
+</div>
+
+<div id="outline-container-org46d0422" class="outline-5">
+<h5 id="org46d0422"><span class="section-number-5">1.4.3.1</span> lookup</h5>
+<div class="outline-text-5" id="text-1-4-3-1">
+<p>
+ramfs 的 lookup 被定义为 simple_lookup, 而 simple_lookup 只是简单的返回 NULL, 即 negative dentry &#x2026; 嗯?
+</p>
+
+<p>
+由于 ramfs 大量操作是建立在 dcache 基础上, 回顾 do_lookup 的过程:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">do_lookup</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#26597;&#25214; dcache, &#23545;&#20110; ramfs &#26469;&#35828;, &#22914;&#26524; __d_lookup &#26597;&#19981;&#21040;&#32467;&#26524;, &#35828;&#26126;&#20043;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21069;&#27809;&#26377; add &#36807;&#36825;&#20010; dentry (&#36890;&#36807; mkdir &#25110; create, symlink &#31561;), &#27492;&#26102;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">do_lookup &#20854;&#23454;&#24050;&#32463;&#21487;&#20197;&#30452;&#25509;&#36820;&#22238; negative entry &#20102;, &#20294;&#30001;&#20110;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">do_lookup &#23454;&#29616;&#22312; vfs &#23618;,&#32780; vfs &#20250;&#35843;&#29992; real_lookup &#23581;&#35797;&#20174; backing</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">store &#21435; lookup &#25152;&#20197; ramfs &#20599;&#25042;&#20351;&#29992;&#20102; simple_lookup &#30452;&#25509;&#36820;&#22238; NULL</span>
+  <span style="color: #859900;">struct</span> <span style="color: #b58900;">dentry</span> *<span style="color: #268bd2;">dentry</span> = __d_lookup<span style="color: #757575;">(</span>nd-&gt;dentry<span style="color: #757575;">,</span> name<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>dentry<span style="color: #757575;">)</span>:
+    dentry = real_lookup<span style="color: #757575;">(</span>nd-&gt;dentry<span style="color: #757575;">,</span> name<span style="color: #757575;">,</span> nd<span style="color: #757575;">)</span>;
+      ramfs-&gt;simple_lookup
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org2098144" class="outline-5">
+<h5 id="org2098144"><span class="section-number-5">1.4.3.2</span> create</h5>
+<div class="outline-text-5" id="text-1-4-3-2">
+<p>
+ramfs_mknod, 基本就是直接 make inode
+</p>
+</div>
+</div>
+
+<div id="outline-container-org11f8285" class="outline-5">
+<h5 id="org11f8285"><span class="section-number-5">1.4.3.3</span> readdir</h5>
+<div class="outline-text-5" id="text-1-4-3-3">
+<p>
+dcache_readdir, 基本就是直接遍历 dcache
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org4a6ffa6" class="outline-4">
+<h4 id="org4a6ffa6"><span class="section-number-4">1.4.4</span> ext2</h4>
+<div class="outline-text-4" id="text-1-4-4">
+<p>
+refers to 
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0427bf5" class="outline-3">
+<h3 id="org0427bf5"><span class="section-number-3">1.5</span> Appendix</h3>
+<div class="outline-text-3" id="text-1-5">
+</div>
+<div id="outline-container-org8d91b8f" class="outline-4">
+<h4 id="org8d91b8f"><span class="section-number-4">1.5.1</span> special inode</h4>
+<div class="outline-text-4" id="text-1-5-1">
+<p>
+除了普通文件和目录, 还存在一些特殊的文件:
+</p>
+
+<ol class="org-ol">
+<li>char device</li>
+
+<li>blk device</li>
+
+<li>pipe</li>
+
+<li>socket</li>
+</ol>
+
+<p>
+inode-&gt;i_mode 是一个 short int, 它的低位保存权限 (rwx), 高位保存着文件的类型, 例如
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">S_IFSOCK</span> 0140000
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">S_IFLNK</span>  0120000
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">S_IFREG</span>  0100000
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">S_IFBLK</span>  0060000
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">S_IFDIR</span>  0040000
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">S_IFCHR</span>  0020000
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">S_IFIFO</span>  0010000
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">S_ISUID</span>  0004000
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">S_ISGID</span>  0002000
+<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">S_ISVTX</span>  0001000
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org8f0fd8d" class="outline-5">
+<h5 id="org8f0fd8d"><span class="section-number-5">1.5.1.1</span> char device</h5>
+<div class="outline-text-5" id="text-1-5-1-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">ext2_mknod</span><span style="color: #757575;">()</span>:
+  inode = ext2_new_inode<span style="color: #757575;">()</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">rdev &#20445;&#23384;&#30528; mknod &#20256;&#20837;&#30340;&#35774;&#22791;&#21495;</span>
+  <span style="color: #268bd2;">init_special_inode</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">,</span> inode-&gt;i_mode<span style="color: #757575;">,</span> <span style="color: #b58900;">rdev</span><span style="color: #757575;">)</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>S_ISCHR<span style="color: #757575;">(</span>mode<span style="color: #757575;">))</span>:
+      inode-&gt;i_fop = &amp;def_chr_fops;
+      inode-&gt;i_rdev = rdev;
+
+<span style="color: #859900;">struct</span> <span style="color: #b58900;">file_operations</span> <span style="color: #268bd2;">def_chr_fops</span> = <span style="color: #757575;">{</span>
+    .open = chrdev_open<span style="color: #757575;">,</span>
+<span style="color: #757575;">}</span>;
+
+<span style="color: #268bd2;">ext2_read_inode</span> <span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">inode</span> * <span style="color: #268bd2;">inode</span><span style="color: #757575;">)</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+  <span style="color: #859900;">struct</span> ext2_inode * raw_inode = ext2_get_inode<span style="color: #757575;">(</span>inode-&gt;i_sb<span style="color: #757575;">,</span> ino<span style="color: #757575;">,</span> &amp;bh<span style="color: #757575;">)</span>;
+  inode-&gt;i_mode = le16_to_cpu<span style="color: #757575;">(</span>raw_inode-&gt;i_mode<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>S_ISREG<span style="color: #757575;">(</span>inode-&gt;i_mode<span style="color: #757575;">))</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+  <span style="color: #859900;">else</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">i_block &#20445;&#23384;&#30528;&#35774;&#22791;&#21495;</span>
+    init_special_inode<span style="color: #757575;">(</span>inode<span style="color: #757575;">,</span> inode-&gt;i_mode<span style="color: #757575;">,</span> old_decode_dev<span style="color: #757575;">(</span>le32_to_cpu<span style="color: #757575;">(</span>raw_inode-&gt;i_block[0]<span style="color: #757575;">)))</span>;
+
+
+<span style="color: #268bd2;">chrdev_open</span><span style="color: #757575;">()</span>:
+  p = inode-&gt;i_cdev;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#31532;&#19968;&#27425;&#25171;&#24320;</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>p<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">inode-&gt;i_rdev &#26159; mknod &#26102;&#25351;&#23450;&#30340;&#35774;&#22791;&#21495;</span>
+    kobj = kobj_lookup<span style="color: #757575;">(</span>cdev_map<span style="color: #757575;">,</span> inode-&gt;i_rdev<span style="color: #757575;">,</span> &amp;idx<span style="color: #757575;">)</span>;
+    new = container_of<span style="color: #757575;">(</span>kobj<span style="color: #757575;">,</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">cdev</span><span style="color: #757575;">,</span> kobj<span style="color: #757575;">)</span>;
+    inode-&gt;i_cdev = p = new;
+    inode-&gt;i_cindex = idx;
+    list_add<span style="color: #757575;">(</span>&amp;inode-&gt;i_devices<span style="color: #757575;">,</span> &amp;p-&gt;list<span style="color: #757575;">)</span>;
+
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">f_op &#37325;&#32622;&#20026; cdev-&gt;ops (&#20043;&#21069;&#20026; inode-&gt;i_fop, &#21363; def_chr_fops)</span>
+  filp-&gt;f_op = fops_get<span style="color: #757575;">(</span>p-&gt;ops<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>filp-&gt;f_op-&gt;open<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">driver &#23454;&#29616;&#30340; open</span>
+    ret = filp-&gt;f_op-&gt;open<span style="color: #757575;">(</span>inode<span style="color: #757575;">,</span>filp<span style="color: #757575;">)</span>;
+</pre>
+</div>
+
+<p>
+可见, char/blk device 设备文件需要文件系统的支持, 主要是两点:
+</p>
+
+<ol class="org-ol">
+<li>文件系统需要能区分出这种类型的文件 (能给 inode-&gt;i_mode 相应的值)</li>
+
+<li>需要能保存设备号 (能给 inode-&gt;i_rdev 相应的值)</li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-org1673550" class="outline-5">
+<h5 id="org1673550"><span class="section-number-5">1.5.1.2</span> blk device</h5>
+</div>
+</div>
+
+<div id="outline-container-org01f0a94" class="outline-4">
+<h4 id="org01f0a94"><span class="section-number-4">1.5.2</span> inode-&gt;i_size</h4>
+<div class="outline-text-4" id="text-1-5-2">
+</div>
+<div id="outline-container-org50c3b3d" class="outline-5">
+<h5 id="org50c3b3d"><span class="section-number-5">1.5.2.1</span> ext2</h5>
+<div class="outline-text-5" id="text-1-5-2-1">
+</div>
+<ol class="org-ol">
+<li><a id="orgb129a9f"></a>dir<br />
+<div class="outline-text-6" id="text-1-5-2-1-1">
+<p>
+ext2 目录的大小是随着目录中 entry 的多少变化的.
+</p>
+</div>
+
+<ol class="org-ol">
+<li><a id="org670d1ee"></a>新建空目录<br />
+<div class="outline-text-7" id="text-1-5-2-1-1-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">ext2_mkdir</span>:
+  inode = ext2_new_inode <span style="color: #757575;">(</span>dir<span style="color: #757575;">,</span> S_IFDIR | mode<span style="color: #757575;">)</span>;
+  <span style="color: #268bd2;">ext2_make_empty</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">,</span> <span style="color: #b58900;">dir</span><span style="color: #757575;">)</span>;
+    chunk_size = ext2_chunk_size<span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">s_blocksize &#19982; fs &#30340;&#37197;&#32622;&#26377;&#20851;, &#19968;&#33324;&#20026; 4K</span>
+      <span style="color: #859900;">return</span> inode-&gt;i_sb-&gt;s_blocksize;
+    <span style="color: #268bd2;">ext2_commit_chunk</span><span style="color: #757575;">(</span><span style="color: #b58900;">page</span><span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> <span style="color: #b58900;">chunk_size</span><span style="color: #757575;">)</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">from &#20026; 0, to &#20026; chunk_size (4K)</span>
+      page-&gt;mapping-&gt;a_ops-&gt;commit_write<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">,</span> page<span style="color: #757575;">,</span> from<span style="color: #757575;">,</span> to<span style="color: #757575;">)</span>;
+        <span style="color: #268bd2;">generic_commit_write</span><span style="color: #757575;">(</span><span style="color: #b58900;">file</span><span style="color: #757575;">,</span> <span style="color: #b58900;">page</span><span style="color: #757575;">,</span> <span style="color: #b58900;">from</span><span style="color: #757575;">,</span> <span style="color: #b58900;">to</span><span style="color: #757575;">)</span>
+          <span style="color: #586e75;">// </span><span style="color: #586e75;">inode-&gt;i_size &#21021;&#22987;&#20026; 0</span>
+          <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>pos &gt; inode-&gt;i_size<span style="color: #757575;">)</span>:
+            i_size_write<span style="color: #757575;">(</span>inode<span style="color: #757575;">,</span> pos<span style="color: #757575;">)</span>;
+              <span style="color: #586e75;">// </span><span style="color: #586e75;">I GOT YOU! &#26032;&#24314;&#30446;&#24405;&#22823;&#23567;&#20026; 4K</span>
+              inode-&gt;i_size = i_size;
+            <span style="color: #268bd2;">mark_inode_dirty</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20462;&#25913;&#26032;&#24314;&#30446;&#24405;&#30340;&#29238;&#30446;&#24405;, &#26089;&#26399;&#29256;&#26412;&#30340; linux &#31216;&#20026; ext2_add_entry</span>
+  <span style="color: #268bd2;">ext2_add_link</span><span style="color: #757575;">(</span><span style="color: #b58900;">dentry</span><span style="color: #757575;">,</span> <span style="color: #b58900;">inode</span><span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org1f10ffe"></a>目录中添加文件或子目录导致大小变化<br />
+<div class="outline-text-7" id="text-1-5-2-1-1-2">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">ext2_create</span>:
+  <span style="color: #268bd2;">ext2_add_nondir</span><span style="color: #757575;">(</span><span style="color: #b58900;">dentry</span><span style="color: #757575;">,</span> <span style="color: #b58900;">inode</span><span style="color: #757575;">)</span>;
+    <span style="color: #268bd2;">ext2_add_link</span><span style="color: #757575;">(</span><span style="color: #b58900;">dentry</span><span style="color: #757575;">,</span> <span style="color: #b58900;">inode</span><span style="color: #757575;">)</span>;
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">ext2_add_link</span>:
+  from = <span style="color: #757575;">(</span><span style="color: #b58900;">char</span>*<span style="color: #757575;">)</span>de - <span style="color: #757575;">(</span><span style="color: #b58900;">char</span>*<span style="color: #757575;">)</span><span style="color: #268bd2;">page_address</span><span style="color: #757575;">(</span><span style="color: #b58900;">page</span><span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">rec_len &#21644; entry &#30340;&#21517;&#23383;&#38271;&#24230;&#26377;&#20851;</span>
+  to = from + rec_len;
+  <span style="color: #268bd2;">ext2_commit_chunk</span><span style="color: #757575;">(</span><span style="color: #b58900;">page</span><span style="color: #757575;">,</span> <span style="color: #b58900;">from</span><span style="color: #757575;">,</span> <span style="color: #b58900;">to</span><span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</li>
+</ol>
+</li>
+
+<li><a id="orgb6481ce"></a>symlink<br />
+<div class="outline-text-6" id="text-1-5-2-1-2">
+<p>
+symlink 通过 ext2_symlink 生成
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">ext2_symlink</span>:
+  l = strlen<span style="color: #757575;">(</span>symname<span style="color: #757575;">)</span>+1;
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>l &gt; <span style="color: #859900;">sizeof</span> <span style="color: #757575;">(</span>EXT2_I<span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span>-&gt;i_data<span style="color: #757575;">))</span>:
+    <span style="color: #859900;">struct</span> ext2_inode_info <span style="color: #757575;">{</span>
+      <span style="color: #b58900;">__le32</span>    <span style="color: #268bd2;">i_data</span>[15];
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+    <span style="color: #757575;">}</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509; symname &#38271;&#24230;&#22823;&#20110; 60 (15*4), &#21017;&#20351;&#29992; slow symlink</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25152;&#35859; slow symlink, &#26159;&#25351;&#20351;&#29992; data block &#26469;&#20445;&#23384; symname</span>
+    <span style="color: #268bd2;">page_symlink</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">,</span> <span style="color: #b58900;">symname</span><span style="color: #757575;">,</span> <span style="color: #b58900;">l</span><span style="color: #757575;">)</span>;
+    mapping-&gt;a_ops-&gt;commit_write<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">,</span> page<span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> len-1<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">else</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">fast symlink, symname &#34987;&#20445;&#23384;&#22312; i_data &#20013;</span>
+    memcpy<span style="color: #757575;">((</span><span style="color: #b58900;">char</span>*<span style="color: #757575;">)(</span>EXT2_I<span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span>-&gt;i_data<span style="color: #757575;">),</span>symname<span style="color: #757575;">,</span>l<span style="color: #757575;">)</span>;
+    inode-&gt;i_size = l-1;
+</pre>
+</div>
+
+<p>
+关于 fast/slow symlink 的一个实验:
+</p>
+
+<pre class="example" id="org33d2d86">
+~@dell-work&gt; ln -s "123456789012345678901234567890123456789012345678901234567890" a
+
+~@dell-work&gt; stat a
+  File: 'a' -&gt; '123456789012345678901234567890123456789012345678901234567890'
+  Size: 60              Blocks: 8          IO Block: 4096   symbolic link
+Device: 802h/2050d      Inode: 21500456    Links: 1
+
+~@dell-work&gt; rm a
+rm: remove symbolic link 'a'? y
+
+~@dell-work&gt; ln -s "12345678901234567890123456789012345678901234567890123456789" a
+
+~@dell-work&gt; stat a
+  File: 'a' -&gt; '12345678901234567890123456789012345678901234567890123456789'
+  Size: 59              Blocks: 0          IO Block: 4096   symbolic link
+Device: 802h/2050d      Inode: 21500456    Links: 1
+</pre>
+
+<p>
+其中, symname 长度为 60 时, Blocks = 8, 表示使用了 8 个 sector:
+4096/512 = 8 (sector 是磁盘的物理属性, 一般为 512b, 而 block 是 fs 抽象的属性, 在 mkfs 时可以指定)
+</p>
+
+<p>
+另外, ext2_read_inode 时如何区别 fast/slow symlink?
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">ext2_read_inode</span>:
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>S_ISLNK<span style="color: #757575;">(</span>inode-&gt;i_mode<span style="color: #757575;">))</span>:
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>ext2_inode_is_fast_symlink<span style="color: #757575;">(</span>inode<span style="color: #757575;">))</span>:
+      inode-&gt;i_op = &amp;ext2_fast_symlink_inode_operations;
+    <span style="color: #859900;">else</span>:
+      inode-&gt;i_op = &amp;ext2_symlink_inode_operations;
+
+<span style="color: #268bd2; font-weight: bold;">ext2_inode_is_fast_symlink</span>:
+  <span style="color: #b58900;">int</span> <span style="color: #268bd2;">ea_blocks</span> = EXT2_I<span style="color: #757575;">(</span>inode<span style="color: #757575;">)</span>-&gt;i_file_acl ? <span style="color: #757575;">(</span>inode-&gt;i_sb-&gt;s_blocksize &gt;&gt; 9<span style="color: #757575;">)</span> : 0;
+  <span style="color: #859900;">return</span> <span style="color: #757575;">(</span>S_ISLNK<span style="color: #757575;">(</span>inode-&gt;i_mode<span style="color: #757575;">)</span> &amp;&amp; inode-&gt;i_blocks - ea_blocks == 0;<span style="color: #757575;">)</span>
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org7c9ce63"></a>regular file<br /></li>
+
+<li><a id="org5ae0f85"></a>char/blk device<br />
+<div class="outline-text-6" id="text-1-5-2-1-4">
+<p>
+mknod 时 i_size 没有赋值, 所以大小为 0
+</p>
+</div>
+</li>
+
+<li><a id="orgc01c9bd"></a>fifo<br /></li>
+
+<li><a id="org1774326"></a>socket<br /></li>
+</ol>
+</div>
+
+<div id="outline-container-org219d7a1" class="outline-5">
+<h5 id="org219d7a1"><span class="section-number-5">1.5.2.2</span> proc</h5>
+</div>
+</div>
+
+<div id="outline-container-orgcd1c237" class="outline-4">
+<h4 id="orgcd1c237"><span class="section-number-4">1.5.3</span> .(single dot) 与 ..(double dots)</h4>
+<div class="outline-text-4" id="text-1-5-3">
+<p>
+对于 ext2 来说, single dot 与 double dots 是真实存在于磁盘上的, 而并非程序模拟出来的
+place holder
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">ext2_mkdir</span>:
+  inode = ext2_new_inode <span style="color: #757575;">(</span>dir<span style="color: #757575;">,</span> S_IFDIR | mode<span style="color: #757575;">)</span>;
+  <span style="color: #268bd2;">ext2_make_empty</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">,</span> <span style="color: #b58900;">parent</span><span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">inode &#26159;&#26032;&#24314;&#30340;&#30446;&#24405;, parent &#26159;&#29238;&#30446;&#24405;</span>
+    kaddr = kmap_atomic<span style="color: #757575;">(</span>page<span style="color: #757575;">,</span> KM_USER0<span style="color: #757575;">)</span>;
+    de = <span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">ext2_dir_entry_2</span> *<span style="color: #757575;">)</span>kaddr;
+    de-&gt;name_len = 1;
+    de-&gt;rec_len = cpu_to_le16<span style="color: #757575;">(</span>EXT2_DIR_REC_LEN<span style="color: #757575;">(</span>1<span style="color: #757575;">))</span>;
+    <span style="color: #268bd2;">memcpy</span> <span style="color: #757575;">(</span>de-&gt;name<span style="color: #757575;">,</span> <span style="color: #2aa198;">".\0\0"</span><span style="color: #757575;">,</span> 4<span style="color: #757575;">)</span>;
+    de-&gt;inode = cpu_to_le32<span style="color: #757575;">(</span>inode-&gt;i_ino<span style="color: #757575;">)</span>;
+
+    de = <span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">ext2_dir_entry_2</span> *<span style="color: #757575;">)(</span>kaddr + EXT2_DIR_REC_LEN<span style="color: #757575;">(</span>1<span style="color: #757575;">))</span>;
+    de-&gt;name_len = 2;
+    de-&gt;rec_len = cpu_to_le16<span style="color: #757575;">(</span>chunk_size - EXT2_DIR_REC_LEN<span style="color: #757575;">(</span>1<span style="color: #757575;">))</span>;
+    de-&gt;inode = cpu_to_le32<span style="color: #757575;">(</span>parent-&gt;i_ino<span style="color: #757575;">)</span>;
+    <span style="color: #268bd2;">memcpy</span> <span style="color: #757575;">(</span>de-&gt;name<span style="color: #757575;">,</span> <span style="color: #2aa198;">"..\0"</span><span style="color: #757575;">,</span> 4<span style="color: #757575;">)</span>;
+</pre>
+</div>
+
+<p>
+可见, single dot 与 double dots 是包含在 dir entry 中的, 并且它们对应的
+inode 在 mkdir 时即被指定.
+</p>
+</div>
+
+<div id="outline-container-orgf9b90ec" class="outline-5">
+<h5 id="orgf9b90ec"><span class="section-number-5">1.5.3.1</span> 测试</h5>
+<div class="outline-text-5" id="text-1-5-3-1">
+<p>
+根据前面关于 path_lookup 的描述, single dot 与 double dots 在
+path_walk 时是做为特例被处理的, 比如, 处理到 double dots 时, 会直接
+climb up (并不需要根据 double dots 对应的 inode, 并且会考虑 mount), 那么可能存在这种问题:
+</p>
+
+<p>
+getdents 或 readdir 返回的 double dots 对应的 linux_dirent 结构体中,
+d_ino 对应的应该是上面 mkdir 时被指定的 ino, 但如果当前目录被 mount 到另一个地方, 对 double dots 进行 path_lookup 时, 对应 double dots 的
+inode 可能是和 mnt_parent 对应的 ino, 两者会不同?
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;sys/types.h&gt;</span>
+<span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;dirent.h&gt;</span>
+
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span>
+<span style="color: #757575;">{</span>
+    <span style="color: #b58900;">DIR</span> * <span style="color: #268bd2;">d</span>= opendir<span style="color: #757575;">(</span>argv[1]<span style="color: #757575;">)</span>;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">i</span> = 0;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">dirent</span> * <span style="color: #268bd2;">ret</span> = readdir<span style="color: #757575;">(</span>d<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>ret<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%s %d\n"</span><span style="color: #757575;">,</span> ret-&gt;d_name<span style="color: #757575;">,</span> ret-&gt;d_ino<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>        
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<pre class="example" id="orga4b4edf">
+$&gt; mkdir test
+
+// a.out 底层使用 readdir
+$&gt; ./a.out test
+.. 21504751
+
+// stat 底层使用 path_lookup
+$&gt; stat test/..
+  File: 'test/..'
+  Size: 12288           Blocks: 24         IO Block: 4096   directory
+Device: 802h/2050d      Inode: 21504751    Links: 121
+
+$&gt; stat .
+  File: '.'
+  Size: 12288           Blocks: 24         IO Block: 4096   directory
+Device: 802h/2050d      Inode: 21504751    Links: 121
+
+$&gt; mkdir -p a/b
+
+$&gt; sudo mount -o bind test a/b
+
+$&gt; ./a.out a/b
+.. 21504751
+
+$&gt; stat a/b/..
+  File: 'a/b/..'
+  Size: 4096            Blocks: 8          IO Block: 4096   directory
+Device: 802h/2050d      Inode: 21725291    Links: 3
+
+$&gt; stat a
+  File: 'a'
+  Size: 4096            Blocks: 8          IO Block: 4096   directory
+Device: 802h/2050d      Inode: 21725291    Links: 3
+
+</pre>
+
+<p>
+不过这种不一致看起来可以用来判断一个 entry 是不是 mount point &#x2026;
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orge6b4ec2" class="outline-4">
+<h4 id="orge6b4ec2"><span class="section-number-4">1.5.4</span> atime / mtime</h4>
+<div class="outline-text-4" id="text-1-5-4">
+<p>
+读写文件时 atime/mtime 会相应变化, vfs 在 generic_file_read / write 处做了实现, 如果某个 fs 的文件读写不是通过 generic_file_read / write, 需要自己处理 atime/mtime
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">do_generic_mapping_read</span>:
+  <span style="color: #268bd2;">file_accessed</span><span style="color: #757575;">(</span><span style="color: #b58900;">filp</span><span style="color: #757575;">)</span>;
+    <span style="color: #268bd2;">touch_atime</span><span style="color: #757575;">(</span>file-&gt;f_vfsmnt<span style="color: #757575;">,</span> file-&gt;f_dentry<span style="color: #757575;">)</span>
+      <span style="color: #268bd2;">update_atime</span><span style="color: #757575;">(</span>dentry-&gt;d_inode<span style="color: #757575;">)</span>;
+        inode-&gt;i_atime = now;
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">generic_file_write</span>:
+  __generic_file_write_nolock
+    __generic_file_aio_write_nolock
+      <span style="color: #b58900;">inode_update_time</span>
+        <span style="color: #268bd2;">inode</span>-&gt;i_mtime = now;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org3da1676" class="outline-4">
+<h4 id="org3da1676"><span class="section-number-4">1.5.5</span> ramfs, rootfs, initramfs</h4>
+<div class="outline-text-4" id="text-1-5-5">
+<p>
+<a href="https://www.kernel.org/doc/Documentation/filesystems/ramfs-rootfs-initramfs.txt">https://www.kernel.org/doc/Documentation/filesystems/ramfs-rootfs-initramfs.txt</a>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org313323b" class="outline-4">
+<h4 id="org313323b"><span class="section-number-4">1.5.6</span> getcwd</h4>
+<div class="outline-text-4" id="text-1-5-6">
+<p>
+getcwd 显然依赖于 fs_struct-&gt;pwdmnt, 但 pwdmnt 做为 vfsmount 只包含一个 dentry 信息, 并不包含完整路径, getcwd 如果获得完整路径的?
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">__d_path</span>:
+  <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>;;<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+      <span style="color: #859900;">struct</span> <span style="color: #b58900;">dentry</span> * <span style="color: #268bd2;">parent</span>;
+      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>dentry == vfsmnt-&gt;mnt_root <span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+          <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>vfsmnt-&gt;mnt_parent == vfsmnt<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+              <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">global_root</span>;
+          <span style="color: #757575;">}</span>
+          dentry = vfsmnt-&gt;mnt_mountpoint;
+          vfsmnt = vfsmnt-&gt;mnt_parent;
+          <span style="color: #859900;">continue</span>;
+      <span style="color: #757575;">}</span>
+      parent = dentry-&gt;d_parent;
+      memcpy<span style="color: #757575;">(</span>end<span style="color: #757575;">,</span> dentry-&gt;d_name.name<span style="color: #757575;">,</span> namelen<span style="color: #757575;">)</span>;
+      dentry = parent;
+  <span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+和 lookup 时的 follow_dotdot 差不多.
+</p>
+
+<p>
+由于 __d_path 使用 dentry-&gt;d_parent 获得完整路径, 所以估计 dcache 在
+drop cache 时需要保证 dentry A 的 parent 不能先于 dentry A 被 drop?
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

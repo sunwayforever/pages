@@ -1,0 +1,563 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 11:56 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Android Sqlite</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Android Sqlite</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgdbebd80">1. SQlite: Android</a>
+<ul>
+<li><a href="#org2807726">1.1. SQLiteDatabase &amp; SQLiteDatabase (c)</a>
+<ul>
+<li><a href="#org74165cf">1.1.1. addCustomFunction</a></li>
+</ul>
+</li>
+<li><a href="#orgbe38404">1.2. SQLiteStatement (c)</a></li>
+<li><a href="#orge650929">1.3. SQLiteSession</a></li>
+<li><a href="#org316a918">1.4. SQLiteConnection &amp; SQLiteConnectionPool</a>
+<ul>
+<li><a href="#orgd91a47f">1.4.1. Yield</a></li>
+<li><a href="#org3384e4b">1.4.2. WAL (Write-ahead Logging)</a></li>
+</ul>
+</li>
+<li><a href="#org8457993">1.5. SQLiteProgram &amp; SQLiteQuery &amp; SQLiteQueryBuilder</a></li>
+<li><a href="#org39ab8bc">1.6. SQLiteDebug</a></li>
+<li><a href="#org0521fe1">1.7. Cursor &amp; CursorWindow</a>
+<ul>
+<li><a href="#org6a2a321">1.7.1. SQLiteCursorDriver</a></li>
+<li><a href="#org88a9998">1.7.2. CursorFactory</a></li>
+<li><a href="#orga9ac806">1.7.3. Cursor</a></li>
+<li><a href="#org80a121c">1.7.4. CursorWindow</a></li>
+</ul>
+</li>
+<li><a href="#orgdab51e1">1.8. Other</a>
+<ul>
+<li><a href="#org3285c8d">1.8.1. adb shell dumpsys meminfo pid</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgdbebd80" class="outline-2">
+<h2 id="orgdbebd80"><span class="section-number-2">1</span> SQlite: Android</h2>
+<div class="outline-text-2" id="text-1">
+<pre class="example" id="org143a0f2">
+
+                                 +----------------+
+                                 | SQLiteDatabase |                         +------------------+
+                                 +-+----------+---+                  +-----&gt;+ SQLiteConnection-+-&lt;---+
+                                   |          |                      |      +------------------+     |
+                                   |          v                      |      +------------------+     |
+     +--------------------+--------+     +----+------------------+   +-----&gt;+ SQLiteConnection |     |
+     |                    |              | SQLiteConnection Pool-+---+      +-----+-----+------+     |
+     v thread_1           v thread_2     +-------+---------------+                |     ^            |
++----+----------+    +----+----------+           ^                                |     |            |
+| SQLiteSession |    | SQLiteSession-+-----------+      +----------------------+  |     |            |
++----+-------+--+    +------+--+-----+           |      |PreparedStatementCache+&lt;-+     |            |
+     |       |              |                    |      +----------------------+        |            |
+     |       +--------------+--------------------+                                      |            |
+     |                      |                                                           |            |
+     |                      +-----------------------------------------------------------+            |
+     |                                                                                               |
+     +-----------------------------------------------------------------------------------------------+
+</pre>
+</div>
+
+<div id="outline-container-org2807726" class="outline-3">
+<h3 id="org2807726"><span class="section-number-3">1.1</span> SQLiteDatabase &amp; SQLiteDatabase (c)</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-org74165cf" class="outline-4">
+<h4 id="org74165cf"><span class="section-number-4">1.1.1</span> addCustomFunction</h4>
+</div>
+</div>
+
+<div id="outline-container-orgbe38404" class="outline-3">
+<h3 id="orgbe38404"><span class="section-number-3">1.2</span> SQLiteStatement (c)</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+Note that `SQLiteStatement' has nothing to do with the native
+`prepared statement', it nothing but a `helper class' to store:
+</p>
+<ul class="org-ul">
+<li>sql string</li>
+<li>bind args</li>
+<li>db connection (session)</li>
+</ul>
+
+<p>
+In fact, there is ONE class named `PreparedStatement', defined in the
+`SQLiteConnection', which corresponds to the `native prepared
+statement', and also there is `PreparedStatementCache' in
+SQLiteConnection to avoid redundant statement preparations. So, cache
+`SQLiteStatement' manually may make no sense? so I really doubt that
+`android providers should use DatabaseUtils.InsertHelper to cache
+SQLiteStatement', as mentioned in:
+</p>
+
+<p>
+<a href="http://www.outofwhatbox.com/blog/2010/12/android-using-databaseutils-inserthelper-for-faster-insertions-into-sqlite-database/#comment-2685">android-using-databaseutils-inserthelper-for-faster-insertions-into-sqlite-database/</a>
+</p>
+</div>
+</div>
+
+<div id="outline-container-orge650929" class="outline-3">
+<h3 id="orge650929"><span class="section-number-3">1.3</span> SQLiteSession</h3>
+</div>
+
+<div id="outline-container-org316a918" class="outline-3">
+<h3 id="org316a918"><span class="section-number-3">1.4</span> SQLiteConnection &amp; SQLiteConnectionPool</h3>
+<div class="outline-text-3" id="text-1-4">
+</div>
+<div id="outline-container-orgd91a47f" class="outline-4">
+<h4 id="orgd91a47f"><span class="section-number-4">1.4.1</span> Yield</h4>
+</div>
+
+<div id="outline-container-org3384e4b" class="outline-4">
+<h4 id="org3384e4b"><span class="section-number-4">1.4.2</span> WAL (Write-ahead Logging)</h4>
+<div class="outline-text-4" id="text-1-4-2">
+<p>
+<a href="http://sqlite.org/wal.html">http://sqlite.org/wal.html</a>
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org8457993" class="outline-3">
+<h3 id="org8457993"><span class="section-number-3">1.5</span> SQLiteProgram &amp; SQLiteQuery &amp; SQLiteQueryBuilder</h3>
+</div>
+
+<div id="outline-container-org39ab8bc" class="outline-3">
+<h3 id="org39ab8bc"><span class="section-number-3">1.6</span> SQLiteDebug</h3>
+</div>
+
+<div id="outline-container-org0521fe1" class="outline-3">
+<h3 id="org0521fe1"><span class="section-number-3">1.7</span> Cursor &amp; CursorWindow</h3>
+<div class="outline-text-3" id="text-1-7">
+</div>
+<div id="outline-container-org6a2a321" class="outline-4">
+<h4 id="org6a2a321"><span class="section-number-4">1.7.1</span> SQLiteCursorDriver</h4>
+</div>
+
+<div id="outline-container-org88a9998" class="outline-4">
+<h4 id="org88a9998"><span class="section-number-4">1.7.2</span> CursorFactory</h4>
+</div>
+
+<div id="outline-container-orga9ac806" class="outline-4">
+<h4 id="orga9ac806"><span class="section-number-4">1.7.3</span> Cursor</h4>
+<div class="outline-text-4" id="text-1-7-3">
+</div>
+<div id="outline-container-orgb53b3d7" class="outline-5">
+<h5 id="orgb53b3d7"><span class="section-number-5">1.7.3.1</span> Cursor Class Hierarchy</h5>
+<div class="outline-text-5" id="text-1-7-3-1">
+<pre class="example" id="orge21c105">
+                          -+----------+
+                           | Cursor/I |
+                          -+----+-----+
+                                |
+                                |
+                     -+---------+-----------+
+                      | CrossProcessCursor/I|
+                     -+----+----+-----------+
+                                |
+                                |
+                      -+-----+--+---------+
+                       | AbstractCursor/A |
+                      -+--------+---------+
+                                |
+            -+------------------+---------------+----------------------+
+             |                                  |                      |
+-+-----------+--------------+          -+-------+------+       -+------+------+
+ | AbstractWindowedCursor/A |           | MatrixCursor |        | MergeCursor |
+-+-----------+--------------+          -+--------------+       -+-------------+
+             |
+            -+----------------------------+
+             |                            |
+    -+-------+------+      -+-------------+-------------+
+     | SqliteCursor |       | BulkCursorToCursorAdaptor |
+    -+--------------+      -+---------------------------+
+</pre>
+</div>
+
+<ol class="org-ol">
+<li><a id="org612429d"></a>Cursor across process<br />
+<div class="outline-text-6" id="text-1-7-3-1-1">
+<p>
+When Cursor in the remote process need to be returned to local process, the
+remote Cursor will be wrapped into a binder object named
+`CursorToBulkCursorAdaptor`, which is not a cursor, but implements methods like
+`onMove`, `getWindow`, etc.
+</p>
+
+<p>
+When the local process received the `CursorToBulkCursorAdaptor` binder, it
+again will be wrapped into a local cursor object named
+`BulkCursorToCursorAdaptor`, which is a `AbstractWindowedCursor`
+</p>
+
+
+<pre class="example" id="org82a62a5">
+            -+------------------------+
+             | AbstractWindowedCursor |
+            -+----------+-------------+
+                        |
+                        |
+          -+------------+--------------+
+           | BulkCursorToCursorAdaptor |
+          -+------------+--------------+
+                        |
+                        |
+               -+-------+------+        local process (e.g. app)
+--------------- |  BulkCursor  | -------------------
+               -+-------+------+        remote process (e.g. provider)
+                        |
+                        |
+          -+------------+--------------+
+           | CursorToBulkCursorAdaptor |
+          -+------------+--------------+
+                        |
+                        |
+                 -+----------+
+                  |  Cursor  |
+                 -+----------+
+</pre>
+</div>
+</li>
+</ol>
+</div>
+
+<div id="outline-container-orgdbf3f9b" class="outline-5">
+<h5 id="orgdbf3f9b"><span class="section-number-5">1.7.3.2</span> Code Snippet</h5>
+<div class="outline-text-5" id="text-1-7-3-2">
+</div>
+<ol class="org-ol">
+<li><a id="org6deadd8"></a>moveToFirst<br />
+<div class="outline-text-6" id="text-1-7-3-2-1">
+<div class="org-src-container">
+<pre class="src src-text">AbstractCursor.moveToFirst
+  AbstractCursor.moveToPosition(0)
+    ret=SqliteCursor.onMove(origPos,0)
+      if mWindow==null || newPosition &lt; mWindow.getStartPosition()
+         || newPosition &gt;= mWindow.getStartPosition()+ mWindow.getNumRows():
+         SqliteCursor.fillWindow(newPosition)
+           mWindow.setStartPosition(newPosition)
+           getQuery().fillWindow(newPosition)
+             SQLiteQuery.nativeFillWindow(nHandle, nStatement, window.mWindowPtr,
+                        startPos, mOffsetIndex);
+               // Bind the offset parameter, telling the program which row to start with
+               sqlite3_bind_int(statement, offsetParam, startPos);
+               while (!windowFull):
+                 sqlite3_step(statement);
+                 window-&gt;allocRow();
+                 for (int i = 0; i &lt; numColumns; i++):
+                   int type = sqlite3_column_type(statement, i);
+                   if (type == SQLITE_TEXT):
+                     const char* text = reinterpret_cast&lt;const char*&gt;(sqlite3_column_text(statement, i));
+                     window-&gt;putString(addedRows, i, text, sizeIncludingNull);
+                   elif: // other type
+                 // end for
+               // end while
+               sqlite3_reset(statement);
+    if ret:
+      mPos=newPos;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="orgdecd639"></a>getString<br />
+<div class="outline-text-6" id="text-1-7-3-2-2">
+<div class="org-src-container">
+<pre class="src src-text">Cursor.getString(pos)
+  AbstractWindowedCursor.getString(pos)
+    mWindow.getString(pos)
+      nativeGetString(pos)
+</pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+
+<div id="outline-container-org3032b91" class="outline-5">
+<h5 id="org3032b91"><span class="section-number-5">1.7.3.3</span> SQLiteCursor</h5>
+<div class="outline-text-5" id="text-1-7-3-3">
+<ul class="org-ul">
+<li>SQLiteCursorDriver
+used to create the SqliteCursor</li>
+<li>SQLiteQuery
+used to invoke `nativefillWindow`</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org3b7f580" class="outline-5">
+<h5 id="org3b7f580"><span class="section-number-5">1.7.3.4</span> To summarize</h5>
+<div class="outline-text-5" id="text-1-7-3-4">
+<ol class="org-ol">
+<li>Cursor by itself is not `CrossProcess`, but with the help of `BulkCursor`
+,`BulkCursorToCursorAdaptor` and `CursorToBulkCursorAdaptor`, Cursor can be
+`CrossProcess`</li>
+<li>The most important methods of the `Cursor` object:
+<ol class="org-ol">
+<li><p>
+fillWindow
+</p>
+
+<p>
+`nativefillWindow` will execute the real query, and fill the result set to
+the `CursorWindow`.  ps. `getCount` will invoke `fillWindow` implicitly.
+</p></li>
+
+<li><p>
+onMove
+</p>
+
+<p>
+`fillWindow` is during `onMove`, e.g. `moveToFirst`, `moveToNext`, &#x2026;
+</p></li>
+</ol></li>
+</ol>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org80a121c" class="outline-4">
+<h4 id="org80a121c"><span class="section-number-4">1.7.4</span> CursorWindow</h4>
+<div class="outline-text-4" id="text-1-7-4">
+<p>
+`CursorWindow` is parcelable, it represents a `window` of sqlite query
+data. The underlying data of a Java CursorWindow object is managed by
+CursorWindow c++ object, in both of the server side and the client
+side.
+</p>
+</div>
+
+<div id="outline-container-orga21be74" class="outline-5">
+<h5 id="orga21be74"><span class="section-number-5">1.7.4.1</span> init</h5>
+<div class="outline-text-5" id="text-1-7-4-1">
+<div class="org-src-container">
+<pre class="src src-text">onMove
+  fillWindow
+    clearOrCreateWindow
+      mWindow = new CursorWindow(name);
+        // sCursorWindowSize specifies the window size in kb, e.g. 2048 Kb
+        mWindowPtr = CursorWindow.nativeCreate(name, sCursorWindowSize);
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org4b1d775" class="outline-5">
+<h5 id="org4b1d775"><span class="section-number-5">1.7.4.2</span> how CursorWindow is passed across process</h5>
+<div class="outline-text-5" id="text-1-7-4-2">
+<p>
+Because `CursorWindow` is only a parcelable (not a binder), so the remote
+`CursorWindow` need to be fetched by the local process again and again,
+e.g. during local `onMove`
+</p>
+
+<div class="org-src-container">
+<pre class="src src-text">BulkCursorToCursorAdaptor.onMove
+  if (mWindow == null
+      || newPosition &lt; mWindow.getStartPosition()
+      || newPosition &gt;= mWindow.getStartPosition() + mWindow.getNumRows()):
+    setWindow(mBulkCursor.getWindow(newPosition));
+      // remote process
+      CursorToBulkCursorAdaptor.getWindow(newPosition)
+        mCursor.moveToPosition(startPos)
+        return mCursor.getWindow()
+          // SQLiteCursor
+          mCursor.fillWindow(position, window);
+            mQuery.fillWindow(position,window);
+              getSession().executeForCursorWindow();
+                SQLiteConnection.nativeExecuteForCursorWindow(start, requiredRow)
+                // native
+                  while (window not full):
+                    sqlite3_step(stmt);
+                    copy_row(window)
+                  sqlite3_reset(stmt)
+                nativeFinalizeStatement(stmt);
+</pre>
+</div>
+</div>
+
+<ol class="org-ol">
+<li><a id="org9c02e32"></a>关于 CursorWindow 的一个 bug (or feature)<br />
+<div class="outline-text-6" id="text-1-7-4-2-1">
+<p>
+每次 onMove (包括 cursor.moveToPosition 等) 都会导致底层的 statement 实际上会重新查询 &#x2026;. 所以这种设计会导致这个 bug (or feature?)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">private</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">query</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">SQLiteDatabase</span> <span style="color: #268bd2;">db</span> = SQLiteDatabase.openDatabase<span style="color: #757575;">(</span><span style="color: #2aa198;">"/storage/sdcard1/test.db"</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">null</span><span style="color: #757575;">,</span><span style="color: #268bd2; font-weight: bold;">SQLiteDatabase</span>.OPEN_READWRITE<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">null</span><span style="color: #757575;">)</span>;
+    <span style="color: #b58900;">Cursor</span> <span style="color: #268bd2;">cursor</span>=db.query<span style="color: #757575;">(</span><span style="color: #2aa198;">"test"</span><span style="color: #757575;">,</span> <span style="color: #859900;">new</span> <span style="color: #b58900;">String</span>[] <span style="color: #757575;">{</span><span style="color: #2aa198;">"name"</span><span style="color: #757575;">,</span><span style="color: #2aa198;">"count"</span><span style="color: #757575;">},</span> <span style="color: #268bd2; font-weight: bold;">null</span><span style="color: #757575;">,</span><span style="color: #268bd2; font-weight: bold;">null</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">null</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">null</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"name"</span><span style="color: #757575;">)</span>;
+    Log.e<span style="color: #757575;">(</span><span style="color: #2aa198;">"sunway"</span><span style="color: #757575;">,</span><span style="color: #2aa198;">"query:get count:"</span>+cursor.getCount<span style="color: #757575;">())</span>;
+    cursor.moveToFirst<span style="color: #757575;">()</span>;
+    Log.e<span style="color: #757575;">(</span><span style="color: #2aa198;">"sunway"</span><span style="color: #757575;">,</span><span style="color: #2aa198;">"moveToFirst: data:"</span>+cursor.getString<span style="color: #757575;">(</span>0<span style="color: #757575;">))</span>;
+    cursor.moveToLast<span style="color: #757575;">()</span>;
+    Log.e<span style="color: #757575;">(</span><span style="color: #2aa198;">"sunway"</span><span style="color: #757575;">,</span><span style="color: #2aa198;">"moved to last"</span><span style="color: #757575;">)</span>;
+    Log.e<span style="color: #757575;">(</span><span style="color: #2aa198;">"sunway"</span><span style="color: #757575;">,</span><span style="color: #2aa198;">"insert a row"</span><span style="color: #757575;">)</span>;
+
+    db.beginTransaction<span style="color: #757575;">()</span>;
+    db.execSQL<span style="color: #757575;">(</span><span style="color: #2aa198;">"INSERT INTO test VALUES (\"aaa\",1)"</span><span style="color: #757575;">)</span>;
+    Log.e<span style="color: #757575;">(</span><span style="color: #2aa198;">"sunway"</span><span style="color: #757575;">,</span><span style="color: #2aa198;">"done"</span><span style="color: #757575;">)</span>;
+    db.setTransactionSuccessful<span style="color: #757575;">()</span>;
+    db.endTransaction<span style="color: #757575;">()</span>;
+
+    cursor.moveToFirst<span style="color: #757575;">()</span>;
+    Log.e<span style="color: #757575;">(</span><span style="color: #2aa198;">"sunway"</span><span style="color: #757575;">,</span><span style="color: #2aa198;">"moveToFirst again: data:"</span>+cursor.getString<span style="color: #757575;">(</span>0<span style="color: #757575;">))</span>;
+    cursor.close<span style="color: #757575;">()</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+当原有数据足够多时 (保证 moveToLast 会调用 fillWindow 替换掉当前
+window), 对同一 cursor 调用两次 moveToFirst 查询的结果不同 &#x2026;. 若要避免这个情况, 要么底层的 cursor window 足够大, 能容纳所有的内容, 要么
+cursor 查询返回后不 finalized statement, 这样可以保证 read transaction
+持有 shared lock, 那么其他 write transaction 会因为无法获得 exclusive
+lock 而无法修改数据库.
+</p>
+</div>
+</li>
+</ol>
+</div>
+
+<div id="outline-container-org8cad368" class="outline-5">
+<h5 id="org8cad368"><span class="section-number-5">1.7.4.3</span> CursorWindow and `ashmem'</h5>
+<div class="outline-text-5" id="text-1-7-4-3">
+<p>
+The underlying data of a Java CursorWindow is managed by CursorWindow
+c++ object, and is stored using `ashmem'
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++">  <span style="color: #b58900;">status_t</span> <span style="color: #268bd2; font-weight: bold;">CursorWindow</span>::<span style="color: #268bd2;">writeToParcel</span><span style="color: #757575;">(</span><span style="color: #b58900;">Parcel</span>* <span style="color: #268bd2;">parcel</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+      <span style="color: #b58900;">status_t</span> <span style="color: #268bd2;">status</span> = parcel-&gt;writeString8<span style="color: #757575;">(</span>mName<span style="color: #757575;">)</span>;
+      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>status<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+          status = parcel-&gt;writeDupFileDescriptor<span style="color: #757575;">(</span>mAshmemFd<span style="color: #757575;">)</span>;
+      <span style="color: #757575;">}</span>
+      <span style="color: #859900;">return</span> status;
+  <span style="color: #757575;">}</span>
+
+<span style="color: #b58900;">status_t</span> <span style="color: #268bd2; font-weight: bold;">CursorWindow</span>::<span style="color: #268bd2;">createFromParcel</span><span style="color: #757575;">(</span><span style="color: #b58900;">Parcel</span>* <span style="color: #268bd2;">parcel</span><span style="color: #757575;">,</span> <span style="color: #b58900;">CursorWindow</span>** <span style="color: #268bd2;">outCursorWindow</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">String8</span> <span style="color: #268bd2;">name</span> = parcel-&gt;readString8<span style="color: #757575;">()</span>;
+
+    <span style="color: #b58900;">status_t</span> <span style="color: #268bd2;">result</span>;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">ashmemFd</span> = parcel-&gt;readFileDescriptor<span style="color: #757575;">()</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+So, CursorWindow parceling is quite efficient using `ashmem', and
+that why CursorWindow could deliver more than 1MB data using binder.
+</p>
+
+<pre class="example" id="org4b2a1b5">
+
+~@sunway-x230&gt; adb shell procmem 642|grep "CursorWindow"
+     0K       0K       0K       0K       0K       0K       0K       0K  /dev/ashmem/CursorWindow:
+     0K       0K       0K       0K       0K       0K       0K       0K  /dev/ashmem/CursorWindow:
+     4K       4K       2K       0K       0K       4K       0K       0K  /dev/ashmem/CursorWindow:
+     0K       0K       0K       0K       0K       0K       0K       0K  /dev/ashmem/CursorWindow:
+     4K       4K       4K       4K       0K       0K       4K       0K  /dev/ashmem/CursorWindow:
+
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgdab51e1" class="outline-3">
+<h3 id="orgdab51e1"><span class="section-number-3">1.8</span> Other</h3>
+<div class="outline-text-3" id="text-1-8">
+</div>
+<div id="outline-container-org3285c8d" class="outline-4">
+<h4 id="org3285c8d"><span class="section-number-4">1.8.1</span> adb shell dumpsys meminfo pid</h4>
+<div class="outline-text-4" id="text-1-8-1">
+<div class="org-src-container">
+<pre class="src src-text">SQL
+        MEMORY_USED:      992
+ PAGECACHE_OVERFLOW:      255          MALLOC_SIZE:       62
+
+DATABASES
+     pgsz     dbsz   Lookaside(b)          cache  Dbname
+        4      300            460       56/65/25  /data/user/0/com.android.providers.contacts/databases/contacts2.db
+        1        9                         0/0/0    (attached) presence_db
+        4      300            498       39/54/24  /data/user/0/com.android.providers.contacts/databases/profile.db
+        1        9                         0/0/0    (attached) presence_db
+        1       19             44        39/30/5  :memory:
+
+</pre>
+</div>
+
+<ol class="org-ol">
+<li>pgsz 是 page_size, 单位 KB.</li>
+<li>dbsz 是 db 文件大小, KB</li>
+<li>lookaside 是已经 checkout 的 lookaside slot 的个数 (<a href="http://www.sqlite.org/c3ref/c_dbstatus_lookaside_used.html">http://www.sqlite.org/c3ref/c_dbstatus_lookaside_used.html</a>)</li>
+<li>cache 是 android 使用的 statement cache 的 hit/miss/num_pages (和
+pcache 无关&#x2026;)</li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

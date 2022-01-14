@@ -1,0 +1,352 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SQlite: Benchmark</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">SQlite: Benchmark</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org56f6ac9">1. SQlite: Benchmark</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org56f6ac9" class="outline-2">
+<h2 id="org56f6ac9"><span class="section-number-2">1</span> SQlite: Benchmark</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+分别使用 c,java 程序插入 10w 条记录, 设置 synchronous 为 full 或 off, 保存数据库文件到 sdcard 或 mtd 设备. java 程序使用 execSQL 或
+InsertHelper.
+</p>
+
+<ul class="org-ul">
+<li>java 测试程序</li>
+</ul>
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">private</span> <span style="color: #b58900;">void</span> <span style="color: #268bd2;">writeDatabase</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">mtd test: use /data/test.db to  mtd</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">sd test: use  /storage/sdcard1/test.db</span>
+    <span style="color: #b58900;">SQLiteDatabase</span> <span style="color: #268bd2;">db</span> = SQLiteDatabase.openDatabase<span style="color: #757575;">(</span><span style="color: #2aa198;">"/data/test.db"</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">null</span><span style="color: #757575;">,</span><span style="color: #268bd2; font-weight: bold;">SQLiteDatabase</span>.OPEN_READWRITE<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">null</span><span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">synchronous = full</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">synchronous = off</span>
+    db.execSQL<span style="color: #757575;">(</span><span style="color: #2aa198;">"pragma synchronous=full"</span><span style="color: #757575;">)</span>;
+    <span style="color: #b58900;">long</span> <span style="color: #268bd2;">startTime</span>=System.currentTimeMillis<span style="color: #757575;">()</span>;
+    <span style="color: #b58900;">InsertHelper</span> <span style="color: #268bd2;">helper</span>=<span style="color: #859900;">new</span> <span style="color: #b58900;">InsertHelper</span><span style="color: #757575;">(</span>db<span style="color: #757575;">,</span> <span style="color: #2aa198;">"test"</span><span style="color: #757575;">)</span>;
+    <span style="color: #b58900;">ContentValues</span> <span style="color: #268bd2;">values</span>=<span style="color: #859900;">new</span> <span style="color: #b58900;">ContentValues</span><span style="color: #757575;">()</span>;
+    values.put<span style="color: #757575;">(</span><span style="color: #2aa198;">"name"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"test"</span><span style="color: #757575;">)</span>;
+    values.put<span style="color: #757575;">(</span><span style="color: #2aa198;">"count"</span><span style="color: #757575;">,</span> 3<span style="color: #757575;">)</span>;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">commit_time</span>=0;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">exec_time</span>=0;
+    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">i</span> = 0; i &lt; 10; i++<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #b58900;">long</span> <span style="color: #268bd2;">time1</span>=System.currentTimeMillis<span style="color: #757575;">()</span>;
+        db.beginTransaction<span style="color: #757575;">()</span>;
+        <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">j</span> = 0; j &lt; 10000; j++<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">execSQL test</span>
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">db.execSQL("insert into test values (\"test\",2)");</span>
+
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">InsertHelper</span>
+            helper.insert<span style="color: #757575;">(</span>values<span style="color: #757575;">)</span>;
+        <span style="color: #757575;">}</span>
+        db.setTransactionSuccessful<span style="color: #757575;">()</span>;
+        <span style="color: #b58900;">long</span> <span style="color: #268bd2;">time2</span>=System.currentTimeMillis<span style="color: #757575;">()</span>;
+        db.endTransaction<span style="color: #757575;">()</span>;
+        <span style="color: #b58900;">long</span> <span style="color: #268bd2;">time3</span>=System.currentTimeMillis<span style="color: #757575;">()</span>;
+
+        exec_time+=<span style="color: #757575;">(</span>time2-time1<span style="color: #757575;">)</span>;
+        commit_time+=<span style="color: #757575;">(</span>time3-time2<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #b58900;">long</span> <span style="color: #268bd2;">endTime</span>=System.currentTimeMillis<span style="color: #757575;">()</span>;
+    Log.e<span style="color: #757575;">(</span><span style="color: #2aa198;">"sunway"</span><span style="color: #757575;">,</span><span style="color: #2aa198;">"done: all_time: "</span>+<span style="color: #757575;">(</span>endTime-startTime<span style="color: #757575;">)</span>+<span style="color: #2aa198;">"mss avg_exec_time: "</span>+exec_time/10 +<span style="color: #2aa198;">"ms "</span>+<span style="color: #2aa198;">" avg_commit_time: "</span>+commit_time/10+<span style="color: #2aa198;">"ms"</span><span style="color: #757575;">)</span>;
+
+<span style="color: #757575;">}</span>
+
+
+</pre>
+</div>
+
+<ul class="org-ul">
+<li>c 测试程序</li>
+</ul>
+<div class="org-src-container">
+<pre class="src src-makefile"><span style="color: #268bd2;">LOCAL_PATH</span>:= $<span style="color: #757575;">(</span><span style="color: #268bd2;">call</span> my-dir<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">include</span> $<span style="color: #757575;">(</span><span style="color: #268bd2;">CLEAR_VARS</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">LOCAL_SRC_FILES</span>:= test_sqlite.c
+<span style="color: #268bd2;">LOCAL_CFLAGS</span> := -Wno-error-unused-parameter
+<span style="color: #268bd2;">LOCAL_MODULE</span>:= test_sqlite
+<span style="color: #268bd2;">LOCAL_MULTILIB</span> := 32
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">LOCAL_LDFLAGS := ...</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">LOCAL_C_INCLUDES := ...</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">LOCAL_STATIC_LIBRARIES := ...</span>
+<span style="color: #268bd2;">LOCAL_SHARED_LIBRARIES</span> := libsqlite
+
+<span style="color: #859900;">include</span> $<span style="color: #757575;">(</span><span style="color: #268bd2;">BUILD_EXECUTABLE</span><span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">"sqlite3.h"</span>
+<span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;pthread.h&gt;</span>
+<span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;string.h&gt;</span>
+<span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;stdio.h&gt;</span>
+
+<span style="color: #b58900;">void</span> <span style="color: #268bd2;">insert</span><span style="color: #757575;">(</span><span style="color: #b58900;">sqlite3</span> * <span style="color: #268bd2;">db</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">char</span> * <span style="color: #268bd2;">zerr</span>;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">rc</span>=0;
+    rc=sqlite3_exec<span style="color: #757575;">(</span>db<span style="color: #757575;">,</span><span style="color: #2aa198;">"pragma synchronous=full;"</span><span style="color: #757575;">,</span>0<span style="color: #757575;">,</span>0<span style="color: #757575;">,</span>&amp;zerr<span style="color: #757575;">)</span>;
+
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">timeval</span> <span style="color: #268bd2;">tv</span>;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">begin</span>=0;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">end</span>=0;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">exec_time</span>=0;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">commit_time</span>=0;
+
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">j</span>=0;
+
+    gettimeofday<span style="color: #757575;">(</span>&amp;tv<span style="color: #757575;">,</span><span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>;
+    begin=tv.tv_sec*1000+tv.tv_usec/1000;
+
+    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>j=0; j&lt;10; j++<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        gettimeofday<span style="color: #757575;">(</span>&amp;tv<span style="color: #757575;">,</span><span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>;
+        <span style="color: #b58900;">int</span> <span style="color: #268bd2;">time1</span>=tv.tv_sec*1000+tv.tv_usec/1000;
+
+        rc=sqlite3_exec<span style="color: #757575;">(</span>db<span style="color: #757575;">,</span><span style="color: #2aa198;">"begin transaction"</span><span style="color: #757575;">,</span>0<span style="color: #757575;">,</span>0<span style="color: #757575;">,</span>&amp;zerr<span style="color: #757575;">)</span>;
+        <span style="color: #b58900;">char</span> * <span style="color: #268bd2;">sql</span>=<span style="color: #2aa198;">"insert into test values (?1, ?2)"</span>;
+        <span style="color: #b58900;">sqlite3_stmt</span> *<span style="color: #268bd2;">stmt</span>;
+        <span style="color: #859900;">const</span> <span style="color: #b58900;">char</span> * <span style="color: #268bd2;">tail</span>;
+        rc=sqlite3_prepare_v2<span style="color: #757575;">(</span>db<span style="color: #757575;">,</span> sql<span style="color: #757575;">,</span> strlen<span style="color: #757575;">(</span>sql<span style="color: #757575;">),</span> &amp;stmt<span style="color: #757575;">,</span>&amp;tail<span style="color: #757575;">)</span>;
+        <span style="color: #b58900;">int</span> <span style="color: #268bd2;">i</span>=0;
+        <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>i = 0; i &lt; 10000; ++i<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            sqlite3_bind_text<span style="color: #757575;">(</span>stmt<span style="color: #757575;">,</span> 1<span style="color: #757575;">,</span> <span style="color: #2aa198;">"test"</span><span style="color: #757575;">,</span> strlen<span style="color: #757575;">(</span><span style="color: #2aa198;">"text"</span><span style="color: #757575;">),</span> SQLITE_TRANSIENT<span style="color: #757575;">)</span>;
+            sqlite3_bind_int<span style="color: #757575;">(</span>stmt<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span>1<span style="color: #757575;">)</span>;
+            sqlite3_step<span style="color: #757575;">(</span>stmt<span style="color: #757575;">)</span>;
+            sqlite3_reset<span style="color: #757575;">(</span>stmt<span style="color: #757575;">)</span>;
+        <span style="color: #757575;">}</span>
+        gettimeofday<span style="color: #757575;">(</span>&amp;tv<span style="color: #757575;">,</span><span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>;
+        <span style="color: #b58900;">int</span> <span style="color: #268bd2;">time2</span>=tv.tv_sec*1000+tv.tv_usec/1000;
+
+        rc=sqlite3_exec<span style="color: #757575;">(</span>db<span style="color: #757575;">,</span><span style="color: #2aa198;">"end transaction"</span><span style="color: #757575;">,</span>0<span style="color: #757575;">,</span>0<span style="color: #757575;">,</span>&amp;zerr<span style="color: #757575;">)</span>;
+
+        gettimeofday<span style="color: #757575;">(</span>&amp;tv<span style="color: #757575;">,</span><span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>;
+        <span style="color: #b58900;">int</span> <span style="color: #268bd2;">time3</span>=tv.tv_sec*1000+tv.tv_usec/1000;
+        sqlite3_finalize<span style="color: #757575;">(</span>stmt<span style="color: #757575;">)</span>;
+        exec_time+=<span style="color: #757575;">(</span>time2-time1<span style="color: #757575;">)</span>;
+        commit_time+=<span style="color: #757575;">(</span>time3-time2<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    gettimeofday<span style="color: #757575;">(</span>&amp;tv<span style="color: #757575;">,</span><span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>;
+    end=tv.tv_sec*1000+tv.tv_usec/1000;
+
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"done: total_time: %d ms, avg_exec_time: %d ms, avg_commit_time: %d ms\n"</span><span style="color: #757575;">,</span> end-begin<span style="color: #757575;">,</span> exec_time/10<span style="color: #757575;">,</span> commit_time/10<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+
+
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">sqlite3</span> *<span style="color: #268bd2;">db</span>;
+    sqlite3_open_v2<span style="color: #757575;">(</span><span style="color: #2aa198;">"/data/test.db"</span><span style="color: #757575;">,</span> &amp;db<span style="color: #757575;">,</span> SQLITE_OPEN_READWRITE<span style="color: #757575;">,</span> 0<span style="color: #757575;">)</span>;
+
+    <span style="color: #b58900;">pthread_t</span> <span style="color: #268bd2;">tid</span>;
+    pthread_create<span style="color: #757575;">(</span>&amp;tid<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">,</span> insert<span style="color: #757575;">,</span> db<span style="color: #757575;">)</span>;
+    pthread_join<span style="color: #757575;">(</span>tid<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">)</span>;
+
+    <span style="color: #859900;">return</span> 0;
+<span style="color: #757575;">}</span>
+
+</pre>
+</div>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">synchronous</th>
+<th scope="col" class="org-left">storage</th>
+<th scope="col" class="org-left">method</th>
+<th scope="col" class="org-right">total_time (ms)</th>
+<th scope="col" class="org-right">avg_exec_time (ms)</th>
+<th scope="col" class="org-right">avg_commit_time (ms)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">off</td>
+<td class="org-left">sd</td>
+<td class="org-left">c</td>
+<td class="org-right">2002</td>
+<td class="org-right">172</td>
+<td class="org-right">27</td>
+</tr>
+
+<tr>
+<td class="org-left">off</td>
+<td class="org-left">mtd</td>
+<td class="org-left">c</td>
+<td class="org-right">1888</td>
+<td class="org-right">163</td>
+<td class="org-right">25</td>
+</tr>
+</tbody>
+<tbody>
+<tr>
+<td class="org-left">full</td>
+<td class="org-left">sd</td>
+<td class="org-left">c</td>
+<td class="org-right">3641</td>
+<td class="org-right">165</td>
+<td class="org-right">198</td>
+</tr>
+
+<tr>
+<td class="org-left">full</td>
+<td class="org-left">mtd</td>
+<td class="org-left">c</td>
+<td class="org-right">1913</td>
+<td class="org-right">158</td>
+<td class="org-right">31</td>
+</tr>
+</tbody>
+<tbody>
+<tr>
+<td class="org-left">full</td>
+<td class="org-left">ssd</td>
+<td class="org-left">c</td>
+<td class="org-right">450</td>
+<td class="org-right">19</td>
+<td class="org-right">25</td>
+</tr>
+</tbody>
+<tbody>
+<tr>
+<td class="org-left">off</td>
+<td class="org-left">sd</td>
+<td class="org-left">java/execSQL</td>
+<td class="org-right">12996</td>
+<td class="org-right">1269</td>
+<td class="org-right">29</td>
+</tr>
+
+<tr>
+<td class="org-left">off</td>
+<td class="org-left">sd</td>
+<td class="org-left">java/insertHelper</td>
+<td class="org-right">10458</td>
+<td class="org-right">1029</td>
+<td class="org-right">16</td>
+</tr>
+
+<tr>
+<td class="org-left">off</td>
+<td class="org-left">mtd</td>
+<td class="org-left">java/insertHelper</td>
+<td class="org-right">10067</td>
+<td class="org-right">977</td>
+<td class="org-right">29</td>
+</tr>
+</tbody>
+<tbody>
+<tr>
+<td class="org-left">full</td>
+<td class="org-left">sd</td>
+<td class="org-left">java/execSQL</td>
+<td class="org-right">15385</td>
+<td class="org-right">1252</td>
+<td class="org-right">285</td>
+</tr>
+
+<tr>
+<td class="org-left">full</td>
+<td class="org-left">sd</td>
+<td class="org-left">java/insertHelper</td>
+<td class="org-right">11874</td>
+<td class="org-right">987</td>
+<td class="org-right">199</td>
+</tr>
+
+<tr>
+<td class="org-left">full</td>
+<td class="org-left">mtd</td>
+<td class="org-left">java/insertHelper</td>
+<td class="org-right">9948</td>
+<td class="org-right">963</td>
+<td class="org-right">31</td>
+</tr>
+</tbody>
+</table>
+
+<ul class="org-ul">
+<li>总结
+<ul class="org-ul">
+<li>使用 java  api 测试时, 执行 sql 语句的速度比 c 程序慢 7 倍左右</li>
+<li>insertHelper 比普通的 execSQL 有 20% 的提升</li>
+<li>java api 和 c api 在 commit 时间上没有差别</li>
+<li>在 sd 卡上, synchronous off 有近 10 倍的性能提长</li>
+<li>在 mtd 上, synchronous 似乎没有差别.</li>
+</ul></li>
+</ul>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

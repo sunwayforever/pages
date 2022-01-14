@@ -1,0 +1,1035 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Linux Kernel: IO</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Linux Kernel: IO</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orge80c46f">1. Linux Kernel: IO</a>
+<ul>
+<li><a href="#org8e31083">1.1. Accessing Files</a>
+<ul>
+<li><a href="#org17cc2e9">1.1.1. Reading File</a></li>
+<li><a href="#orgb2c4691">1.1.2. Reading Block Device File</a></li>
+<li><a href="#org395b148">1.1.3. Writing File</a></li>
+<li><a href="#orgdf56d2a">1.1.4. Writing Dirty Pages</a></li>
+<li><a href="#orgc060a55">1.1.5. Read ahead</a></li>
+<li><a href="#org0fcf583">1.1.6. Memory Mapping</a></li>
+</ul>
+</li>
+<li><a href="#org9cd4480">1.2. Architectures</a>
+<ul>
+<li><a href="#org9fd6662">1.2.1. Page Cache</a></li>
+<li><a href="#org69a2ce5">1.2.2. File system</a></li>
+<li><a href="#orgf8e65f0">1.2.3. Generic Block Layer</a></li>
+<li><a href="#org4268534">1.2.4. bdev fs</a></li>
+<li><a href="#org20e2d8d">1.2.5. Block Device Driver</a></li>
+<li><a href="#orgfdb409d">1.2.6. I/O Architecture</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+<div id="outline-container-orge80c46f" class="outline-2">
+<h2 id="orge80c46f"><span class="section-number-2">1</span> Linux Kernel: IO</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org8e31083" class="outline-3">
+<h3 id="org8e31083"><span class="section-number-3">1.1</span> Accessing Files</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-org17cc2e9" class="outline-4">
+<h4 id="org17cc2e9"><span class="section-number-4">1.1.1</span> Reading File</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+读文件的最上层入口是 f_op-&gt;read, Linux 提供了一个 generic 的实现叫做
+generic_file_read, 如果你想利用 IO architectures 中的其它部分, 例如
+Page Cache, Generic Block Layer, IO Scheduler 等的功能, 必须指定
+generic_file_read 做为 f_op-&gt;read 的实现.
+</p>
+</div>
+
+<div id="outline-container-org1db61ec" class="outline-5">
+<h5 id="org1db61ec"><span class="section-number-5">1.1.1.1</span> VFS</h5>
+<div class="outline-text-5" id="text-1-1-1-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">generic_file_read</span> <span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">file</span> *<span style="color: #268bd2;">filp</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> <span style="color: #268bd2;">__user</span> *buf<span style="color: #757575;">,</span> <span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">count</span><span style="color: #757575;">,</span> <span style="color: #b58900;">loff_t</span> *<span style="color: #268bd2;">ppos</span><span style="color: #757575;">)</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">iovec &#35760;&#24405;&#20102;&#26412;&#27425;&#35835;&#25805;&#20316;&#35201;&#22635;&#20805;&#30340; buffer &#21644;&#22823;&#23567;</span>
+  <span style="color: #859900;">struct</span> iovec local_iov = <span style="color: #757575;">{</span> .iov_base = buf<span style="color: #757575;">,</span> .iov_len = count <span style="color: #757575;">}</span>;
+  __generic_file_aio_read<span style="color: #757575;">(</span>&amp;kiocb<span style="color: #757575;">,</span> &amp;local_iov<span style="color: #757575;">,</span> 1<span style="color: #757575;">,</span> ppos<span style="color: #757575;">)</span>;
+    <span style="color: #b58900;">read_descriptor_t</span> <span style="color: #268bd2;">desc</span>;
+    desc.arg.buf = iov[seg].iov_base;
+    desc.count = iov[seg].iov_len;
+    <span style="color: #268bd2;">do_generic_file_read</span><span style="color: #757575;">(</span><span style="color: #b58900;">filp</span><span style="color: #757575;">,</span><span style="color: #b58900;">ppos</span><span style="color: #757575;">,</span>&amp;desc<span style="color: #757575;">,</span><span style="color: #b58900;">file_read_actor</span><span style="color: #757575;">)</span>;
+      <span style="color: #268bd2;">do_generic_mapping_read</span><span style="color: #757575;">(</span>filp-&gt;f_mapping<span style="color: #757575;">,</span>&amp;filp-&gt;f_ra<span style="color: #757575;">,</span><span style="color: #b58900;">filp</span><span style="color: #757575;">,</span><span style="color: #b58900;">ppos</span><span style="color: #757575;">,</span><span style="color: #b58900;">desc</span><span style="color: #757575;">,</span><span style="color: #b58900;">actor</span><span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgbf49518" class="outline-5">
+<h5 id="orgbf49518"><span class="section-number-5">1.1.1.2</span> Page Cache</h5>
+<div class="outline-text-5" id="text-1-1-1-2">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">do_generic_mapping_read</span><span style="color: #757575;">(</span>filp-&gt;f_mapping<span style="color: #757575;">,</span>&amp;filp-&gt;f_ra<span style="color: #757575;">,</span><span style="color: #b58900;">filp</span><span style="color: #757575;">,</span><span style="color: #b58900;">ppos</span><span style="color: #757575;">,</span><span style="color: #b58900;">desc</span><span style="color: #757575;">,</span><span style="color: #b58900;">actor</span><span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">ppos &#26159;&#35201;&#35835;&#21462;&#30340; offset (&#23383;&#33410;), index &#26159;&#36825;&#20010; offset &#23545;&#24212;&#30340; page cache &#20013;&#30340;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">page index. page index &#19982; offset &#26159;&#32447;&#24615;&#30340;&#26144;&#23556;&#20851;&#31995;</span>
+  index = *ppos &gt;&gt; PAGE_CACHE_SHIFT;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">mapping &#26159; inode-&gt;address_space</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">!! &#26597;&#25214; page cache !!</span>
+  page = find_get_page<span style="color: #757575;">(</span>mapping<span style="color: #757575;">,</span> index<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> radix_tree_lookup<span style="color: #757575;">(</span>&amp;mapping-&gt;page_tree<span style="color: #757575;">,</span> offset<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">!! page cache miss !!</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>unlikely<span style="color: #757575;">(</span>page == <span style="color: #268bd2; font-weight: bold;">NULL</span><span style="color: #757575;">))</span>:
+    <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">no_cached_page</span>;
+  <span style="color: #859900;">else</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">!! page cache hit !!</span>
+    <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">page_ok</span>;  
+
+<span style="color: #268bd2; font-weight: bold;">no_cached_page</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">page cache hit, &#20998;&#37197;&#19968;&#20010;&#26032;&#30340; page, &#21152;&#21040; page cache &#20013;, &#24182; readpage</span>
+  cached_page = page_cache_alloc_cold<span style="color: #757575;">(</span>mapping<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#26032; page &#19982; mapping &#30340; index &#20851;&#32852;, &#21152;&#21040; page cache &#20013;</span>
+  <span style="color: #268bd2;">add_to_page_cache_lru</span><span style="color: #757575;">(</span><span style="color: #b58900;">cached_page</span><span style="color: #757575;">,</span> <span style="color: #b58900;">mapping</span><span style="color: #757575;">,</span> <span style="color: #b58900;">index</span><span style="color: #757575;">,</span> <span style="color: #b58900;">GFP_KERNEL</span><span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">lock page, readpage &#26159;&#20010;&#24322;&#27493;&#30340;&#35843;&#29992; (dma), do_generic_mapping_read &#38656;&#35201;&#36890;&#36807; lock_page &#38459;&#22622;&#20303;</span>
+    <span style="color: #268bd2;">SetPageLocked</span><span style="color: #757575;">(</span><span style="color: #b58900;">page</span><span style="color: #757575;">)</span>;
+  <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">read_page</span>;
+
+<span style="color: #268bd2; font-weight: bold;">read_page</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">NEXT STAGE</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">The read will unlock the page</span>
+  mapping-&gt;a_ops-&gt;readpage<span style="color: #757575;">(</span>filp<span style="color: #757575;">,</span> page<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#22240;&#20026; readpage &#26159;&#24322;&#27493;&#30340;, readpage &#36820;&#22238;&#26102; page &#19968;&#33324;&#26159; !update</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36825;&#37324;&#30340; lock_page &#20250;&#20351;&#20989;&#25968;&#38459;&#22622;&#20303;, &#31561;&#24453;&#24213;&#23618;&#35835;&#25805;&#20316;&#30340;&#32467;&#26463;</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>PageUptodate<span style="color: #757575;">(</span>page<span style="color: #757575;">))</span>:
+    lock_page<span style="color: #757575;">(</span>page<span style="color: #757575;">)</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">TASK_UNINTERRUPTIBLE, &#25152;&#35859;&#30340; D &#29366;&#24577;</span>
+      <span style="color: #268bd2;">__wait_on_bit_lock</span><span style="color: #757575;">(</span><span style="color: #b58900;">page_waitqueue</span><span style="color: #757575;">(</span><span style="color: #268bd2;">page</span><span style="color: #757575;">),</span> &amp;wait<span style="color: #757575;">,</span> <span style="color: #b58900;">sync_page</span><span style="color: #757575;">,</span> <span style="color: #b58900;">TASK_UNINTERRUPTIBLE</span><span style="color: #757575;">)</span>;
+    <span style="color: #268bd2;">unlock_page</span><span style="color: #757575;">(</span><span style="color: #b58900;">page</span><span style="color: #757575;">)</span>;
+  <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">page_ok</span>;
+
+<span style="color: #268bd2; font-weight: bold;">page_ok</span>:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">actor &#23454;&#38469;&#26159; file_read_actor, &#36127;&#36131;&#23558; page &#30340;&#25968;&#25454;&#22797;&#21046;&#21040; desc, &#21363;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">user space &#30340; buffer &#20013;</span>
+  ret = actor<span style="color: #757575;">(</span>desc<span style="color: #757575;">,</span> page<span style="color: #757575;">,</span> offset<span style="color: #757575;">,</span> nr<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org6af36a8" class="outline-5">
+<h5 id="org6af36a8"><span class="section-number-5">1.1.1.3</span> File System</h5>
+<div class="outline-text-5" id="text-1-1-1-3">
+<p>
+a_ops-&gt;readpage 是和具体文件系统打交道的函数, 它的作用是真正从设备读取一个 page.
+</p>
+
+<p>
+但与 generic_file_read 类似, VFS 也提供了一个通用的函数, 比如
+mpage_readpage 或 block_read_full_page.
+</p>
+
+<p>
+有了这些函数, 具体文件系统不再需要考虑如何和下一层的 Generic Block
+Layer 打交道, 它们只需要实现几个回调即可, 比如 get_block
+</p>
+
+<p>
+以 ext2 为例, 它定义的 readpage 为:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">static</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">ext2_readpage</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">file</span> *<span style="color: #268bd2;">file</span><span style="color: #757575;">,</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">page</span> *<span style="color: #268bd2;">page</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">return</span> mpage_readpage<span style="color: #757575;">(</span>page<span style="color: #757575;">,</span> ext2_get_block<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+其中的 ext2_get_block 是 get_block 回调, 这个函数是和具体文件系统相关的, 它的作用是将 readpage 传过来的 block_in_file 映射为 logical block
+(sector_t)
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgdeffd7f" class="outline-5">
+<h5 id="orgdeffd7f"><span class="section-number-5">1.1.1.4</span> Generic Block Layer</h5>
+<div class="outline-text-5" id="text-1-1-1-4">
+</div>
+<ol class="org-ol">
+<li><a id="org40f27b5"></a>mpage_readpage<br />
+<div class="outline-text-6" id="text-1-1-1-4-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #586e75;">// </span><span style="color: #586e75;">mpage_readpage &#24182;&#19981;&#38656;&#35201; file &#25351;&#38024;, &#22240;&#20026; page &#20013;&#24050;&#32463;&#21253;&#21547;&#20102;&#36275;&#22815;&#30340;&#20449;&#24687;:</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">1. page-&gt;index,  &#34920;&#31034; page &#22312; address_space &#30340; index (&#25110;&#23545;&#24212;&#30340;&#25991;&#20214;&#30340; offset)</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">2. page-&gt;mapping-&gt;host, &#34920;&#31034; page &#23545;&#24212;&#30340; inode</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">inode &#21644; index &#21487;&#20197;&#26631;&#35782;&#26412;&#27425;&#35201;&#35835;&#21462;&#30340;&#20869;&#23481;</span>
+
+<span style="color: #268bd2;">mpage_readpage</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">page</span> *<span style="color: #268bd2;">page</span><span style="color: #757575;">,</span> <span style="color: #b58900;">get_block_t</span> <span style="color: #268bd2;">get_block</span><span style="color: #757575;">)</span>:
+  bio = do_mpage_readpage<span style="color: #757575;">(</span>bio<span style="color: #757575;">,</span> page<span style="color: #757575;">,</span> 1<span style="color: #757575;">,</span> &amp;last_block_in_bio<span style="color: #757575;">,</span> get_block<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">inode</span> *<span style="color: #268bd2;">inode</span> = page-&gt;mapping-&gt;host;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">PAGE_CACHE_SHIFT &#20026; 12 (4KB), blkbits &#19968;&#33324;&#20026; 9 (512B)</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25152;&#20197; block_in_file = page_index * 8</span>
+    block_in_file = page-&gt;index &lt;&lt; <span style="color: #757575;">(</span>PAGE_CACHE_SHIFT - blkbits<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">blocks_per_page = 4K &gt;&gt; 9 = 8, &#34920;&#31034;&#19968;&#20010; page &#23481;&#32435; 8 &#20010; block (sector)</span>
+    blocks_per_page = PAGE_CACHE_SIZE &gt;&gt; blkbits;
+    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>page_block = 0; page_block &lt; blocks_per_page; page_block++<span style="color: #757575;">,</span> block_in_file++<span style="color: #757575;">)</span>:
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#23545;&#36825;&#20010; page &#20013;&#30340;&#27599;&#20010; block</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#35843;&#29992;&#25991;&#20214;&#31995;&#32479;&#30456;&#20851;&#30340; get_block, &#20197;&#20415;&#24471;&#21040; block_in_file &#19982;&#30495;&#27491;&#30340; sector_t &#30340;&#23545;&#24212;</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20851;&#31995;, &#30495;&#27491;&#30340; sector_t &#20445;&#23384;&#22312; bh-&gt;b_blocknr &#20013;</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36825;&#37324;&#30340; block_in_file &#21482;&#26159;&#30456;&#24403;&#20110;&#25991;&#20214;&#30340;&#20559;&#31227;&#37327;, &#30495;&#27491;&#30340; logical block (sector_t)</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21482;&#26377;&#25991;&#20214;&#31995;&#32479;&#25165;&#30693;&#36947;   </span>
+      get_block<span style="color: #757575;">(</span>inode<span style="color: #757575;">,</span> block_in_file<span style="color: #757575;">,</span> &amp;bh<span style="color: #757575;">,</span> 0<span style="color: #757575;">)</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">blocks &#25968;&#32452;&#20445;&#23384;&#30528;&#24490;&#29615;&#36807;&#31243;&#20013;&#23545;&#24212;&#21508;&#20010; block_in_file &#30340; sector_t &#30340;&#20540;</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#22914;&#26524;&#36825;&#20010;&#25968;&#32452;&#20013;&#30340;&#25968;&#25454;&#19981;&#26159;&#36830;&#32493;&#36882;&#22686;&#30340; (&#20363;&#22914; 23456789 &#26159;&#36830;&#32493;&#36882;&#22686;&#30340;), &#34920;&#31034;</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36825;&#20010; page &#30340;&#25968;&#25454;&#22312;&#29289;&#29702;&#35774;&#22791;&#19978;&#19981;&#26159;&#36830;&#32493;&#30340;, &#35843;&#29992; block_read_full_page</span>
+      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>page_block &amp;&amp; blocks[page_block-1] != bh.b_blocknr-1<span style="color: #757575;">)</span>:
+        block_read_full_page<span style="color: #757575;">(</span>page<span style="color: #757575;">,</span> get_block<span style="color: #757575;">)</span>;
+        <span style="color: #859900;">return</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#29289;&#29702;&#35774;&#22791;&#19978;&#36830;&#32493;, &#20165;&#26500;&#36896;&#19968;&#20010; BIO</span>
+      bio = mpage_alloc<span style="color: #757575;">(</span>bdev<span style="color: #757575;">,</span> blocks[0]<span style="color: #757575;">,</span>nr_pages<span style="color: #757575;">,</span>GFP_KERNEL<span style="color: #757575;">)</span>;
+      <span style="color: #268bd2;">bio_add_page</span><span style="color: #757575;">(</span><span style="color: #b58900;">bio</span><span style="color: #757575;">,</span> <span style="color: #b58900;">page</span><span style="color: #757575;">,</span> <span style="color: #b58900;">length</span><span style="color: #757575;">,</span> 0<span style="color: #757575;">)</span>
+      <span style="color: #268bd2;">mpage_bio_submit</span><span style="color: #757575;">(</span><span style="color: #b58900;">READ</span><span style="color: #757575;">,</span> <span style="color: #b58900;">bio</span><span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org83ca7cd"></a>block_read_full_page<br />
+<div class="outline-text-6" id="text-1-1-1-4-2">
+<p>
+block_read_full_page 与 mpage_readpage 类似, 也是构造相应的 BIO 并提交,
+但它并不会像 mpage_readpage 一样尝试用一个 BIO 表示连续的多个 block:
+block_read_full_page 对一个 page 会构造 8 个 buffer_head, 然后对每个
+buffer_header 构造一个 BIO, 同时 page 会被转换为一个 buffer page.
+</p>
+
+<p>
+实际上, 具体文件系统中大部分读取 block 的操作 (例如 __bread) 都是采用类似的方法: 读取单个 block 时构造 buffer_head, submit BIO 并使用一个
+buffer page 来 cache 这个 buffer_head.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #586e75;">// </span><span style="color: #586e75;">block_read_full_page &#19982; mpage_readpage &#31867;&#20284;, &#20294;&#30465;&#21435;&#20102;&#21512;&#24182; bio &#30340;&#36807;&#31243;</span>
+<span style="color: #268bd2;">block_read_full_page</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">page</span> *<span style="color: #268bd2;">page</span><span style="color: #757575;">,</span> <span style="color: #b58900;">get_block_t</span> *<span style="color: #268bd2;">get_block</span><span style="color: #757575;">)</span>:
+  <span style="color: #859900;">struct</span> inode *inode = page-&gt;mapping-&gt;host;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">block_read_full_page &#32467;&#26463;&#21518;, page &#24517;&#28982;&#20250;&#26159;&#19968;&#20010; buffer page</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>page_has_buffers<span style="color: #757575;">(</span>page<span style="color: #757575;">))</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#29983;&#25104; 8 &#20010; buffer_head, &#24182;&#23558; page &#36716;&#25442;&#20026; buffer page</span>
+    <span style="color: #268bd2;">create_empty_buffers</span><span style="color: #757575;">(</span><span style="color: #b58900;">page</span><span style="color: #757575;">,</span> <span style="color: #b58900;">blocksize</span><span style="color: #757575;">,</span> 0<span style="color: #757575;">)</span>;
+  head = page_buffers<span style="color: #757575;">(</span>page<span style="color: #757575;">)</span>;
+  iblock = <span style="color: #757575;">(</span><span style="color: #b58900;">sector_t</span><span style="color: #757575;">)</span>page-&gt;index &lt;&lt; <span style="color: #757575;">(</span>PAGE_CACHE_SHIFT - inode-&gt;i_blkbits<span style="color: #757575;">)</span>;
+
+  <span style="color: #268bd2;">for_each</span> <span style="color: #757575;">(</span><span style="color: #b58900;">iblock</span><span style="color: #757575;">,</span> <span style="color: #b58900;">bh</span><span style="color: #757575;">)</span>:
+    get_block<span style="color: #757575;">(</span>inode<span style="color: #757575;">,</span> iblock<span style="color: #757575;">,</span> bh<span style="color: #757575;">,</span> 0<span style="color: #757575;">)</span>
+    <span style="color: #b58900;">arr</span>[nr++] = bh;
+
+  for_each <span style="color: #b58900;">bh</span> <span style="color: #b58900;">in</span> <span style="color: #268bd2;">arr</span>:
+    submit_bh<span style="color: #757575;">(</span>READ<span style="color: #757575;">,</span> bh<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="orgd75856a"></a>submit_bio<br />
+<div class="outline-text-6" id="text-1-1-1-4-3">
+<p>
+无论是 block_read_full_page 的 submit_bh 或 mpage_read 的
+mpage_bio_submit, 最终都会调用到 submit_bio:
+</p>
+
+<ol class="org-ol">
+<li>对于 submit_bh, 它会将 bio-&gt;bi_end_io 设置为 end_bio_bh_io_sync, 后者会调用 end_buffer_async_read</li>
+
+<li>对于 mpage_bio_submit, 它会将 bio-&gt;bi_end_io 设置为
+mpage_end_io_read</li>
+</ol>
+
+<p>
+bio-&gt;bi_end_io 都会在底层 IO 结束时被调用, 并且都会 unlock_page 从而唤醒上层的 do_generic_mapping_read
+</p>
+</div>
+</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgb2c4691" class="outline-4">
+<h4 id="orgb2c4691"><span class="section-number-4">1.1.2</span> Reading Block Device File</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+读取块设备文件时与普通文件有些差别:
+</p>
+
+<ol class="org-ol">
+<li>get_block 回调使用的是 blkdev_get_block</li>
+
+<li>readpage 使用的是 block_read_full_page 而不是 mpage_readpage</li>
+</ol>
+
+<p>
+直接读取块设备文件时, 并不需要具体文件系统提供的 Mapping Layer
+(get_block), 因为它是和具体文件系统无关的, 实际上, blkdev_get_block 只是一个 noop 函数, 它将 block index 直接映射为 sector_t
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">blkdev_get_block</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">inode</span> *<span style="color: #268bd2;">inode</span><span style="color: #757575;">,</span> <span style="color: #b58900;">sector_t</span> <span style="color: #268bd2;">iblock</span><span style="color: #757575;">,</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">buffer_head</span> *<span style="color: #268bd2;">bh</span><span style="color: #757575;">)</span>:
+  bh-&gt;b_blocknr = iblock;
+</pre>
+</div>
+
+<p>
+另外, readpage 使用 block_read_full_page (而不是 mpage_readpage), 可能原因是:
+</p>
+
+<p>
+具体文件系统通常需要直接读取设备的 block, 例如 super_block,
+inode_block 等, 这些操作一般都是通过 __bread (__getblk) 完成, 后者会使用 buffer page 来 cache 这些 block 对应的 buffer_head. 而且这些 buffer
+page 是挂在块设备文件对应的 inode 的 address_space 下的.
+</p>
+
+<p>
+上层 readpage 使用 block_read_full_page, 可以与底层的 __bread 互通, 在两者看来, 它们操作的是同一个 inode, 看到的是相同的 buffer page 及
+buffer_head
+</p>
+</div>
+</div>
+
+<div id="outline-container-org395b148" class="outline-4">
+<h4 id="org395b148"><span class="section-number-4">1.1.3</span> Writing File</h4>
+<div class="outline-text-4" id="text-1-1-3">
+</div>
+<div id="outline-container-orgef57238" class="outline-5">
+<h5 id="orgef57238"><span class="section-number-5">1.1.3.1</span> VFS</h5>
+<div class="outline-text-5" id="text-1-1-3-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">generic_file_write</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">file</span> *<span style="color: #268bd2;">file</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">char</span> <span style="color: #268bd2;">__user</span> *buf<span style="color: #757575;">,</span><span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">count</span><span style="color: #757575;">,</span> <span style="color: #b58900;">loff_t</span> *<span style="color: #268bd2;">ppos</span><span style="color: #757575;">)</span>:
+  __generic_file_write_nolock<span style="color: #757575;">(</span>file<span style="color: #757575;">,</span> &amp;local_iov<span style="color: #757575;">,</span> 1<span style="color: #757575;">,</span> ppos<span style="color: #757575;">)</span>;
+    __generic_file_aio_write_nolock<span style="color: #757575;">(</span>&amp;kiocb<span style="color: #757575;">,</span> iov<span style="color: #757575;">,</span> nr_segs<span style="color: #757575;">,</span> ppos<span style="color: #757575;">)</span>;
+      <span style="color: #268bd2;">generic_file_buffered_write</span><span style="color: #757575;">(</span><span style="color: #b58900;">iocb</span><span style="color: #757575;">,</span> <span style="color: #b58900;">iov</span><span style="color: #757575;">,</span> <span style="color: #b58900;">nr_segs</span><span style="color: #757575;">,</span> <span style="color: #b58900;">pos</span><span style="color: #757575;">,</span> <span style="color: #b58900;">ppos</span><span style="color: #757575;">,</span> <span style="color: #b58900;">count</span><span style="color: #757575;">,</span> <span style="color: #b58900;">written</span><span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org6f15bdc" class="outline-5">
+<h5 id="org6f15bdc"><span class="section-number-5">1.1.3.2</span> Page Cache</h5>
+<div class="outline-text-5" id="text-1-1-3-2">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2;">generic_file_buffered_write</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">kiocb</span> *<span style="color: #268bd2;">iocb</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">iovec</span> *<span style="color: #268bd2;">iov</span><span style="color: #757575;">,</span>
+                            <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">long</span> <span style="color: #268bd2;">nr_segs</span><span style="color: #757575;">,</span> <span style="color: #b58900;">loff_t</span> <span style="color: #268bd2;">pos</span><span style="color: #757575;">,</span> <span style="color: #b58900;">loff_t</span> *<span style="color: #268bd2;">ppos</span><span style="color: #757575;">,</span>
+                            <span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">count</span><span style="color: #757575;">,</span> <span style="color: #b58900;">ssize_t</span> <span style="color: #268bd2;">written</span><span style="color: #757575;">)</span>:
+  <span style="color: #859900;">struct</span> file *file = iocb-&gt;ki_filp;
+  <span style="color: #859900;">struct</span> <span style="color: #b58900;">address_space</span> * <span style="color: #268bd2;">mapping</span> = file-&gt;f_mapping;
+  <span style="color: #859900;">struct</span> <span style="color: #b58900;">address_space_operations</span> *<span style="color: #268bd2;">a_ops</span> = mapping-&gt;a_ops;
+  <span style="color: #859900;">struct</span> <span style="color: #b58900;">inode</span>  *<span style="color: #268bd2;">inode</span> = mapping-&gt;host;
+
+  index = pos &gt;&gt; PAGE_CACHE_SHIFT;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#26597;&#25214; page cache, &#33509;&#19981;&#23384;&#22312;, &#21017;&#26032;&#24314;&#19968;&#20010; page </span>
+  page = __grab_cache_page<span style="color: #757575;">(</span>mapping<span style="color: #757575;">,</span>index<span style="color: #757575;">,</span>&amp;cached_page<span style="color: #757575;">,</span>&amp;lru_pvec<span style="color: #757575;">)</span>;
+    page = find_lock_page<span style="color: #757575;">(</span>mapping<span style="color: #757575;">,</span> index<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>page<span style="color: #757575;">)</span>:
+      *cached_page = page_cache_alloc<span style="color: #757575;">(</span>mapping<span style="color: #757575;">)</span>;
+      add_to_page_cache<span style="color: #757575;">(</span>*cached_page<span style="color: #757575;">,</span> mapping<span style="color: #757575;">,</span> index<span style="color: #757575;">,</span> GFP_KERNEL<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> *cached_page
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">prepare_write &#19982;&#20855;&#20307;&#25991;&#20214;&#31995;&#32479;&#30456;&#20851;, &#36825;&#20010;&#20989;&#25968;&#36820;&#22238;&#21518;, &#21487;&#20197;&#20445;&#35777;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">page &#20013;&#24050;&#32463;&#26377;&#30456;&#24212;&#30340; buffer_head, &#24182;&#19988; page &#20013;&#24050;&#32463;&#21253;&#21547;&#21407;&#22987;&#30340;&#25968;&#25454;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">(write &#25805;&#20316;&#38656;&#35201;&#22312;&#21407;&#22987;&#25968;&#25454;&#30340;&#22522;&#30784;&#19978;&#36827;&#34892;&#35206;&#30422;)</span>
+  a_ops-&gt;prepare_write<span style="color: #757575;">(</span>file<span style="color: #757575;">,</span> page<span style="color: #757575;">,</span> offset<span style="color: #757575;">,</span> offset+bytes<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25968;&#25454;&#34987;&#20889;&#21040; page</span>
+  <span style="color: #268bd2;">filemap_copy_from_user</span><span style="color: #757575;">(</span><span style="color: #b58900;">page</span><span style="color: #757575;">,</span> <span style="color: #b58900;">offset</span><span style="color: #757575;">,</span> <span style="color: #b58900;">buf</span><span style="color: #757575;">,</span> <span style="color: #b58900;">bytes</span><span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#26681;&#25454; offset &#21644; size &#30830;&#23450; page &#20013;&#21508;&#20010; buffer_head &#30340;&#29366;&#24577;&#21482;&#26377;&#34987;&#20462;&#25913;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21040;&#30340; buffer_head &#25165;&#20250;&#25913;&#20026; dirty, &#21518;&#32493; sync &#26102;&#21482;&#38656;&#35201; sync &#36825;&#19968;&#20010;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">buffer_head</span>
+  a_ops-&gt;commit_write<span style="color: #757575;">(</span>file<span style="color: #757575;">,</span> page<span style="color: #757575;">,</span> offset<span style="color: #757575;">,</span> offset+bytes<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">balance dirty page (vm_dirty_ratio)</span>
+  <span style="color: #268bd2;">balance_dirty_pages_ratelimited</span><span style="color: #757575;">()</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#38500;&#38750;&#25351;&#23450;&#20102; O_SYNC &#25110; O_DIRECT, &#21542;&#21017; write &#25805;&#20316;&#22312; commit_write &#23601;&#32467;&#26463;&#20102;,</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#30495;&#27491;&#30340; IO &#25805;&#20316;&#21457;&#29983;&#22312; sync &#26102;</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org288a5b2" class="outline-5">
+<h5 id="org288a5b2"><span class="section-number-5">1.1.3.3</span> File System</h5>
+<div class="outline-text-5" id="text-1-1-3-3">
+<p>
+与 read 时的 readpage 类似, prepare_write 和 commit_write 是和文件系统相关的, 但有 VFS 有相应的通用实现, 具体文件系统只需要提供一个 get_block
+回调.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgab9c94e" class="outline-5">
+<h5 id="orgab9c94e"><span class="section-number-5">1.1.3.4</span> Generic Block Layer</h5>
+<div class="outline-text-5" id="text-1-1-3-4">
+</div>
+<ol class="org-ol">
+<li><a id="org31634bd"></a>prepare_write<br />
+<div class="outline-text-6" id="text-1-1-3-4-1">
+<p>
+prepare_write 的主要功能是: 确保 page 是一个 buffer page, 并且保证
+page 中已经有对应的原始数据, 所以它的代码与 block_read_full_page 有些类似.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #b58900;">int</span> <span style="color: #268bd2;">block_prepare_write</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">page</span> *<span style="color: #268bd2;">page</span><span style="color: #757575;">,</span> <span style="color: #b58900;">unsigned</span> <span style="color: #268bd2;">from</span><span style="color: #757575;">,</span> <span style="color: #b58900;">unsigned</span> <span style="color: #268bd2;">to</span><span style="color: #757575;">,</span> <span style="color: #b58900;">get_block_t</span> *<span style="color: #268bd2;">get_block</span><span style="color: #757575;">)</span>:
+  <span style="color: #859900;">struct</span> inode *inode = page-&gt;mapping-&gt;host;
+  <span style="color: #268bd2;">__block_prepare_write</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">,</span> <span style="color: #b58900;">page</span><span style="color: #757575;">,</span> <span style="color: #b58900;">from</span><span style="color: #757575;">,</span> <span style="color: #b58900;">to</span><span style="color: #757575;">,</span> <span style="color: #b58900;">get_block</span><span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org4718fc1"></a>commit_write<br />
+<div class="outline-text-6" id="text-1-1-3-4-2">
+<p>
+commit_write 主要功能是修改 buffer_head 和 page 本身的状态, 以便随后
+writepage 时能找到哪些 buffer_head 是 dirty 的.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">static</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">__block_commit_write</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">inode</span> *<span style="color: #268bd2;">inode</span><span style="color: #757575;">,</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">page</span> *<span style="color: #268bd2;">page</span><span style="color: #757575;">,</span> <span style="color: #b58900;">unsigned</span> <span style="color: #268bd2;">from</span><span style="color: #757575;">,</span> <span style="color: #b58900;">unsigned</span> <span style="color: #268bd2;">to</span><span style="color: #757575;">)</span>:
+  for_each bh in page_buffers<span style="color: #757575;">(</span>page<span style="color: #757575;">)</span>:
+    unless <span style="color: #757575;">(</span>block_end &lt;= from || block_start &gt;= to<span style="color: #757575;">)</span>:
+      set_buffer_uptodate<span style="color: #757575;">(</span>bh<span style="color: #757575;">)</span>;
+      <span style="color: #268bd2;">mark_buffer_dirty</span><span style="color: #757575;">(</span><span style="color: #b58900;">bh</span><span style="color: #757575;">)</span>;
+
+</pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgdf56d2a" class="outline-4">
+<h4 id="orgdf56d2a"><span class="section-number-4">1.1.4</span> Writing Dirty Pages</h4>
+<div class="outline-text-4" id="text-1-1-4">
+</div>
+</div>
+
+<div id="outline-container-orgc060a55" class="outline-4">
+<h4 id="orgc060a55"><span class="section-number-4">1.1.5</span> Read ahead</h4>
+<div class="outline-text-4" id="text-1-1-5">
+<p>
+每次调用 do_generic_mapping_read 时, 在查找 page cache 之前, 会通过
+page_cache_readahead 尝试进行 read ahead (ra), 具体 page_cache_readahead 的行为(是否进行 ra, ra 哪些 page 等) 由以下几方面确定:
+</p>
+
+<ol class="org-ol">
+<li>通过 (ra-&gt;start, ra-&gt;size) 维护一个 current window, 通过
+(ra-&gt;ahead_start, ra-&gt;ahead_size) 维护一个 ahead window, 两个
+window 是前后连续的</li>
+
+<li>若 read 是对文件开头的读操作, 则通过 get_init_ra_size 计算初始
+ra-&gt;size, 其大小与 read 的 size 正相关, 大小从 16 K 到 128K 不等, 并对 current window 进行 ra</li>
+
+<li>若本次 read 要读取的 page_index = ra-&gt;prev_page + 1, 表示连续的读操作, 则通过 get_next_ra_size 根据 ra-&gt;size 对 ra-&gt;ahead_size 进行倍增 (最大 128K), 增大 ahead window, 并对 ahead window 进行 ra</li>
+
+<li>若本次 read 的 page_index 与 ra-&gt;prev_page 不连续, 则重置 ra (例如
+ra-&gt;size 置 -1), 但 ra 并不禁用.</li>
+
+<li>若 get_next_ra_size 时发现之前对该文件的读取出现过 page cache miss
+(handle_ra_miss), 表示内存可以比较紧张, 则上一步的 get_next_ra_size
+会减少 ahead window 的大小 (最小 16K) 而不是倍增</li>
+
+<li>若当前读操作已经超越 current window, 则重置 ahead window 为 current
+window, 并通过 get_next_ra_size 分配一个新的(更大的) ahead window</li>
+
+<li>若连续对 256 个 page 的 ra 都因为 page cache hit 没有执行,
+则禁用 ra</li>
+</ol>
+</div>
+
+<div id="outline-container-orgd41fa70" class="outline-5">
+<h5 id="orgd41fa70"><span class="section-number-5">1.1.5.1</span> page_cache_readahead</h5>
+</div>
+
+<div id="outline-container-org1a59984" class="outline-5">
+<h5 id="org1a59984"><span class="section-number-5">1.1.5.2</span> handle_ra_miss</h5>
+</div>
+
+<div id="outline-container-orge5809e3" class="outline-5">
+<h5 id="orge5809e3"><span class="section-number-5">1.1.5.3</span> utils</h5>
+<div class="outline-text-5" id="text-1-1-5-3">
+<ul class="org-ul">
+<li>readahead</li>
+
+<li>posix_fadvise</li>
+
+<li>madvise</li>
+
+<li>blockdev</li>
+</ul>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0fcf583" class="outline-4">
+<h4 id="org0fcf583"><span class="section-number-4">1.1.6</span> Memory Mapping</h4>
+<div class="outline-text-4" id="text-1-1-6">
+<p>
+refers to 
+</p>
+</div>
+
+<div id="outline-container-orga64c1b5" class="outline-5">
+<h5 id="orga64c1b5"><span class="section-number-5">1.1.6.1</span> vm_area_struct</h5>
+<div class="outline-text-5" id="text-1-1-6-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">struct</span> <span style="color: #b58900;">vm_area_struct</span> <span style="color: #757575;">{</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">vma &#20013;&#21644; file map &#30456;&#20851;&#30340;&#25104;&#21592;</span>
+    <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">long</span> <span style="color: #268bd2;">vm_start</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">rb_node</span> <span style="color: #268bd2;">vm_rb</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">vm_operations_struct</span> * <span style="color: #268bd2;">vm_ops</span>;
+    <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">long</span> <span style="color: #268bd2;">vm_pgoff</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">file</span> * <span style="color: #268bd2;">vm_file</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orga81a246" class="outline-5">
+<h5 id="orga81a246"><span class="section-number-5">1.1.6.2</span> filemap_nopage</h5>
+<div class="outline-text-5" id="text-1-1-6-2">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #586e75;">// </span><span style="color: #586e75;">&#23454;&#38469;&#20195;&#30721;&#20013; handle_pte_fault &#23545;&#20110; file mapping &#30340;&#35843;&#29992;&#36335;&#24452;&#26159;</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">do_file_page -&gt; filemap_getpage &#32780;&#19981;&#26159; do_no_page -&gt; filemap_nopage</span>
+<span style="color: #586e75;">// </span><span style="color: #586e75;">&#20294;&#20004;&#32773;&#20195;&#30721;&#22522;&#26412;&#31867;&#20284;</span>
+<span style="color: #859900;">struct</span> <span style="color: #b58900;">page</span> * <span style="color: #268bd2;">filemap_nopage</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">vm_area_struct</span> * <span style="color: #268bd2;">area</span><span style="color: #757575;">,</span> <span style="color: #b58900;">address</span><span style="color: #757575;">,</span> <span style="color: #b58900;">int</span> *<span style="color: #268bd2;">type</span><span style="color: #757575;">)</span>:
+  <span style="color: #859900;">struct</span> file *file = area-&gt;vm_file;
+  <span style="color: #859900;">struct</span> <span style="color: #b58900;">address_space</span> *<span style="color: #268bd2;">mapping</span> = file-&gt;f_mapping;
+  <span style="color: #859900;">struct</span> <span style="color: #b58900;">file_ra_state</span> *<span style="color: #268bd2;">ra</span> = &amp;file-&gt;f_ra;
+  <span style="color: #859900;">struct</span> <span style="color: #b58900;">inode</span> *<span style="color: #268bd2;">inode</span> = mapping-&gt;host;
+
+  pgoff = <span style="color: #757575;">((</span>address - area-&gt;vm_start<span style="color: #757575;">)</span> &gt;&gt; PAGE_CACHE_SHIFT<span style="color: #757575;">)</span> + area-&gt;vm_pgoff;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">madvise (MADV_SEQUENTIAL)</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>VM_SequentialReadHint<span style="color: #757575;">(</span>area<span style="color: #757575;">))</span>:
+    page_cache_readahead<span style="color: #757575;">(</span>mapping<span style="color: #757575;">,</span> ra<span style="color: #757575;">,</span> file<span style="color: #757575;">,</span> pgoff<span style="color: #757575;">,</span> 1<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">some logic related to ra</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#26597;&#25214; page cache</span>
+  page = find_get_page<span style="color: #757575;">(</span>mapping<span style="color: #757575;">,</span> pgoff<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>page<span style="color: #757575;">)</span>
+    <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">no_cached_page</span>;
+  <span style="color: #859900;">else</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">assume page is updated for simple case</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">return minor fault, since no IO issued</span>
+    *type = VM_FAULT_MINOR;
+    <span style="color: #859900;">return</span> page 
+
+no_cached_page:
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20998;&#37197; page cache &#24182; readpage</span>
+  page_cache_read<span style="color: #757575;">(</span>file<span style="color: #757575;">,</span> pgoff<span style="color: #757575;">)</span>;
+    <span style="color: #268bd2;">page_cache_alloc_cold</span><span style="color: #757575;">(</span><span style="color: #b58900;">mapping</span><span style="color: #757575;">)</span>;
+    <span style="color: #268bd2;">add_to_page_cache_lru</span><span style="color: #757575;">(</span><span style="color: #b58900;">page</span><span style="color: #757575;">,</span> <span style="color: #b58900;">mapping</span><span style="color: #757575;">,</span> <span style="color: #b58900;">offset</span><span style="color: #757575;">,</span> <span style="color: #b58900;">GFP_KERNEL</span><span style="color: #757575;">)</span>;
+    mapping-&gt;a_ops-&gt;readpage<span style="color: #757575;">(</span>file<span style="color: #757575;">,</span> page<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">find page cache again, should hit</span>
+  page = find_get_page<span style="color: #757575;">(</span>mapping<span style="color: #757575;">,</span> pgoff<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">major fault here</span>
+  *type = VM_FAULT_MAJOR;
+  <span style="color: #859900;">return</span> page
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgd37cb63" class="outline-5">
+<h5 id="orgd37cb63"><span class="section-number-5">1.1.6.3</span> do_page_fault</h5>
+<div class="outline-text-5" id="text-1-1-6-3">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">do_page_fault</span>:
+  <span style="color: #859900;">__asm__</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"movl %%cr2,%0"</span>:<span style="color: #2aa198;">"=r"</span> <span style="color: #757575;">(</span>address<span style="color: #757575;">))</span>;
+  vma = find_vma<span style="color: #757575;">(</span>mm<span style="color: #757575;">,</span> address<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">switch</span> <span style="color: #757575;">(</span>handle_mm_fault<span style="color: #757575;">(</span>mm<span style="color: #757575;">,</span> vma<span style="color: #757575;">,</span> address<span style="color: #757575;">,</span> write<span style="color: #757575;">))</span> <span style="color: #757575;">{</span>
+             handle_pte_fault<span style="color: #757575;">(</span>mm<span style="color: #757575;">,</span> vma<span style="color: #757575;">,</span> address<span style="color: #757575;">,</span> write_access<span style="color: #757575;">,</span> pte<span style="color: #757575;">,</span> pmd<span style="color: #757575;">)</span>;
+               do_no_page<span style="color: #757575;">(</span>mm<span style="color: #757575;">,</span> vma<span style="color: #757575;">,</span> address<span style="color: #757575;">,</span> write_access<span style="color: #757575;">,</span> pte<span style="color: #757575;">,</span> pmd<span style="color: #757575;">)</span>;
+                 new_page = vma-&gt;vm_ops-&gt;nopage<span style="color: #757575;">(</span>vma<span style="color: #757575;">,</span> address &amp; PAGE_MASK<span style="color: #757575;">,</span> &amp;ret<span style="color: #757575;">)</span>;
+                   filemap_nopage<span style="color: #757575;">(</span>vma<span style="color: #757575;">,</span> address &amp; PAGE_MASK<span style="color: #757575;">,</span> &amp;ret<span style="color: #757575;">)</span>
+                 entry = mk_pte<span style="color: #757575;">(</span>new_page<span style="color: #757575;">,</span> vma-&gt;vm_page_prot<span style="color: #757575;">)</span>;
+                 set_pte<span style="color: #757575;">(</span>page_table<span style="color: #757575;">,</span> entry<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">case</span> VM_FAULT_MINOR:
+      tsk-&gt;min_flt++;
+      <span style="color: #859900;">break</span>;
+    <span style="color: #859900;">case</span> VM_FAULT_MAJOR:
+      tsk-&gt;maj_flt++;
+      <span style="color: #859900;">break</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">case xxx</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org9cd4480" class="outline-3">
+<h3 id="org9cd4480"><span class="section-number-3">1.2</span> Architectures</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-org9fd6662" class="outline-4">
+<h4 id="org9fd6662"><span class="section-number-4">1.2.1</span> Page Cache</h4>
+</div>
+
+<div id="outline-container-org69a2ce5" class="outline-4">
+<h4 id="org69a2ce5"><span class="section-number-4">1.2.2</span> File system</h4>
+<div class="outline-text-4" id="text-1-2-2">
+</div>
+<div id="outline-container-org0a3eed5" class="outline-5">
+<h5 id="org0a3eed5"><span class="section-number-5">1.2.2.1</span> readpage</h5>
+</div>
+
+<div id="outline-container-org904035b" class="outline-5">
+<h5 id="org904035b"><span class="section-number-5">1.2.2.2</span> prepare_write</h5>
+</div>
+
+<div id="outline-container-org4b90ca4" class="outline-5">
+<h5 id="org4b90ca4"><span class="section-number-5">1.2.2.3</span> commit_write</h5>
+</div>
+
+<div id="outline-container-org9dd216a" class="outline-5">
+<h5 id="org9dd216a"><span class="section-number-5">1.2.2.4</span> writepage</h5>
+</div>
+
+<div id="outline-container-org86d635d" class="outline-5">
+<h5 id="org86d635d"><span class="section-number-5">1.2.2.5</span> getblock</h5>
+</div>
+</div>
+
+<div id="outline-container-orgf8e65f0" class="outline-4">
+<h4 id="orgf8e65f0"><span class="section-number-4">1.2.3</span> Generic Block Layer</h4>
+<div class="outline-text-4" id="text-1-2-3">
+</div>
+<div id="outline-container-org617c07b" class="outline-5">
+<h5 id="org617c07b"><span class="section-number-5">1.2.3.1</span> Data Structure</h5>
+<div class="outline-text-5" id="text-1-2-3-1">
+</div>
+<ol class="org-ol">
+<li><a id="orgc5aef32"></a>bio<br /></li>
+
+<li><a id="org686e704"></a>block_device<br /></li>
+
+<li><a id="org9f3aa02"></a>gendisk<br /></li>
+
+<li><a id="orgdd01f31"></a>request_queue<br /></li>
+
+<li><a id="orge0d0c49"></a>request<br /></li>
+</ol>
+</div>
+
+<div id="outline-container-orgb38d236" class="outline-5">
+<h5 id="orgb38d236"><span class="section-number-5">1.2.3.2</span> submit_bio</h5>
+<div class="outline-text-5" id="text-1-2-3-2">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">submit_bio</span>:
+  <span style="color: #268bd2;">generic_make_request</span><span style="color: #757575;">(</span><span style="color: #b58900;">bio</span><span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#35745;&#31639; bio &#21253;&#25324;&#22810;&#23569;&#20010; sector</span>
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">nr_sectors</span> = bio_sectors<span style="color: #757575;">(</span>bio<span style="color: #757575;">)</span>;
+    q = bdev_get_queue<span style="color: #757575;">(</span>bio-&gt;bi_bdev<span style="color: #757575;">)</span>;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">block_device-&gt;gendisk-&gt;request_queue</span>
+      <span style="color: #859900;">return</span> bdev-&gt;bd_disk-&gt;queue;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509; bio-&gt;bi_dev &#25351;&#21521;&#19968;&#20010;&#20998;&#21306;, &#23558; bio-&gt;bi_sector</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36716;&#25442;&#20026;&#30456;&#23545;&#20110; bio-&gt;bi_dev-&gt;bd_contains &#30340; sector</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#24182;&#23558; bio-&gt;bi_dev &#21464;&#20026; bio-&gt;bi_dev-&gt;bd_contains</span>
+    <span style="color: #268bd2;">blk_partition_remap</span><span style="color: #757575;">(</span><span style="color: #b58900;">bio</span><span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">q-&gt;make_request_fn &#26159;&#22312; block device driver &#21021;&#22987;&#26102;</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36890;&#36807; blk_init_queue &#25351;&#23450;&#30340;, &#19968;&#33324;&#40664;&#35748;&#30340;&#23454;&#29616;&#20026; __make_request</span>
+    q-&gt;make_request_fn<span style="color: #757575;">(</span>q<span style="color: #757575;">,</span> bio<span style="color: #757575;">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org6de858c" class="outline-5">
+<h5 id="org6de858c"><span class="section-number-5">1.2.3.3</span> IO Scheduler</h5>
+<div class="outline-text-5" id="text-1-2-3-3">
+</div>
+<ol class="org-ol">
+<li><a id="org6e3e66c"></a>driver plug/unplug<br />
+<div class="outline-text-6" id="text-1-2-3-3-1">
+<p>
+IO scheduler 作用是将多个 bio delay 一段时间再统一交给 driver 的
+request_fn, 这段 delay 使得 IO scheduler 可以将 bio merger 到某个之前的 request 中,并实现对这些 request 的排队, 那么 delay 时间有多久?
+</p>
+
+<p>
+IO scheduler 通过 plug/unplug 机制控制这个 delay:
+</p>
+
+<ol class="org-ol">
+<li>通过 blk_plug_device 将 device 的 request_queue 设为 plugged 状态,
+这时 request_queue 的所有 request 不会被 driver 处理, request_queue
+处于等待接受 quest 以便能 merge request 的状态</li>
+
+<li>blk_plug_device 时会启动一个 timer (request_queue-&gt;unplug_timer),
+timer 的 delay 为 request_queue-&gt;unplug_delay (3ms). 这个 timer 可以保证至多 3ms 后 device 会被 unplug, 以便 driver 可以开始处理
+request.</li>
+
+<li>若 device 处理 plugged 状态, 但 request_queue 中的 pending request
+个数大于 request_queue-&gt;unplug_thresh, 表示当前有足够的 pending
+request, 则 device 此时也会被 unplug</li>
+</ol>
+</div>
+</li>
+
+<li><a id="orgbdde1e0"></a>__make_request<br />
+<div class="outline-text-6" id="text-1-2-3-3-2">
+<p>
+__make_request 是 request_queue-&gt;make_request_fn 的默认实现, 如果
+driver 希望使用 IO Scheduler 的功能, 则需要指定 make_request_fn 为 __make_request
+</p>
+
+<p>
+__make_request 会直接与 IO scheduler 打交道.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">__make_request</span>:
+  sector = bio-&gt;bi_sector;
+  nr_sectors = bio_sectors<span style="color: #757575;">(</span>bio<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>elv_queue_empty<span style="color: #757575;">(</span>q<span style="color: #757575;">))</span>:
+    blk_plug_device<span style="color: #757575;">(</span>q<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">goto</span> <span style="color: #268bd2; font-weight: bold;">get_rq</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">req &#20445;&#23384;&#30528; elevator &#36820;&#22238;&#30340;&#32467;&#26524;: elevator &#35748;&#20026; bio &#21487;&#20197;&#19982; req</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">merge &#22312;&#19968;&#36215;&#33267;&#20110;&#20026;&#20160;&#20040; elevator &#35748;&#20026;&#21487;&#20197;&#19982; req merge, &#21442;&#32771;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">elevator &#31639;&#27861;, &#31616;&#21333;&#30340;&#20197; noop elevator &#20026;&#20363;, &#22914;&#26524; elevator &#21457;&#29616;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">bio &#19982;&#26576;&#20010; req &#26159;&#36830;&#32493;&#30340; (&#20363;&#22914; req-&gt;sector + req-&gt;nr_sectors =</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">bio-&gt;bi_sector, &#34920;&#31034; bio &#21487;&#20197; merge &#21040; req &#26411;&#23614;), &#21017;&#35748;&#20026; bio &#19982;</span>
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">req &#26159;&#21487;&#20197; merge &#30340;</span>
+  el_ret = elv_merge<span style="color: #757575;">(</span>q<span style="color: #757575;">,</span> &amp;req<span style="color: #757575;">,</span> bio<span style="color: #757575;">)</span>;
+  <span style="color: #859900;">switch</span> <span style="color: #757575;">(</span>el_ret<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">bio &#21487;&#20197; merge &#21040; req &#30340;&#26411;&#23614;</span>
+    <span style="color: #859900;">case</span> ELEVATOR_BACK_MERGE:
+      req-&gt;biotail-&gt;bi_next = bio;
+      req-&gt;biotail = bio;
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#22240;&#20026; bio &#26159; merge &#21040; req &#30340;&#26411;&#23614;, &#25152;&#20197; req-&gt;sector (req &#24320;&#22987;&#30340;</span>
+      <span style="color: #586e75;">// </span><span style="color: #586e75;">sector) &#19981;&#21464;</span>
+      req-&gt;nr_sectors += nr_sectors;
+    <span style="color: #859900;">case</span> ELEVATOR_FRONT_MERGE:
+      req-&gt;bio = bio;
+      req-&gt;sector = sector;
+      req-&gt;nr_sectors += nr_sectors;
+    <span style="color: #859900;">case</span> ELEVATOR_NO_MERGE:
+      <span style="color: #859900;">break</span>;
+<span style="color: #268bd2; font-weight: bold;">get_rq</span>:
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#26080;&#27861; merge, &#29983;&#25104;&#19968;&#20010;&#26032;&#30340; request</span>
+    req-&gt;nr_sectors = nr_sectors;
+    req-&gt;bio = req-&gt;biotail = bio;
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+    <span style="color: #268bd2;">add_request</span><span style="color: #757575;">(</span><span style="color: #b58900;">q</span><span style="color: #757575;">,</span> <span style="color: #b58900;">req</span><span style="color: #757575;">)</span>;
+      <span style="color: #268bd2;">__elv_add_request</span><span style="color: #757575;">()</span>
+        q-&gt;elevator-&gt;ops-&gt;elevator_add_req_fn<span style="color: #757575;">(</span>q<span style="color: #757575;">,</span> rq<span style="color: #757575;">,</span> where<span style="color: #757575;">)</span>;
+        <span style="color: #b58900;">int</span> <span style="color: #268bd2;">nrq</span> = q-&gt;rq.count[READ] + q-&gt;rq.count[WRITE] - q-&gt;in_flight;
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>nrq == q-&gt;unplug_thresh<span style="color: #757575;">)</span>:
+          __generic_unplug_device<span style="color: #757575;">(</span>q<span style="color: #757575;">)</span>;
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">!! DRIVER !!</span>
+            q-&gt;request_fn<span style="color: #757575;">(</span>q<span style="color: #757575;">)</span>;
+</pre>
+</div>
+
+<p>
+总的来说, __make_request 会:
+</p>
+
+<ol class="org-ol">
+<li>通过 request_queue-&gt;elevator 找到 elevator</li>
+
+<li>调用 elevator 的相关方法 (elv_merge 等), 将 bio 转换为 request 放在 request_queue 中, 或将 bio merge 到某个已经存在的 request 中.</li>
+
+<li>根据需要 (例如 unplug_thresh) 调用 generic_unplug_device 来通知
+driver, 后者会调用 request_fn 来真正启动 IO</li>
+</ol>
+</div>
+</li>
+
+<li><a id="org1f964fc"></a>IO scheduler algorithm<br />
+<ol class="org-ol">
+<li><a id="orgfbeb792"></a>common purposes<br />
+<div class="outline-text-7" id="text-1-2-3-3-3-1">
+<ol class="org-ol">
+<li>To minimize time wasted by hard disk seeks</li>
+
+<li>To prioritize a certain processes' I/O requests</li>
+
+<li>To give a share of the disk bandwidth to each running process</li>
+
+<li>To guarantee that certain requests will be issued before a particular deadline</li>
+</ol>
+</div>
+</li>
+
+<li><a id="org8d6564b"></a>elevator_ops<br />
+<div class="outline-text-7" id="text-1-2-3-3-3-2">
+<p>
+elevator_ops 是各个 elevator 算法需要实现的回调函数. __make_request 时调用的 elv_queue_empty, elv_merge, elv_add_request, elv_next_request 等都是对 elevator_ops 相应函数的封装.
+</p>
+
+<p>
+IO scheduler 是位于 __make_request 与 driver 之间的一层, 两者都需要调用 elevator_ops 相关的函数, 例如:
+</p>
+
+<ol class="org-ol">
+<li>__make_request 需要调用 elevator_merge_fn 尝试进行 merge, 调用
+elevator_add_req_fn 添加一个新的 request</li>
+
+<li>driver 的 request_fn 需要调用 elevator_next_req_fn 从 request_queue
+拿一个 request 进行真正的 IO</li>
+</ol>
+</div>
+
+<ol class="org-ol">
+<li><a id="orga79a853"></a>elevator_queue_empty_fn<br /></li>
+
+<li><a id="org01162f4"></a>elevator_merge_fn<br />
+<div class="outline-text-8" id="text-1-2-3-3-3-2-2">
+<p>
+虽然不同的 elevator 都会实现自己的 elevator_merge_fn, 但实现起来基本都是差不多的:
+</p>
+
+<ol class="org-ol">
+<li>尝试 elv_try_last_merge, 看看 request-&gt;last_merge (上次 merge 的
+request) 是否也可以满足这次 merge</li>
+
+<li>若不行, 在 request_queue 中找一个可以 merge 的 request</li>
+</ol>
+
+<p>
+`可以 merge` 的标准是某个 request 与 bio 是连续的 (adjacent).
+</p>
+
+<p>
+不同的 elevator 的这个"找"的过程会有所区别, 例如 noop 直接是遍历整个
+request_queue, deadline 会使用 hash, 而 anticipatory 会使用 rbtree
+</p>
+</div>
+</li>
+
+<li><a id="org310c89d"></a>elevator_add_req_fn<br /></li>
+
+<li><a id="orga642592"></a>elevator_next_req_fn<br />
+<div class="outline-text-8" id="text-1-2-3-3-3-2-4">
+<p>
+merge 只是 elevator 的一部分功能, elv_next_request (或
+elevator_next_req_fn) 才是 elevator 的主要功能.
+</p>
+
+<p>
+这部分也是 IO scheduler 被称为 elevator 的原因: 它负责对多个 request 进行排序以便减少磁盘 seek 的时间, 但与生活中的电梯不同的是, IO scheduler
+的功能要简单一些: 它只需要将 request 按照 sector (楼层) 从小到大排序,
+并不需要考虑磁头当前的位置 (电梯当前的楼层), 例如, 假设当前有几个
+request, 其 sector 分别为: 4 8 10 3, 则 IO scheduler 会将它们排序为 3
+4 8 10, 然后从 3 开始操作数据. 而对于真实的电梯来说, 假设电梯此时在 9
+层, 则 10 8 4 3 更好一些.
+</p>
+
+<p>
+为什么 IO scheduler 不考虑磁头的位置并采用简单的按 sector 升序扫描的方法?
+</p>
+
+<p>
+磁盘的寻址, 以 CHS 模式为例, 需要定位三个部件:
+</p>
+
+<ul class="org-ul">
+<li>Cylinder, 柱面</li>
+
+<li>Header, 磁头, 1+2 可以定位 Track, 称为寻道</li>
+
+<li>Sector, 扇区, 1+2+3 可以定位最终的扇区</li>
+</ul>
+
+<p>
+其中定位 C 和 H 称为寻道, 需要移动磁头, 时间一般为 10ms 左右, 定位 S
+称为 latency, 依靠磁盘的旋转, 一般平均为 4ms (以 7200 转/分的硬盘为例,
+60*1000/7200/2 = 4ms )
+</p>
+
+<p>
+以下全是猜的&#x2026;
+</p>
+
+<ol class="org-ol">
+<li>寻址是一个很慢的过程 (15ms 左右) , 但我认为寻址的速度和距离可能关系不大, 即磁头 1 -&gt; 2 和 1 -&gt; 10 可能时间是差不多的 (磁头并不需要像电梯一样 1 -&gt; 2 -&gt; 3 .. -&gt; 10, 而是可以直接 1 -&gt; 10), 所以不需要太在意初始磁头的位置</li>
+
+<li>一次 IO 的初始扇区定位后, 后续对连续扇区的操作可能只需要旋转磁盘(S)
+即可, 不需要寻道 (CH), 将 sector 升序排序可以尽可能的利用这一性质</li>
+
+<li>磁盘片的转动应该是固定一个方向, 所以固定的升序也是必要的.</li>
+</ol>
+
+<p>
+综上, IO scheduler 采取的直接排序后线性扫描的方式应该也能尽可能的减少磁盘寻址的次数
+</p>
+
+<p>
+猜测结束&#x2026;
+</p>
+
+<p>
+不同的 elevator 的 elevator_next_req_fn 基本都是这种简单的排序, 但各个
+elevator 在解决 IO 优先级, 防止 starvation 等方面会有不同. 
+</p>
+</div>
+</li>
+</ol>
+</li>
+
+<li><a id="orgcb132f3"></a>algorithm<br />
+<ol class="org-ol">
+<li><a id="org1aeaf81"></a>noop<br />
+<ol class="org-ol">
+<li><a id="orgb01d2ee"></a>elevator_merge_fn<br /></li>
+
+<li><a id="org9236111"></a>elevator_next_req_fn<br /></li>
+</ol>
+</li>
+
+<li><a id="org7eab63f"></a>deadline<br /></li>
+
+<li><a id="orgc7d7af0"></a>CFQ<br />
+<ol class="org-ol">
+<li><a id="org63df1e2"></a>ionice<br /></li>
+</ol>
+</li>
+
+<li><a id="org6a9c7d6"></a>anticipatory<br /></li>
+</ol>
+</li>
+</ol>
+</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org4268534" class="outline-4">
+<h4 id="org4268534"><span class="section-number-4">1.2.4</span> bdev fs</h4>
+<div class="outline-text-4" id="text-1-2-4">
+<p>
+bdev 文件系统是一个很特殊的伪文件系统, 它和其它文件系统一样, 提供了各种 ops, 但并不会被 mount 到某个 dentry&#x2026;
+</p>
+</div>
+
+<div id="outline-container-orga192a8d" class="outline-5">
+<h5 id="orga192a8d"><span class="section-number-5">1.2.4.1</span> bdev fs 的作用</h5>
+<div class="outline-text-5" id="text-1-2-4-1">
+<ol class="org-ol">
+<li>访问 block device file 时会关联到 bdev fs 定义的各种 ops, 但这种关联并不是通过 mount 确立的, 而是通过 init_special_inode 这种代码实现的.</li>
+
+<li>bdev fs 还是一个作用是通过 inode cache 来维护 dev_t 和 block_device
+的关联, 例如 bdget</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org269dd16" class="outline-5">
+<h5 id="org269dd16"><span class="section-number-5">1.2.4.2</span> bdev_cache_init</h5>
+</div>
+
+<div id="outline-container-org4ea4ccb" class="outline-5">
+<h5 id="org4ea4ccb"><span class="section-number-5">1.2.4.3</span> init_special_inode</h5>
+</div>
+
+<div id="outline-container-org033288b" class="outline-5">
+<h5 id="org033288b"><span class="section-number-5">1.2.4.4</span> bdget</h5>
+</div>
+</div>
+
+<div id="outline-container-org20e2d8d" class="outline-4">
+<h4 id="org20e2d8d"><span class="section-number-4">1.2.5</span> Block Device Driver</h4>
+<div class="outline-text-4" id="text-1-2-5">
+</div>
+<div id="outline-container-org5d0d545" class="outline-5">
+<h5 id="org5d0d545"><span class="section-number-5">1.2.5.1</span> Initialization</h5>
+<div class="outline-text-5" id="text-1-2-5-1">
+</div>
+<ol class="org-ol">
+<li><a id="orgcba7747"></a>register_blkdev<br /></li>
+
+<li><a id="org0e7e24d"></a>blk_init_queue<br /></li>
+</ol>
+</div>
+
+<div id="outline-container-org9f62cd0" class="outline-5">
+<h5 id="org9f62cd0"><span class="section-number-5">1.2.5.2</span> request_fn</h5>
+<div class="outline-text-5" id="text-1-2-5-2">
+<p>
+do_xxx_request
+</p>
+</div>
+</div>
+
+<div id="outline-container-orge54dcb0" class="outline-5">
+<h5 id="orge54dcb0"><span class="section-number-5">1.2.5.3</span> interrupt handler</h5>
+</div>
+
+<div id="outline-container-orga92026b" class="outline-5">
+<h5 id="orga92026b"><span class="section-number-5">1.2.5.4</span> DMA</h5>
+</div>
+</div>
+
+<div id="outline-container-orgfdb409d" class="outline-4">
+<h4 id="orgfdb409d"><span class="section-number-4">1.2.6</span> I/O Architecture</h4>
+<div class="outline-text-4" id="text-1-2-6">
+</div>
+<div id="outline-container-org14523cb" class="outline-5">
+<h5 id="org14523cb"><span class="section-number-5">1.2.6.1</span> I/O port</h5>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

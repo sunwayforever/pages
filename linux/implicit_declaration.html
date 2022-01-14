@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 11:55 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Implicit Declaration</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Implicit Declaration</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org9c8e28d">1. Implicit Declaration</a>
+<ul>
+<li><a href="#org07446a2">1.1. The problem</a></li>
+<li><a href="#org7339efb">1.2. Analysis</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+<div id="outline-container-org9c8e28d" class="outline-2">
+<h2 id="org9c8e28d"><span class="section-number-2">1</span> Implicit Declaration</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org07446a2" class="outline-3">
+<h3 id="org07446a2"><span class="section-number-3">1.1</span> The problem</h3>
+<div class="outline-text-3" id="text-1-1">
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #586e75;">/* </span><span style="color: #586e75;">main.c</span><span style="color: #586e75;"> */</span>
+<span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;stdint.h&gt;</span>
+<span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;stdio.h&gt;</span>
+<span style="color: #586e75;">/* </span><span style="color: #586e75;">int64_t foo();</span><span style="color: #586e75;"> */</span>
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">int64_t</span> <span style="color: #268bd2;">x</span> = foo<span style="color: #757575;">()</span>;
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"after return: %ld\n"</span><span style="color: #757575;">,</span> x<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> 0;
+<span style="color: #757575;">}</span>
+
+<span style="color: #586e75;">/* </span><span style="color: #586e75;">-----------------------------------------------</span><span style="color: #586e75;"> */</span>
+
+<span style="color: #586e75;">/* </span><span style="color: #586e75;">foo.c</span><span style="color: #586e75;"> */</span>
+<span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;stdint.h&gt;</span>
+<span style="color: #268bd2;">#include</span> <span style="color: #2aa198;">&lt;stdio.h</span>
+<span style="color: #b58900;">int64_t</span> <span style="color: #268bd2;">foo</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">int64_t</span> <span style="color: #268bd2;">ret</span> = 1l &lt;&lt; 31;
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"before return: %ld\n"</span><span style="color: #757575;">,</span> ret<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> ret;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org9aeac26">
+$&gt; gcc main.c foo.c
+main.c: In function ‘main’:
+main.c:6:17: warning: implicit declaration of function ‘foo’ [-Wimplicit-function-declaration]
+     int64_t x = foo();
+
+$&gt; ./a.out
+before return: 2147483648
+after return: -2147483648
+</pre>
+
+<p>
+but if we add the declaration `int64_t foo();` in main.c
+</p>
+
+<pre class="example" id="org7b2a24e">
+$&gt; gcc main.c foo.c
+
+$&gt; ./a.out 
+before return: 2147483648
+after return: 2147483648
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org7339efb" class="outline-3">
+<h3 id="org7339efb"><span class="section-number-3">1.2</span> Analysis</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+Did you notice the warning `implicit description of function ‘foo’
+[-Wimplicit-function-declaration]`
+</p>
+
+<p>
+When C doesn't find a declaration, it assumes this implicit
+declaration: `int f();`, which means the function can receive whatever
+you give it, and returns an int
+</p>
+
+<p>
+What happends in the problematic example:
+</p>
+
+<ol class="org-ol">
+<li>when foo returns, it will place 1l&lt;&lt;31, or 0x0000000080000000 in x0
+(suppose under aarch64), which is a 64bit register.</li>
+
+<li>now control returns back to main, the implicit declaration makes
+`main` believe that `foo` will return an int, so it will fetch the
+`int` value from w0 (the bottom half of x0), which is 0x80000000.</li>
+
+<li>then the int value 0x80000000 is cast to int64_t, which will be
+0xffffffff80000000 (guess you know why 0xffffffff80000000 instead
+of 0x0000000080000000)</li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

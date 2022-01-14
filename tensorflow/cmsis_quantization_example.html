@@ -1,0 +1,472 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CMSIS Quantization Example</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">CMSIS Quantization Example</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org23b64b8">1. CMSIS Quantization Example</a>
+<ul>
+<li><a href="#orgb1a7caa">1.1. output_shift 与 bias_shift</a>
+<ul>
+<li><a href="#orgeb76c88">1.1.1. dec_bit</a></li>
+<li><a href="#org43bcfed">1.1.2. 计算 dense layer 的 shift</a></li>
+</ul>
+</li>
+<li><a href="#orgefda25a">1.2. weight 量化</a></li>
+<li><a href="#org8b4224c">1.3. activiation 量化</a></li>
+<li><a href="#orga25e14e">1.4. 坑</a></li>
+<li><a href="#orgd060b6e">1.5. 完整代码</a>
+<ul>
+<li><a href="#org0a3b400">1.5.1. 模型定义</a></li>
+<li><a href="#orgc8db4c5">1.5.2. 量化</a></li>
+</ul>
+</li>
+<li><a href="#org885b5b3">1.6. cmsis-nn 与 tflite 量化</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org23b64b8" class="outline-2">
+<h2 id="org23b64b8"><span class="section-number-2">1</span> CMSIS Quantization Example</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-orgb1a7caa" class="outline-3">
+<h3 id="orgb1a7caa"><span class="section-number-3">1.1</span> output_shift 与 bias_shift</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-orgeb76c88" class="outline-4">
+<h4 id="orgeb76c88"><span class="section-number-4">1.1.1</span> dec_bit</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+dec_bit 指 float 最多可以左移 dec_bit 而不超过量化范围.
+</p>
+
+<p>
+例如, 假设量化范围为 uint8, 则 [-128, 127),  若 float 为 2.0, 则 dec_bit 为 5,
+因为 2.0 &lt;&lt; 5 = 64, 而 2.0 &lt;&lt; 6 = 128, 所以最大移位为 5
+</p>
+
+<p>
+以 uint8 量化为例, 计算 dec_bit 的公式为
+</p>
+
+<p>
+7 - (np.ceil(np.log2(float_number)))
+</p>
+</div>
+</div>
+
+<div id="outline-container-org43bcfed" class="outline-4">
+<h4 id="org43bcfed"><span class="section-number-4">1.1.2</span> 计算 dense layer 的 shift</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+定义:
+</p>
+
+<ol class="org-ol">
+<li>fi: input dec_bit</li>
+<li>fw: weight dec_bit</li>
+<li>fo: output dec_bit</li>
+<li>fb: bias dec_bit</li>
+</ol>
+
+<p>
+则:
+</p>
+
+<ul class="org-ul">
+<li>output_shift = fi+fw-fo</li>
+<li>bias_shift = fi+fw-fb</li>
+</ul>
+
+<p>
+解释:
+</p>
+
+<p>
+为便于理解, 把 dec_bit 看作是 10 的幂 (而不是 2 的幂)
+</p>
+
+<p>
+假设 input 为 0.1, weight 为 0.01, bias = 0.1.
+</p>
+
+<p>
+未量化时 wx+b 的值为 0.001+0.1=0.101
+</p>
+
+<p>
+设对 x/w/b/o 量化的 dec_bit 分别为 1/2/1/2; W/X/B/O 分别是 w/x/b/o 量化后的结果.
+</p>
+
+<p>
+如何使用 W/X/B 得到 O?
+</p>
+
+<p>
+\(wx+b=o \implies wx+b=(\frac{X}{10})*(\frac{W}{100})+\frac{B}{10}=\frac{XW}{1000}+\frac{B}{10}=\frac{XW+100B}{1000}=\frac{O}{100}\implies
+\frac{XW+100B}{10}=O\)
+</p>
+
+<p>
+最后的式子显示于 B 需要左移 2 (fi+fw-fb), 且 output 需要右移 1 (fi+fw-fo) 才能最终得于 O
+</p>
+
+<p>
+以 fc 为例, 计算的过程大约是: (XW+ (B &lt;&lt;bias_shift)) &gt;&gt; output_shift
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgefda25a" class="outline-3">
+<h3 id="orgefda25a"><span class="section-number-3">1.2</span> weight 量化</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+根据 weight 本身的范围确定 weight 的 dec_bit, 然后令 W=w*(2**dec_bit) 即可
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #268bd2;">dec_bit</span> = 7 - <span style="color: #757575;">(</span>np.ceil<span style="color: #757575;">(</span>np.log2<span style="color: #757575;">(</span>np.<span style="color: #839496;">max</span><span style="color: #757575;">(</span>[<span style="color: #839496;">abs</span><span style="color: #757575;">(</span>min_weight<span style="color: #757575;">),</span> <span style="color: #839496;">abs</span><span style="color: #757575;">(</span>max_weight<span style="color: #757575;">)</span>]<span style="color: #757575;">,</span> axis=0<span style="color: #757575;">))))</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org8b4224c" class="outline-3">
+<h3 id="org8b4224c"><span class="section-number-3">1.3</span> activiation 量化</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+使用一些参考输入, 确定每一层的输入输出的范围, 计算各自的 dec_bit 做为相应的 fi,
+fo, 配合 fw 可以获得 output_shift 和 bias_shift
+</p>
+</div>
+</div>
+
+<div id="outline-container-orga25e14e" class="outline-3">
+<h3 id="orga25e14e"><span class="section-number-3">1.4</span> 坑</h3>
+<div class="outline-text-3" id="text-1-4">
+<ol class="org-ol">
+<li><p>
+keras layer activation
+</p>
+
+<p>
+keras.Layers.Dense(16, activiation="softmax"), 这一层的输出会包含 softmax 的结果, 所以使用这一层的输出计算的量化参数并不是 dense layer 的参数.
+</p>
+
+<p>
+解决的方法是把 softmax 做为单独的一层, 不要和 dense 写在一起
+</p></li>
+
+<li><p>
+ReLU 导致的问题
+</p>
+
+<p>
+假设网络结构为:
+</p>
+
+<p>
+FC1 -&gt; ReLU -&gt; FC2
+</p>
+
+<p>
+当计算 FC2 的 input 量化参数时, 不能使用 ReLU 的输出做为 FC2 的 input, 因为
+FC1 的 ouptut 与 FC2 的 input 的值并不相同, 但 cmsis-nn 针对 ReLU 并没有对应的 output_shift 参数. 所以 inference 时, FC1 的输出与 FC1 输出量化参数一致,但与 FC2 输入量化参数并不一致.
+</p>
+
+<p>
+为解决这个问题, FC2 的 input 可以直接使用 FC1 output 的量化参数, 或者给
+cmsis-nn 加 patch, 使 ReLU 计算时完成如下的操作:
+</p>
+
+<pre class="example" id="orga17b63e">
+Quantize(
+  Dequantize(FC1_OUT,FC1_OUTPUT_QUANT_PARAM),
+  FC2_INPUT_QUANT_PARAM
+ )
+</pre>
+
+<p>
+除了 ReLU, CMSIS 中的 average pooling, max pooling, 也有类似的问题 (softmax
+是否有这个问题还不确定&#x2026;)
+</p>
+
+<p>
+Q: FC, CONV 为什么不像 ReLU 一样直接忽略 output_shift?
+</p>
+
+<p>
+A: 两个 uint8 相乘, 结果用 uint8 是保存不了的, output_shift 实际上代表的是
+Quantize(Dequantize(output_1, dec_bit_output_1), dec_bit_input_2) 这个过程&#x2026;但
+ReLU, pooling 不存在这个问题
+</p></li>
+
+<li><p>
+训练的越多越不准确&#x2026;
+</p>
+
+<p>
+最初的模型使用了 dropout 做正则化 (而没有使用 batch norm 或 l1/l2
+regularizer), 导致训练的越多 weight 越大 (从 0.x 增加到 2.x), 而 weight 变大又导致 activiation 变大 (从几十增加到几千), 而 cmsis-nn 的 output_shift 只支持右移, 即它假设 activiation 总是在 [-128,128) 范围内, 当 activiation 远远大于这个范围时, 缺失的左移操作会导致结果不准确.
+</p>
+
+<p>
+解决的方法:
+</p>
+
+<ol class="org-ol">
+<li>使用 batch norm, 保证 activiation 在一定范围</li>
+
+<li>使用 l1/l2 regularizer, 保证 weight 在较小的范围</li>
+</ol></li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-orgd060b6e" class="outline-3">
+<h3 id="orgd060b6e"><span class="section-number-3">1.5</span> 完整代码</h3>
+<div class="outline-text-3" id="text-1-5">
+</div>
+<div id="outline-container-org0a3b400" class="outline-4">
+<h4 id="org0a3b400"><span class="section-number-4">1.5.1</span> 模型定义</h4>
+<div class="outline-text-4" id="text-1-5-1">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">cnn</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">inputs</span> = keras.Input<span style="color: #757575;">(</span>shape=<span style="color: #757575;">(</span>FRAMES<span style="color: #757575;">,</span> DCT_COEFFICIENT_COUNT<span style="color: #757575;">))</span>
+    <span style="color: #268bd2;">outputs</span> = tf.expand_dims<span style="color: #757575;">(</span>inputs<span style="color: #757575;">,</span> axis=-1<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">outputs</span> = layers.Conv2D<span style="color: #757575;">(</span>
+        filters=28<span style="color: #757575;">,</span> kernel_size=[10<span style="color: #757575;">,</span> 4]<span style="color: #757575;">,</span> strides=[1<span style="color: #757575;">,</span> 1]<span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"conv1"</span>
+    <span style="color: #757575;">)(</span>outputs<span style="color: #757575;">)</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">outputs = layers.BatchNormalization()(outputs)</span>
+    <span style="color: #268bd2;">outputs</span> = layers.ReLU<span style="color: #757575;">()(</span>outputs<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">outputs</span> = layers.Dropout<span style="color: #757575;">(</span>0.3<span style="color: #757575;">)(</span>outputs<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">outputs</span> = layers.Conv2D<span style="color: #757575;">(</span>
+        filters=30<span style="color: #757575;">,</span> kernel_size=[10<span style="color: #757575;">,</span> 4]<span style="color: #757575;">,</span> strides=[2<span style="color: #757575;">,</span> 1]<span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"conv2"</span>
+    <span style="color: #757575;">)(</span>outputs<span style="color: #757575;">)</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">outputs = layers.BatchNormalization()(outputs)</span>
+    <span style="color: #268bd2;">outputs</span> = layers.ReLU<span style="color: #757575;">()(</span>outputs<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">outputs</span> = layers.Dropout<span style="color: #757575;">(</span>0.2<span style="color: #757575;">)(</span>outputs<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">outputs</span> = layers.Flatten<span style="color: #757575;">()(</span>outputs<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">outputs</span> = layers.Dense<span style="color: #757575;">(</span>16<span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"dense1"</span><span style="color: #757575;">)(</span>outputs<span style="color: #757575;">)</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">outputs = layers.BatchNormalization()(outputs)</span>
+    <span style="color: #268bd2;">outputs</span> = layers.ReLU<span style="color: #757575;">()(</span>outputs<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">outputs</span> = layers.Dropout<span style="color: #757575;">(</span>0.1<span style="color: #757575;">)(</span>outputs<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">outputs</span> = layers.Dense<span style="color: #757575;">(</span>128<span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"dense2"</span><span style="color: #757575;">)(</span>outputs<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">outputs</span> = layers.ReLU<span style="color: #757575;">()(</span>outputs<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">outputs</span> = layers.Dense<span style="color: #757575;">(</span><span style="color: #839496;">len</span><span style="color: #757575;">(</span>WORDS<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"dense3"</span><span style="color: #757575;">)(</span>outputs<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">outputs</span> = layers.Softmax<span style="color: #757575;">()(</span>outputs<span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">return</span> keras.Model<span style="color: #757575;">(</span>inputs<span style="color: #757575;">,</span> outputs<span style="color: #757575;">)</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgc8db4c5" class="outline-4">
+<h4 id="orgc8db4c5"><span class="section-number-4">1.5.2</span> 量化</h4>
+<div class="outline-text-4" id="text-1-5-2">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">import</span> tensorflow <span style="color: #859900;">as</span> tf
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+
+<span style="color: #859900;">from</span> tensorflow <span style="color: #859900;">import</span> keras
+<span style="color: #859900;">from</span> tensorflow.keras <span style="color: #859900;">import</span> layers<span style="color: #757575;">,</span> losses<span style="color: #757575;">,</span> metrics<span style="color: #757575;">,</span> optimizers<span style="color: #757575;">,</span> models
+
+tf.keras.backend.clear_session<span style="color: #757575;">()</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">collect_inference_statistics</span><span style="color: #757575;">(</span>model<span style="color: #757575;">,</span> ref_input<span style="color: #757575;">)</span>:
+    <span style="color: #839496;">input</span> = model.layers[0].output
+    <span style="color: #268bd2;">prev</span> = model.layers[0]
+    <span style="color: #268bd2;">outputs</span> = []
+    <span style="color: #859900;">for</span> layer <span style="color: #859900;">in</span> model.layers:
+        <span style="color: #859900;">if</span> layer.name.startswith<span style="color: #757575;">(</span><span style="color: #2aa198;">"conv"</span><span style="color: #757575;">)</span> <span style="color: #859900;">or</span> layer.name.startswith<span style="color: #757575;">(</span><span style="color: #2aa198;">"dense"</span><span style="color: #757575;">)</span>:
+            outputs.append<span style="color: #757575;">(</span>prev.output<span style="color: #757575;">)</span>
+            outputs.append<span style="color: #757575;">(</span>layer.output<span style="color: #757575;">)</span>
+            <span style="color: #268bd2;">prev</span> = layer
+
+    <span style="color: #268bd2;">model</span> = keras.Model<span style="color: #757575;">(</span><span style="color: #839496;">input</span><span style="color: #757575;">,</span> outputs<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">max_value</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">min_value</span> = []<span style="color: #757575;">,</span> []
+    <span style="color: #859900;">for</span> x <span style="color: #859900;">in</span> ref_input[0:2000]:
+        <span style="color: #268bd2;">value</span> = [<span style="color: #757575;">(</span>i.numpy<span style="color: #757575;">()</span>.<span style="color: #839496;">min</span><span style="color: #757575;">(),</span> i.numpy<span style="color: #757575;">()</span>.<span style="color: #839496;">max</span><span style="color: #757575;">())</span> <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> model<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>]
+        min_value.append<span style="color: #757575;">(</span>[v[0] <span style="color: #859900;">for</span> v <span style="color: #859900;">in</span> value]<span style="color: #757575;">)</span>
+        max_value.append<span style="color: #757575;">(</span>[v[1] <span style="color: #859900;">for</span> v <span style="color: #859900;">in</span> value]<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">min_value</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">max_value</span> = <span style="color: #757575;">(</span>
+            np.asarray<span style="color: #757575;">(</span>min_value<span style="color: #757575;">)</span>.<span style="color: #839496;">min</span><span style="color: #757575;">(</span>axis=0<span style="color: #757575;">),</span>
+            np.asarray<span style="color: #757575;">(</span>max_value<span style="color: #757575;">)</span>.<span style="color: #839496;">max</span><span style="color: #757575;">(</span>axis=0<span style="color: #757575;">),</span>
+        <span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">shift</span> = <span style="color: #757575;">(</span>
+            <span style="color: #757575;">(</span>7 - <span style="color: #757575;">(</span>np.ceil<span style="color: #757575;">(</span>np.log2<span style="color: #757575;">(</span>np.<span style="color: #839496;">max</span><span style="color: #757575;">(</span>[<span style="color: #839496;">abs</span><span style="color: #757575;">(</span>min_value<span style="color: #757575;">),</span> <span style="color: #839496;">abs</span><span style="color: #757575;">(</span>max_value<span style="color: #757575;">)</span>]<span style="color: #757575;">,</span> axis=0<span style="color: #757575;">)))))</span>
+            .astype<span style="color: #757575;">(</span><span style="color: #839496;">int</span><span style="color: #757575;">)</span>
+            .tolist<span style="color: #757575;">()</span>
+        <span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> [<span style="color: #757575;">(</span>s[0]<span style="color: #757575;">,</span> s[1]<span style="color: #757575;">)</span> <span style="color: #859900;">for</span> s <span style="color: #859900;">in</span> <span style="color: #839496;">zip</span><span style="color: #757575;">(</span>shift[0::2]<span style="color: #757575;">,</span> shift[1::2]<span style="color: #757575;">)</span>]
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">quantize</span><span style="color: #757575;">(</span>model<span style="color: #757575;">,</span> shift<span style="color: #757575;">,</span> ref_input<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">KWS_CMSIS_NN</span> = <span style="color: #2aa198;">"model/kws_cmsis_nn.h"</span>
+
+    <span style="color: #268bd2;">int_bits</span> = <span style="color: #839496;">int</span><span style="color: #757575;">(</span>np.ceil<span style="color: #757575;">(</span>np.log2<span style="color: #757575;">(</span><span style="color: #839496;">max</span><span style="color: #757575;">(</span><span style="color: #839496;">abs</span><span style="color: #757575;">(</span>ref_input.<span style="color: #839496;">min</span><span style="color: #757575;">()),</span> <span style="color: #839496;">abs</span><span style="color: #757575;">(</span>ref_input.<span style="color: #839496;">max</span><span style="color: #757575;">())))))</span>
+    <span style="color: #268bd2;">dec_bits</span> = 7 - int_bits
+
+    <span style="color: #859900;">with</span> <span style="color: #839496;">open</span><span style="color: #757575;">(</span>KWS_CMSIS_NN<span style="color: #757575;">,</span> <span style="color: #2aa198;">"w"</span><span style="color: #757575;">)</span> <span style="color: #859900;">as</span> f:
+        f.write<span style="color: #757575;">(</span><span style="color: #2aa198;">"// -*- eval: (sw/large-file-mode); -*-\n"</span><span style="color: #757575;">)</span>
+        f.write<span style="color: #757575;">(</span><span style="color: #2aa198;">"#define MFCC_DEC_BITS {}\n"</span>.<span style="color: #839496;">format</span><span style="color: #757575;">(</span>dec_bits<span style="color: #757575;">))</span>
+
+    <span style="color: #268bd2;">i</span> = -1
+    <span style="color: #859900;">for</span> layer <span style="color: #859900;">in</span> model.layers:
+        <span style="color: #859900;">if</span> layer.name.startswith<span style="color: #757575;">(</span><span style="color: #2aa198;">"conv"</span><span style="color: #757575;">)</span> <span style="color: #859900;">or</span> layer.name.startswith<span style="color: #757575;">(</span><span style="color: #2aa198;">"dense"</span><span style="color: #757575;">)</span>:
+            <span style="color: #268bd2;">i</span> += 1
+            <span style="color: #859900;">print</span><span style="color: #757575;">(</span>layer.name<span style="color: #757575;">)</span>
+            <span style="color: #268bd2;">fw</span> = <span style="color: #268bd2; font-weight: bold;">None</span>
+            <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>t<span style="color: #757575;">,</span> value<span style="color: #757575;">)</span> <span style="color: #859900;">in</span> <span style="color: #839496;">enumerate</span><span style="color: #757575;">(</span>layer.get_weights<span style="color: #757575;">())</span>:
+                <span style="color: #268bd2;">int_bits</span> = <span style="color: #839496;">int</span><span style="color: #757575;">(</span>
+                    np.ceil<span style="color: #757575;">(</span>np.log2<span style="color: #757575;">(</span><span style="color: #839496;">max</span><span style="color: #757575;">(</span><span style="color: #839496;">abs</span><span style="color: #757575;">(</span>value.<span style="color: #839496;">min</span><span style="color: #757575;">()),</span> <span style="color: #839496;">abs</span><span style="color: #757575;">(</span>value.<span style="color: #839496;">max</span><span style="color: #757575;">()))))</span>
+                <span style="color: #757575;">)</span>
+                <span style="color: #268bd2;">dec_bits</span> = 7 - int_bits
+                <span style="color: #268bd2;">q_value</span> = np.<span style="color: #839496;">round</span><span style="color: #757575;">(</span>value * 2 ** dec_bits<span style="color: #757575;">)</span>
+
+                <span style="color: #859900;">if</span> t == 0:
+                    <span style="color: #268bd2;">shift_name</span> = layer.name + <span style="color: #2aa198;">"_out"</span>
+                    <span style="color: #268bd2;">var_name</span> = layer.name + <span style="color: #2aa198;">"_weight"</span>
+                    <span style="color: #586e75;"># </span><span style="color: #586e75;">fi+fw-fo</span>
+                    <span style="color: #268bd2;">fw</span> = dec_bits
+                    <span style="color: #268bd2;">shift_bits</span> = shift[i][0] + fw - shift[i][1]
+                <span style="color: #859900;">else</span>:
+                    <span style="color: #268bd2;">shift_name</span> = layer.name + <span style="color: #2aa198;">"_bias"</span>
+                    <span style="color: #268bd2;">var_name</span> = layer.name + <span style="color: #2aa198;">"_bias"</span>
+                    <span style="color: #268bd2;">shift_bits</span> = shift[i][0] + fw - dec_bits
+
+                <span style="color: #859900;">if</span> shift_bits &lt; 0:
+                    <span style="color: #268bd2;">shift_bits</span> = 0
+
+                <span style="color: #859900;">with</span> <span style="color: #839496;">open</span><span style="color: #757575;">(</span>KWS_CMSIS_NN<span style="color: #757575;">,</span> <span style="color: #2aa198;">"a"</span><span style="color: #757575;">)</span> <span style="color: #859900;">as</span> f:
+                    f.write<span style="color: #757575;">(</span>
+                        <span style="color: #2aa198;">"#define {}_SHIFT {}\n"</span>.<span style="color: #839496;">format</span><span style="color: #757575;">(</span>shift_name.upper<span style="color: #757575;">(),</span> shift_bits<span style="color: #757575;">)</span>
+                    <span style="color: #757575;">)</span>
+
+                    f.write<span style="color: #757575;">(</span><span style="color: #2aa198;">"#define {} {{"</span>.<span style="color: #839496;">format</span><span style="color: #757575;">(</span>var_name.upper<span style="color: #757575;">()))</span>
+
+                    <span style="color: #859900;">if</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span>value.shape<span style="color: #757575;">)</span> == 4:
+                        <span style="color: #586e75;"># </span><span style="color: #586e75;">tf   : HWNC</span>
+                        <span style="color: #586e75;"># </span><span style="color: #586e75;">cmsis: CHWN</span>
+                        <span style="color: #268bd2;">q_value_t</span> = np.transpose<span style="color: #757575;">(</span>q_value<span style="color: #757575;">,</span> <span style="color: #757575;">(</span>3<span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> 1<span style="color: #757575;">,</span> 2<span style="color: #757575;">))</span>
+                    <span style="color: #859900;">else</span>:
+                        <span style="color: #268bd2;">q_value_t</span> = np.transpose<span style="color: #757575;">(</span>q_value<span style="color: #757575;">)</span>
+                        q_value_t.tofile<span style="color: #757575;">(</span>f<span style="color: #757575;">,</span> sep=<span style="color: #2aa198;">", "</span><span style="color: #757575;">,</span> <span style="color: #839496;">format</span>=<span style="color: #2aa198;">"%d"</span><span style="color: #757575;">)</span>
+                        f.write<span style="color: #757575;">(</span><span style="color: #2aa198;">"}\n"</span><span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">if</span> <span style="color: #839496;">__name__</span> == <span style="color: #2aa198;">"__main__"</span>:
+    <span style="color: #268bd2;">MODEL_PATH</span> = <span style="color: #2aa198;">"./model/kws"</span>
+    <span style="color: #268bd2;">model</span> = keras.models.load_model<span style="color: #757575;">(</span>MODEL_PATH<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">ref_input</span> = np.load<span style="color: #757575;">(</span><span style="color: #2aa198;">"./temp/test_x.npy"</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">shift</span> = collect_inference_statistics<span style="color: #757575;">(</span>model<span style="color: #757575;">,</span> ref_input<span style="color: #757575;">)</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>shift<span style="color: #757575;">)</span>
+    quantize<span style="color: #757575;">(</span>model<span style="color: #757575;">,</span> shift<span style="color: #757575;">,</span> ref_input<span style="color: #757575;">)</span>
+
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org885b5b3" class="outline-3">
+<h3 id="org885b5b3"><span class="section-number-3">1.6</span> cmsis-nn 与 tflite 量化</h3>
+<div class="outline-text-3" id="text-1-6">
+<p>
+tflite for mcu 底层支持 cmsis-nn, 但 tflite 的量化规范来自于 gemmlowp, 与前面描述的基于 2^n 的对称量化并不一致. 事实上, cmsis-nn 针对 tflite 的量化需求提供了另外一套 api
+</p>
+
+<p>
+<a href="file:///home/sunway/source/tensorflow/tensorflow/lite/micro/tools/make/downloads/cmsis/CMSIS/NN/README.md#org6eed935">file:///home/sunway/source/tensorflow/tensorflow/lite/micro/tools/make/downloads/cmsis/CMSIS/NN/README.md#org6eed935</a>
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

@@ -1,0 +1,1066 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Weight Initialization</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Weight Initialization</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgee166c0">1. Weight Initialization</a>
+<ul>
+<li><a href="#orgb8304c6">1.1. 初始化为相同的值</a></li>
+<li><a href="#orgc511863">1.2. 初始化为随机值</a></li>
+<li><a href="#orgc86a91d">1.3. Xavier initialization</a></li>
+<li><a href="#org8477bdc">1.4. He initialization</a></li>
+<li><a href="#org46039a5">1.5. Batch Normalization</a></li>
+<li><a href="#org47a68e2">1.6. <span class="done DONE">DONE</span> 不适当的权重初始化导致训练无法收敛</a>
+<ul>
+<li><a href="#orgec8601c">1.6.1. 加上 bias</a></li>
+<li><a href="#orgba0d480">1.6.2. 加上 activation</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgee166c0" class="outline-2">
+<h2 id="orgee166c0"><span class="section-number-2">1</span> Weight Initialization</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-orgb8304c6" class="outline-3">
+<h3 id="orgb8304c6"><span class="section-number-3">1.1</span> 初始化为相同的值</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+若权重被初始化为相同的值, 或者更具体的, 被初始化为相同的列, 而所有神经元会一直有相同的输出, 导致神经元失去意义
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-10-14 22:36</span>
+<span style="color: #859900;">import</span> torch
+
+<span style="color: #268bd2;">N</span> = 3
+
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">Layer</span><span style="color: #757575;">(</span>torch.nn.Module<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">)</span>:
+        <span style="color: #839496;">super</span><span style="color: #757575;">()</span>.__init__<span style="color: #757575;">()</span>
+        <span style="color: #859900;">self</span>.w = torch.nn.Parameter<span style="color: #757575;">(</span>
+            torch.randn<span style="color: #757575;">(</span>out_features<span style="color: #757575;">)</span>.repeat<span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> 1<span style="color: #757575;">)</span>.transpose<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> 1<span style="color: #757575;">)</span>
+        <span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">forward</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> <span style="color: #839496;">input</span><span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">ret</span> = torch.matmul<span style="color: #757575;">(</span><span style="color: #839496;">input</span><span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.w<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"------"</span><span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #839496;">input</span><span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span>.w<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span>.w.grad<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span>ret<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"------"</span><span style="color: #757575;">)</span>
+        <span style="color: #859900;">return</span> ret
+
+
+<span style="color: #268bd2;">net</span> = torch.nn.Sequential<span style="color: #757575;">()</span>
+net.add_module<span style="color: #757575;">(</span><span style="color: #2aa198;">"linear"</span><span style="color: #757575;">,</span> Layer<span style="color: #757575;">(</span>N<span style="color: #757575;">,</span> N<span style="color: #757575;">))</span>
+
+<span style="color: #268bd2;">optimizer</span> = torch.optim.SGD<span style="color: #757575;">(</span>net.parameters<span style="color: #757575;">(),</span> lr=1<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">criterion</span> = torch.nn.MSELoss<span style="color: #757575;">()</span>
+
+<span style="color: #268bd2;">x</span> = torch.rand<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> N<span style="color: #757575;">)</span>
+<span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>3<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"epoch: %d"</span> % <span style="color: #757575;">(</span>i<span style="color: #757575;">))</span>
+    <span style="color: #268bd2;">out</span> = net<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>
+    optimizer.zero_grad<span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">loss</span> = criterion<span style="color: #757575;">(</span>out<span style="color: #757575;">,</span> torch.ones<span style="color: #757575;">((</span>1<span style="color: #757575;">,</span> N<span style="color: #757575;">)))</span>
+    loss.backward<span style="color: #757575;">()</span>
+    optimizer.step<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<p>
+epoch: 0
+</p>
+<hr />
+<p>
+tensor()
+Parameter containing:
+tensor([[ 2.2574,  2.2574,  2.2574],
+        [-1.2911, -1.2911, -1.2911],
+        [-1.2469, -1.2469, -1.2469]], requires_grad=True)
+None
+tensor(, grad_fn=&lt;MmBackward&gt;)
+</p>
+<hr />
+<p>
+epoch: 1
+</p>
+<hr />
+<p>
+tensor()
+Parameter containing:
+tensor([[ 2.5595,  2.5595,  2.5595],
+        [-1.1240, -1.1240, -1.1240],
+        [-0.5409, -0.5409, -0.5409]], requires_grad=True)
+tensor([[-0.3021, -0.3021, -0.3021],
+        [-0.1671, -0.1671, -0.1671],
+        [-0.7060, -0.7060, -0.7060]])
+tensor(, grad_fn=&lt;MmBackward&gt;)
+</p>
+<hr />
+<p>
+epoch: 2
+</p>
+<hr />
+<p>
+tensor()
+Parameter containing:
+tensor([[ 2.7254,  2.7254,  2.7254],
+        [-1.0322, -1.0322, -1.0322],
+        [-0.1532, -0.1532, -0.1532]], requires_grad=True)
+tensor([[-0.1659, -0.1659, -0.1659],
+        [-0.0918, -0.0918, -0.0918],
+        [-0.3876, -0.3876, -0.3876]])
+tensor(, grad_fn=&lt;MmBackward&gt;)
+</p>
+<hr />
+
+<p>
+由于初始权重每列均相同, 导致同一层的神经元的输出都相同, 若 label x 也相同, 则反向传播时同一层神经元的梯度也相同
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgc511863" class="outline-3">
+<h3 id="orgc511863"><span class="section-number-3">1.2</span> 初始化为随机值</h3>
+<div class="outline-text-3" id="text-1-2">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+<span style="color: #859900;">import</span> torch
+
+<span style="color: #268bd2;">N</span> = 100
+plt.style.use<span style="color: #757575;">(</span><span style="color: #2aa198;">"default"</span><span style="color: #757575;">)</span>
+
+plt.ylim<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> 40<span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">init_weight</span><span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">return</span> torch.nn.Parameter<span style="color: #757575;">(</span>torch.randn<span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">))</span>
+
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">Layer</span><span style="color: #757575;">(</span>torch.nn.Module<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">,</span> n<span style="color: #757575;">)</span>:
+        <span style="color: #839496;">super</span><span style="color: #757575;">()</span>.__init__<span style="color: #757575;">()</span>
+        <span style="color: #859900;">self</span>.n = n
+        <span style="color: #859900;">self</span>.w = init_weight<span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">forward</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> <span style="color: #839496;">input</span><span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">ret</span> = torch.matmul<span style="color: #757575;">(</span><span style="color: #839496;">input</span><span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.w<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">ret</span> = torch.nn.functional.sigmoid<span style="color: #757575;">(</span>ret<span style="color: #757575;">)</span>
+        plt.subplot<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.n<span style="color: #757575;">)</span>
+        plt.xlim<span style="color: #757575;">(</span>-1<span style="color: #757575;">,</span> 1<span style="color: #757575;">)</span>
+        plt.hist<span style="color: #757575;">(</span>ret.detach<span style="color: #757575;">()</span>.numpy<span style="color: #757575;">()</span>.reshape<span style="color: #757575;">(</span>-1<span style="color: #757575;">))</span>
+        <span style="color: #859900;">return</span> ret
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">train</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">net</span> = torch.nn.Sequential<span style="color: #757575;">()</span>
+
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>10<span style="color: #757575;">)</span>:
+        net.add_module<span style="color: #757575;">(</span><span style="color: #2aa198;">"linear%d"</span> % <span style="color: #757575;">(</span>i<span style="color: #757575;">),</span> Layer<span style="color: #757575;">(</span>N<span style="color: #757575;">,</span> N<span style="color: #757575;">,</span> i + 1<span style="color: #757575;">))</span>
+
+    <span style="color: #268bd2;">x</span> = torch.rand<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> N<span style="color: #757575;">)</span>
+    net<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>
+    plt.show<span style="color: #757575;">()</span>
+
+
+train<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+
+<div id="org6ee564b" class="figure">
+<p><img src="../extra/init_weight.png" alt="init_weight.png" />
+</p>
+</div>
+
+<p>
+当权重初始化为 randn (均值为 0, 方差为 1 的正态分布) 时, 各层的输出都在 0 或 1
+附近, sigmoid 在 0 或 1 附近时梯度很小, 这时神经元称为饱和状态, 难以梯度下降.
+</p>
+
+<p>
+sigmoid 饱和是因为计算 \(w^T x\) 时过大(例如大于 1).
+</p>
+
+<p>
+我们假设最初的输入 x 是经过 scale 的值, 假设范围为 [-1,1], 我们的目标是通过调整
+\(w\) 的分布, 使得 \(w^Tx\) 在 [-1,1] 范围内.
+</p>
+
+<p>
+在上面的例子中, 我们使用 `randn` 初始化 \(w\), 它是一个 \(\mu=0, \delta=1\) 的标准正态分布. 假设每一层网络输入的 x 均为 1, 则 \(w^Tx\) 为 100 个标准正态分布的叠加, 可以证明这个输出是一个 \(\mu=0, \delta=\sqrt{100}\) 的正态分布, 非常容易取到远大于 1 的值.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgc86a91d" class="outline-3">
+<h3 id="orgc86a91d"><span class="section-number-3">1.3</span> Xavier initialization</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+Xavier initialization 基本思想是通过调用 \(w\) 的值使得输入和输出的方差基本一致
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">def</span> <span style="color: #268bd2;">init_weight</span><span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">return</span> torch.nn.Parameter<span style="color: #757575;">(</span>
+        torch.randn<span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">)</span> / np.sqrt<span style="color: #757575;">(</span>in_features<span style="color: #757575;">))</span>
+
+train<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+
+<div id="org7145865" class="figure">
+<p><img src="../extra/xavier.png" alt="xavier.png" />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org8477bdc" class="outline-3">
+<h3 id="org8477bdc"><span class="section-number-3">1.4</span> He initialization</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+Xavier initialization 对 sigmoid 是有效的, 试试看对 relu 是否有效
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">def</span> <span style="color: #268bd2;">init_weight</span><span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">return</span> torch.nn.Parameter<span style="color: #757575;">(</span>torch.randn<span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">)</span> / np.sqrt<span style="color: #757575;">(</span>in_features<span style="color: #757575;">))</span>
+
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">Layer</span><span style="color: #757575;">(</span>torch.nn.Module<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">,</span> n<span style="color: #757575;">)</span>:
+        <span style="color: #839496;">super</span><span style="color: #757575;">()</span>.__init__<span style="color: #757575;">()</span>
+        <span style="color: #859900;">self</span>.n = n
+        <span style="color: #859900;">self</span>.w = init_weight<span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">forward</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> <span style="color: #839496;">input</span><span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">ret</span> = torch.matmul<span style="color: #757575;">(</span><span style="color: #839496;">input</span><span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.w<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">ret</span> = torch.nn.functional.relu<span style="color: #757575;">(</span>ret<span style="color: #757575;">)</span>
+        plt.subplot<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.n<span style="color: #757575;">)</span>
+        plt.xlim<span style="color: #757575;">(</span>-1<span style="color: #757575;">,</span> 1<span style="color: #757575;">)</span>
+        plt.hist<span style="color: #757575;">(</span>ret.detach<span style="color: #757575;">()</span>.numpy<span style="color: #757575;">()</span>.reshape<span style="color: #757575;">(</span>-1<span style="color: #757575;">))</span>
+        <span style="color: #859900;">return</span> ret
+
+train<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+
+<div id="org7c852a9" class="figure">
+<p><img src="../extra/xavier_relu.png" alt="xavier_relu.png" />
+</p>
+</div>
+
+<p>
+后面的神经元的输出趋向于 0.
+</p>
+
+<p>
+虽然对于 relu 来说, 不论输出为多少, 梯度都固定为 1, 但由于反向传播时对 w 求偏导时需要乘上对应的 x, 所以 x 趋向于 0 同样会使 w 的梯度很小.
+</p>
+
+<p>
+He initialization的思想是：在 ReLU 网络中，假定每一层有一半的神经元被激活，另一半为 0，所以，要保持方差不变，只需要在 Xavier 的基础上再除以 2
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">def</span> <span style="color: #268bd2;">init_weight</span><span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">return</span> torch.nn.Parameter<span style="color: #757575;">(</span>
+        torch.randn<span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">)</span> / np.sqrt<span style="color: #757575;">(</span>in_features / 2<span style="color: #757575;">))</span>
+
+
+train<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+
+<div id="org4d1f3d0" class="figure">
+<p><img src="../extra/he_init.png" alt="he_init.png" />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org46039a5" class="outline-3">
+<h3 id="org46039a5"><span class="section-number-3">1.5</span> <a href="batchnorm.html#org99fdaca">Batch Normalization</a></h3>
+</div>
+
+<div id="outline-container-org47a68e2" class="outline-3">
+<h3 id="org47a68e2"><span class="section-number-3">1.6</span> <span class="done DONE">DONE</span> 不适当的权重初始化导致训练无法收敛</h3>
+<div class="outline-text-3" id="text-1-6">
+<ul class="org-ul">
+<li>State "DONE"       from              <span class="timestamp-wrapper"><span class="timestamp">[2021-10-15 五 12:14]</span></span></li>
+</ul>
+
+<p>
+以一个三层的网络为例: \(y_1=w_1*x, y_2=w_2*y_1, l=mse(y_2,y)\), 且设置 \(w_1,
+w_2\) 均为 0
+</p>
+
+<p>
+\(\frac{dl}{dw_2}=\frac{dl}{dy_2}*\frac{dy_2}{dw_2}=\frac{dl}{dy_2}*y_1\)
+</p>
+
+<p>
+\(w_1=0 \implies y_1=0 \implies \frac{dl}{d{w_2}} = 0\)
+</p>
+
+<p>
+\(\frac{dl}{dw_1}=\frac{dl}{dy_2}*\frac{dy_2}{dy_1}*\frac{dy_1}{dw_1}=\frac{dl}{dy_2}*w_2*\frac{dy_1}{dw_1}\)
+</p>
+
+<p>
+\(w_2=0 \implies \frac{dl}{dw1} = 0\)
+</p>
+
+<p>
+导致模型无法收敛
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-10-14 22:36</span>
+<span style="color: #859900;">import</span> torch
+
+<span style="color: #268bd2;">N</span> = 3
+
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">Layer</span><span style="color: #757575;">(</span>torch.nn.Module<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">,</span> init_func<span style="color: #757575;">)</span>:
+        <span style="color: #839496;">super</span><span style="color: #757575;">()</span>.__init__<span style="color: #757575;">()</span>
+        <span style="color: #859900;">self</span>.w = torch.nn.Parameter<span style="color: #757575;">(</span>torch.zeros<span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">))</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">self.w = torch.nn.init.xavier_uniform_(self.w)</span>
+        <span style="color: #859900;">self</span>.w = init_func<span style="color: #757575;">(</span><span style="color: #859900;">self</span>.w<span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">forward</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> <span style="color: #839496;">input</span><span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">ret</span> = torch.matmul<span style="color: #757575;">(</span><span style="color: #839496;">input</span><span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.w<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span>f<span style="color: #2aa198;">"------"</span><span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"input:"</span><span style="color: #757575;">,</span> <span style="color: #839496;">input</span><span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"weight:"</span><span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.w<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"grad:"</span><span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.w.grad<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"output:"</span><span style="color: #757575;">,</span> ret<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"------"</span><span style="color: #757575;">)</span>
+        <span style="color: #859900;">return</span> ret
+
+
+<span style="color: #268bd2;">x</span> = torch.rand<span style="color: #757575;">(</span>10<span style="color: #757575;">,</span> N<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">for</span> init_func <span style="color: #859900;">in</span> [
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">torch.nn.init.xavier_uniform_,</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">torch.nn.init.uniform_,</span>
+    <span style="color: #859900;">lambda</span> x: x<span style="color: #757575;">,</span>
+]:
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>init_func.<span style="color: #839496;">__name__</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">net</span> = torch.nn.Sequential<span style="color: #757575;">()</span>
+    net.add_module<span style="color: #757575;">(</span><span style="color: #2aa198;">"encoder"</span><span style="color: #757575;">,</span> Layer<span style="color: #757575;">(</span>N<span style="color: #757575;">,</span> 10<span style="color: #757575;">,</span> init_func<span style="color: #757575;">))</span>
+    net.add_module<span style="color: #757575;">(</span><span style="color: #2aa198;">"decoder"</span><span style="color: #757575;">,</span> Layer<span style="color: #757575;">(</span>10<span style="color: #757575;">,</span> N<span style="color: #757575;">,</span> init_func<span style="color: #757575;">))</span>
+
+    <span style="color: #268bd2;">optimizer</span> = torch.optim.SGD<span style="color: #757575;">(</span>net.parameters<span style="color: #757575;">(),</span> lr=0.01<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">criterion</span> = torch.nn.MSELoss<span style="color: #757575;">()</span>
+
+    <span style="color: #268bd2;">loss_val</span> = <span style="color: #268bd2; font-weight: bold;">None</span>
+    <span style="color: #268bd2;">EPOCH</span> = 2
+    <span style="color: #859900;">for</span> epoch <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>EPOCH<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span>f<span style="color: #2aa198;">"----------epoch: {epoch}----------"</span><span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">out</span> = net<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>
+        optimizer.zero_grad<span style="color: #757575;">()</span>
+        <span style="color: #268bd2;">loss</span> = criterion<span style="color: #757575;">(</span>out<span style="color: #757575;">,</span> x<span style="color: #757575;">)</span>
+        loss.backward<span style="color: #757575;">()</span>
+        optimizer.step<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<p>
+&lt;lambda&gt;
+-----&#x2013;&#x2014;epoch: 0-----&#x2013;&#x2014;
+</p>
+<hr />
+<p>
+input: tensor([[0.5559, 0.7492, 0.7514],
+        [0.6140, 0.7566, 0.6718],
+        [0.1971, 0.1813, 0.5641],
+        [0.1271, 0.4532, 0.4344],
+        [0.4615, 0.1038, 0.7771],
+        [0.5174, 0.9104, 0.3995],
+        [0.9099, 0.5128, 0.0951],
+        [0.8051, 0.4550, 0.7187],
+        [0.6267, 0.9796, 0.4795],
+        [0.0192, 0.1095, 0.6044]])
+weight: Parameter containing:
+tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], requires_grad=True)
+grad: None
+output: tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], grad_fn=&lt;MmBackward&gt;)
+</p>
+<hr />
+<hr />
+<p>
+input: tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], grad_fn=&lt;MmBackward&gt;)
+weight: Parameter containing:
+tensor([[0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.]], requires_grad=True)
+grad: None
+output: tensor([[0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.]], grad_fn=&lt;MmBackward&gt;)
+</p>
+<hr />
+<p>
+-----&#x2013;&#x2014;epoch: 1-----&#x2013;&#x2014;
+</p>
+<hr />
+<p>
+input: tensor([[0.5559, 0.7492, 0.7514],
+        [0.6140, 0.7566, 0.6718],
+        [0.1971, 0.1813, 0.5641],
+        [0.1271, 0.4532, 0.4344],
+        [0.4615, 0.1038, 0.7771],
+        [0.5174, 0.9104, 0.3995],
+        [0.9099, 0.5128, 0.0951],
+        [0.8051, 0.4550, 0.7187],
+        [0.6267, 0.9796, 0.4795],
+        [0.0192, 0.1095, 0.6044]])
+weight: Parameter containing:
+tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], requires_grad=True)
+grad: tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]])
+output: tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], grad_fn=&lt;MmBackward&gt;)
+</p>
+<hr />
+<hr />
+<p>
+input: tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], grad_fn=&lt;MmBackward&gt;)
+weight: Parameter containing:
+tensor([[0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.]], requires_grad=True)
+grad: tensor([[0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.]])
+output: tensor([[0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.]], grad_fn=&lt;MmBackward&gt;)
+</p>
+<hr />
+</div>
+
+<div id="outline-container-orgec8601c" class="outline-4">
+<h4 id="orgec8601c"><span class="section-number-4">1.6.1</span> 加上 bias</h4>
+<div class="outline-text-4" id="text-1-6-1">
+<p>
+\(y_1=w_1*x+b_1, y_2=w_2*y_1+b_2, l=mse(y2,y)\)
+</p>
+
+<p>
+\(\frac{dl}{db_2}=2*(y_2-y)\)
+</p>
+
+<p>
+\(\frac{dl}{db_1}=2*(y_2-y)*w_2\)
+</p>
+
+<p>
+所以 \(b_2\) 可以被更新, 但其它参数还是会维持为 0 不变, 因为它们的梯度不依赖 \(b_2\)
+或 \(y_2\) 的值
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-10-14 22:36</span>
+<span style="color: #859900;">import</span> torch
+
+<span style="color: #268bd2;">N</span> = 3
+
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">Layer</span><span style="color: #757575;">(</span>torch.nn.Module<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">)</span>:
+        <span style="color: #839496;">super</span><span style="color: #757575;">()</span>.__init__<span style="color: #757575;">()</span>
+        <span style="color: #859900;">self</span>.w = torch.nn.Parameter<span style="color: #757575;">(</span>torch.zeros<span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">))</span>
+        <span style="color: #859900;">self</span>.b = torch.nn.Parameter<span style="color: #757575;">(</span>torch.zeros<span style="color: #757575;">(</span>out_features<span style="color: #757575;">))</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">forward</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> <span style="color: #839496;">input</span><span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">ret</span> = torch.matmul<span style="color: #757575;">(</span><span style="color: #839496;">input</span><span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.w<span style="color: #757575;">)</span> + <span style="color: #859900;">self</span>.b
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span>f<span style="color: #2aa198;">"------"</span><span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"input:"</span><span style="color: #757575;">,</span> <span style="color: #839496;">input</span><span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"weight:"</span><span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.w<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"bias:"</span><span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.b<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"grad:"</span><span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.w.grad<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"bias_grad:"</span><span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.b.grad<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"output:"</span><span style="color: #757575;">,</span> ret<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"------"</span><span style="color: #757575;">)</span>
+        <span style="color: #859900;">return</span> ret
+
+
+<span style="color: #268bd2;">x</span> = torch.rand<span style="color: #757575;">(</span>10<span style="color: #757575;">,</span> N<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">net</span> = torch.nn.Sequential<span style="color: #757575;">()</span>
+net.add_module<span style="color: #757575;">(</span><span style="color: #2aa198;">"encoder"</span><span style="color: #757575;">,</span> Layer<span style="color: #757575;">(</span>N<span style="color: #757575;">,</span> 10<span style="color: #757575;">))</span>
+net.add_module<span style="color: #757575;">(</span><span style="color: #2aa198;">"decoder"</span><span style="color: #757575;">,</span> Layer<span style="color: #757575;">(</span>10<span style="color: #757575;">,</span> N<span style="color: #757575;">))</span>
+
+<span style="color: #268bd2;">optimizer</span> = torch.optim.SGD<span style="color: #757575;">(</span>net.parameters<span style="color: #757575;">(),</span> lr=0.01<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">criterion</span> = torch.nn.MSELoss<span style="color: #757575;">()</span>
+
+<span style="color: #268bd2;">loss_val</span> = <span style="color: #268bd2; font-weight: bold;">None</span>
+<span style="color: #268bd2;">EPOCH</span> = 2
+<span style="color: #859900;">for</span> epoch <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>EPOCH<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>f<span style="color: #2aa198;">"----------epoch: {epoch}----------"</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">out</span> = net<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>
+    optimizer.zero_grad<span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">loss</span> = criterion<span style="color: #757575;">(</span>out<span style="color: #757575;">,</span> x<span style="color: #757575;">)</span>
+    loss.backward<span style="color: #757575;">()</span>
+    optimizer.step<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<p>
+-----&#x2013;&#x2014;epoch: 0-----&#x2013;&#x2014;
+</p>
+<hr />
+<p>
+input: tensor([[0.0892, 0.0043, 0.1385],
+        [0.5969, 0.6326, 0.0483],
+        [0.6149, 0.3503, 0.9675],
+        [0.8038, 0.6002, 0.6653],
+        [0.7709, 0.9145, 0.9097],
+        [0.3827, 0.4187, 0.3746],
+        [0.4997, 0.8725, 0.9211],
+        [0.3268, 0.2441, 0.0907],
+        [0.2871, 0.0215, 0.1810],
+        [0.0679, 0.7250, 0.1056]])
+weight: Parameter containing:
+tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], requires_grad=True)
+bias: Parameter containing:
+tensor([0., 0., 0., 0., 0., 0., 0., 0., 0., 0.], requires_grad=True)
+grad: None
+bias_grad: None
+output: tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], grad_fn=&lt;AddBackward0&gt;)
+</p>
+<hr />
+<hr />
+<p>
+input: tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], grad_fn=&lt;AddBackward0&gt;)
+weight: Parameter containing:
+tensor([[0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.]], requires_grad=True)
+bias: Parameter containing:
+tensor([0., 0., 0.], requires_grad=True)
+grad: None
+bias_grad: None
+output: tensor([[0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.]], grad_fn=&lt;AddBackward0&gt;)
+</p>
+<hr />
+<p>
+-----&#x2013;&#x2014;epoch: 1-----&#x2013;&#x2014;
+</p>
+<hr />
+<p>
+input: tensor([[0.0892, 0.0043, 0.1385],
+        [0.5969, 0.6326, 0.0483],
+        [0.6149, 0.3503, 0.9675],
+        [0.8038, 0.6002, 0.6653],
+        [0.7709, 0.9145, 0.9097],
+        [0.3827, 0.4187, 0.3746],
+        [0.4997, 0.8725, 0.9211],
+        [0.3268, 0.2441, 0.0907],
+        [0.2871, 0.0215, 0.1810],
+        [0.0679, 0.7250, 0.1056]])
+weight: Parameter containing:
+tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], requires_grad=True)
+bias: Parameter containing:
+tensor([0., 0., 0., 0., 0., 0., 0., 0., 0., 0.], requires_grad=True)
+grad: tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]])
+bias_grad: tensor([0., 0., 0., 0., 0., 0., 0., 0., 0., 0.])
+output: tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], grad_fn=&lt;AddBackward0&gt;)
+</p>
+<hr />
+<hr />
+<p>
+input: tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], grad_fn=&lt;AddBackward0&gt;)
+weight: Parameter containing:
+tensor([[0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.]], requires_grad=True)
+bias: Parameter containing:
+tensor([0.0030, 0.0032, 0.0029], requires_grad=True)
+grad: tensor([[0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.]])
+bias_grad: tensor([-0.2960, -0.3189, -0.2935])
+output: tensor([[0.0030, 0.0032, 0.0029],
+        [0.0030, 0.0032, 0.0029],
+        [0.0030, 0.0032, 0.0029],
+        [0.0030, 0.0032, 0.0029],
+        [0.0030, 0.0032, 0.0029],
+        [0.0030, 0.0032, 0.0029],
+        [0.0030, 0.0032, 0.0029],
+        [0.0030, 0.0032, 0.0029],
+        [0.0030, 0.0032, 0.0029],
+        [0.0030, 0.0032, 0.0029]], grad_fn=&lt;AddBackward0&gt;)
+</p>
+<hr />
+</div>
+</div>
+
+<div id="outline-container-orgba0d480" class="outline-4">
+<h4 id="orgba0d480"><span class="section-number-4">1.6.2</span> 加上 activation</h4>
+<div class="outline-text-4" id="text-1-6-2">
+<p>
+加上 relu 后对每一层的梯度和输出 (0) 都没有影响, 所以不会有什么改变
+</p>
+
+<p>
+加上 sigmoid 后对每一层的输出 (0) 都会有影响, 所以各个参数的梯度会发生改变
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-10-14 22:36</span>
+<span style="color: #859900;">import</span> torch
+
+<span style="color: #268bd2;">N</span> = 3
+
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">Layer</span><span style="color: #757575;">(</span>torch.nn.Module<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">)</span>:
+        <span style="color: #839496;">super</span><span style="color: #757575;">()</span>.__init__<span style="color: #757575;">()</span>
+        <span style="color: #859900;">self</span>.w = torch.nn.Parameter<span style="color: #757575;">(</span>torch.zeros<span style="color: #757575;">(</span>in_features<span style="color: #757575;">,</span> out_features<span style="color: #757575;">))</span>
+        <span style="color: #859900;">self</span>.b = torch.nn.Parameter<span style="color: #757575;">(</span>torch.zeros<span style="color: #757575;">(</span>out_features<span style="color: #757575;">))</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">forward</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> <span style="color: #839496;">input</span><span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">ret</span> = torch.matmul<span style="color: #757575;">(</span><span style="color: #839496;">input</span><span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.w<span style="color: #757575;">)</span> + <span style="color: #859900;">self</span>.b
+        <span style="color: #268bd2;">ret</span> = torch.relu<span style="color: #757575;">(</span>ret<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span>f<span style="color: #2aa198;">"------"</span><span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"input:"</span><span style="color: #757575;">,</span> <span style="color: #839496;">input</span><span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"weight:"</span><span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.w<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"bias:"</span><span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.b<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"grad:"</span><span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.w.grad<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"bias_grad:"</span><span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.b.grad<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"output:"</span><span style="color: #757575;">,</span> ret<span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"------"</span><span style="color: #757575;">)</span>
+        <span style="color: #859900;">return</span> ret
+
+
+<span style="color: #268bd2;">x</span> = torch.rand<span style="color: #757575;">(</span>10<span style="color: #757575;">,</span> N<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">net</span> = torch.nn.Sequential<span style="color: #757575;">()</span>
+net.add_module<span style="color: #757575;">(</span><span style="color: #2aa198;">"encoder"</span><span style="color: #757575;">,</span> Layer<span style="color: #757575;">(</span>N<span style="color: #757575;">,</span> 10<span style="color: #757575;">))</span>
+net.add_module<span style="color: #757575;">(</span><span style="color: #2aa198;">"decoder"</span><span style="color: #757575;">,</span> Layer<span style="color: #757575;">(</span>10<span style="color: #757575;">,</span> N<span style="color: #757575;">))</span>
+
+<span style="color: #268bd2;">optimizer</span> = torch.optim.SGD<span style="color: #757575;">(</span>net.parameters<span style="color: #757575;">(),</span> lr=0.01<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">criterion</span> = torch.nn.MSELoss<span style="color: #757575;">()</span>
+
+<span style="color: #268bd2;">loss_val</span> = <span style="color: #268bd2; font-weight: bold;">None</span>
+<span style="color: #268bd2;">EPOCH</span> = 2
+<span style="color: #859900;">for</span> epoch <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>EPOCH<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>f<span style="color: #2aa198;">"----------epoch: {epoch}----------"</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">out</span> = net<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>
+    optimizer.zero_grad<span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">loss</span> = criterion<span style="color: #757575;">(</span>out<span style="color: #757575;">,</span> x<span style="color: #757575;">)</span>
+    loss.backward<span style="color: #757575;">()</span>
+    optimizer.step<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<p>
+-----&#x2013;&#x2014;epoch: 0-----&#x2013;&#x2014;
+</p>
+<hr />
+<p>
+input: tensor([[0.7440, 0.9623, 0.0264],
+        [0.1071, 0.7099, 0.7681],
+        [0.0640, 0.9640, 0.5351],
+        [0.5744, 0.1441, 0.1794],
+        [0.9339, 0.7973, 0.6490],
+        [0.3939, 0.9950, 0.1150],
+        [0.6462, 0.4156, 0.9414],
+        [0.1071, 0.8234, 0.0591],
+        [0.8225, 0.9480, 0.4412],
+        [0.7329, 0.7617, 0.5860]])
+weight: Parameter containing:
+tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], requires_grad=True)
+bias: Parameter containing:
+tensor([0., 0., 0., 0., 0., 0., 0., 0., 0., 0.], requires_grad=True)
+grad: None
+bias_grad: None
+output: tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], grad_fn=&lt;ReluBackward0&gt;)
+</p>
+<hr />
+<hr />
+<p>
+input: tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], grad_fn=&lt;ReluBackward0&gt;)
+weight: Parameter containing:
+tensor([[0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.]], requires_grad=True)
+bias: Parameter containing:
+tensor([0., 0., 0.], requires_grad=True)
+grad: None
+bias_grad: None
+output: tensor([[0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.]], grad_fn=&lt;ReluBackward0&gt;)
+</p>
+<hr />
+<p>
+-----&#x2013;&#x2014;epoch: 1-----&#x2013;&#x2014;
+</p>
+<hr />
+<p>
+input: tensor([[0.7440, 0.9623, 0.0264],
+        [0.1071, 0.7099, 0.7681],
+        [0.0640, 0.9640, 0.5351],
+        [0.5744, 0.1441, 0.1794],
+        [0.9339, 0.7973, 0.6490],
+        [0.3939, 0.9950, 0.1150],
+        [0.6462, 0.4156, 0.9414],
+        [0.1071, 0.8234, 0.0591],
+        [0.8225, 0.9480, 0.4412],
+        [0.7329, 0.7617, 0.5860]])
+weight: Parameter containing:
+tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], requires_grad=True)
+bias: Parameter containing:
+tensor([0., 0., 0., 0., 0., 0., 0., 0., 0., 0.], requires_grad=True)
+grad: tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]])
+bias_grad: tensor([0., 0., 0., 0., 0., 0., 0., 0., 0., 0.])
+output: tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], grad_fn=&lt;ReluBackward0&gt;)
+</p>
+<hr />
+<hr />
+<p>
+input: tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], grad_fn=&lt;ReluBackward0&gt;)
+weight: Parameter containing:
+tensor([[0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.]], requires_grad=True)
+bias: Parameter containing:
+tensor([0., 0., 0.], requires_grad=True)
+grad: tensor([[0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.]])
+bias_grad: tensor([0., 0., 0.])
+output: tensor([[0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.]], grad_fn=&lt;ReluBackward0&gt;)
+</p>
+<hr />
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

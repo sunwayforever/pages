@@ -1,0 +1,1034 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TensorRT</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">TensorRT</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org64d69c0">1. TensorRT</a>
+<ul>
+<li><a href="#orgd7f2420">1.1. <span class="done DONE">DONE</span> Quantization Aware Training</a>
+<ul>
+<li><a href="#org6bd8dee">1.1.1. Overview</a></li>
+<li><a href="#org2ece33f">1.1.2. Impl</a></li>
+<li><a href="#orge095de2">1.1.3. TensorRT Optimizer</a></li>
+</ul>
+</li>
+<li><a href="#org63b9328">1.2. <span class="done DONE">DONE</span> Sparsity</a></li>
+<li><a href="#org98f67c7">1.3. Tensor Fusion</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org64d69c0" class="outline-2">
+<h2 id="org64d69c0"><span class="section-number-2">1</span> TensorRT</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-orgd7f2420" class="outline-3">
+<h3 id="orgd7f2420"><span class="section-number-3">1.1</span> <span class="done DONE">DONE</span> Quantization Aware Training</h3>
+<div class="outline-text-3" id="text-1-1">
+<ul class="org-ul">
+<li>State "DONE"       from "TODO"       <span class="timestamp-wrapper"><span class="timestamp">[2021-10-29 五 23:13]</span></span></li>
+</ul>
+</div>
+
+<div id="outline-container-org6bd8dee" class="outline-4">
+<h4 id="org6bd8dee"><span class="section-number-4">1.1.1</span> Overview</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+<a href="https://developer.nvidia.com/blog/achieving-fp32-accuracy-for-int8-inference-using-quantization-aware-training-with-tensorrt/">https://developer.nvidia.com/blog/achieving-fp32-accuracy-for-int8-inference-using-quantization-aware-training-with-tensorrt/</a>
+</p>
+
+<p>
+<a href="https://github.com/NVIDIA/TensorRT/tree/master/tools/pytorch-quantization">https://github.com/NVIDIA/TensorRT/tree/master/tools/pytorch-quantization</a>
+</p>
+
+<p>
+TensorRT 的 pytorch_quantization 是一个实现 fake quantization 的 pytorch plugin
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-10-29 14:24</span>
+<span style="color: #859900;">import</span> os
+<span style="color: #859900;">import</span> torch
+<span style="color: #859900;">from</span> torch <span style="color: #859900;">import</span> nn
+<span style="color: #859900;">from</span> torch <span style="color: #859900;">import</span> optim
+<span style="color: #859900;">from</span> torch.utils.data <span style="color: #859900;">import</span> DataLoader<span style="color: #757575;">,</span> Dataset
+<span style="color: #859900;">import</span> torch.nn.functional <span style="color: #859900;">as</span> F
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+
+<span style="color: #859900;">import</span> torch.onnx
+
+<span style="color: #859900;">from</span> pytorch_quantization <span style="color: #859900;">import</span> nn <span style="color: #859900;">as</span> quant_nn
+<span style="color: #859900;">from</span> pytorch_quantization <span style="color: #859900;">import</span> calib
+<span style="color: #859900;">from</span> pytorch_quantization.tensor_quant <span style="color: #859900;">import</span> QuantDescriptor
+<span style="color: #859900;">from</span> pytorch_quantization <span style="color: #859900;">import</span> quant_modules
+<span style="color: #859900;">from</span> absl <span style="color: #859900;">import</span> logging
+
+logging.set_verbosity<span style="color: #757575;">(</span>logging.FATAL<span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">export_to_onnx</span><span style="color: #757575;">(</span>model<span style="color: #757575;">)</span>:
+    model.<span style="color: #839496;">eval</span><span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">dummy_input</span> = torch.randn<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 5<span style="color: #757575;">)</span>
+
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">use_fb_fake_quant &#26159; tensorrt &#30340;&#19968;&#20010; hack: &#24403;&#38656;&#35201;&#23548;&#20986;&#20026; onnx &#26102;&#35774;&#20026; true,</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">forward &#26102; fake_tensor_quant &#20250;&#34987;&#26367;&#25442;&#20026; _fb_fake_quant, &#21518;&#32773;&#20250;&#35843;&#29992;torch &#33258;</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">&#24049;&#30340; fake_quantize_per_channel_affine &#20197;&#20415;&#23548;&#20986;&#20026; onnx &#30340;</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">QuantizeLinear/DequantizeLinear</span>
+    <span style="color: #268bd2;">quant_nn.TensorQuantizer.use_fb_fake_quant</span> = <span style="color: #268bd2; font-weight: bold;">True</span>
+
+    torch.onnx.export<span style="color: #757575;">(</span>
+        model<span style="color: #757575;">,</span>
+        dummy_input<span style="color: #757575;">,</span>
+        <span style="color: #2aa198;">"fake.onnx"</span><span style="color: #757575;">,</span>
+        opset_version=13<span style="color: #757575;">,</span>
+    <span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">quant_nn.TensorQuantizer.use_fb_fake_quant</span> = <span style="color: #268bd2; font-weight: bold;">False</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">get_data</span><span style="color: #757575;">()</span>:
+    <span style="color: #859900;">class</span> <span style="color: #b58900;">PlainDataset</span><span style="color: #757575;">(</span>Dataset<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span>:
+            <span style="color: #268bd2;">x</span> = torch.<span style="color: #839496;">round</span><span style="color: #757575;">(</span>torch.rand<span style="color: #757575;">(</span>10000<span style="color: #757575;">)</span> * 200<span style="color: #757575;">)</span>
+            <span style="color: #268bd2;">x</span> = x.unsqueeze<span style="color: #757575;">(</span>1<span style="color: #757575;">)</span>
+            <span style="color: #268bd2;">x</span> = torch.cat<span style="color: #757575;">((</span>x<span style="color: #757575;">,</span> x * 2<span style="color: #757575;">,</span> x * 3<span style="color: #757575;">,</span> x * 4<span style="color: #757575;">,</span> x * 5<span style="color: #757575;">),</span> 1<span style="color: #757575;">)</span>
+            <span style="color: #859900;">self</span>.X = x
+
+        <span style="color: #859900;">def</span> <span style="color: #268bd2;">__getitem__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> index<span style="color: #757575;">)</span>:
+            <span style="color: #859900;">return</span> <span style="color: #859900;">self</span>.X[index]
+
+        <span style="color: #859900;">def</span> <span style="color: #268bd2;">__len__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span>:
+            <span style="color: #859900;">return</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span>.X<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">training_set</span> = PlainDataset<span style="color: #757575;">()</span>
+    <span style="color: #859900;">return</span> DataLoader<span style="color: #757575;">(</span>training_set<span style="color: #757575;">,</span> batch_size=100<span style="color: #757575;">,</span> shuffle=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">pretrain_model</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">model</span> = nn.Sequential<span style="color: #757575;">(</span>
+        nn.Linear<span style="color: #757575;">(</span>5<span style="color: #757575;">,</span> 1<span style="color: #757575;">),</span>
+        nn.Linear<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 5<span style="color: #757575;">),</span>
+    <span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">if</span> os.path.exists<span style="color: #757575;">(</span><span style="color: #2aa198;">"model.pt"</span><span style="color: #757575;">)</span>:
+        <span style="color: #859900;">return</span>
+
+    train_model<span style="color: #757575;">(</span>model<span style="color: #757575;">)</span>
+    torch.save<span style="color: #757575;">(</span>model.state_dict<span style="color: #757575;">(),</span> <span style="color: #2aa198;">"model.pt"</span><span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">train_model</span><span style="color: #757575;">(</span>model<span style="color: #757575;">,</span> epoch=500<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">criterion</span> = nn.MSELoss<span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">optimizer</span> = optim.Adam<span style="color: #757575;">(</span>model.parameters<span style="color: #757575;">())</span>
+
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>epoch<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">for</span> x <span style="color: #859900;">in</span> get_data<span style="color: #757575;">()</span>:
+            <span style="color: #268bd2;">loss</span> = criterion<span style="color: #757575;">(</span>model<span style="color: #757575;">(</span>x<span style="color: #757575;">),</span> x<span style="color: #757575;">)</span>
+            optimizer.zero_grad<span style="color: #757575;">()</span>
+            loss.backward<span style="color: #757575;">()</span>
+            optimizer.step<span style="color: #757575;">()</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">if i % 10 == 0:</span>
+        <span style="color: #586e75;">#     </span><span style="color: #586e75;">print("epoch #%d: loss: %f" % (i, loss.detach().item()))</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">load_model</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">quant_desc_input</span> = QuantDescriptor<span style="color: #757575;">(</span>calib_method=<span style="color: #2aa198;">"histogram"</span><span style="color: #757575;">)</span>
+    quant_nn.QuantConv2d.set_default_quant_desc_input<span style="color: #757575;">(</span>quant_desc_input<span style="color: #757575;">)</span>
+    quant_nn.QuantLinear.set_default_quant_desc_input<span style="color: #757575;">(</span>quant_desc_input<span style="color: #757575;">)</span>
+
+    quant_modules.initialize<span style="color: #757575;">()</span>
+
+    <span style="color: #268bd2;">model</span> = nn.Sequential<span style="color: #757575;">(</span>
+        nn.Linear<span style="color: #757575;">(</span>5<span style="color: #757575;">,</span> 1<span style="color: #757575;">),</span>
+        nn.Linear<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 5<span style="color: #757575;">),</span>
+    <span style="color: #757575;">)</span>
+    model.load_state_dict<span style="color: #757575;">(</span>torch.load<span style="color: #757575;">(</span><span style="color: #2aa198;">"model.pt"</span><span style="color: #757575;">))</span>
+    <span style="color: #859900;">return</span> model
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">fake_quantize</span><span style="color: #757575;">(</span>model<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">collect_stats</span><span style="color: #757575;">(</span>model<span style="color: #757575;">,</span> data<span style="color: #757575;">,</span> num_batches<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">for</span> name<span style="color: #757575;">,</span> module <span style="color: #859900;">in</span> model.named_modules<span style="color: #757575;">()</span>:
+            <span style="color: #859900;">if</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>module<span style="color: #757575;">,</span> quant_nn.TensorQuantizer<span style="color: #757575;">)</span>:
+                module.disable_quant<span style="color: #757575;">()</span>
+                module.enable_calib<span style="color: #757575;">()</span>
+
+        <span style="color: #859900;">for</span> i<span style="color: #757575;">,</span> data <span style="color: #859900;">in</span> <span style="color: #839496;">enumerate</span><span style="color: #757575;">(</span>data<span style="color: #757575;">)</span>:
+            model<span style="color: #757575;">(</span>data<span style="color: #757575;">)</span>
+            <span style="color: #859900;">if</span> i &gt;= num_batches:
+                <span style="color: #859900;">break</span>
+        <span style="color: #859900;">for</span> name<span style="color: #757575;">,</span> module <span style="color: #859900;">in</span> model.named_modules<span style="color: #757575;">()</span>:
+            <span style="color: #859900;">if</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>module<span style="color: #757575;">,</span> quant_nn.TensorQuantizer<span style="color: #757575;">)</span>:
+                module.enable_quant<span style="color: #757575;">()</span>
+                module.disable_calib<span style="color: #757575;">()</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">compute_amax</span><span style="color: #757575;">(</span>model<span style="color: #757575;">,</span> **kwargs<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">for</span> name<span style="color: #757575;">,</span> module <span style="color: #859900;">in</span> model.named_modules<span style="color: #757575;">()</span>:
+            <span style="color: #859900;">if</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>module<span style="color: #757575;">,</span> quant_nn.TensorQuantizer<span style="color: #757575;">)</span>:
+                <span style="color: #859900;">if</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>module._calibrator<span style="color: #757575;">,</span> calib.MaxCalibrator<span style="color: #757575;">)</span>:
+                    module.load_calib_amax<span style="color: #757575;">()</span>
+                <span style="color: #859900;">else</span>:
+                    module.load_calib_amax<span style="color: #757575;">(</span>method=<span style="color: #2aa198;">"percentile"</span><span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">with</span> torch.no_grad<span style="color: #757575;">()</span>:
+        collect_stats<span style="color: #757575;">(</span>model<span style="color: #757575;">,</span> get_data<span style="color: #757575;">(),</span> num_batches=1000<span style="color: #757575;">)</span>
+        compute_amax<span style="color: #757575;">(</span>model<span style="color: #757575;">)</span>
+
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">for name, module in model.named_modules():</span>
+    <span style="color: #586e75;">#     </span><span style="color: #586e75;">if isinstance(module, quant_nn.TensorQuantizer):</span>
+    <span style="color: #586e75;">#         </span><span style="color: #586e75;">print("------")</span>
+    <span style="color: #586e75;">#         </span><span style="color: #586e75;">print(name, module)</span>
+
+    <span style="color: #859900;">return</span> model
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">test</span><span style="color: #757575;">(</span>model<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">x</span> = torch.tensor<span style="color: #757575;">(</span>[[10<span style="color: #757575;">,</span> 20<span style="color: #757575;">,</span> 30<span style="color: #757575;">,</span> 40<span style="color: #757575;">,</span> 50]]<span style="color: #757575;">)</span>.<span style="color: #839496;">float</span><span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">y_hat</span> = model<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>y_hat<span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">if</span> <span style="color: #839496;">__name__</span> == <span style="color: #2aa198;">"__main__"</span>:
+    pretrain_model<span style="color: #757575;">()</span>
+
+    <span style="color: #268bd2;">model</span> = load_model<span style="color: #757575;">()</span>
+    test<span style="color: #757575;">(</span>model<span style="color: #757575;">)</span>
+
+    fake_quantize<span style="color: #757575;">(</span>model<span style="color: #757575;">)</span>
+    test<span style="color: #757575;">(</span>model<span style="color: #757575;">)</span>
+
+    train_model<span style="color: #757575;">(</span>model<span style="color: #757575;">,</span> epoch=1<span style="color: #757575;">)</span>
+    fake_quantize<span style="color: #757575;">(</span>model<span style="color: #757575;">)</span>
+    test<span style="color: #757575;">(</span>model<span style="color: #757575;">)</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org2ece33f" class="outline-4">
+<h4 id="org2ece33f"><span class="section-number-4">1.1.2</span> Impl</h4>
+<div class="outline-text-4" id="text-1-1-2">
+</div>
+<div id="outline-container-orgf6e6f02" class="outline-5">
+<h5 id="orgf6e6f02"><span class="section-number-5">1.1.2.1</span> monkey patching</h5>
+<div class="outline-text-5" id="text-1-1-2-1">
+<p>
+quant_modules.initialize 会把 torch.nn 中的 Linear 等模块替换成 QuantLinear 等模块
+</p>
+</div>
+</div>
+
+<div id="outline-container-org9be6607" class="outline-5">
+<h5 id="org9be6607"><span class="section-number-5">1.1.2.2</span> foward</h5>
+<div class="outline-text-5" id="text-1-1-2-2">
+</div>
+<ol class="org-ol">
+<li><a id="org3bf507b"></a>QuantLinear<br />
+<div class="outline-text-6" id="text-1-1-2-2-1">
+<p>
+forward 会被 propagate 给 input_quantizer 和 weight_quantizer
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">forward</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> <span style="color: #839496;">input</span><span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">quant_input</span> = <span style="color: #859900;">self</span>._input_quantizer<span style="color: #757575;">(</span><span style="color: #839496;">input</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">quant_weight</span> = <span style="color: #859900;">self</span>._weight_quantizer<span style="color: #757575;">(</span><span style="color: #859900;">self</span>.weight<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">output</span> = F.linear<span style="color: #757575;">(</span>quant_input<span style="color: #757575;">,</span> quant_weight<span style="color: #757575;">,</span> bias=<span style="color: #859900;">self</span>.bias<span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> output
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org5e40e61"></a>TensorQuantizer<br />
+<div class="outline-text-6" id="text-1-1-2-2-2">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">forward</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> inputs<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">if</span> <span style="color: #859900;">self</span>._disabled:
+        <span style="color: #859900;">return</span> inputs
+
+    <span style="color: #268bd2;">outputs</span> = inputs
+
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">&#35843;&#29992; TensorQuantizer.enable_calib() &#20250;&#35774;&#32622; _if_calib, &#34920;&#31034; calibrator &#38656;&#35201;</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">&#35760;&#24405;&#20197;&#33719;&#24471;&#26368;&#22823;&#20540; amax (abs max)</span>
+    <span style="color: #859900;">if</span> <span style="color: #859900;">self</span>._if_calib:
+        <span style="color: #859900;">self</span>._calibrator.collect<span style="color: #757575;">(</span>inputs<span style="color: #757575;">)</span>
+
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">&#35843;&#29992; enable_quant() &#20250;&#35774;&#32622; _if_quant, &#34920;&#31034;&#38656;&#35201;&#20351;&#29992; amax &#36827;&#34892; fake quant&#20351;</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">&#29992;&#26102;&#38656;&#35201;&#20808; enable calib, disable quant, calib &#23436;&#25104;&#21518;&#35745;&#31639; amax, &#28982;&#21518;&#20877;</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">enable quant, disable calib &#36827;&#34892;&#24102; fake quant &#30340; evaluation</span>
+    <span style="color: #859900;">if</span> <span style="color: #859900;">self</span>._if_quant:
+        <span style="color: #268bd2;">outputs</span> = <span style="color: #859900;">self</span>._quant_forward<span style="color: #757575;">(</span>inputs<span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">return</span> outputs
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">_quant_forward</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> inputs<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">amax &#26102;&#36890;&#36807; load_calib_amax &#35745;&#31639;&#30340; amax</span>
+    <span style="color: #268bd2;">amax</span> = <span style="color: #859900;">self</span>._get_amax<span style="color: #757575;">(</span>inputs<span style="color: #757575;">)</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">fake_tensor_quant &#26159;&#27880;&#20876;&#30340; autograd function</span>
+    <span style="color: #859900;">if</span> <span style="color: #859900;">not</span> TensorQuantizer.use_fb_fake_quant:
+        <span style="color: #268bd2;">outputs</span> = fake_tensor_quant<span style="color: #757575;">(</span>
+            inputs<span style="color: #757575;">,</span> amax<span style="color: #757575;">,</span> <span style="color: #859900;">self</span>._num_bits<span style="color: #757575;">,</span> <span style="color: #859900;">self</span>._unsigned<span style="color: #757575;">,</span> <span style="color: #859900;">self</span>._narrow_range
+        <span style="color: #757575;">)</span>
+    <span style="color: #859900;">else</span>:
+        <span style="color: #268bd2;">outputs</span> = <span style="color: #859900;">self</span>._fb_fake_quant<span style="color: #757575;">(</span>inputs<span style="color: #757575;">,</span> amax<span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> outputs
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org4e996bf"></a>fake_tensor_quant<br />
+<div class="outline-text-6" id="text-1-1-2-2-3">
+<p>
+<a href="https://pytorch.org/tutorials/beginner/examples_autograd/two_layer_net_custom_function.html">https://pytorch.org/tutorials/beginner/examples_autograd/two_layer_net_custom_function.html</a>
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">class</span> <span style="color: #b58900;">FakeTensorQuantFunction</span><span style="color: #757575;">(</span>Function<span style="color: #757575;">)</span>:
+    @<span style="color: #839496;">staticmethod</span>
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">forward</span><span style="color: #757575;">(</span>ctx<span style="color: #757575;">,</span> inputs<span style="color: #757575;">,</span> amax<span style="color: #757575;">,</span> num_bits=8<span style="color: #757575;">,</span> unsigned=<span style="color: #268bd2; font-weight: bold;">False</span><span style="color: #757575;">,</span> narrow_range=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>:
+        ctx.save_for_backward<span style="color: #757575;">(</span>inputs<span style="color: #757575;">,</span> amax<span style="color: #757575;">)</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">fake quant &#21363; outputs=dequant(quant(inputs))</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">1. quant, &#35745;&#31639; scale &#24182;&#35745;&#31639; outputs=inputs*scale</span>
+        <span style="color: #268bd2;">outputs</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">scale</span> = _tensor_quant<span style="color: #757575;">(</span>inputs<span style="color: #757575;">,</span> amax<span style="color: #757575;">,</span> num_bits<span style="color: #757575;">,</span> unsigned<span style="color: #757575;">,</span> narrow_range<span style="color: #757575;">)</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">2. dequant, outputs=outputs/scale</span>
+        <span style="color: #859900;">return</span> outputs / scale.to<span style="color: #757575;">(</span>inputs.dtype<span style="color: #757575;">)</span>
+
+    @<span style="color: #839496;">staticmethod</span>
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">backward</span><span style="color: #757575;">(</span>ctx<span style="color: #757575;">,</span> grad_outputs<span style="color: #757575;">)</span>:
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">...</span>
+
+<span style="color: #268bd2;">fake_tensor_quant</span> = FakeTensorQuantFunction.<span style="color: #839496;">apply</span>
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org5a81ae7"></a>_fb_fake_quant<br />
+<div class="outline-text-6" id="text-1-1-2-2-4">
+<p>
+在导出成 onnx 时需要通过设置 use_fb_fake_quant = True 调用_fb_fake_quant, 后者会调用 torch.fake_quantize_per_channel_affine,以便 export 时能导出成 onnx 标准的
+QuantizeLinear / DequantizeLinear
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">_fb_fake_quant</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> inputs<span style="color: #757575;">,</span> amax<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">bound</span> = <span style="color: #757575;">(</span>1 &lt;&lt; <span style="color: #757575;">(</span><span style="color: #859900;">self</span>._num_bits - 1 + <span style="color: #839496;">int</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span>._unsigned<span style="color: #757575;">)))</span> - 1
+    <span style="color: #268bd2;">outputs</span> = torch.fake_quantize_per_tensor_affine<span style="color: #757575;">(</span>
+        inputs<span style="color: #757575;">,</span>
+        amax.item<span style="color: #757575;">()</span> / bound<span style="color: #757575;">,</span>
+        0<span style="color: #757575;">,</span>
+        -bound - 1 <span style="color: #859900;">if</span> <span style="color: #859900;">not</span> <span style="color: #859900;">self</span>._unsigned <span style="color: #859900;">else</span> 0<span style="color: #757575;">,</span>
+        bound<span style="color: #757575;">,</span>
+    <span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> outputs
+</pre>
+</div>
+
+<p>
+导出成 onnx 的结果为:
+</p>
+
+
+<div id="org8f3b52d" class="figure">
+<p><img src="../extra/trt_quant.png" alt="trt_quant.png" />
+</p>
+</div>
+</div>
+</li>
+</ol>
+</div>
+
+
+<div id="outline-container-orgbfe6c8b" class="outline-5">
+<h5 id="orgbfe6c8b"><span class="section-number-5">1.1.2.3</span> backward</h5>
+<div class="outline-text-5" id="text-1-1-2-3">
+</div>
+<ol class="org-ol">
+<li><a id="orgd3d2d10"></a>FakeTensorQuantFunction<br />
+<div class="outline-text-6" id="text-1-1-2-3-1">
+<p>
+Straight Through Estimation (STE) with clipping
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">backward</span><span style="color: #757575;">(</span>ctx<span style="color: #757575;">,</span> grad_outputs<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">inputs</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">amax</span> = ctx.saved_tensors
+    <span style="color: #268bd2;">zero</span> = grad_outputs.new_zeros<span style="color: #757575;">(</span>1<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">grad_inputs</span> = torch.where<span style="color: #757575;">(</span>inputs.<span style="color: #839496;">abs</span><span style="color: #757575;">()</span> &lt;= amax<span style="color: #757575;">,</span> grad_outputs<span style="color: #757575;">,</span> zero<span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> grad_inputs<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">None</span>
+</pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orge095de2" class="outline-4">
+<h4 id="orge095de2"><span class="section-number-4">1.1.3</span> TensorRT Optimizer</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<p>
+<a href="https://www.nvidia.com/en-us/on-demand/session/gtcspring21-s31653/">https://www.nvidia.com/en-us/on-demand/session/gtcspring21-s31653/</a>
+</p>
+
+<p>
+QuantLinear 把原来的 \(w*x+b\) 变成为 \(DQ(Q(w))*DQ(Q(x))+b\), 后续需要 tensorrt 的
+optimizer 把 DQ 和 Q 前移或后移达到量化计算的目的, 例如:
+</p>
+
+<pre class="example" id="org6968150">
+x -&gt; Q1 -&gt; DQ1 -&gt; [mul] -&gt;  y
+                    ^
+w -&gt; Q2 -&gt; DQ2 -----|
+</pre>
+
+<p>
+可以优化为:
+</p>
+
+<pre class="example" id="orgedb517e">
+x -&gt; Q1 -&gt; [mul] -&gt; [DQ1 -&gt; DQ2] -&gt; y
+             ^
+    [w-&gt;Q2] -|
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org63b9328" class="outline-3">
+<h3 id="org63b9328"><span class="section-number-3">1.2</span> <span class="done DONE">DONE</span> Sparsity</h3>
+<div class="outline-text-3" id="text-1-2">
+<ul class="org-ul">
+<li>State "DONE"       from "TODO"       <span class="timestamp-wrapper"><span class="timestamp">[2021-11-09 二 16:52]</span></span></li>
+</ul>
+
+<p>
+<a href="https://developer.nvidia.com/blog/accelerating-inference-with-sparsity-using-ampere-and-tensorrt/">https://developer.nvidia.com/blog/accelerating-inference-with-sparsity-using-ampere-and-tensorrt/</a>
+</p>
+
+<p>
+<a href="https://github.com/NVIDIA/apex/tree/master/apex/contrib/sparsity">https://github.com/NVIDIA/apex/tree/master/apex/contrib/sparsity</a> 是一个做
+prunning 的 pytorch 插件
+</p>
+
+<ol class="org-ol">
+<li>它只会对 Linear, Conv2D 等的 weight 做 prunning,</li>
+
+<li>它要求 weight 有特定的 shape, 比如对于 [x,y] 大小的 Linear Layer 需要 x%8==0,
+y%16==0</li>
+
+<li>在 pruning 时, 默认使用 m4n2_1d 的方式, 即在一维的方向上每 4 个数固定选择两个绝对值最小的数进行 prunning</li>
+
+<li>prunning 之后会在 torch 模型中针对每个被 prune 的参数记录一个 mask buffer, 这个 buffer 有两个作用:
+
+<ol class="org-ol">
+<li>GPU 需要根据这个 buffer 进行 sparsity 操作</li>
+
+<li>sparsity 工具 (ASP) 会对 pytorch 的 optimizer 进行 monkey patching, 修改过的 optimizer 会利用这个 buffer 保证对 prunning 后的模型进行训练时会跳过已经被 prune 的数据</li>
+</ol></li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-11-09 13:38</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-------------------- sparse_masklib.py --------------------</span>
+<span style="color: #859900;">import</span> sys
+<span style="color: #859900;">import</span> torch
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> collections
+<span style="color: #859900;">from</span> itertools <span style="color: #859900;">import</span> permutations
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">fill</span><span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">return</span> <span style="color: #839496;">float</span><span style="color: #757575;">(</span>x.nonzero<span style="color: #757575;">()</span>.size<span style="color: #757575;">(</span>0<span style="color: #757575;">))</span> / torch.numel<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">reshape_1d</span><span style="color: #757575;">(</span>matrix<span style="color: #757575;">,</span> m<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">If not a nice multiple of m, fill with zeroes.</span>
+    <span style="color: #859900;">if</span> matrix.shape[1] % m &gt; 0:
+        <span style="color: #268bd2;">mat</span> = torch.cuda.FloatTensor<span style="color: #757575;">(</span>
+            matrix.shape[0]<span style="color: #757575;">,</span> matrix.shape[1] + <span style="color: #757575;">(</span>m - matrix.shape[1] % m<span style="color: #757575;">)</span>
+        <span style="color: #757575;">)</span>.fill_<span style="color: #757575;">(</span>0<span style="color: #757575;">)</span>
+        mat[:<span style="color: #757575;">,</span> : matrix.shape[1]] = matrix
+        <span style="color: #268bd2;">shape</span> = mat.shape
+        <span style="color: #859900;">return</span> mat.view<span style="color: #757575;">(</span>-1<span style="color: #757575;">,</span> m<span style="color: #757575;">),</span> shape
+    <span style="color: #859900;">else</span>:
+        <span style="color: #859900;">return</span> matrix.view<span style="color: #757575;">(</span>-1<span style="color: #757575;">,</span> m<span style="color: #757575;">),</span> matrix.shape
+
+
+<span style="color: #268bd2;">valid_m4n2_1d_patterns</span> = <span style="color: #268bd2; font-weight: bold;">None</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">compute_valid_1d_patterns</span><span style="color: #757575;">(</span>m<span style="color: #757575;">,</span> n<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">Early exit if patterns was already created.</span>
+    <span style="color: #859900;">global</span> valid_m4n2_1d_patterns
+
+    <span style="color: #859900;">if</span> m == 4 <span style="color: #859900;">and</span> n == 2 <span style="color: #859900;">and</span> valid_m4n2_1d_patterns <span style="color: #859900;">is</span> <span style="color: #859900;">not</span> <span style="color: #268bd2; font-weight: bold;">None</span>:
+        <span style="color: #859900;">return</span> valid_m4n2_1d_patterns
+    <span style="color: #268bd2;">patterns</span> = torch.zeros<span style="color: #757575;">(</span>m<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">patterns</span>[:n] = 1
+    <span style="color: #268bd2;">valid_patterns</span> = torch.Tensor<span style="color: #757575;">(</span><span style="color: #839496;">list</span><span style="color: #757575;">(</span><span style="color: #839496;">set</span><span style="color: #757575;">(</span>permutations<span style="color: #757575;">(</span>patterns.tolist<span style="color: #757575;">()))))</span>
+    <span style="color: #859900;">if</span> m == 4 <span style="color: #859900;">and</span> n == 2:
+        <span style="color: #268bd2;">valid_m4n2_1d_patterns</span> = valid_patterns
+    <span style="color: #859900;">return</span> valid_patterns
+
+
+<span style="color: #2aa198;">""" m:n 1d structured best """</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">mn_1d_best</span><span style="color: #757575;">(</span>matrix<span style="color: #757575;">,</span> m<span style="color: #757575;">,</span> n<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">Find all possible patterns.</span>
+    <span style="color: #268bd2;">patterns</span> = compute_valid_1d_patterns<span style="color: #757575;">(</span>m<span style="color: #757575;">,</span> n<span style="color: #757575;">)</span>.cuda<span style="color: #757575;">()</span>
+
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">Find the best m:n pattern (sum of non-masked weights).</span>
+    <span style="color: #268bd2;">mask</span> = torch.cuda.IntTensor<span style="color: #757575;">(</span>matrix.shape<span style="color: #757575;">)</span>.fill_<span style="color: #757575;">(</span>1<span style="color: #757575;">)</span>.view<span style="color: #757575;">(</span>-1<span style="color: #757575;">,</span> m<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">mat</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">shape</span> = reshape_1d<span style="color: #757575;">(</span>matrix<span style="color: #757575;">,</span> m<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">pmax</span> = torch.argmax<span style="color: #757575;">(</span>torch.matmul<span style="color: #757575;">(</span>mat.<span style="color: #839496;">abs</span><span style="color: #757575;">(),</span> patterns.t<span style="color: #757575;">()),</span> dim=1<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">mask</span>[:] = patterns[pmax[:]]
+    <span style="color: #268bd2;">mask</span> = mask.view<span style="color: #757575;">(</span>matrix.shape<span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> mask
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">m4n2_1d</span><span style="color: #757575;">(</span>mat<span style="color: #757575;">,</span> density<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">return</span> mn_1d_best<span style="color: #757575;">(</span>mat<span style="color: #757575;">,</span> 4<span style="color: #757575;">,</span> 2<span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">create_mask</span><span style="color: #757575;">(</span>tensor<span style="color: #757575;">,</span> pattern=<span style="color: #2aa198;">"m4n2_1d"</span><span style="color: #757575;">,</span> density=0.5<span style="color: #757575;">)</span>:
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">Reshape tensor and mask.</span>
+    <span style="color: #268bd2;">shape</span> = tensor.shape
+    <span style="color: #268bd2;">ttype</span> = tensor.<span style="color: #839496;">type</span><span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">t</span> = tensor.<span style="color: #839496;">float</span><span style="color: #757575;">()</span>.contiguous<span style="color: #757575;">()</span>
+
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">1d-tensor</span>
+    <span style="color: #859900;">if</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span>shape<span style="color: #757575;">)</span> == 1:
+        <span style="color: #268bd2;">t</span> = t.view<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> shape[0]<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">func</span> = <span style="color: #839496;">getattr</span><span style="color: #757575;">(</span>sys.modules[<span style="color: #839496;">__name__</span>]<span style="color: #757575;">,</span> pattern<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">mask</span> = func<span style="color: #757575;">(</span>t<span style="color: #757575;">,</span> density<span style="color: #757575;">)</span>
+        <span style="color: #859900;">return</span> mask.view<span style="color: #757575;">(</span>shape<span style="color: #757575;">)</span>.<span style="color: #839496;">type</span><span style="color: #757575;">(</span>ttype<span style="color: #757575;">)</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">2d-tensor (in, out)</span>
+    <span style="color: #859900;">elif</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span>shape<span style="color: #757575;">)</span> == 2:
+        <span style="color: #268bd2;">t</span> = t.view<span style="color: #757575;">(</span>shape[0]<span style="color: #757575;">,</span> shape[1]<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">func</span> = <span style="color: #839496;">getattr</span><span style="color: #757575;">(</span>sys.modules[<span style="color: #839496;">__name__</span>]<span style="color: #757575;">,</span> pattern<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">mask</span> = func<span style="color: #757575;">(</span>t<span style="color: #757575;">,</span> density<span style="color: #757575;">)</span>
+        <span style="color: #859900;">return</span> mask.view<span style="color: #757575;">(</span>shape<span style="color: #757575;">)</span>.<span style="color: #839496;">type</span><span style="color: #757575;">(</span>ttype<span style="color: #757575;">)</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">3d-tensor (batch, in, out)</span>
+    <span style="color: #859900;">elif</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span>shape<span style="color: #757575;">)</span> == 3:
+        <span style="color: #268bd2;">t</span> = t.view<span style="color: #757575;">(</span>shape[0] * shape[1]<span style="color: #757575;">,</span> shape[2]<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">func</span> = <span style="color: #839496;">getattr</span><span style="color: #757575;">(</span>sys.modules[<span style="color: #839496;">__name__</span>]<span style="color: #757575;">,</span> pattern<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">mask</span> = func<span style="color: #757575;">(</span>t<span style="color: #757575;">,</span> density<span style="color: #757575;">)</span>
+        <span style="color: #859900;">return</span> mask.view<span style="color: #757575;">(</span>shape<span style="color: #757575;">)</span>.<span style="color: #839496;">type</span><span style="color: #757575;">(</span>ttype<span style="color: #757575;">)</span>
+    <span style="color: #586e75;"># </span><span style="color: #586e75;">4d-tensor (in, out, h, w)</span>
+    <span style="color: #859900;">elif</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span>shape<span style="color: #757575;">)</span> == 4:
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">convs</span>
+        <span style="color: #268bd2;">t</span> = <span style="color: #757575;">(</span>
+            t.permute<span style="color: #757575;">(</span>2<span style="color: #757575;">,</span> 3<span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> 1<span style="color: #757575;">)</span>
+            .contiguous<span style="color: #757575;">()</span>
+            .view<span style="color: #757575;">(</span>shape[2] * shape[3] * shape[0]<span style="color: #757575;">,</span> shape[1]<span style="color: #757575;">)</span>
+        <span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">func</span> = <span style="color: #839496;">getattr</span><span style="color: #757575;">(</span>sys.modules[<span style="color: #839496;">__name__</span>]<span style="color: #757575;">,</span> pattern<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">mask</span> = func<span style="color: #757575;">(</span>t<span style="color: #757575;">,</span> density<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">mask</span> = <span style="color: #757575;">(</span>
+            mask.view<span style="color: #757575;">(</span>shape[2]<span style="color: #757575;">,</span> shape[3]<span style="color: #757575;">,</span> shape[0]<span style="color: #757575;">,</span> shape[1]<span style="color: #757575;">)</span>
+            .permute<span style="color: #757575;">(</span>2<span style="color: #757575;">,</span> 3<span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> 1<span style="color: #757575;">)</span>
+            .contiguous<span style="color: #757575;">()</span>
+        <span style="color: #757575;">)</span>
+        <span style="color: #859900;">return</span> mask.view<span style="color: #757575;">(</span>shape<span style="color: #757575;">)</span>.<span style="color: #839496;">type</span><span style="color: #757575;">(</span>ttype<span style="color: #757575;">)</span>
+
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-------------------- asp.py --------------------</span>
+<span style="color: #859900;">import</span> types
+<span style="color: #859900;">import</span> torch
+
+<span style="color: #268bd2;">torchvision_imported</span> = <span style="color: #268bd2; font-weight: bold;">True</span>
+<span style="color: #859900;">try</span>:
+    <span style="color: #859900;">import</span> torchvision
+<span style="color: #859900;">except</span> <span style="color: #b58900;">ImportError</span>:
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"[ASP][Warning] torchvision cannot be imported."</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">torchvision_imported</span> = <span style="color: #268bd2; font-weight: bold;">False</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">eligible_modules</span><span style="color: #757575;">(</span>
+    model<span style="color: #757575;">,</span> whitelist_layer_types<span style="color: #757575;">,</span> allowed_layer_names<span style="color: #757575;">,</span> disallowed_layer_names
+<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">eligible_modules_list</span> = []
+    <span style="color: #859900;">for</span> name<span style="color: #757575;">,</span> mod <span style="color: #859900;">in</span> model.named_modules<span style="color: #757575;">()</span>:
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>
+            <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> whitelist_layer_types<span style="color: #757575;">)</span>
+            <span style="color: #859900;">and</span> name <span style="color: #859900;">not</span> <span style="color: #859900;">in</span> disallowed_layer_names
+        <span style="color: #757575;">)</span>:
+            <span style="color: #859900;">if</span> allowed_layer_names <span style="color: #859900;">is</span> <span style="color: #859900;">not</span> <span style="color: #268bd2; font-weight: bold;">None</span> <span style="color: #859900;">and</span> name <span style="color: #859900;">not</span> <span style="color: #859900;">in</span> allowed_layer_names:
+                <span style="color: #859900;">continue</span>
+            eligible_modules_list.append<span style="color: #757575;">((</span>name<span style="color: #757575;">,</span> mod<span style="color: #757575;">))</span>
+    <span style="color: #859900;">return</span> eligible_modules_list
+
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">ASP</span>:
+    <span style="color: #268bd2;">__model</span> = <span style="color: #268bd2; font-weight: bold;">None</span>
+    <span style="color: #268bd2;">__verbosity</span> = 0
+    <span style="color: #268bd2;">__optimizer</span> = <span style="color: #268bd2; font-weight: bold;">None</span>
+    <span style="color: #268bd2;">__sparse_parameters</span> = []
+    <span style="color: #268bd2;">__calculate_mask</span> = <span style="color: #268bd2; font-weight: bold;">None</span>
+
+    @<span style="color: #839496;">classmethod</span>
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">init_model_for_pruning</span><span style="color: #757575;">(</span>
+        cls<span style="color: #757575;">,</span>
+        model<span style="color: #757575;">,</span>
+        mask_calculator=<span style="color: #2aa198;">"m4n2_1d"</span><span style="color: #757575;">,</span>
+        verbosity=3<span style="color: #757575;">,</span>
+        whitelist=[torch.nn.Linear<span style="color: #757575;">,</span> torch.nn.Conv1d<span style="color: #757575;">,</span> torch.nn.Conv2d<span style="color: #757575;">,</span> torch.nn.Conv3d]<span style="color: #757575;">,</span>
+        allowed_layer_names=<span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">,</span>
+        disallowed_layer_names=[]<span style="color: #757575;">,</span>
+        allow_recompute_mask=<span style="color: #268bd2; font-weight: bold;">False</span><span style="color: #757575;">,</span>
+        custom_layer_dict=<span style="color: #757575;">{},</span>
+    <span style="color: #757575;">)</span>:
+        <span style="color: #859900;">assert</span> cls.__model <span style="color: #859900;">is</span> <span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"ASP has been initialized already."</span>
+        <span style="color: #268bd2;">cls.__model</span> = model
+        <span style="color: #268bd2;">cls.__verbosity</span> = verbosity
+
+        <span style="color: #859900;">if</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>mask_calculator<span style="color: #757575;">,</span> <span style="color: #839496;">str</span><span style="color: #757575;">)</span>:
+
+            <span style="color: #859900;">def</span> <span style="color: #268bd2;">create_mask_from_pattern</span><span style="color: #757575;">(</span>param<span style="color: #757575;">)</span>:
+                <span style="color: #859900;">return</span> create_mask<span style="color: #757575;">(</span>param<span style="color: #757575;">,</span> mask_calculator<span style="color: #757575;">)</span>.<span style="color: #839496;">bool</span><span style="color: #757575;">()</span>
+
+            <span style="color: #268bd2;">cls.__calculate_mask</span> = create_mask_from_pattern
+        <span style="color: #859900;">else</span>:
+            <span style="color: #268bd2;">cls.__calculate_mask</span> = mask_calculator  <span style="color: #586e75;"># </span><span style="color: #586e75;">user defined function</span>
+
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">function to extract variables that will be sparsified.</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">idea is that you will add one of these functions for each module type that can be sparsified.</span>
+        <span style="color: #859900;">if</span> torchvision_imported:
+            <span style="color: #859900;">print</span><span style="color: #757575;">(</span>
+                <span style="color: #2aa198;">"[ASP] torchvision is imported, can work with the MaskRCNN/KeypointRCNN from torchvision."</span>
+            <span style="color: #757575;">)</span>
+            <span style="color: #268bd2;">sparse_parameter_list</span> = <span style="color: #757575;">{</span>
+                torch.nn.Linear: [<span style="color: #2aa198;">"weight"</span>]<span style="color: #757575;">,</span>
+                torch.nn.Conv1d: [<span style="color: #2aa198;">"weight"</span>]<span style="color: #757575;">,</span>
+                torch.nn.Conv2d: [<span style="color: #2aa198;">"weight"</span>]<span style="color: #757575;">,</span>
+                torch.nn.Conv3d: [<span style="color: #2aa198;">"weight"</span>]<span style="color: #757575;">,</span>
+                torchvision.ops.misc.Conv2d: [<span style="color: #2aa198;">"weight"</span>]<span style="color: #757575;">,</span>
+            <span style="color: #757575;">}</span>
+        <span style="color: #859900;">else</span>:
+            <span style="color: #268bd2;">sparse_parameter_list</span> = <span style="color: #757575;">{</span>
+                torch.nn.Linear: [<span style="color: #2aa198;">"weight"</span>]<span style="color: #757575;">,</span>
+                torch.nn.Conv1d: [<span style="color: #2aa198;">"weight"</span>]<span style="color: #757575;">,</span>
+                torch.nn.Conv2d: [<span style="color: #2aa198;">"weight"</span>]<span style="color: #757575;">,</span>
+                torch.nn.Conv3d: [<span style="color: #2aa198;">"weight"</span>]<span style="color: #757575;">,</span>
+            <span style="color: #757575;">}</span>
+        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>
+            custom_layer_dict
+        <span style="color: #757575;">)</span>:  <span style="color: #586e75;"># </span><span style="color: #586e75;">Update default list to include user supplied custom (layer type : parameter tensor), make sure this tensor type is something ASP knows how to prune</span>
+            sparse_parameter_list.update<span style="color: #757575;">(</span>custom_layer_dict<span style="color: #757575;">)</span>
+            <span style="color: #268bd2;">whitelist</span> += <span style="color: #839496;">list</span><span style="color: #757575;">(</span>custom_layer_dict.keys<span style="color: #757575;">())</span>
+
+        <span style="color: #859900;">for</span> module_type <span style="color: #859900;">in</span> whitelist:
+            <span style="color: #859900;">assert</span> module_type <span style="color: #859900;">in</span> sparse_parameter_list<span style="color: #757575;">,</span> <span style="color: #757575;">(</span>
+                <span style="color: #2aa198;">"Module %s :: Don't know how to sparsify module."</span> % module.dtype<span style="color: #757575;">()</span>
+            <span style="color: #757575;">)</span>
+
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">find all sparse modules, extract sparse parameters and decorate</span>
+        <span style="color: #859900;">def</span> <span style="color: #268bd2;">add_sparse_attributes</span><span style="color: #757575;">(</span>module_name<span style="color: #757575;">,</span> module<span style="color: #757575;">)</span>:
+            <span style="color: #268bd2;">sparse_parameters</span> = sparse_parameter_list[<span style="color: #839496;">type</span><span style="color: #757575;">(</span>module<span style="color: #757575;">)</span>]
+            <span style="color: #859900;">for</span> p_name<span style="color: #757575;">,</span> p <span style="color: #859900;">in</span> module.named_parameters<span style="color: #757575;">()</span>:
+                <span style="color: #859900;">if</span> p_name <span style="color: #859900;">in</span> sparse_parameters <span style="color: #859900;">and</span> p.requires_grad:
+                    <span style="color: #586e75;"># </span><span style="color: #586e75;">check for NVIDIA's TC compatibility: we check along the horizontal direction</span>
+                    <span style="color: #859900;">if</span> p.dtype == torch.float32 <span style="color: #859900;">and</span> <span style="color: #757575;">(</span>
+                        <span style="color: #757575;">(</span>p.size<span style="color: #757575;">()</span>[0] % 8<span style="color: #757575;">)</span> != 0 <span style="color: #859900;">or</span> <span style="color: #757575;">(</span>p.size<span style="color: #757575;">()</span>[1] % 16<span style="color: #757575;">)</span> != 0
+                    <span style="color: #757575;">)</span>:  <span style="color: #586e75;"># </span><span style="color: #586e75;">User defines FP32 and APEX internally uses FP16 math</span>
+                        <span style="color: #859900;">print</span><span style="color: #757575;">(</span>
+                            <span style="color: #2aa198;">"[ASP] Auto skipping pruning %s::%s of size=%s and type=%s for sparsity"</span>
+                            % <span style="color: #757575;">(</span>module_name<span style="color: #757575;">,</span> p_name<span style="color: #757575;">,</span> <span style="color: #839496;">str</span><span style="color: #757575;">(</span>p.size<span style="color: #757575;">()),</span> <span style="color: #839496;">str</span><span style="color: #757575;">(</span>p.dtype<span style="color: #757575;">))</span>
+                        <span style="color: #757575;">)</span>
+                        <span style="color: #859900;">continue</span>
+                    <span style="color: #859900;">if</span> p.dtype == torch.float16 <span style="color: #859900;">and</span> <span style="color: #757575;">(</span>
+                        <span style="color: #757575;">(</span>p.size<span style="color: #757575;">()</span>[0] % 8<span style="color: #757575;">)</span> != 0 <span style="color: #859900;">or</span> <span style="color: #757575;">(</span>p.size<span style="color: #757575;">()</span>[1] % 16<span style="color: #757575;">)</span> != 0
+                    <span style="color: #757575;">)</span>:  <span style="color: #586e75;"># </span><span style="color: #586e75;">For Conv2d dim= K x CRS; we prune along C</span>
+                        <span style="color: #859900;">print</span><span style="color: #757575;">(</span>
+                            <span style="color: #2aa198;">"[ASP] Auto skipping pruning %s::%s of size=%s and type=%s for sparsity"</span>
+                            % <span style="color: #757575;">(</span>module_name<span style="color: #757575;">,</span> p_name<span style="color: #757575;">,</span> <span style="color: #839496;">str</span><span style="color: #757575;">(</span>p.size<span style="color: #757575;">()),</span> <span style="color: #839496;">str</span><span style="color: #757575;">(</span>p.dtype<span style="color: #757575;">))</span>
+                        <span style="color: #757575;">)</span>
+                        <span style="color: #859900;">continue</span>
+
+                    <span style="color: #859900;">if</span> cls.__verbosity &gt;= 3:
+                        <span style="color: #859900;">print</span><span style="color: #757575;">(</span>
+                            <span style="color: #2aa198;">"[ASP] Sparsifying %s::%s of size=%s and type=%s for sparsity"</span>
+                            % <span style="color: #757575;">(</span>module_name<span style="color: #757575;">,</span> p_name<span style="color: #757575;">,</span> <span style="color: #839496;">str</span><span style="color: #757575;">(</span>p.size<span style="color: #757575;">()),</span> <span style="color: #839496;">str</span><span style="color: #757575;">(</span>p.dtype<span style="color: #757575;">))</span>
+                        <span style="color: #757575;">)</span>
+
+                    <span style="color: #268bd2;">mask</span> = torch.ones_like<span style="color: #757575;">(</span>p<span style="color: #757575;">)</span>.<span style="color: #839496;">bool</span><span style="color: #757575;">()</span>
+                    <span style="color: #268bd2;">buffname</span> = p_name.split<span style="color: #757575;">(</span><span style="color: #2aa198;">"."</span><span style="color: #757575;">)</span>[-1]  <span style="color: #586e75;"># </span><span style="color: #586e75;">buffer names cannot contain "."</span>
+                    module.register_buffer<span style="color: #757575;">(</span><span style="color: #2aa198;">"__%s_mma_mask"</span> % buffname<span style="color: #757575;">,</span> mask<span style="color: #757575;">)</span>
+                    <span style="color: #859900;">if</span> allow_recompute_mask:
+                        <span style="color: #268bd2;">pruned</span> = torch.zeros_like<span style="color: #757575;">(</span>p<span style="color: #757575;">)</span>.cpu<span style="color: #757575;">()</span>
+                        module.register_buffer<span style="color: #757575;">(</span><span style="color: #2aa198;">"__%s_mma_pruned_p"</span> % buffname<span style="color: #757575;">,</span> pruned<span style="color: #757575;">)</span>
+                    <span style="color: #859900;">else</span>:
+                        <span style="color: #268bd2;">pruned</span> = <span style="color: #268bd2; font-weight: bold;">None</span>
+                    cls.__sparse_parameters.append<span style="color: #757575;">(</span>
+                        <span style="color: #757575;">(</span>module_name<span style="color: #757575;">,</span> module<span style="color: #757575;">,</span> p_name<span style="color: #757575;">,</span> p<span style="color: #757575;">,</span> mask<span style="color: #757575;">,</span> pruned<span style="color: #757575;">)</span>
+                    <span style="color: #757575;">)</span>
+                <span style="color: #859900;">else</span>:
+                    <span style="color: #859900;">if</span> cls.__verbosity &gt;= 3:
+                        <span style="color: #859900;">print</span><span style="color: #757575;">(</span>
+                            <span style="color: #2aa198;">"[ASP] Not sparsifying %s::%s of size=%s and type=%s"</span>
+                            % <span style="color: #757575;">(</span>module_name<span style="color: #757575;">,</span> p_name<span style="color: #757575;">,</span> <span style="color: #839496;">str</span><span style="color: #757575;">(</span>p.size<span style="color: #757575;">()),</span> <span style="color: #839496;">str</span><span style="color: #757575;">(</span>p.dtype<span style="color: #757575;">))</span>
+                        <span style="color: #757575;">)</span>
+
+        <span style="color: #859900;">for</span> name<span style="color: #757575;">,</span> sparse_module <span style="color: #859900;">in</span> eligible_modules<span style="color: #757575;">(</span>
+            model<span style="color: #757575;">,</span> <span style="color: #839496;">tuple</span><span style="color: #757575;">(</span>whitelist<span style="color: #757575;">),</span> allowed_layer_names<span style="color: #757575;">,</span> disallowed_layer_names
+        <span style="color: #757575;">)</span>:
+            add_sparse_attributes<span style="color: #757575;">(</span>name<span style="color: #757575;">,</span> sparse_module<span style="color: #757575;">)</span>
+
+    @<span style="color: #839496;">classmethod</span>
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">init_optimizer_for_pruning</span><span style="color: #757575;">(</span>cls<span style="color: #757575;">,</span> optimizer<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">assert</span> cls.__optimizer <span style="color: #859900;">is</span> <span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"ASP has initialized optimizer already."</span>
+        <span style="color: #859900;">assert</span> <span style="color: #757575;">(</span>
+            cls.__calculate_mask <span style="color: #859900;">is</span> <span style="color: #859900;">not</span> <span style="color: #268bd2; font-weight: bold;">None</span>
+        <span style="color: #757575;">),</span> <span style="color: #2aa198;">"Called ASP.init_optimizer_for_pruning before ASP.init_model_for_pruning."</span>
+
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">store pointer to original optimizer step method</span>
+        <span style="color: #268bd2;">cls.__optimizer</span> = optimizer
+        <span style="color: #268bd2;">cls.__optimizer.__step</span> = optimizer.step
+
+        <span style="color: #859900;">def</span> <span style="color: #268bd2;">__step</span><span style="color: #757575;">(</span>opt_self<span style="color: #757575;">,</span> *args<span style="color: #757575;">,</span> **kwargs<span style="color: #757575;">)</span>:
+            <span style="color: #586e75;"># </span><span style="color: #586e75;">prune gradients before step method</span>
+            <span style="color: #859900;">with</span> torch.no_grad<span style="color: #757575;">()</span>:
+                <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>
+                    module_name<span style="color: #757575;">,</span>
+                    module<span style="color: #757575;">,</span>
+                    p_name<span style="color: #757575;">,</span>
+                    p<span style="color: #757575;">,</span>
+                    mask<span style="color: #757575;">,</span>
+                    pruned<span style="color: #757575;">,</span>
+                <span style="color: #757575;">)</span> <span style="color: #859900;">in</span> cls.__sparse_parameters:
+                    <span style="color: #859900;">if</span> p.grad <span style="color: #859900;">is</span> <span style="color: #859900;">not</span> <span style="color: #268bd2; font-weight: bold;">None</span>:  <span style="color: #586e75;"># </span><span style="color: #586e75;">thx pjudd</span>
+                        p.grad.mul_<span style="color: #757575;">(</span>mask<span style="color: #757575;">)</span>
+            <span style="color: #586e75;"># </span><span style="color: #586e75;">call original optimizer step method</span>
+            <span style="color: #268bd2;">rval</span> = opt_self.__step<span style="color: #757575;">(</span>*args<span style="color: #757575;">,</span> **kwargs<span style="color: #757575;">)</span>
+            <span style="color: #586e75;"># </span><span style="color: #586e75;">prune parameters after step method</span>
+            <span style="color: #859900;">with</span> torch.no_grad<span style="color: #757575;">()</span>:
+                <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>
+                    module_name<span style="color: #757575;">,</span>
+                    module<span style="color: #757575;">,</span>
+                    p_name<span style="color: #757575;">,</span>
+                    p<span style="color: #757575;">,</span>
+                    mask<span style="color: #757575;">,</span>
+                    pruned<span style="color: #757575;">,</span>
+                <span style="color: #757575;">)</span> <span style="color: #859900;">in</span> cls.__sparse_parameters:
+                    p.mul_<span style="color: #757575;">(</span>mask<span style="color: #757575;">)</span>
+            <span style="color: #859900;">return</span> rval
+
+        <span style="color: #268bd2;">cls.__optimizer.step</span> = types.MethodType<span style="color: #757575;">(</span>__step<span style="color: #757575;">,</span> cls.__optimizer<span style="color: #757575;">)</span>
+
+    @<span style="color: #839496;">classmethod</span>
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">compute_sparse_masks</span><span style="color: #757575;">(</span>cls<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">with</span> torch.no_grad<span style="color: #757575;">()</span>:
+            <span style="color: #859900;">for</span> module_name<span style="color: #757575;">,</span> module<span style="color: #757575;">,</span> p_name<span style="color: #757575;">,</span> p<span style="color: #757575;">,</span> mask<span style="color: #757575;">,</span> pruned <span style="color: #859900;">in</span> cls.__sparse_parameters:
+                <span style="color: #859900;">if</span> mask.<span style="color: #839496;">sum</span><span style="color: #757575;">()</span> &lt; mask.numel<span style="color: #757575;">()</span>:  <span style="color: #586e75;"># </span><span style="color: #586e75;">when recalculating masks</span>
+                    <span style="color: #586e75;"># </span><span style="color: #586e75;">restore dense parameter if allow_recompute_mask is enabled</span>
+                    <span style="color: #859900;">assert</span> <span style="color: #757575;">(</span>
+                        pruned <span style="color: #859900;">is</span> <span style="color: #859900;">not</span> <span style="color: #268bd2; font-weight: bold;">None</span>
+                    <span style="color: #757575;">),</span> <span style="color: #2aa198;">"Unable to restore dense parameter because allow_recompute_mask == False"</span>
+                    p.add_<span style="color: #757575;">(</span>pruned.cuda<span style="color: #757575;">())</span>
+
+                mask.set_<span style="color: #757575;">(</span>cls.__calculate_mask<span style="color: #757575;">(</span>p<span style="color: #757575;">))</span>
+
+                <span style="color: #859900;">if</span> pruned <span style="color: #859900;">is</span> <span style="color: #859900;">not</span> <span style="color: #268bd2; font-weight: bold;">None</span>:  <span style="color: #586e75;"># </span><span style="color: #586e75;">stow away pruned weights to cpu</span>
+                    pruned.set_<span style="color: #757575;">((</span>p * <span style="color: #757575;">(</span>~mask<span style="color: #757575;">))</span>.cpu<span style="color: #757575;">())</span>
+
+                p.mul_<span style="color: #757575;">(</span>
+                    mask
+                <span style="color: #757575;">)</span>  <span style="color: #586e75;"># </span><span style="color: #586e75;">in-place multiplication, so pruned weights are 0-values, hence checkpoint will have 0s for pruned weights</span>
+                <span style="color: #859900;">if</span> cls.__verbosity &gt;= 2:
+                    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>
+                        <span style="color: #2aa198;">"[ASP] Enabled %.2f%% sparsity for %s::%s of size=%s and type=%s"</span>
+                        % <span style="color: #757575;">(</span>
+                            100.0 * mask.<span style="color: #839496;">sum</span><span style="color: #757575;">()</span> / mask.numel<span style="color: #757575;">(),</span>
+                            module_name<span style="color: #757575;">,</span>
+                            p_name<span style="color: #757575;">,</span>
+                            <span style="color: #839496;">str</span><span style="color: #757575;">(</span>p.size<span style="color: #757575;">()),</span>
+                            <span style="color: #839496;">str</span><span style="color: #757575;">(</span>p.dtype<span style="color: #757575;">),</span>
+                        <span style="color: #757575;">)</span>
+                    <span style="color: #757575;">)</span>
+
+    @<span style="color: #839496;">classmethod</span>
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">prune_trained_model</span><span style="color: #757575;">(</span>cls<span style="color: #757575;">,</span> model<span style="color: #757575;">,</span> optimizer<span style="color: #757575;">)</span>:
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">add mask buffers to model (init_model_for_pruning), augment optimizer (init_optimizer_for_pruning) and compute masks (compute_sparse_masks)</span>
+        cls.init_model_for_pruning<span style="color: #757575;">(</span>
+            model<span style="color: #757575;">,</span>
+            mask_calculator=<span style="color: #2aa198;">"m4n2_1d"</span><span style="color: #757575;">,</span>
+            verbosity=2<span style="color: #757575;">,</span>
+            whitelist=[torch.nn.Linear<span style="color: #757575;">,</span> torch.nn.Conv2d]<span style="color: #757575;">,</span>
+            allow_recompute_mask=<span style="color: #268bd2; font-weight: bold;">False</span><span style="color: #757575;">,</span>
+        <span style="color: #757575;">)</span>
+        cls.init_optimizer_for_pruning<span style="color: #757575;">(</span>optimizer<span style="color: #757575;">)</span>
+        cls.compute_sparse_masks<span style="color: #757575;">()</span>
+
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-------------------- test.py --------------------</span>
+<span style="color: #859900;">import</span> os
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> torch
+<span style="color: #859900;">from</span> torch <span style="color: #859900;">import</span> nn
+<span style="color: #859900;">from</span> torch <span style="color: #859900;">import</span> optim
+<span style="color: #859900;">from</span> torch.utils.data <span style="color: #859900;">import</span> DataLoader<span style="color: #757575;">,</span> Dataset
+<span style="color: #859900;">import</span> torch.nn.functional <span style="color: #859900;">as</span> F
+
+<span style="color: #268bd2;">model</span> = <span style="color: #268bd2; font-weight: bold;">None</span>
+<span style="color: #268bd2;">optimizer</span> = <span style="color: #268bd2; font-weight: bold;">None</span>
+
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">ToyDataset</span><span style="color: #757575;">(</span>Dataset<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">x</span> = torch.<span style="color: #839496;">round</span><span style="color: #757575;">(</span>torch.rand<span style="color: #757575;">(</span>1000<span style="color: #757575;">)</span> * 200<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">x</span> = x.unsqueeze<span style="color: #757575;">(</span>1<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">x</span> = torch.cat<span style="color: #757575;">((</span>x<span style="color: #757575;">,</span> x * 2<span style="color: #757575;">,</span> x * 3<span style="color: #757575;">,</span> x * 4<span style="color: #757575;">,</span> x * 5<span style="color: #757575;">,</span> x * 6<span style="color: #757575;">,</span> x * 7<span style="color: #757575;">,</span> x * 8<span style="color: #757575;">),</span> 1<span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.X = x
+        <span style="color: #859900;">self</span>.Y = <span style="color: #859900;">self</span>.X
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__getitem__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> index<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">return</span> <span style="color: #859900;">self</span>.X[index]<span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.Y[index]
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__len__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span>:
+        <span style="color: #859900;">return</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span>.X<span style="color: #757575;">)</span>
+
+
+<span style="color: #268bd2;">training_loader</span> = DataLoader<span style="color: #757575;">(</span>ToyDataset<span style="color: #757575;">(),</span> batch_size=100<span style="color: #757575;">,</span> shuffle=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">train</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">criterion</span> = nn.MSELoss<span style="color: #757575;">()</span>
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>500<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">for</span> x<span style="color: #757575;">,</span> y <span style="color: #859900;">in</span> training_loader:
+            <span style="color: #268bd2;">loss</span> = criterion<span style="color: #757575;">(</span>model<span style="color: #757575;">(</span>x.to<span style="color: #757575;">(</span><span style="color: #2aa198;">"cuda"</span><span style="color: #757575;">)),</span> y.to<span style="color: #757575;">(</span><span style="color: #2aa198;">"cuda"</span><span style="color: #757575;">))</span>
+            optimizer.zero_grad<span style="color: #757575;">()</span>
+            loss.backward<span style="color: #757575;">()</span>
+            optimizer.step<span style="color: #757575;">()</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"epoch #%d: loss: %f"</span> % <span style="color: #757575;">(</span>i<span style="color: #757575;">,</span> loss.item<span style="color: #757575;">()))</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">test</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">x</span> = torch.tensor<span style="color: #757575;">(</span>[[2<span style="color: #757575;">,</span> 4<span style="color: #757575;">,</span> 6<span style="color: #757575;">,</span> 8<span style="color: #757575;">,</span> 10<span style="color: #757575;">,</span> 12<span style="color: #757575;">,</span> 14<span style="color: #757575;">,</span> 16]]<span style="color: #757575;">)</span>.<span style="color: #839496;">float</span><span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">y_hat</span> = model<span style="color: #757575;">(</span>x.to<span style="color: #757575;">(</span><span style="color: #2aa198;">"cuda"</span><span style="color: #757575;">))</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"orig: "</span><span style="color: #757575;">,</span> x<span style="color: #757575;">,</span> <span style="color: #2aa198;">" new: "</span><span style="color: #757575;">,</span> y_hat<span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">get_model</span><span style="color: #757575;">(</span>f<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">global</span> model<span style="color: #757575;">,</span> optimizer
+    <span style="color: #859900;">if</span> os.path.exists<span style="color: #757575;">(</span>f<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">model</span> = torch.load<span style="color: #757575;">(</span>f<span style="color: #757575;">)</span>.cuda<span style="color: #757575;">()</span>
+        <span style="color: #268bd2;">optimizer</span> = optim.Adam<span style="color: #757575;">(</span>model.parameters<span style="color: #757575;">(),</span> lr=0.01<span style="color: #757575;">)</span>
+    <span style="color: #859900;">else</span>:
+        <span style="color: #268bd2;">model</span> = nn.Sequential<span style="color: #757575;">(</span>
+            nn.Linear<span style="color: #757575;">(</span>8<span style="color: #757575;">,</span> 16<span style="color: #757575;">),</span>
+            nn.PReLU<span style="color: #757575;">(),</span>
+            nn.Linear<span style="color: #757575;">(</span>16<span style="color: #757575;">,</span> 8<span style="color: #757575;">),</span>
+        <span style="color: #757575;">)</span>.cuda<span style="color: #757575;">()</span>
+        <span style="color: #268bd2;">optimizer</span> = optim.Adam<span style="color: #757575;">(</span>model.parameters<span style="color: #757575;">(),</span> lr=0.01<span style="color: #757575;">)</span>
+        train<span style="color: #757575;">()</span>
+        torch.save<span style="color: #757575;">(</span>model<span style="color: #757575;">,</span> f<span style="color: #757575;">)</span>
+
+
+get_model<span style="color: #757575;">(</span><span style="color: #2aa198;">"/tmp/model.pt"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"-------orig---------"</span><span style="color: #757575;">)</span>
+test<span style="color: #757575;">()</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>model[2].state_dict<span style="color: #757575;">())</span>
+ASP.prune_trained_model<span style="color: #757575;">(</span>model<span style="color: #757575;">,</span> optimizer<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"-------pruned---------"</span><span style="color: #757575;">)</span>
+test<span style="color: #757575;">()</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>model[2].state_dict<span style="color: #757575;">())</span>
+train<span style="color: #757575;">()</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"-------retrain---------"</span><span style="color: #757575;">)</span>
+test<span style="color: #757575;">()</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>model[2].state_dict<span style="color: #757575;">())</span>
+torch.save<span style="color: #757575;">(</span>model<span style="color: #757575;">,</span> <span style="color: #2aa198;">"/tmp/model_sparse.pt"</span><span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+--&#x2013;&#x2014;orig----&#x2013;&#x2014;
+orig:  tensor()  new:  tensor(,
+       device='cuda:0', grad_fn=&lt;AddmmBackward&gt;)
+OrderedDict([('weight', tensor([[ 0.1899, -0.1074, -0.0064, -0.0016,  0.0893,  0.2194, -0.1457, -0.1500,
+          0.0482,  0.0495, -0.1510,  0.0169, -0.0174,  0.0402,  0.1461, -0.1233],
+        [-0.0973, -0.2051,  0.0303, -0.0798,  0.1052, -0.1524, -0.0244,  0.1359,
+          0.0051,  0.0985, -0.1482,  0.1417, -0.0118,  0.1361,  0.2233, -0.1164],
+        [ 0.1049, -0.1537, -0.1860,  0.1423, -0.1657, -0.0253, -0.0455,  0.1699,
+          0.2134,  0.0081, -0.2659,  0.1806,  0.0515,  0.2417, -0.0409,  0.3283],
+        [ 0.1426,  0.0729,  0.0950,  0.2379, -0.2145,  0.0646, -0.0936,  0.1097,
+          0.0842, -0.2154, -0.0906, -0.0958,  0.0363,  0.2453,  0.1978,  0.3038],
+        [ 0.2264, -0.0101,  0.3551, -0.3178,  0.2250, -0.0257,  0.0879, -0.3122,
+         -0.1913, -0.0425, -0.0036,  0.1085,  0.1470,  0.0149,  0.0971,  0.3013],
+        [ 0.3303,  0.0674, -0.1155, -0.1443, -0.0213, -0.0546,  0.0669, -0.2751,
+         -0.0199,  0.0575, -0.2252,  0.3843, -0.1892,  0.4178, -0.0364,  0.0071],
+        [ 0.3373, -0.0020,  0.2039, -0.0458,  0.2323, -0.3360,  0.0140, -0.1100,
+         -0.1204, -0.0694, -0.0018,  0.1073,  0.2118,  0.3473,  0.0345, -0.0222],
+        [ 0.0731, -0.3941,  0.1664,  0.0100,  0.1053, -0.4457,  0.2373, -0.0818,
+         -0.0015, -0.0019, -0.4326,  0.0886, -0.2492,  0.2418,  0.2013,  0.0996]],
+       device='cuda:0')), ('bias', tensor([0.0658, 0.0500, 0.1469, 0.0165, 0.1377, 0.1143, 0.0687, 0.1848],
+       device='cuda:0'))])
+[ASP] torchvision is imported, can work with the MaskRCNN/KeypointRCNN from torchvision.
+[ASP] Auto skipping pruning 0::weight of size=torch.Size([16, 8]) and type=torch.float32 for sparsity
+[ASP] Enabled 50.00% sparsity for 2::weight of size=torch.Size([8, 16]) and type=torch.float32
+--&#x2013;&#x2014;pruned----&#x2013;&#x2014;
+orig:  tensor()  new:  tensor(,
+       device='cuda:0', grad_fn=&lt;AddmmBackward&gt;)
+OrderedDict([('weight', tensor([[ 0.1899, -0.1074, -0.0000, -0.0000,  0.0000,  0.2194, -0.0000, -0.1500,
+          0.0000,  0.0495, -0.1510,  0.0000, -0.0000,  0.0000,  0.1461, -0.1233],
+        [-0.0973, -0.2051,  0.0000, -0.0000,  0.0000, -0.1524, -0.0000,  0.1359,
+          0.0000,  0.0000, -0.1482,  0.1417, -0.0000,  0.1361,  0.2233, -0.0000],
+        [ 0.0000, -0.1537, -0.1860,  0.0000, -0.1657, -0.0000, -0.0000,  0.1699,
+          0.2134,  0.0000, -0.2659,  0.0000,  0.0000,  0.2417, -0.0000,  0.3283],
+        [ 0.1426,  0.0000,  0.0000,  0.2379, -0.2145,  0.0000, -0.0000,  0.1097,
+          0.0000, -0.2154, -0.0000, -0.0958,  0.0000,  0.2453,  0.0000,  0.3038],
+        [ 0.0000, -0.0000,  0.3551, -0.3178,  0.2250, -0.0000,  0.0000, -0.3122,
+         -0.1913, -0.0000, -0.0000,  0.1085,  0.1470,  0.0000,  0.0000,  0.3013],
+        [ 0.3303,  0.0000, -0.0000, -0.1443, -0.0000, -0.0000,  0.0669, -0.2751,
+         -0.0000,  0.0000, -0.2252,  0.3843, -0.1892,  0.4178, -0.0000,  0.0000],
+        [ 0.3373, -0.0000,  0.2039, -0.0000,  0.2323, -0.3360,  0.0000, -0.0000,
+         -0.1204, -0.0000, -0.0000,  0.1073,  0.2118,  0.3473,  0.0000, -0.0000],
+        [ 0.0000, -0.3941,  0.1664,  0.0000,  0.0000, -0.4457,  0.2373, -0.0000,
+         -0.0000, -0.0000, -0.4326,  0.0886, -0.2492,  0.2418,  0.0000,  0.0000]],
+       device='cuda:0')), ('bias', tensor([0.0658, 0.0500, 0.1469, 0.0165, 0.1377, 0.1143, 0.0687, 0.1848],
+       device='cuda:0')), ('__weight_mma_mask', tensor([[ True,  True, False, False, False,  True, False,  True, False,  True,
+          True, False, False, False,  True,  True],
+        [ True,  True, False, False, False,  True, False,  True, False, False,
+          True,  True, False,  True,  True, False],
+        [False,  True,  True, False,  True, False, False,  True,  True, False,
+          True, False, False,  True, False,  True],
+        [ True, False, False,  True,  True, False, False,  True, False,  True,
+         False,  True, False,  True, False,  True],
+        [False, False,  True,  True,  True, False, False,  True,  True, False,
+         False,  True,  True, False, False,  True],
+        [ True, False, False,  True, False, False,  True,  True, False, False,
+          True,  True,  True,  True, False, False],
+        [ True, False,  True, False,  True,  True, False, False,  True, False,
+         False,  True,  True,  True, False, False],
+        [False,  True,  True, False, False,  True,  True, False, False, False,
+          True,  True,  True,  True, False, False]], device='cuda:0'))])
+epoch #499: loss: 0.610391
+--&#x2013;&#x2014;retrain----&#x2013;&#x2014;
+orig:  tensor()  new:  tensor(,
+       device='cuda:0', grad_fn=&lt;AddmmBackward&gt;)
+OrderedDict([('weight', tensor([[ 0.2176, -0.1109, -0.0000, -0.0000,  0.0000,  0.1861, -0.0000, -0.1460,
+          0.0000,  0.0276, -0.1884,  0.0000, -0.0000,  0.0000,  0.0870, -0.0764],
+        [-0.1423, -0.1618,  0.0000, -0.0000,  0.0000, -0.1394, -0.0000,  0.1436,
+          0.0000,  0.0000, -0.1384, -0.0720, -0.0000,  0.1603,  0.1100, -0.0000],
+        [ 0.0000, -0.1045, -0.1682,  0.0000, -0.1040, -0.0000, -0.0000,  0.1698,
+          0.1514,  0.0000, -0.2424,  0.0000,  0.0000,  0.2411, -0.0000,  0.2935],
+        [ 0.1369,  0.0000,  0.0000,  0.2759, -0.1883,  0.0000, -0.0000,  0.1236,
+          0.0000, -0.0164, -0.0000, -0.1456,  0.0000,  0.2672,  0.0000,  0.2691],
+        [ 0.0000, -0.0000,  0.4154, -0.2569,  0.1915, -0.0000,  0.0000, -0.3162,
+         -0.1192, -0.0000, -0.0000,  0.0208, -0.0131,  0.0000,  0.0000,  0.3485],
+        [ 0.2522,  0.0000, -0.0000, -0.0961, -0.0000, -0.0000,  0.0340, -0.2356,
+         -0.0000,  0.0000, -0.1943,  0.2541, -0.0421,  0.4076, -0.0000,  0.0000],
+        [ 0.2798, -0.0000,  0.2241, -0.0000,  0.1726, -0.3089,  0.0000, -0.0000,
+         -0.0214, -0.0000, -0.0000, -0.1063,  0.3034,  0.3635,  0.0000, -0.0000],
+        [ 0.0000, -0.3632,  0.2074,  0.0000,  0.0000, -0.4494,  0.2390, -0.0000,
+         -0.0000, -0.0000, -0.4418, -0.0210, -0.2601,  0.2938,  0.0000,  0.0000]],
+       device='cuda:0')), ('bias', tensor([0.0612, 0.0340, 0.1160, 0.0579, 0.1724, 0.1567, 0.1405, 0.1688],
+       device='cuda:0')), ('__weight_mma_mask', tensor([[ True,  True, False, False, False,  True, False,  True, False,  True,
+          True, False, False, False,  True,  True],
+        [ True,  True, False, False, False,  True, False,  True, False, False,
+          True,  True, False,  True,  True, False],
+        [False,  True,  True, False,  True, False, False,  True,  True, False,
+          True, False, False,  True, False,  True],
+        [ True, False, False,  True,  True, False, False,  True, False,  True,
+         False,  True, False,  True, False,  True],
+        [False, False,  True,  True,  True, False, False,  True,  True, False,
+         False,  True,  True, False, False,  True],
+        [ True, False, False,  True, False, False,  True,  True, False, False,
+          True,  True,  True,  True, False, False],
+        [ True, False,  True, False,  True,  True, False, False,  True, False,
+         False,  True,  True,  True, False, False],
+        [False,  True,  True, False, False,  True,  True, False, False, False,
+          True,  True,  True,  True, False, False]], device='cuda:0'))])
+</p>
+</div>
+</div>
+
+<div id="outline-container-org98f67c7" class="outline-3">
+<h3 id="org98f67c7"><span class="section-number-3">1.3</span> Tensor Fusion</h3>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

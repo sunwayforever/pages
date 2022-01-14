@@ -1,0 +1,545 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 11:55 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Linux: Mount Shared Subtrees</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Linux: Mount Shared Subtrees</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgd6d0301">1. Linux: Mount Shared Subtrees</a>
+<ul>
+<li><a href="#org53eb78c">1.1. mount tree replication</a>
+<ul>
+<li><a href="#orga283fb2">1.1.1. bind mount</a></li>
+<li><a href="#orgcca6940">1.1.2. mount namespace</a></li>
+</ul>
+</li>
+<li><a href="#orge682edd">1.2. mount tree propagation</a>
+<ul>
+<li><a href="#orga3ba343">1.2.1. private</a></li>
+<li><a href="#org2ee0fd6">1.2.2. shared</a></li>
+<li><a href="#orgb3eae33">1.2.3. slave</a></li>
+<li><a href="#org66f1bd9">1.2.4. peer group 及 master peer group</a></li>
+</ul>
+</li>
+<li><a href="#org4a5e0a3">1.3. 再看 replication</a></li>
+<li><a href="#orgd818018">1.4. use-case</a>
+<ul>
+<li><a href="#orgda9d4f1">1.4.1. bind + shared + shared</a></li>
+<li><a href="#org0e96aa1">1.4.2. bind + shared + slave</a></li>
+<li><a href="#org7dc4a6f">1.4.3. unshare + shared + shared</a></li>
+<li><a href="#orged3c1d8">1.4.4. unbindable</a></li>
+</ul>
+</li>
+<li><a href="#org2063141">1.5. 总结</a></li>
+<li><a href="#org7a5abfe">1.6. 参考</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+<div id="outline-container-orgd6d0301" class="outline-2">
+<h2 id="orgd6d0301"><span class="section-number-2">1</span> Linux: Mount Shared Subtrees</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+mount shared subtrees 提出了 mount propagation, peer group 的概念, 根据同一个 peer group 中的 mount object 能进行的 propagation 的不同, 又分为四种不同的 mount:
+</p>
+
+<ol class="org-ol">
+<li>private</li>
+
+<li>shared</li>
+
+<li>slave</li>
+
+<li>unbindable</li>
+</ol>
+
+<p>
+在说明上述四种 mount 之前, 先介绍 mount tree 的 replication 和
+propagation.
+</p>
+</div>
+
+<div id="outline-container-org53eb78c" class="outline-3">
+<h3 id="org53eb78c"><span class="section-number-3">1.1</span> mount tree replication</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+最初的 linux 只支持一个 mount namespace, 这时 mount tree 是没有
+replication 的概念的: 每个进程的通过不同的"指针"指向同一个 namespace,
+导致 a 进程 mount 的结果 b 进程也可以看到, 反之亦然, 可以把这种做法看做是 "传引用"
+</p>
+
+<p>
+所谓的 replication, 是指 linux 将一个 mount tree 复制到另一个地方的过程, 可以把这种做法看做是 "传值", replication 可以使双方有可能通过
+"propagation" 控制各自的 mount tree, 这一点通过 "传引用" 是不可能做到的.
+</p>
+
+<p>
+可以认为 bind 和 mount namespace 是 linux 实现 mount tree replication
+的两种方法.
+</p>
+</div>
+
+<div id="outline-container-orga283fb2" class="outline-4">
+<h4 id="orga283fb2"><span class="section-number-4">1.1.1</span> bind mount</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+bind mount 可以将一个 mount object replicate 到别一个 mount object, 例如:
+</p>
+
+<pre class="example" id="org0c44ec3">
+mount -o bind ./a ./b
+</pre>
+
+<p>
+这个 b mount object 相当于 a mount object 的复制
+</p>
+
+<p>
+这里有一个问题:
+</p>
+
+<pre class="example" id="orgbf75b64">
+# ls a
+aa
+# ls aa
+// 空目录
+# mount -o bind ./a ./b
+# ls b
+aa
+# ls c
+cc
+# mount -o bind ./c ./a/aa
+# ls a/aa
+cc
+# ls b/aa 
+结果是什么?
+</pre>
+
+<p>
+问题是: 虽然 b 是 a 的 replication, 但是对 a 的 mount tree 的修改是否会反映到 b 的 mount tree 上?
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgcca6940" class="outline-4">
+<h4 id="orgcca6940"><span class="section-number-4">1.1.2</span> mount namespace</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+通过 unshare 系统调用或 clone 时的 CLONE_NEWNS 参数, 可以使当前进程(或
+fork 出来的子进程) 使用它自己的 mount namespace.
+</p>
+
+<p>
+后来 linux 支持每个进程可以通过 unshare 拥有自己独立的 namespace, 这就相当该进程使用的 namespace 是原来 namespace 的值 copy. 这一点和 bind
+mount 是类似的.
+</p>
+
+<p>
+同样的问题: 对原 namespace 的修改是否会反映到新的 namespace 上?
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orge682edd" class="outline-3">
+<h3 id="orge682edd"><span class="section-number-3">1.2</span> mount tree propagation</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+上面提到的问题的答案就是 mount tree propagation.
+</p>
+
+<p>
+所以的 propagation, 是指某个 mount tree 的修改传递到另一个 mount tree
+的过程. 通过查看两个 mount tree 的属性, 决定 propagation 的过程, 这里的属性就是最开始提到的四种不同的 mount
+</p>
+</div>
+
+<div id="outline-container-orga3ba343" class="outline-4">
+<h4 id="orga3ba343"><span class="section-number-4">1.2.1</span> private</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+通过 mount &#x2013;make-private 或 mount 系统调用的 MS_PRIVATE 参数可以将一个 mount object 指定为 private 类型.
+</p>
+
+<p>
+private 类型的 mount object 对应的 mount tree 不会 propagate mount
+event 也不会 receive mount event, 即:
+</p>
+
+<ol class="org-ol">
+<li>其它 mount tree 的修改不会被 propagate 到这个 mount tree</li>
+
+<li>同时, 这个 mount tree 的修改也不会 propagate 到其它 mount tree.</li>
+</ol>
+
+<p>
+默认情况下所有 mount object 都是 private
+</p>
+</div>
+</div>
+
+<div id="outline-container-org2ee0fd6" class="outline-4">
+<h4 id="org2ee0fd6"><span class="section-number-4">1.2.2</span> shared</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<p>
+通过 mount &#x2013;make-shared 或 MS_SHARED 指定. 
+</p>
+
+<p>
+这种 mount object 可以同时 propagate 和 receive mount event, 即:
+</p>
+
+<ol class="org-ol">
+<li>当前 peer group 的其它 shared mount tree 的修改会被 propagate 到这个 mount tree</li>
+
+<li>这个 mount tree 的修改会被 propagate 到当前 peer group.</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgb3eae33" class="outline-4">
+<h4 id="orgb3eae33"><span class="section-number-4">1.2.3</span> slave</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<p>
+通过 mount &#x2013;make-slave 或 MS_SLAVE 指定.
+</p>
+
+<p>
+这个相当于介于 private 和 shared 中间的一种类型. 它可以 receive mount
+event, 但不会 propagate, 即:
+</p>
+
+<ol class="org-ol">
+<li>当前 slave 的 master peer group 中其它 shared mount tree 的修改会被
+propagate 到这个 mount tree.</li>
+
+<li>但是这个 mount tree 的修改不会被 propagate 到任何 peer group.</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org66f1bd9" class="outline-4">
+<h4 id="org66f1bd9"><span class="section-number-4">1.2.4</span> peer group 及 master peer group</h4>
+<div class="outline-text-4" id="text-1-2-4">
+<p>
+所谓的 peer group 是针对 shared 而言的一个概念: shared mount tree 支持
+propagate 及 receive, 那么相应的范围是什么? 即
+</p>
+
+<ol class="org-ol">
+<li>哪些 mount tree 会收到 propagation?</li>
+
+<li>会接受哪些 mount tree 的 propagation?</li>
+</ol>
+
+<p>
+答案就是 peer group: 只有同一个 peer group 的 mount tree 才会
+propagate/receive.
+</p>
+
+<p>
+所谓的 master peer group, 是针对 slave 而言的: slave mount tree 可以接受哪些 mount tree 的 propagation?
+</p>
+
+<p>
+答案是 master peer group: slave 只接受其 master peer group 中的 share
+mount tree 发送的 propagation.
+</p>
+</div>
+
+<div id="outline-container-org049af2c" class="outline-5">
+<h5 id="org049af2c"><span class="section-number-5">1.2.4.1</span> peer group 及 master peer group 如何指定?</h5>
+<div class="outline-text-5" id="text-1-2-4-1">
+<ul class="org-ul">
+<li><p>
+peer group
+</p>
+
+<ol class="org-ol">
+<li><p>
+如果 a 是 shared, peer group 为 x, 则 a 的所有 bind mount 的 peer
+group 也是 x. 这里的顺序很重要: 如果 a 初始为 private, bind mount
+到 b 后再通过 make-shared 分别将 a,b 变为 shared, 两者的 peer
+group 并不相同. 例如:
+</p>
+
+<pre class="example" id="orgdc25f05">
+# mount -o bind da da
+# mount --make-private da
+# mount -o bind da db
+# cat /proc/self/mountinfo |grep test
+// 两个都是 private
+112 69 8:2 /sunway/test/da /home/sunway/test/da rw,relatime - ext4 /dev/sda2 rw,data=ordered
+113 69 8:2 /sunway/test/da /home/sunway/test/db rw,relatime - ext4 /dev/sda2 rw,data=ordered
+
+# mount --make-shared da
+# mount --make-shared db
+# cat /proc/self/mountinfo |grep test
+// da, db 为 shared, 但其 peer group 不同 (1, 64), 所以两者之间不会有任何 propagation 发生. 
+112 69 8:2 /sunway/test/da /home/sunway/test/da rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+113 69 8:2 /sunway/test/da /home/sunway/test/db rw,relatime shared:64 - ext4 /dev/sda2 rw,data=ordered
+</pre></li>
+
+<li>clone 出来的 namespace 中所有的 mount object 与原 namespace 有相同的 peer group.</li>
+
+<li>只有 shared mount object 才有 peer group: private, slave 没有该属性.</li>
+</ol>
+
+<p>
+综上, peer group 在 bind, clone namespace 时继承而来.
+</p></li>
+
+<li><p>
+master peer group
+</p>
+
+<p>
+slave mount object 必须由 shared mount object 转换而来, 这时 slave
+的 master peer group 即原来的 peer group.
+</p></li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org4a5e0a3" class="outline-3">
+<h3 id="org4a5e0a3"><span class="section-number-3">1.3</span> 再看 replication</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+replication 会将一个 mount tree 复制到另一个地方的过程, 从上面的描述可以看到, replication 不仅复制 mount tree, 同时也会复制所有相关信息:
+</p>
+
+<ul class="org-ul">
+<li>shared, slave, private, &#x2026;</li>
+
+<li>peer group, master peer group &#x2026;</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgd818018" class="outline-3">
+<h3 id="orgd818018"><span class="section-number-3">1.4</span> use-case</h3>
+<div class="outline-text-3" id="text-1-4">
+</div>
+<div id="outline-container-orgda9d4f1" class="outline-4">
+<h4 id="orgda9d4f1"><span class="section-number-4">1.4.1</span> bind + shared + shared</h4>
+<div class="outline-text-4" id="text-1-4-1">
+<pre class="example" id="org0bdd56c">
+# find test
+./
+./db
+./db/dbb
+./da
+./da/daa
+./dc
+./dc/dcc
+
+// 这一步是需要的, 因为 --make-shared 之类的操作只能对 mount object 使用
+// 所以需要通过这一步将 da 变为一个 mount object
+# mount -o bind da da
+# cat /proc/self/mountinfo |grep test
+// da 为 private
+112 69 8:2 /sunway/test/da /home/sunway/test/da rw,relatime - ext4 /dev/sda2 rw,data=ordered
+
+# mount --make-shared da
+# cat /proc/self/mountinfo |grep test
+// da 为 shared, peer group 为 1
+112 69 8:2 /sunway/test/da /home/sunway/test/da rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+
+# mount -o bind da db
+# cat /proc/self/mountinfo |grep test
+// db 自动为 shared, 且其 peer group 与 da 相同, 为 1
+112 69 8:2 /sunway/test/da /home/sunway/test/da rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+113 69 8:2 /sunway/test/da /home/sunway/test/db rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+
+# sudo mount -o bind dc/ da/daa/
+# cat /proc/self/mountinfo |grep test
+// da 的改动被 propagate 到 db, SHARED!
+112 69 8:2 /sunway/test/da /home/sunway/test/da rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+113 69 8:2 /sunway/test/da /home/sunway/test/db rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+114 112 8:2 /sunway/test/dc /home/sunway/test/da/daa rw,relatime shared:64 - ext4 /dev/sda2 rw,data=ordered
+115 113 8:2 /sunway/test/dc /home/sunway/test/db/daa rw,relatime shared:64 - ext4 /dev/sda2 rw,data=ordered
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0e96aa1" class="outline-4">
+<h4 id="org0e96aa1"><span class="section-number-4">1.4.2</span> bind + shared + slave</h4>
+<div class="outline-text-4" id="text-1-4-2">
+<pre class="example" id="org64cd59c">
+# mount -o bind da da
+# cat /proc/self/mountinfo |grep test
+// da 为 private
+112 69 8:2 /sunway/test/da /home/sunway/test/da rw,relatime - ext4 /dev/sda2 rw,data=ordered
+
+# mount --make-shared da
+# cat /proc/self/mountinfo |grep test
+// da 为 shared, peer group 为 1
+112 69 8:2 /sunway/test/da /home/sunway/test/da rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+
+# mount -o bind da db
+# cat /proc/self/mountinfo |grep test
+// db 自动为 shared, 且其 peer group 与 da 相同, 为 1
+112 69 8:2 /sunway/test/da /home/sunway/test/da rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+113 69 8:2 /sunway/test/da /home/sunway/test/db rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+
+# mount --make-slave db
+# cat /proc/self/mountinfo |grep test
+// db 变为 da 的 slave: 其 master peer group 为 1
+112 69 8:2 /sunway/test/da /home/sunway/test/da rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+113 69 8:2 /sunway/test/da /home/sunway/test/db rw,relatime master:1 - ext4 /dev/sda2 rw,data=ordered
+
+# mount -o bind dc/ db/daa/
+# cat /proc/self/mountinfo |grep test
+// 对 slave (db) 的修改没有 propagate 到 master (da)
+112 69 8:2 /sunway/test/da /home/sunway/test/da rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+113 69 8:2 /sunway/test/da /home/sunway/test/db rw,relatime master:1 - ext4 /dev/sda2 rw,data=ordered
+114 113 8:2 /sunway/test/dc /home/sunway/test/db/daa rw,relatime - ext4 /dev/sda2 rw,data=ordered
+# umount db/daa
+# mount -o bind dc da/daa/
+# cat /proc/self/mountinfo |grep test
+// 对 master (da) 的修改 propagate 到 slave (db)
+112 69 8:2 /sunway/test/da /home/sunway/test/da rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+113 69 8:2 /sunway/test/da /home/sunway/test/db rw,relatime master:1 - ext4 /dev/sda2 rw,data=ordered
+114 112 8:2 /sunway/test/dc /home/sunway/test/da/daa rw,relatime shared:64 - ext4 /dev/sda2 rw,data=ordered
+115 113 8:2 /sunway/test/dc /home/sunway/test/db/daa rw,relatime master:64 - ext4 /dev/sda2 rw,data=ordered
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org7dc4a6f" class="outline-4">
+<h4 id="org7dc4a6f"><span class="section-number-4">1.4.3</span> unshare + shared + shared</h4>
+<div class="outline-text-4" id="text-1-4-3">
+<pre class="example" id="org866d367">
+# mount -o bind da da
+# mount --make-shared da
+# mount -o bind da db
+# cat /proc/self/mountinfo |grep test
+112 69 8:2 /sunway/test/da /home/sunway/test/da rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+113 69 8:2 /sunway/test/da /home/sunway/test/db rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+
+# unshare -m --propagation unchanged bash
+// 这里的 --propagation unchanged 参数是必要的, 默认情况下 unshare 在 clone namespace 后会使用 --propagation private
+// 参数将新的 namespace 中的所有 mount object 都变为 private, 以确认 unshare 后两个 namespace 是完全独立的. 
+# cat /proc/self/mountinfo |grep test
+// clone namespace 会复制原 namespace 的一切信息: shared, peer group, ...
+144 143 8:2 /sunway/test/da /home/sunway/test/da rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+145 143 8:2 /sunway/test/da /home/sunway/test/db rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+
+// 新的 bash 里执行
+# mount -o bind dc/ da/daa/
+# cat /proc/self/mountinfo |grep test
+144 143 8:2 /sunway/test/da /home/sunway/test/da rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+145 143 8:2 /sunway/test/da /home/sunway/test/db rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+146 144 8:2 /sunway/test/dc /home/sunway/test/da/daa rw,relatime shared:64 - ext4 /dev/sda2 rw,data=ordered
+148 145 8:2 /sunway/test/dc /home/sunway/test/db/daa rw,relatime shared:64 - ext4 /dev/sda2 rw,data=ordered
+
+// 旧的 bash 里执行
+# cat /proc/self/mountinfo |grep test
+112 69 8:2 /sunway/test/da /home/sunway/test/da rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+113 69 8:2 /sunway/test/da /home/sunway/test/db rw,relatime shared:1 - ext4 /dev/sda2 rw,data=ordered
+149 112 8:2 /sunway/test/dc /home/sunway/test/da/daa rw,relatime shared:64 - ext4 /dev/sda2 rw,data=ordered
+147 113 8:2 /sunway/test/dc /home/sunway/test/db/daa rw,relatime shared:64 - ext4 /dev/sda2 rw,data=ordered
+
+// 可见, 新的 bash 中对 da 的修改被 propagate 到新 bash 中的 db, 同时, 这个修改也被 propagate 到旧的 namespace ...
+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orged3c1d8" class="outline-4">
+<h4 id="orged3c1d8"><span class="section-number-4">1.4.4</span> unbindable</h4>
+</div>
+</div>
+
+<div id="outline-container-org2063141" class="outline-3">
+<h3 id="org2063141"><span class="section-number-3">1.5</span> 总结</h3>
+<div class="outline-text-3" id="text-1-5">
+<ol class="org-ol">
+<li>bind, namespace 是两种实现 replication 的方法</li>
+
+<li>replication 会复制许多信息, 包括 mount tree, mount 的类型 (shared,
+slave, private, &#x2026;) 及相关信息 (peer group, master peer group)</li>
+
+<li>mount 类型影响 propagation.</li>
+
+<li>peer group 对 propagation 有决定性影响, 它只能通过 replication 获得</li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-org7a5abfe" class="outline-3">
+<h3 id="org7a5abfe"><span class="section-number-3">1.6</span> 参考</h3>
+<div class="outline-text-3" id="text-1-6">
+<p>
+<a href="https://www.kernel.org/doc/Documentation/filesystems/sharedsubtree.txt">https://www.kernel.org/doc/Documentation/filesystems/sharedsubtree.txt</a>
+</p>
+
+<p>
+<a href="http://lwn.net/Articles/159077/">http://lwn.net/Articles/159077/</a>
+</p>
+
+<p>
+<a href="http://timothysc.github.io/blog/2013/02/22/perprocess/">http://timothysc.github.io/blog/2013/02/22/perprocess/</a>
+</p>
+
+<p>
+<a href="http://www.ibm.com/developerworks/linux/library/l-mount-namespaces/index.html">http://www.ibm.com/developerworks/linux/library/l-mount-namespaces/index.html</a>
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

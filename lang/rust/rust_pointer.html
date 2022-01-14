@@ -1,0 +1,622 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rust Pointer</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Rust Pointer</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org680f681">1. Rust Pointer</a>
+<ul>
+<li><a href="#orgc284160">1.1. slice</a></li>
+<li><a href="#org5dac9c3">1.2. Box</a>
+<ul>
+<li><a href="#org0ee4a61">1.2.1. 内部原理</a></li>
+<li><a href="#orgdb1fc9c">1.2.2. Box 使用</a></li>
+<li><a href="#org5166cab">1.2.3. Box 的应用场景</a></li>
+</ul>
+</li>
+<li><a href="#org7d05c58">1.3. Rc</a>
+<ul>
+<li><a href="#org0cb38e3">1.3.1. 内部原理</a></li>
+<li><a href="#org3e059b3">1.3.2. 使用 Rc 实现链表</a></li>
+</ul>
+</li>
+<li><a href="#org839b6d5">1.4. RefCell</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org680f681" class="outline-2">
+<h2 id="org680f681"><span class="section-number-2">1</span> Rust Pointer</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-orgc284160" class="outline-3">
+<h3 id="orgc284160"><span class="section-number-3">1.1</span> slice</h3>
+<div class="outline-text-3" id="text-1-1">
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #859900;">struct</span> <span style="color: #b58900;">Test</span><span style="color: #757575;">(</span><span style="color: #b58900;">i64</span><span style="color: #757575;">,</span> <span style="color: #b58900;">i64</span><span style="color: #757575;">)</span>;
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">format_of_string</span><span style="color: #757575;">()</span> -&gt; <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"------\nformat of String:"</span><span style="color: #757575;">)</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">s</span> = <span style="color: #2aa198;">"abcde"</span>.to_owned<span style="color: #757575;">()</span>;
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"size: </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #268bd2; font-weight: bold;">mem</span>::size_of_val<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span>s<span style="color: #757575;">))</span>;
+
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">pp</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>s <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _ <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">i64</span>; 3];
+    <span style="color: #cb4b16; font-weight: bold;">unsafe</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"string addr is </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> pp<span style="color: #757575;">)</span>;
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span>
+            <span style="color: #2aa198;">"string value is 0x</span><span style="color: #2aa198; font-style: italic;">{:x}</span><span style="color: #2aa198;"> 0x</span><span style="color: #2aa198; font-style: italic;">{:x}</span><span style="color: #2aa198;"> 0x</span><span style="color: #2aa198; font-style: italic;">{:x}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span>
+            <span style="color: #757575;">(</span>*pp<span style="color: #757575;">)</span>[0]<span style="color: #757575;">,</span>
+            <span style="color: #757575;">(</span>*pp<span style="color: #757575;">)</span>[1]<span style="color: #757575;">,</span>
+            <span style="color: #757575;">(</span>*pp<span style="color: #757575;">)</span>[2]<span style="color: #757575;">,</span>
+        <span style="color: #757575;">)</span>;
+
+        <span style="color: #859900;">let</span> <span style="color: #268bd2;">p_heap</span> = <span style="color: #757575;">(</span>*pp<span style="color: #757575;">)</span>[0] <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">u8</span>; 6];
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"heap value is </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> *p_heap<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">format_of_str</span><span style="color: #757575;">()</span> -&gt; <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"------\nformat of &amp;str:"</span><span style="color: #757575;">)</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">orig</span> = <span style="color: #2aa198;">"abc"</span>.to_owned<span style="color: #757575;">()</span>;
+
+
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">s</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>orig[1..];
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"size: </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #268bd2; font-weight: bold;">mem</span>::size_of_val<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span>s<span style="color: #757575;">))</span>;
+
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">pp</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>s <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _ <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">i64</span>; 2];
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">pp_orig</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>orig <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _ <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">i64</span>; 3];
+    <span style="color: #cb4b16; font-weight: bold;">unsafe</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"string addr is </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> pp_orig<span style="color: #757575;">)</span>;
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span>
+            <span style="color: #2aa198;">"string value is 0x</span><span style="color: #2aa198; font-style: italic;">{:x}</span><span style="color: #2aa198;"> 0x</span><span style="color: #2aa198; font-style: italic;">{:x}</span><span style="color: #2aa198;"> 0x</span><span style="color: #2aa198; font-style: italic;">{:x}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span>
+            <span style="color: #757575;">(</span>*pp_orig<span style="color: #757575;">)</span>[0]<span style="color: #757575;">,</span>
+            <span style="color: #757575;">(</span>*pp_orig<span style="color: #757575;">)</span>[1]<span style="color: #757575;">,</span>
+            <span style="color: #757575;">(</span>*pp_orig<span style="color: #757575;">)</span>[2]<span style="color: #757575;">,</span>
+        <span style="color: #757575;">)</span>;
+
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"str addr is </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> pp<span style="color: #757575;">)</span>;
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span>
+            <span style="color: #2aa198;">"str value is 0x</span><span style="color: #2aa198; font-style: italic;">{:x}</span><span style="color: #2aa198;"> 0x</span><span style="color: #2aa198; font-style: italic;">{:x}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span>
+            <span style="color: #757575;">(</span>*pp<span style="color: #757575;">)</span>[0]<span style="color: #757575;">,</span>
+            <span style="color: #757575;">(</span>*pp<span style="color: #757575;">)</span>[1]<span style="color: #757575;">,</span>
+        <span style="color: #757575;">)</span>;        
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    format_of_string<span style="color: #757575;">()</span>;
+    format_of_str<span style="color: #757575;">()</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<hr />
+<p>
+format of String:
+size: 24
+string addr is 0x7ffc8543c5f8
+string value is 0x56533d4d4c80 0x5 0x5
+heap value is [97, 98, 99, 100, 101, 0]
+</p>
+<hr />
+<p>
+format of &amp;str:
+size: 16
+string addr is 0x7ffc8543c570
+string value is 0x56533d4d4c80 0x3 0x3
+str addr is 0x7ffc8543c588
+str value is 0x56533d4d4c81 0x2
+</p>
+
+<ol class="org-ol">
+<li>String 本身位于栈上, 格式为 `[pointer_to_heap, size, capacity]`,
+pointer_to_heap 指向堆, 保存 String 真正的内容</li>
+
+<li>&amp;str 格式为 `[pointer_to_heap, size]`, 它直接指向 heap + slice_offset, 而不是指向栈上的 String 对象</li>
+</ol>
+
+<p>
+所以 &amp;str 以及 &amp;slice 中的 &amp; 操作并非直接取地址, 它们`生成`一个 `fat pointer`,且
+pointer 会指向真正的 payload 而不是栈上的 String 或 array.
+</p>
+
+<p>
+另外, `fat pointer` 中的 size 用来确保运行时访问不越界
+</p>
+</div>
+</div>
+
+<div id="outline-container-org5dac9c3" class="outline-3">
+<h3 id="org5dac9c3"><span class="section-number-3">1.2</span> Box</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-org0ee4a61" class="outline-4">
+<h4 id="org0ee4a61"><span class="section-number-4">1.2.1</span> 内部原理</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #859900;">struct</span> <span style="color: #b58900;">Test</span><span style="color: #757575;">(</span><span style="color: #b58900;">i64</span><span style="color: #757575;">,</span> <span style="color: #b58900;">i64</span><span style="color: #757575;">)</span>;
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #859900;">mut</span> <span style="color: #268bd2;">p</span> = <span style="color: #b58900;">Box</span>::new<span style="color: #757575;">(</span><span style="color: #b58900;">Test</span><span style="color: #757575;">(</span>1234<span style="color: #757575;">,</span> 5678<span style="color: #757575;">))</span>;
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"size: </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #268bd2; font-weight: bold;">mem</span>::size_of_val<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span>p<span style="color: #757575;">))</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">pp</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>p <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _ <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">i64</span>; 1];
+    <span style="color: #cb4b16; font-weight: bold;">unsafe</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"box addr is </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> pp<span style="color: #757575;">)</span>;
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"box value is 0x</span><span style="color: #2aa198; font-style: italic;">{:x}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #757575;">(</span>*pp<span style="color: #757575;">)</span>[0]<span style="color: #757575;">)</span>;
+
+        <span style="color: #859900;">let</span> <span style="color: #268bd2;">p_heap</span> = <span style="color: #757575;">(</span>*pp<span style="color: #757575;">)</span>[0] <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">i64</span>; 2];
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"heap value is </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> *p_heap<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+size: 8
+box addr is 0x7ffefa5bde28
+box value is 0x55d631c7ab40
+heap value is [1234, 5678]
+</p>
+
+<p>
+Box 自身分配在栈上, 它只包含一个指向堆的地址 (String 除了地址还包括 size 和
+capacity), payload 实际在堆上.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgdb1fc9c" class="outline-4">
+<h4 id="orgdb1fc9c"><span class="section-number-4">1.2.2</span> Box 使用</h4>
+<div class="outline-text-4" id="text-1-2-2">
+</div>
+<div id="outline-container-orgd5a1825" class="outline-5">
+<h5 id="orgd5a1825"><span class="section-number-5">1.2.2.1</span> 使用 reference 实现链表</h5>
+<div class="outline-text-5" id="text-1-2-2-1">
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #268bd2;">#[derive</span><span style="color: #757575;">(</span><span style="color: #268bd2;">Debug</span><span style="color: #757575;">)</span><span style="color: #268bd2;">]</span>
+<span style="color: #859900;">struct</span> <span style="color: #b58900;">ListNode</span>&lt;'<span style="color: #268bd2;">a</span>&gt; <span style="color: #757575;">{</span>
+    <span style="color: #268bd2;">val</span>: <span style="color: #b58900;">i32</span><span style="color: #757575;">,</span>
+    <span style="color: #268bd2;">next</span>: <span style="color: #b58900;">Option</span>&lt;<span style="color: #839496; background-color: #002b36;">&amp;</span>'<span style="color: #268bd2;">a</span> <span style="color: #b58900;">ListNode</span>&lt;'<span style="color: #268bd2;">a</span>&gt;&gt;<span style="color: #757575;">,</span>
+<span style="color: #757575;">}</span>
+<span style="color: #859900;">impl</span>&lt;'<span style="color: #268bd2;">a</span>&gt; <span style="color: #b58900;">ListNode</span>&lt;'<span style="color: #268bd2;">a</span>&gt; <span style="color: #757575;">{</span>
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">new</span><span style="color: #757575;">(</span><span style="color: #268bd2;">val</span>: <span style="color: #b58900;">i32</span><span style="color: #757575;">)</span> -&gt; <span style="color: #757575;">(</span><span style="color: #b58900;">ListNode</span>&lt;'<span style="color: #268bd2;">a</span>&gt;<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">return</span> <span style="color: #b58900;">ListNode</span> <span style="color: #757575;">{</span>
+            <span style="color: #268bd2;">val</span>: val<span style="color: #757575;">,</span>
+            <span style="color: #268bd2;">next</span>: <span style="color: #b58900;">None</span><span style="color: #757575;">,</span>
+        <span style="color: #757575;">}</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+<span style="color: #268bd2;">#[derive</span><span style="color: #757575;">(</span><span style="color: #268bd2;">Debug</span><span style="color: #757575;">)</span><span style="color: #268bd2;">]</span>
+<span style="color: #859900;">struct</span> <span style="color: #b58900;">LinkedList</span>&lt;'<span style="color: #268bd2;">a</span>&gt; <span style="color: #757575;">{</span>
+    <span style="color: #268bd2;">root</span>: <span style="color: #b58900;">Option</span>&lt;<span style="color: #839496; background-color: #002b36;">&amp;</span>'<span style="color: #268bd2;">a</span> <span style="color: #b58900;">ListNode</span>&lt;'<span style="color: #268bd2;">a</span>&gt;&gt;<span style="color: #757575;">,</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">impl</span>&lt;'<span style="color: #268bd2;">a</span>&gt; <span style="color: #b58900;">LinkedList</span>&lt;'<span style="color: #268bd2;">a</span>&gt; <span style="color: #757575;">{</span>
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">new</span><span style="color: #757575;">()</span> -&gt; <span style="color: #b58900;">LinkedList</span>&lt;'<span style="color: #268bd2;">a</span>&gt; <span style="color: #757575;">{</span>
+        <span style="color: #859900;">return</span> <span style="color: #b58900;">LinkedList</span> <span style="color: #757575;">{</span> <span style="color: #268bd2;">root</span>: <span style="color: #b58900;">None</span> <span style="color: #757575;">}</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">add_node</span><span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">mut</span> <span style="color: #859900;">self</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">node</span>: <span style="color: #839496; background-color: #002b36;">&amp;</span>'<span style="color: #268bd2;">a</span> <span style="color: #859900;">mut</span> <span style="color: #b58900;">ListNode</span>&lt;'<span style="color: #268bd2;">a</span>&gt;<span style="color: #757575;">)</span> -&gt; <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        node.next = <span style="color: #859900;">self</span>.root;
+        <span style="color: #859900;">self</span>.root = <span style="color: #b58900;">Some</span><span style="color: #757575;">(</span>node<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #859900;">mut</span> <span style="color: #268bd2;">list</span> = <span style="color: #b58900;">LinkedList</span>::new<span style="color: #757575;">()</span>;
+
+    <span style="color: #859900;">let</span> <span style="color: #859900;">mut</span> <span style="color: #268bd2;">node1</span> = <span style="color: #b58900;">ListNode</span>::new<span style="color: #757575;">(</span>1<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">let</span> <span style="color: #859900;">mut</span> <span style="color: #268bd2;">node2</span> = <span style="color: #b58900;">ListNode</span>::new<span style="color: #757575;">(</span>2<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">let</span> <span style="color: #859900;">mut</span> <span style="color: #268bd2;">node3</span> = <span style="color: #b58900;">ListNode</span>::new<span style="color: #757575;">(</span>3<span style="color: #757575;">)</span>;
+
+    list.add_node<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">mut</span> node1<span style="color: #757575;">)</span>;
+    list.add_node<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">mut</span> node2<span style="color: #757575;">)</span>;
+    list.add_node<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">mut</span> node3<span style="color: #757575;">)</span>;
+
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> list<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+LinkedList { root: Some(ListNode { val: 3, next: Some(ListNode { val: 2, next: Some(ListNode { val: 1, next: None }) }) }) }
+</p>
+
+<p>
+这种实现的问题是:
+</p>
+
+<ol class="org-ol">
+<li>由于 node 栈上分配的原因, struct ListNode 定义时无法指定 next 为 TreeNode, 因为递归定义的结构体无法在编译时确定大小, 只能定义 next 为 reference</li>
+
+<li>需要指定许多 lifetime annotation 确定 reference 有效</li>
+
+<li>next 只是引用, 所以 parent 并不是 node 的 owner, 需要额外的 owner (node1,
+node2, node3) 确保 reference 有效</li>
+
+<li>由于栈上分配的原因, 无法把封装在一个函数中. 因为 shadow copy 时不会 copy
+reference</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgaa9d777" class="outline-5">
+<h5 id="orgaa9d777"><span class="section-number-5">1.2.2.2</span> 使用 Box 实现链表</h5>
+<div class="outline-text-5" id="text-1-2-2-2">
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #268bd2;">#[derive</span><span style="color: #757575;">(</span><span style="color: #268bd2;">Debug</span><span style="color: #757575;">)</span><span style="color: #268bd2;">]</span>
+<span style="color: #859900;">struct</span> <span style="color: #b58900;">ListNode</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2;">val</span>: <span style="color: #b58900;">i32</span><span style="color: #757575;">,</span>
+    <span style="color: #268bd2;">next</span>: <span style="color: #b58900;">Option</span>&lt;<span style="color: #b58900;">Box</span>&lt;<span style="color: #b58900;">ListNode</span>&gt;&gt;<span style="color: #757575;">,</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">impl</span> <span style="color: #b58900;">ListNode</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">new</span><span style="color: #757575;">(</span><span style="color: #268bd2;">val</span>: <span style="color: #b58900;">i32</span><span style="color: #757575;">)</span> -&gt; <span style="color: #b58900;">Box</span>&lt;<span style="color: #b58900;">ListNode</span>&gt; <span style="color: #757575;">{</span>
+        <span style="color: #b58900;">Box</span>::new<span style="color: #757575;">(</span><span style="color: #b58900;">ListNode</span> <span style="color: #757575;">{</span>
+            <span style="color: #268bd2;">val</span>: val<span style="color: #757575;">,</span>
+            <span style="color: #268bd2;">next</span>: <span style="color: #b58900;">None</span><span style="color: #757575;">,</span>
+        <span style="color: #757575;">})</span>
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #268bd2;">#[derive</span><span style="color: #757575;">(</span><span style="color: #268bd2;">Debug</span><span style="color: #757575;">)</span><span style="color: #268bd2;">]</span>
+<span style="color: #859900;">struct</span> <span style="color: #b58900;">LinkedList</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2;">root</span>: <span style="color: #b58900;">Option</span>&lt;<span style="color: #b58900;">Box</span>&lt;<span style="color: #b58900;">ListNode</span>&gt;&gt;<span style="color: #757575;">,</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">impl</span> <span style="color: #b58900;">LinkedList</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">new</span><span style="color: #757575;">()</span> -&gt; <span style="color: #b58900;">LinkedList</span> <span style="color: #757575;">{</span>
+        <span style="color: #b58900;">LinkedList</span> <span style="color: #757575;">{</span> <span style="color: #268bd2;">root</span>: <span style="color: #b58900;">None</span> <span style="color: #757575;">}</span>
+    <span style="color: #757575;">}</span>
+
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">push_front</span><span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">mut</span> <span style="color: #859900;">self</span><span style="color: #757575;">,</span> <span style="color: #859900;">mut</span> <span style="color: #268bd2;">node</span>: <span style="color: #b58900;">Box</span>&lt;<span style="color: #b58900;">ListNode</span>&gt;<span style="color: #757575;">)</span> -&gt; <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">let</span> <span style="color: #268bd2;">t</span> = <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #268bd2; font-weight: bold;">mem</span>::replace<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">mut</span> <span style="color: #859900;">self</span>.root<span style="color: #757575;">,</span> <span style="color: #b58900;">None</span><span style="color: #757575;">)</span>;
+        node.next = t;
+        <span style="color: #859900;">self</span>.root = <span style="color: #b58900;">Some</span><span style="color: #757575;">(</span>node<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">push_back</span><span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">mut</span> <span style="color: #859900;">self</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">node</span>: <span style="color: #b58900;">Box</span>&lt;<span style="color: #b58900;">ListNode</span>&gt;<span style="color: #757575;">)</span> -&gt; <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">let</span> <span style="color: #859900;">mut</span> <span style="color: #268bd2;">fake_root</span> = <span style="color: #b58900;">ListNode</span>::new<span style="color: #757575;">(</span>0<span style="color: #757575;">)</span>;
+        <span style="color: #859900;">let</span> <span style="color: #268bd2;">t</span> = <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #268bd2; font-weight: bold;">mem</span>::replace<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">mut</span> <span style="color: #859900;">self</span>.root<span style="color: #757575;">,</span> <span style="color: #b58900;">None</span><span style="color: #757575;">)</span>;
+        fake_root.next = t;
+        <span style="color: #859900;">let</span> <span style="color: #859900;">mut</span> <span style="color: #268bd2;">head</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">mut</span> fake_root;
+        <span style="color: #859900;">while</span> <span style="color: #859900;">let</span> <span style="color: #b58900;">Some</span><span style="color: #757575;">(</span><span style="color: #859900;">ref</span> <span style="color: #859900;">mut</span> <span style="color: #268bd2;">n</span><span style="color: #757575;">)</span> = head.next <span style="color: #757575;">{</span>
+            head = n
+        <span style="color: #757575;">}</span>
+        head.next = <span style="color: #b58900;">Some</span><span style="color: #757575;">(</span>node<span style="color: #757575;">)</span>;
+        <span style="color: #859900;">self</span>.root = fake_root.next;
+    <span style="color: #757575;">}</span>
+
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">pop_front</span><span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">mut</span> <span style="color: #859900;">self</span><span style="color: #757575;">)</span> -&gt; <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">if</span> <span style="color: #859900;">let</span> <span style="color: #b58900;">Some</span><span style="color: #757575;">(</span><span style="color: #859900;">ref</span> <span style="color: #859900;">mut</span> <span style="color: #268bd2;">node</span><span style="color: #757575;">)</span> = <span style="color: #859900;">self</span>.root <span style="color: #757575;">{</span>
+            <span style="color: #859900;">self</span>.root = <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #268bd2; font-weight: bold;">mem</span>::replace<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">mut</span> node.next<span style="color: #757575;">,</span> <span style="color: #b58900;">None</span><span style="color: #757575;">)</span>;;
+        <span style="color: #757575;">}</span>
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #859900;">mut</span> <span style="color: #268bd2;">list</span> = <span style="color: #b58900;">LinkedList</span>::new<span style="color: #757575;">()</span>;
+    list.push_front<span style="color: #757575;">(</span><span style="color: #b58900;">ListNode</span>::new<span style="color: #757575;">(</span>1<span style="color: #757575;">))</span>;
+    list.push_back<span style="color: #757575;">(</span><span style="color: #b58900;">ListNode</span>::new<span style="color: #757575;">(</span>2<span style="color: #757575;">))</span>;
+    list.pop_front<span style="color: #757575;">()</span>;
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> list<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+LinkedList { root: Some(ListNode { val: 2, next: None }) }
+</p>
+
+<p>
+使用 Box 无需考虑 owner 的问题, 但还是需要处理用 reference 和 mem::replace 来防止 Box 被 move,
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org5166cab" class="outline-4">
+<h4 id="org5166cab"><span class="section-number-4">1.2.3</span> Box 的应用场景</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<ol class="org-ol">
+<li>递归定义的数据结构</li>
+
+<li>堆上分配</li>
+
+<li><p>
+单一 owner 可以搞定的问题, 例如单向链表 (双向链表和树, 图等可能难以用 Box 处理)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #859900;">let</span> <span style="color: #268bd2;">node</span> = <span style="color: #b58900;">TreeNode</span>::new<span style="color: #757575;">(</span>1<span style="color: #757575;">)</span>;
+prev.next = node;
+<span style="color: #586e75;">// </span><span style="color: #586e75;">node &#24050;&#32463;&#34987; move &#21040; prev.next, &#26080;&#27861;&#20877;&#36171;&#20540;&#32473; next.prev</span>
+next.prev = node;
+</pre>
+</div></li>
+</ol>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org7d05c58" class="outline-3">
+<h3 id="org7d05c58"><span class="section-number-3">1.3</span> Rc</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+rust 编译时只允许单一 owner, 通过 Rc 可以支持双向链表等需要多个 owner 的场景.
+</p>
+
+<p>
+Rc 即 reference counting, 多个不同的 Rc 可以在内部 `own` 同一个资源, `运行时` 通过引用计数的方式决定何时释放资源.
+</p>
+
+<p>
+在编译时一个 Rc 还是只有一个 owner, 编译器并不知道多个 Rc `own` 同一个资源.
+</p>
+</div>
+
+<div id="outline-container-org0cb38e3" class="outline-4">
+<h4 id="org0cb38e3"><span class="section-number-4">1.3.1</span> 内部原理</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<ol class="org-ol">
+<li><p>
+Box 的 clone 会复制所有数据, 包含堆上的数据
+</p>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #268bd2;">#[derive</span><span style="color: #757575;">(</span><span style="color: #268bd2;">Clone</span><span style="color: #757575;">)</span><span style="color: #268bd2;">]</span>
+<span style="color: #859900;">struct</span> <span style="color: #b58900;">Test</span><span style="color: #757575;">(</span><span style="color: #b58900;">i64</span><span style="color: #757575;">,</span> <span style="color: #b58900;">i64</span><span style="color: #757575;">)</span>;
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">p</span> = <span style="color: #b58900;">Box</span>::new<span style="color: #757575;">(</span><span style="color: #b58900;">Test</span><span style="color: #757575;">(</span>1234<span style="color: #757575;">,</span> 5678<span style="color: #757575;">))</span>;
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"box size: </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #268bd2; font-weight: bold;">mem</span>::size_of_val<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span>p<span style="color: #757575;">))</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">pp</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>p <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _ <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">i64</span>; 1];
+    <span style="color: #cb4b16; font-weight: bold;">unsafe</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"box addr is </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> pp<span style="color: #757575;">)</span>;
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"box value is 0x</span><span style="color: #2aa198; font-style: italic;">{:x}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #757575;">(</span>*pp<span style="color: #757575;">)</span>[0]<span style="color: #757575;">)</span>;
+
+        <span style="color: #859900;">let</span> <span style="color: #268bd2;">p_heap</span> = <span style="color: #757575;">(</span>*pp<span style="color: #757575;">)</span>[0] <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">i64</span>; 2];
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"heap value is </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> *p_heap<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">p_cloned</span> = p.clone<span style="color: #757575;">()</span>;
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"rc size: </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #268bd2; font-weight: bold;">mem</span>::size_of_val<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span>p_cloned<span style="color: #757575;">))</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">pp_cloned</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>p_cloned <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _ <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">i64</span>; 1];
+    <span style="color: #cb4b16; font-weight: bold;">unsafe</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"cloned box addr is </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> pp_cloned<span style="color: #757575;">)</span>;
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"cloned box value is 0x</span><span style="color: #2aa198; font-style: italic;">{:x}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #757575;">(</span>*pp_cloned<span style="color: #757575;">)</span>[0]<span style="color: #757575;">)</span>;
+
+        <span style="color: #859900;">let</span> <span style="color: #268bd2;">p_heap</span> = <span style="color: #757575;">(</span>*pp_cloned<span style="color: #757575;">)</span>[0] <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">i64</span>; 2];
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"heap value is </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> *p_heap<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+</pre>
+</div>
+
+<p>
+box addr is 0x7ffe9fcef808
+box value is 0x7f456602a000
+heap value is [1234, 5678]
+cloned box addr is 0x7ffe9fcef920
+cloned box value is 0x7f456602a020
+heap value is [1234, 5678]
+</p></li>
+
+<li><p>
+Rc 的 clone 只是 shadow copy
+</p>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #268bd2;">#[derive</span><span style="color: #757575;">(</span><span style="color: #268bd2;">Clone</span><span style="color: #757575;">)</span><span style="color: #268bd2;">]</span>
+<span style="color: #859900;">struct</span> <span style="color: #b58900;">Test</span><span style="color: #757575;">(</span><span style="color: #b58900;">i64</span><span style="color: #757575;">,</span> <span style="color: #b58900;">i64</span><span style="color: #757575;">)</span>;
+
+<span style="color: #859900;">use</span> <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #268bd2; font-weight: bold;">rc</span>::<span style="color: #b58900;">Rc</span>;
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">p</span> = <span style="color: #b58900;">Rc</span>::new<span style="color: #757575;">(</span><span style="color: #b58900;">Test</span><span style="color: #757575;">(</span>1234<span style="color: #757575;">,</span> 5678<span style="color: #757575;">))</span>;
+
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">pp</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>p <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _ <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">i64</span>; 2];
+    <span style="color: #cb4b16; font-weight: bold;">unsafe</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"rc addr is </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> pp<span style="color: #757575;">)</span>;
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"rc value is 0x</span><span style="color: #2aa198; font-style: italic;">{:x}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #757575;">(</span>*pp<span style="color: #757575;">)</span>[0]<span style="color: #757575;">)</span>;
+
+        <span style="color: #859900;">let</span> <span style="color: #268bd2;">p_heap</span> = <span style="color: #757575;">(</span>*pp<span style="color: #757575;">)</span>[0] <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">i64</span>; 4];
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"heap value is </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> *p_heap<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"strong_count: </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #b58900;">Rc</span>::strong_count<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span>p<span style="color: #757575;">))</span>;
+
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">""</span><span style="color: #757575;">)</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">p_cloned</span> = p.clone<span style="color: #757575;">()</span>;
+    <span style="color: #859900;">let</span> <span style="color: #268bd2;">pp_cloned</span> = <span style="color: #839496; background-color: #002b36;">&amp;</span>p_cloned <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> _ <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">i64</span>; 1];
+    <span style="color: #cb4b16; font-weight: bold;">unsafe</span> <span style="color: #757575;">{</span>
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"cloned box addr is </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> pp_cloned<span style="color: #757575;">)</span>;
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"cloned box value is 0x</span><span style="color: #2aa198; font-style: italic;">{:x}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #757575;">(</span>*pp_cloned<span style="color: #757575;">)</span>[0]<span style="color: #757575;">)</span>;
+
+        <span style="color: #859900;">let</span> <span style="color: #268bd2;">p_heap</span> = <span style="color: #757575;">(</span>*pp_cloned<span style="color: #757575;">)</span>[0] <span style="color: #859900;">as</span> *<span style="color: #859900;">const</span> [<span style="color: #b58900;">i64</span>; 4];
+        <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"heap value is </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> *p_heap<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"strong_count: </span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #b58900;">Rc</span>::strong_count<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span>p<span style="color: #757575;">))</span>;
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> <span style="color: #b58900;">Rc</span>::into_raw<span style="color: #757575;">(</span>p<span style="color: #757575;">))</span>;
+<span style="color: #757575;">}</span>
+
+</pre>
+</div>
+
+<p>
+rc addr is 0x7ffcb5afe7e8
+rc value is 0x7f8d1f020020
+heap value is [1, 1, 1234, 5678]
+strong_count: 1
+</p>
+
+<p>
+cloned box addr is 0x7ffcb5afe988
+cloned box value is 0x7f8d1f020020
+heap value is [2, 1, 1234, 5678]
+strong_count: 2
+0x7f8d1f020030
+</p>
+
+<p>
+Rc 不是 fat pointer, 它只包含一个堆上的地址, 真正的数据以及引用计数等放在堆上.
+</p></li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-org3e059b3" class="outline-4">
+<h4 id="org3e059b3"><span class="section-number-4">1.3.2</span> 使用 Rc 实现链表</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<p>
+使用 Rc 实现链表并不比 Box 简单, 主要原因是, 在遍历 list 时, 可以这样:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #859900;">let</span> <span style="color: #859900;">mut</span> <span style="color: #268bd2;">head</span> = fake_root.clone<span style="color: #757575;">()</span>;
+<span style="color: #859900;">while</span> <span style="color: #859900;">let</span> <span style="color: #b58900;">Some</span><span style="color: #757575;">(</span>n<span style="color: #757575;">)</span> = head.next.clone<span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    head = n;
+<span style="color: #757575;">}</span>
+<span style="color: #b58900;">Rc</span>::get_mut<span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">mut</span> head<span style="color: #757575;">)</span>.unwrap<span style="color: #757575;">()</span>.next = <span style="color: #b58900;">Some</span><span style="color: #757575;">(</span>node<span style="color: #757575;">)</span>;
+<span style="color: #859900;">self</span>.root = fake_root.next.clone<span style="color: #757575;">()</span>;
+</pre>
+</div>
+
+<p>
+问题是 Rc 只有在存在一个 owner 时才可以通过 get_mut 来修改, 类似于读写锁的限制,
+导致我们在遍历时实际上无法修改, 因为至少有两个 owner 存在.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org839b6d5" class="outline-3">
+<h3 id="org839b6d5"><span class="section-number-3">1.4</span> RefCell</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+RefCell 并不是指针类型, 和 owner 机制无关. 它只是一个 wrapper, 使非 mutable 的变量也可以在运行时被修改.
+</p>
+
+<p>
+因为 Rc 使得可以有多个 owner, 但这时却难以对数据进行修改, 通过 RefCell, 可以方便的修改数据.
+</p>
+
+<p>
+RefCell 通过 borrow() 和 borrow_mut() 实现了运行时的 `读写锁` 而非 Rc 那种编译时
+</p>
+
+<div class="org-src-container">
+<pre class="src src-rust"><span style="color: #859900;">use</span> <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #268bd2; font-weight: bold;">cell</span>::<span style="color: #b58900;">RefCell</span>;
+<span style="color: #859900;">use</span> <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #268bd2; font-weight: bold;">rc</span>::<span style="color: #b58900;">Rc</span>;
+
+<span style="color: #268bd2;">#[derive</span><span style="color: #757575;">(</span><span style="color: #268bd2;">Debug</span><span style="color: #757575;">)</span><span style="color: #268bd2;">]</span>
+<span style="color: #859900;">struct</span> <span style="color: #b58900;">ListNode</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2;">val</span>: <span style="color: #b58900;">i32</span><span style="color: #757575;">,</span>
+    <span style="color: #268bd2;">next</span>: <span style="color: #b58900;">Option</span>&lt;<span style="color: #b58900;">Rc</span>&lt;<span style="color: #b58900;">RefCell</span>&lt;<span style="color: #b58900;">ListNode</span>&gt;&gt;&gt;<span style="color: #757575;">,</span>
+<span style="color: #757575;">}</span>
+<span style="color: #859900;">impl</span> <span style="color: #b58900;">ListNode</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">new</span><span style="color: #757575;">(</span><span style="color: #268bd2;">val</span>: <span style="color: #b58900;">i32</span><span style="color: #757575;">)</span> -&gt; <span style="color: #757575;">(</span><span style="color: #b58900;">Rc</span>&lt;<span style="color: #b58900;">RefCell</span>&lt;<span style="color: #b58900;">ListNode</span>&gt;&gt;<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">return</span> <span style="color: #b58900;">Rc</span>::new<span style="color: #757575;">(</span><span style="color: #b58900;">RefCell</span>::new<span style="color: #757575;">(</span><span style="color: #b58900;">ListNode</span> <span style="color: #757575;">{</span>
+            <span style="color: #268bd2;">val</span>: val<span style="color: #757575;">,</span>
+            <span style="color: #268bd2;">next</span>: <span style="color: #b58900;">None</span><span style="color: #757575;">,</span>
+        <span style="color: #757575;">}))</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+<span style="color: #268bd2;">#[derive</span><span style="color: #757575;">(</span><span style="color: #268bd2;">Debug</span><span style="color: #757575;">)</span><span style="color: #268bd2;">]</span>
+<span style="color: #859900;">struct</span> <span style="color: #b58900;">LinkedList</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2;">root</span>: <span style="color: #b58900;">Option</span>&lt;<span style="color: #b58900;">Rc</span>&lt;<span style="color: #b58900;">RefCell</span>&lt;<span style="color: #b58900;">ListNode</span>&gt;&gt;&gt;<span style="color: #757575;">,</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">impl</span> <span style="color: #b58900;">LinkedList</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">new</span><span style="color: #757575;">()</span> -&gt; <span style="color: #b58900;">LinkedList</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">return</span> <span style="color: #b58900;">LinkedList</span> <span style="color: #757575;">{</span> <span style="color: #268bd2;">root</span>: <span style="color: #b58900;">None</span> <span style="color: #757575;">}</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">push_front</span><span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">mut</span> <span style="color: #859900;">self</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">node</span>: <span style="color: #b58900;">Rc</span>&lt;<span style="color: #b58900;">RefCell</span>&lt;<span style="color: #b58900;">ListNode</span>&gt;&gt;<span style="color: #757575;">)</span> -&gt; <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        node.borrow_mut<span style="color: #757575;">()</span>.next = <span style="color: #859900;">self</span>.root.clone<span style="color: #757575;">()</span>;
+        <span style="color: #859900;">self</span>.root = <span style="color: #b58900;">Some</span><span style="color: #757575;">(</span>node<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+
+    <span style="color: #859900;">fn</span> <span style="color: #268bd2;">push_back</span><span style="color: #757575;">(</span><span style="color: #839496; background-color: #002b36;">&amp;</span><span style="color: #859900;">mut</span> <span style="color: #859900;">self</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">node</span>: <span style="color: #b58900;">Rc</span>&lt;<span style="color: #b58900;">RefCell</span>&lt;<span style="color: #b58900;">ListNode</span>&gt;&gt;<span style="color: #757575;">)</span> -&gt; <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">let</span> <span style="color: #859900;">mut</span> <span style="color: #268bd2;">fake_root</span> = <span style="color: #b58900;">ListNode</span>::new<span style="color: #757575;">(</span>0<span style="color: #757575;">)</span>;
+        fake_root.borrow_mut<span style="color: #757575;">()</span>.next = <span style="color: #859900;">self</span>.root.clone<span style="color: #757575;">()</span>;
+
+        <span style="color: #859900;">let</span> <span style="color: #859900;">mut</span> <span style="color: #268bd2;">head</span> = fake_root.clone<span style="color: #757575;">()</span>;
+        <span style="color: #859900;">while</span> <span style="color: #859900;">let</span> <span style="color: #b58900;">Some</span><span style="color: #757575;">(</span>n<span style="color: #757575;">)</span> = head.clone<span style="color: #757575;">()</span>.borrow<span style="color: #757575;">()</span>.next.clone<span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+            head = n;
+        <span style="color: #757575;">}</span>
+        head.borrow_mut<span style="color: #757575;">()</span>.next = <span style="color: #b58900;">Some</span><span style="color: #757575;">(</span>node<span style="color: #757575;">)</span>;
+
+        <span style="color: #859900;">self</span>.root = fake_root.borrow<span style="color: #757575;">()</span>.next.clone<span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+
+<span style="color: #859900;">fn</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">let</span> <span style="color: #859900;">mut</span> <span style="color: #268bd2;">list</span> = <span style="color: #b58900;">LinkedList</span>::new<span style="color: #757575;">()</span>;
+
+    list.push_front<span style="color: #757575;">(</span><span style="color: #b58900;">ListNode</span>::new<span style="color: #757575;">(</span>1<span style="color: #757575;">))</span>;
+    list.push_back<span style="color: #757575;">(</span><span style="color: #b58900;">ListNode</span>::new<span style="color: #757575;">(</span>2<span style="color: #757575;">))</span>;
+
+    <span style="color: #839496;">println!</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"</span><span style="color: #2aa198; font-style: italic;">{:?}</span><span style="color: #2aa198;">"</span><span style="color: #757575;">,</span> list<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+LinkedList { root: Some(RefCell { value: ListNode { val: 1, next: Some(RefCell { value: ListNode { val: 2, next: None } }) } }) }
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

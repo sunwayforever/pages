@@ -1,0 +1,924 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TVM Graph Executor</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">TVM Graph Executor</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orge348008">1. <span class="done DONE">DONE</span> TVM Graph Executor</a>
+<ul>
+<li><a href="#org69a2518">1.1. Example</a></li>
+<li><a href="#orgbd3e893">1.2. Impl</a>
+<ul>
+<li><a href="#orgfa33989">1.2.1. init</a></li>
+<li><a href="#org23a0049">1.2.2. run</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orge348008" class="outline-2">
+<h2 id="orge348008"><span class="section-number-2">1</span> <span class="done DONE">DONE</span> TVM Graph Executor</h2>
+<div class="outline-text-2" id="text-1">
+<ul class="org-ul">
+<li>State "DONE"       from "TODO"       <span class="timestamp-wrapper"><span class="timestamp">[2021-09-24 五 18:51]</span></span></li>
+</ul>
+<p>
+对于一个 nn 来说, codegen 会编译成多个 function, function 之间的调用关系由
+relay.build 返回的 graph 来描述.
+</p>
+
+<p>
+graph executor 的作用是根据 graph 依次执行所有相关的 module
+</p>
+</div>
+
+<div id="outline-container-org69a2518" class="outline-3">
+<h3 id="org69a2518"><span class="section-number-3">1.1</span> Example</h3>
+<div class="outline-text-3" id="text-1-1">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+
+<span style="color: #268bd2;">a</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"a"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">),</span> dtype=<span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">b</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"b"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">),</span> dtype=<span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">c</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"c"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">),</span> dtype=<span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">out</span> = relay.add<span style="color: #757575;">(</span>a<span style="color: #757575;">,</span> b<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">out</span> = relay.add<span style="color: #757575;">(</span>out<span style="color: #757575;">,</span> c<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">func</span> = relay.Function<span style="color: #757575;">(</span>[a<span style="color: #757575;">,</span> b<span style="color: #757575;">,</span> c]<span style="color: #757575;">,</span> out<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span> = tvm.IRModule.from_expr<span style="color: #757575;">(</span>func<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+<span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>opt_level=0<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> target=<span style="color: #2aa198;">"c"</span><span style="color: #757575;">,</span> params=<span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>graph<span style="color: #757575;">)</span>
+
+<span style="color: #586e75;"># </span><span style="color: #586e75;">x, y, z = np.ones((1, 10)), np.ones((1, 10)), np.ones((1, 10))</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">intrp = relay.create_executor("graph", device=tvm.cpu(0), target="llvm")</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">op_res = intrp.evaluate(func)(x, y, z)</span>
+</pre>
+</div>
+
+<p>
+def @main(%a: Tensor[(1, 10), float32], %b: Tensor[(1, 10), float32], %c: Tensor[(1, 10), float32]) {
+  %0 = add(%a, %b);
+  add(%0, %c)
+}
+</p>
+
+<p>
+{
+  "nodes": [
+    {
+      "op": "null", 
+      "name": "a", 
+      "inputs": []
+    }, 
+    {
+      "op": "null", 
+      "name": "b", 
+      "inputs": []
+    }, 
+    {
+      "op": "null", 
+      "name": "c", 
+      "inputs": []
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "tvmgen_default_fused_add", 
+      "attrs": {
+        "num_inputs": "2", 
+        "num_outputs": "1", 
+        "hash": "8ec3c08331cd92b5", 
+        "flatten_data": "0", 
+        "func_name": "tvmgen_default_fused_add"
+      }, 
+      "inputs": [
+        [
+          0, 
+          0, 
+          0
+        ], 
+        [
+          1, 
+          0, 
+          0
+        ]
+      ]
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "tvmgen_default_fused_add1", 
+      "attrs": {
+        "num_inputs": "2", 
+        "num_outputs": "1", 
+        "hash": "8ec3c08331cd92b5", 
+        "flatten_data": "0", 
+        "func_name": "tvmgen_default_fused_add"
+      }, 
+      "inputs": [
+        [
+          3, 
+          0, 
+          0
+        ], 
+        [
+          2, 
+          0, 
+          0
+        ]
+      ]
+    }
+  ], 
+  "arg_nodes": [0, 1, 2], 
+  "heads": [
+    [
+      4, 
+      0, 
+      0
+    ]
+  ], 
+  "attrs": {
+    "dltype": [
+      "list_str", 
+      [
+        "float32", 
+        "float32", 
+        "float32", 
+        "float32", 
+        "float32"
+      ]
+    ], 
+    "shape": [
+      "list_shape", 
+      [
+        [1, 10], 
+        [1, 10], 
+        [1, 10], 
+        [1, 10], 
+        [1, 10]
+      ]
+    ], 
+    "storage_id": [
+      "list_int", 
+      [0, 1, 2, 3, 4]
+    ]
+  }, 
+  "node_row_ptr": [0, 1, 2, 3, 4, 5]
+}
+
+/tmp/ipykernel_218993/2066100685.py:16: DeprecationWarning: legacy graph executor behavior of producing json / lib / params will be removed in the next release. Please see documents of tvm.contrib.graph_executor.GraphModule for the  new recommended usage.
+  graph, lib, params = relay.build(mod, target="c", params=None)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+
+<span style="color: #268bd2;">x</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">y</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">z</span> = np.ones<span style="color: #757575;">((</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">)),</span> np.ones<span style="color: #757575;">((</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">)),</span> np.ones<span style="color: #757575;">((</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">))</span>
+<span style="color: #268bd2;">intrp</span> = relay.create_executor<span style="color: #757575;">(</span><span style="color: #2aa198;">"graph"</span><span style="color: #757575;">,</span> device=tvm.cpu<span style="color: #757575;">(</span>0<span style="color: #757575;">),</span> target=<span style="color: #2aa198;">"llvm"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">op_res</span> = intrp.evaluate<span style="color: #757575;">(</span>func<span style="color: #757575;">)(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">,</span> z<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>op_res<span style="color: #757575;">)</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgbd3e893" class="outline-3">
+<h3 id="orgbd3e893"><span class="section-number-3">1.2</span> Impl</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-orgfa33989" class="outline-4">
+<h4 id="orgfa33989"><span class="section-number-4">1.2.1</span> init</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #859900;">const</span> <span style="color: #268bd2; font-weight: bold;">runtime</span>::<span style="color: #b58900;">PackedFunc</span>* <span style="color: #268bd2;">graph_executor</span> = <span style="color: #268bd2; font-weight: bold;">tvm</span>::<span style="color: #268bd2; font-weight: bold;">runtime</span>::<span style="color: #268bd2; font-weight: bold;">Registry</span>::Get<span style="color: #757575;">(</span><span style="color: #2aa198;">"tvm.graph_executor.create"</span><span style="color: #757575;">)</span>;
+  <span style="color: #b58900;">Module</span> <span style="color: #268bd2;">GraphExecutorCreate</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">string</span>&amp; <span style="color: #268bd2;">sym_json</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #268bd2; font-weight: bold;">tvm</span>::<span style="color: #268bd2; font-weight: bold;">runtime</span>::<span style="color: #b58900;">Module</span>&amp; <span style="color: #268bd2;">m</span><span style="color: #757575;">,</span>
+                           <span style="color: #859900;">const</span> <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">vector</span>&lt;Device&gt;&amp; <span style="color: #268bd2;">devs</span><span style="color: #757575;">,</span>
+                           <span style="color: #859900;">const</span> <span style="color: #b58900;">PackedFunc</span> <span style="color: #268bd2;">lookup_linked_param_func</span><span style="color: #757575;">)</span>
+    <span style="color: #859900;">auto</span> <span style="color: #268bd2;">exec</span> = make_object&lt;GraphExecutor&gt;<span style="color: #757575;">()</span>;
+    exec-&gt;Init<span style="color: #757575;">(</span>sym_json<span style="color: #757575;">,</span> m<span style="color: #757575;">,</span> devs<span style="color: #757575;">,</span> lookup_linked_param_func<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> Module<span style="color: #757575;">(</span>exec<span style="color: #757575;">)</span>;
+
+<span style="color: #268bd2; font-weight: bold;">Init</span>:
+  <span style="color: #859900;">this</span>-&gt;SetupStorage<span style="color: #757575;">()</span>;
+  <span style="color: #859900;">this</span>-&gt;SetupOpExecs<span style="color: #757575;">()</span>;
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orgdf13dc0" class="outline-5">
+<h5 id="orgdf13dc0"><span class="section-number-5">1.2.1.1</span> graph format</h5>
+<div class="outline-text-5" id="text-1-2-1-1">
+<pre class="example" id="org7c5b938">
+# 一共有 5 个 node
+{
+  "nodes": [
+    {
+      "op": "null", 
+      "name": "a", 
+      "inputs": []
+    }, 
+    {
+      "op": "null", 
+      "name": "b", 
+      "inputs": []
+    }, 
+    {
+      "op": "null", 
+      "name": "c", 
+      "inputs": []
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "tvmgen_default_fused_add", 
+      "attrs": {
+        "num_outputs": "1", 
+        "num_inputs": "2", 
+        "flatten_data": "0", 
+        "func_name": "tvmgen_default_fused_add", 
+        "hash": "8ec3c08331cd92b5"
+      },
+      # 第一个 add 操作有两个 input:
+      # 第1个为 [0,0,0], 表示 node[0] 的 第 0 个输出, 即 a
+      # 第2个为 [1,0,0], 表示 node[1] 的 第 0 个输出, 即 b
+      # 这三个数的意义为 [node,index,version]
+      "inputs": [
+        [
+          0, 
+          0, 
+          0
+        ], 
+        [
+          1, 
+          0, 
+          0
+        ]
+      ]
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "tvmgen_default_fused_add1", 
+      "attrs": {
+        "num_outputs": "1", 
+        "num_inputs": "2", 
+        "flatten_data": "0", 
+        "func_name": "tvmgen_default_fused_add", 
+        "hash": "8ec3c08331cd92b5"
+      },
+      # 第二个 add 操作的两个 input:
+      # 第1个为 [3,0,0], 表示 node[3] 的 第 0 个输出, 即第一个 add 操作的唯一的输出
+      # 第2个为 [2,0,0], 表示 node[2] 的 第 0 个输出, 即 c
+      # 这三个数的意义为 [node,index,version]      
+      "inputs": [
+        [
+          3, 
+          0, 
+          0
+        ], 
+        [
+          2, 
+          0, 
+          0
+        ]
+      ]
+    }
+  ],
+  # arg_nodes 表示模型的输入 node, 即 a,b,c 三个 node 是输入
+  "arg_nodes": [0, 1, 2],
+  # heads 表示模型的输出, [4,0,0] 即 node[4] 的第 0 个输出, 即第二个 add 操作的输出
+  "heads": [
+    [
+      4, 
+      0, 
+      0
+    ]
+  ], 
+  "attrs": {
+    "dltype": [
+      "list_str", 
+      [
+        "float32", 
+        "float32", 
+        "float32", 
+        "float32", 
+        "float32"
+      ]
+    ],
+    #storage_id 是代表的是每个输出的 storage_id, 如果两个输出不会同时使用, 则它
+    #们可能使用相同的 storage_id 以节省内存, 由于 storage_id 在 graph 中已经计算
+    #好, SetupStorage 的代码会比较简单
+    "storage_id": [
+      "list_int", 
+      [0, 1, 2, 3, 4]
+    ], 
+    "shape": [
+      "list_shape", 
+      [
+        [1, 10], 
+        [1, 10], 
+        [1, 10], 
+        [1, 10], 
+        [1, 10]
+      ]
+    ]
+  },
+  # node_row_ptr 用来快速给每一个输出编码, 进而获得它对应的 storage, 例如
+  # 三个 node 输出个数分别为 1,3,1, 则 node_row_ptr 为
+  # [0, 1, 4, 5]
+  # 则 node[0][0] 为 0, node[2,0] = node_row_ptr[2]+0=4
+  # 相当于把二维的 [node,index] 转换为一维, 参考 entry_id 函数
+  "node_row_ptr": [0, 1, 2, 3, 4, 5]
+}
+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org9d37e88" class="outline-5">
+<h5 id="org9d37e88"><span class="section-number-5">1.2.1.2</span> <span class="done DONE">DONE</span> SetupStorage</h5>
+<div class="outline-text-5" id="text-1-2-1-2">
+<ul class="org-ul">
+<li>State "DONE"       from              <span class="timestamp-wrapper"><span class="timestamp">[2021-10-06 三 23:20]</span></span></li>
+</ul>
+<p>
+SetupStorage 的作用基本上是:
+</p>
+</div>
+
+<ol class="org-ol">
+<li><a id="org512bd59"></a>device_index<br />
+<div class="outline-text-6" id="text-1-2-1-2-1">
+<p>
+根据 graph 中的 attrs.device_index 确定 expr 使用的 device, 将来会在 device
+上分配 DLTensor
+</p>
+
+<p>
+其中 attris.device_index 是由 GraphExecutorCodegen 生成的 (根据 on_device
+annotation）
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #859900;">auto</span>&amp; <span style="color: #268bd2;">pit</span> : pool_entry<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">This for loop is very fast since there are usually only a couple of</span>
+    <span style="color: #586e75;">// </span><span style="color: #586e75;">devices available on the same hardware.</span>
+    <span style="color: #859900;">const</span> <span style="color: #859900;">auto</span>&amp; <span style="color: #268bd2;">cit</span> =
+        <span style="color: #268bd2; font-weight: bold;">std</span>::find_if<span style="color: #757575;">(</span>devices_.begin<span style="color: #757575;">(),</span> devices_.end<span style="color: #757575;">(),</span> [&amp;<span style="color: #268bd2;">pit</span>]<span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">Device</span>&amp; <span style="color: #268bd2;">d</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            <span style="color: #859900;">return</span> pit.device_type == <span style="color: #859900;">static_cast</span>&lt;<span style="color: #b58900;">int</span>&gt;<span style="color: #757575;">(</span>d.device_type<span style="color: #757575;">)</span>;
+        <span style="color: #757575;">})</span>;
+    <span style="color: #b58900;">Device</span> <span style="color: #268bd2;">dev</span> = cit == devices_.end<span style="color: #757575;">()</span> ? devices_[0] : *cit;
+
+    <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">vector</span>&lt;<span style="color: #b58900;">int64_t</span>&gt; <span style="color: #268bd2;">shape</span>;
+    shape.push_back<span style="color: #757575;">(</span><span style="color: #859900;">static_cast</span>&lt;<span style="color: #b58900;">int64_t</span>&gt;<span style="color: #757575;">(</span>pit.size + 3<span style="color: #757575;">)</span> / 4<span style="color: #757575;">)</span>;
+    storage_pool_.push_back<span style="color: #757575;">(</span>
+        <span style="color: #268bd2; font-weight: bold;">NDArray</span>::Empty<span style="color: #757575;">(</span>shape<span style="color: #757575;">,</span> DLDataType<span style="color: #757575;">{</span>kDLFloat<span style="color: #757575;">,</span> 32<span style="color: #757575;">,</span> 1<span style="color: #757575;">},</span> dev<span style="color: #757575;">))</span>;
+<span style="color: #757575;">}</span>
+
+<span style="color: #b58900;">NDArray</span> <span style="color: #268bd2; font-weight: bold;">NDArray</span>::<span style="color: #268bd2;">Empty</span><span style="color: #757575;">(</span>
+    <span style="color: #b58900;">ShapeTuple</span> <span style="color: #268bd2;">shape</span><span style="color: #757575;">,</span> <span style="color: #b58900;">DLDataType</span> <span style="color: #268bd2;">dtype</span><span style="color: #757575;">,</span> <span style="color: #b58900;">Device</span> <span style="color: #268bd2;">dev</span><span style="color: #757575;">,</span>
+    <span style="color: #b58900;">Optional</span>&lt;String&gt; <span style="color: #268bd2;">mem_scope</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">NDArray</span> <span style="color: #268bd2;">ret</span> = <span style="color: #268bd2; font-weight: bold;">Internal</span>::Create<span style="color: #757575;">(</span>shape<span style="color: #757575;">,</span> dtype<span style="color: #757575;">,</span> dev<span style="color: #757575;">)</span>;
+    ret.get_mutable<span style="color: #757575;">()</span>-&gt;dl_tensor.data =
+        <span style="color: #268bd2; font-weight: bold;">DeviceAPI</span>::Get<span style="color: #757575;">(</span>ret-&gt;device<span style="color: #757575;">)</span>
+            -&gt;AllocDataSpace<span style="color: #757575;">(</span>
+                ret-&gt;device<span style="color: #757575;">,</span> shape.size<span style="color: #757575;">(),</span> shape.data<span style="color: #757575;">(),</span> ret-&gt;dtype<span style="color: #757575;">,</span> mem_scope<span style="color: #757575;">)</span>;
+    <span style="color: #859900;">return</span> ret;
+<span style="color: #757575;">}</span>
+
+<span style="color: #586e75;">// </span><span style="color: #586e75;">opencl example</span>
+<span style="color: #b58900;">void</span>* <span style="color: #268bd2; font-weight: bold;">OpenCLWorkspace</span>::<span style="color: #268bd2;">AllocDataSpace</span><span style="color: #757575;">(</span>
+    <span style="color: #b58900;">Device</span> <span style="color: #268bd2;">dev</span><span style="color: #757575;">,</span> <span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">size</span><span style="color: #757575;">,</span> <span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">alignment</span><span style="color: #757575;">,</span> <span style="color: #b58900;">DLDataType</span> <span style="color: #268bd2;">type_hint</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">cl</span>::<span style="color: #b58900;">BufferDescriptor</span>* <span style="color: #268bd2;">desc</span> = <span style="color: #859900;">new</span> <span style="color: #268bd2; font-weight: bold;">cl</span>::<span style="color: #b58900;">BufferDescriptor</span>;
+    desc-&gt;buffer = clCreateBuffer<span style="color: #757575;">(</span>
+        <span style="color: #859900;">this</span>-&gt;context<span style="color: #757575;">,</span> CL_MEM_READ_WRITE<span style="color: #757575;">,</span> size<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">nullptr</span><span style="color: #757575;">,</span> &amp;err_code<span style="color: #757575;">)</span>;
+    desc-&gt;layout = <span style="color: #268bd2; font-weight: bold;">cl</span>::<span style="color: #268bd2; font-weight: bold;">BufferDescriptor</span>::<span style="color: #268bd2; font-weight: bold;">MemoryLayout</span>::kBuffer1D;
+    <span style="color: #859900;">return</span> desc;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org1c56e95"></a>storage_id<br />
+<div class="outline-text-6" id="text-1-2-1-2-2">
+<p>
+根据 graph 中的 attrs.storage_id 给每一个输出设置一个 DLTensor, 保存在
+data_entry_ 中
+</p>
+
+<p>
+attris.storage_id 也是在 GraphExecutorCodegen 生成的
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++">data_entry_.resize<span style="color: #757575;">(</span>num_node_entries<span style="color: #757575;">())</span>;
+data_alignment_.resize<span style="color: #757575;">(</span>num_node_entries<span style="color: #757575;">())</span>;
+<span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">i</span> = 0; i &lt; data_entry_.size<span style="color: #757575;">()</span>; ++i<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">storage_id</span> = attrs_.storage_id[i];
+    ICHECK_LT<span style="color: #757575;">(</span><span style="color: #859900;">static_cast</span>&lt;<span style="color: #b58900;">size_t</span>&gt;<span style="color: #757575;">(</span>storage_id<span style="color: #757575;">),</span> storage_pool_.size<span style="color: #757575;">())</span>;
+    data_entry_[i] = storage_pool_[storage_id].CreateView<span style="color: #757575;">(</span>attrs_.shape[i]<span style="color: #757575;">,</span> vtype[i]<span style="color: #757575;">)</span>;
+
+    <span style="color: #859900;">const</span> <span style="color: #b58900;">DLTensor</span>* <span style="color: #268bd2;">tmp</span> = data_entry_[i].<span style="color: #859900;">operator</span>-&gt;<span style="color: #757575;">()</span>;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+
+<ol class="org-ol">
+<li><a id="org20c559a"></a>storage_id example<br />
+<div class="outline-text-7" id="text-1-2-1-2-2-1">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+
+<span style="color: #268bd2;">a</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"a"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">),</span> dtype=<span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">b</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"b"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 10<span style="color: #757575;">),</span> dtype=<span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">out1</span> = relay.add<span style="color: #757575;">(</span>a<span style="color: #757575;">,</span> b<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">out2</span> = relay.add<span style="color: #757575;">(</span>out1<span style="color: #757575;">,</span> a<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">out</span> = relay.add<span style="color: #757575;">(</span>out2<span style="color: #757575;">,</span> b<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">func</span> = relay.Function<span style="color: #757575;">(</span>[a<span style="color: #757575;">,</span> b]<span style="color: #757575;">,</span> out<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span> = tvm.IRModule.from_expr<span style="color: #757575;">(</span>func<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>opt_level=0<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> target=<span style="color: #2aa198;">"c"</span><span style="color: #757575;">,</span> params=<span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>graph<span style="color: #757575;">)</span>
+
+</pre>
+</div>
+
+<p>
+{
+  "nodes": [
+    {
+      "op": "null", 
+      "name": "a", 
+      "inputs": []
+    }, 
+    {
+      "op": "null", 
+      "name": "b", 
+      "inputs": []
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "tvmgen_default_fused_add", 
+      "attrs": {
+        "num_outputs": "1", 
+        "num_inputs": "2", 
+        "flatten_data": "0", 
+        "func_name": "tvmgen_default_fused_add", 
+        "hash": "8ec3c08331cd92b5"
+      }, 
+      "inputs": [
+        [
+          0, 
+          0, 
+          0
+        ], 
+        [
+          1, 
+          0, 
+          0
+        ]
+      ]
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "tvmgen_default_fused_add1", 
+      "attrs": {
+        "num_outputs": "1", 
+        "num_inputs": "2", 
+        "flatten_data": "0", 
+        "func_name": "tvmgen_default_fused_add", 
+        "hash": "8ec3c08331cd92b5"
+      }, 
+      "inputs": [
+        [
+          2, 
+          0, 
+          0
+        ], 
+        [
+          0, 
+          0, 
+          0
+        ]
+      ]
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "tvmgen_default_fused_add2", 
+      "attrs": {
+        "num_outputs": "1", 
+        "num_inputs": "2", 
+        "flatten_data": "0", 
+        "func_name": "tvmgen_default_fused_add", 
+        "hash": "8ec3c08331cd92b5"
+      }, 
+      "inputs": [
+        [
+          3, 
+          0, 
+          0
+        ], 
+        [
+          1, 
+          0, 
+          0
+        ]
+      ]
+    }
+  ], 
+  "arg_nodes": [0, 1], 
+  "heads": [
+    [
+      4, 
+      0, 
+      0
+    ]
+  ], 
+  "attrs": {
+    "dltype": [
+      "list_str", 
+      [
+        "float32", 
+        "float32", 
+        "float32", 
+        "float32", 
+        "float32"
+      ]
+    ], 
+    "storage_id": [
+      "list_int", 
+      [0, 1, 2, 3, 2]
+    ], 
+    "shape": [
+      "list_shape", 
+      [
+        [1, 10], 
+        [1, 10], 
+        [1, 10], 
+        [1, 10], 
+        [1, 10]
+      ]
+    ]
+  }, 
+  "node_row_ptr": [0, 1, 2, 3, 4, 5]
+}
+</p>
+
+<p>
+storage_id 为 [0, 1, 2, 3, 2]，因为 output (即 [5,0,0]) 与 out1 (即 [2,0,0]) 使用会相同的 DLTensor
+</p>
+</div>
+</li>
+</ol>
+</li>
+</ol>
+</div>
+
+<div id="outline-container-org607986a" class="outline-5">
+<h5 id="org607986a"><span class="section-number-5">1.2.1.3</span> GraphExecutorCodegen</h5>
+<div class="outline-text-5" id="text-1-2-1-3">
+<p>
+SetupStorage 时需的 graph 信息，包括 device_index 和 storage_id, 都来自
+GraphExecutorCodegen, 具体的, 来自 StaticMemoryPlan
+</p>
+
+<p>
+例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-09-08 18:19</span>
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+<span style="color: #859900;">from</span> tvm.contrib <span style="color: #859900;">import</span> graph_executor
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">test_on_device</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">x</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"x"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 5<span style="color: #757575;">))</span>
+    <span style="color: #268bd2;">y</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"y"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 5<span style="color: #757575;">))</span>
+    <span style="color: #268bd2;">x_data</span> = np.random.rand<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 5<span style="color: #757575;">)</span>.astype<span style="color: #757575;">(</span><span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">y_data</span> = np.random.rand<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 5<span style="color: #757575;">)</span>.astype<span style="color: #757575;">(</span><span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">cpu_dev</span> = tvm.device<span style="color: #757575;">(</span><span style="color: #2aa198;">"cpu"</span><span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">opencl_dev</span> = tvm.device<span style="color: #757575;">(</span><span style="color: #2aa198;">"opencl"</span><span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">get_function</span><span style="color: #757575;">()</span>:
+        <span style="color: #268bd2;">add</span> = relay.add<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">_add</span> = relay.annotation.on_device<span style="color: #757575;">(</span>add<span style="color: #757575;">,</span> opencl_dev<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">log</span> = relay.log<span style="color: #757575;">(</span>_add<span style="color: #757575;">)</span>
+        <span style="color: #268bd2;">func</span> = relay.Function<span style="color: #757575;">(</span>[x<span style="color: #757575;">,</span> y]<span style="color: #757575;">,</span> log<span style="color: #757575;">)</span>
+        <span style="color: #859900;">return</span> func
+
+    <span style="color: #268bd2;">func</span> = get_function<span style="color: #757575;">()</span>
+    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>func<span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>opt_level=1<span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">lib</span> = relay.build<span style="color: #757575;">(</span>
+            func<span style="color: #757575;">,</span> <span style="color: #757575;">{</span><span style="color: #2aa198;">"cpu"</span>: <span style="color: #2aa198;">"llvm"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"opencl"</span>: <span style="color: #2aa198;">"opencl"</span><span style="color: #757575;">},</span> params=<span style="color: #757575;">{</span><span style="color: #2aa198;">"x"</span>: x_data<span style="color: #757575;">,</span> <span style="color: #2aa198;">"y"</span>: y_data<span style="color: #757575;">}</span>
+        <span style="color: #757575;">)</span>
+        <span style="color: #859900;">print</span><span style="color: #757575;">(</span>lib.graph_json<span style="color: #757575;">)</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">rt_mod = graph_executor.GraphModule(</span>
+        <span style="color: #586e75;">#     </span><span style="color: #586e75;">lib["default"](tvm.cpu(0), tvm.device("opencl"))</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">)</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">rt_mod.run()</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">tvm_res = rt_mod.get_output(0).numpy()</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">print(tvm_res)</span>
+
+
+<span style="color: #859900;">if</span> <span style="color: #839496;">__name__</span> == <span style="color: #2aa198;">"__main__"</span>:
+    test_on_device<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<p>
+fn (%x: Tensor[(1, 5), float32], %y: Tensor[(1, 5), float32]) {
+  %0 = add(%x, %y);
+  %1 = on_device(%0, device_type=4);
+  log(%1)
+}
+{
+  "nodes": [
+    {
+      "op": "null", 
+      "name": "p0", 
+      "inputs": []
+    }, 
+    {
+      "op": "null", 
+      "name": "p1", 
+      "inputs": []
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "tvmgen_default_fused_add", 
+      "attrs": {
+        "num_outputs": "1", 
+        "num_inputs": "2", 
+        "flatten_data": "0", 
+        "func_name": "tvmgen_default_fused_add", 
+        "hash": "77c3516efdd817bd"
+      }, 
+      "inputs": [
+        [
+          0, 
+          0, 
+          0
+        ], 
+        [
+          1, 
+          0, 
+          0
+        ]
+      ]
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "__copy", 
+      "attrs": {
+        "num_outputs": "1", 
+        "num_inputs": "1", 
+        "flatten_data": "0", 
+        "func_name": "__copy", 
+        "hash": "b78177ac726e601e"
+      }, 
+      "inputs": [
+        [
+          2, 
+          0, 
+          0
+        ]
+      ]
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "tvmgen_default_fused_log", 
+      "attrs": {
+        "num_outputs": "1", 
+        "num_inputs": "1", 
+        "flatten_data": "0", 
+        "func_name": "tvmgen_default_fused_log", 
+        "hash": "8a435bddfed54dab"
+      }, 
+      "inputs": [
+        [
+          3, 
+          0, 
+          0
+        ]
+      ]
+    }
+  ], 
+  "arg_nodes": [0, 1], 
+  "heads": [
+    [
+      4, 
+      0, 
+      0
+    ]
+  ], 
+  "attrs": {
+    "dltype": [
+      "list_str", 
+      [
+        "float32", 
+        "float32", 
+        "float32", 
+        "float32", 
+        "float32"
+      ]
+    ], 
+    "device_index": [
+      "list_int", 
+      [4, 4, 4, 1, 1]
+    ], 
+    "storage_id": [
+      "list_int", 
+      [0, 1, 2, 3, 4]
+    ], 
+    "shape": [
+      "list_shape", 
+      [
+        [1, 5], 
+        [1, 5], 
+        [1, 5], 
+        [1, 5], 
+        [1, 5]
+      ]
+    ]
+  }, 
+  "node_row_ptr": [0, 1, 2, 3, 4, 5]
+}
+</p>
+
+<p>
+device_index 为 [4,4,4,1,1], 意味着 node[2] (即 add) 的输出会被分配在 device 4
+(opencl) 上, 同时它的输入 (node[0],node[1], 即 x,y) 也需要分配在 opencl 上
+</p>
+
+<p>
+GraphExecutor 的 set_input 会负责最终调用 opencl 的 CopyDataFromTo 把输入复制到
+x, y
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgb20fd66" class="outline-5">
+<h5 id="orgb20fd66"><span class="section-number-5">1.2.1.4</span> SetupOpExecs</h5>
+<div class="outline-text-5" id="text-1-2-1-4">
+<p>
+SetupOpExecs 的作用有两个:
+</p>
+
+<ol class="org-ol">
+<li>找到所有 PackedFunc (通过 module-&gt;GetFunction)</li>
+<li>确定每个 PackedFunc 的参数和返回值对应的具体的 DLTensor (使用 SetupStorage 时分配的 data_entry_)</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #b58900;">void</span> <span style="color: #268bd2; font-weight: bold;">GraphExecutor</span>::<span style="color: #268bd2;">SetupOpExecs</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">unordered_set</span>&lt;<span style="color: #b58900;">uint32_t</span>&gt; <span style="color: #268bd2;">input_node_eids</span>;
+    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">i</span> = 0; i &lt; input_nodes_.size<span style="color: #757575;">()</span>; i++<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #b58900;">uint32_t</span> <span style="color: #268bd2;">nid</span> = input_nodes_[i];
+        input_node_eids.insert<span style="color: #757575;">(</span>entry_id<span style="color: #757575;">(</span>nid<span style="color: #757575;">,</span> 0<span style="color: #757575;">))</span>;
+    <span style="color: #757575;">}</span>
+
+    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">uint32_t</span> <span style="color: #268bd2;">nid</span> = 0; nid &lt; <span style="color: #859900;">this</span>-&gt;GetNumOfNodes<span style="color: #757575;">()</span>; ++nid<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+        <span style="color: #859900;">const</span> <span style="color: #859900;">auto</span>&amp; <span style="color: #268bd2;">inode</span> = nodes_[nid];
+        <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">vector</span>&lt;DLTensor&gt; <span style="color: #268bd2;">args</span>;
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36755;&#20837;&#21442;&#25968;</span>
+        <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #859900;">auto</span>&amp; <span style="color: #268bd2;">e</span> : inode.inputs<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            <span style="color: #b58900;">uint32_t</span> <span style="color: #268bd2;">eid</span> = <span style="color: #859900;">this</span>-&gt;entry_id<span style="color: #757575;">(</span>e<span style="color: #757575;">)</span>;
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20351;&#29992; data_entry_ &#20013;&#20998;&#37197;&#32473; eid &#30340; DLTensor, &#26377;&#21487;&#33021;&#19981;&#21516;&#30340; eid &#26368;&#32456;</span>
+            <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20250;&#20351;&#29992;&#30456;&#21516;&#30340; DLTensor, &#22240;&#20026;&#23427;&#20204;&#26377;&#30456;&#21516;&#30340; storage_id</span>
+            args.push_back<span style="color: #757575;">(</span>*<span style="color: #757575;">(</span>data_entry_[eid].<span style="color: #859900;">operator</span>-&gt;<span style="color: #757575;">()))</span>;
+        <span style="color: #757575;">}</span>
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36755;&#20986;</span>
+        <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">uint32_t</span> <span style="color: #268bd2;">index</span> = 0; index &lt; inode.param.num_outputs; ++index<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            <span style="color: #b58900;">uint32_t</span> <span style="color: #268bd2;">eid</span> = <span style="color: #859900;">this</span>-&gt;entry_id<span style="color: #757575;">(</span>nid<span style="color: #757575;">,</span> index<span style="color: #757575;">)</span>;
+            args.push_back<span style="color: #757575;">(</span>*<span style="color: #757575;">(</span>data_entry_[eid].<span style="color: #859900;">operator</span>-&gt;<span style="color: #757575;">()))</span>;
+        <span style="color: #757575;">}</span>
+
+        <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36755;&#20837;&#21644;&#36755;&#20986;&#30340; DLTensor &#37117;&#25171;&#21253;&#22312;&#21516;&#19968;&#20010; args &#20013;&#20570;&#20026; tvm op &#30340;&#21442;&#25968;</span>
+        <span style="color: #268bd2; font-weight: bold;">std</span>::tie<span style="color: #757575;">(</span>op_execs_[nid]<span style="color: #757575;">,</span> op_args<span style="color: #757575;">)</span> =
+            CreateTVMOp<span style="color: #757575;">(</span>inode.param<span style="color: #757575;">,</span> args<span style="color: #757575;">,</span> inode.inputs.size<span style="color: #757575;">())</span>;
+    <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org23a0049" class="outline-4">
+<h4 id="org23a0049"><span class="section-number-4">1.2.2</span> run</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<p>
+执行 GraphExecutor 的代码大约是这样:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #b58900;">PackedFunc</span> <span style="color: #268bd2;">set_input</span> = mod.GetFunction<span style="color: #757575;">(</span><span style="color: #2aa198;">"set_input"</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">false</span><span style="color: #757575;">)</span>;
+<span style="color: #b58900;">PackedFunc</span> <span style="color: #268bd2;">run</span> = mod.GetFunction<span style="color: #757575;">(</span><span style="color: #2aa198;">"run"</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">false</span><span style="color: #757575;">)</span>;
+<span style="color: #b58900;">PackedFunc</span> <span style="color: #268bd2;">get_output</span> = mod.GetFunction<span style="color: #757575;">(</span><span style="color: #2aa198;">"get_output"</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">false</span><span style="color: #757575;">)</span>;
+set_input<span style="color: #757575;">(</span><span style="color: #2aa198;">"A"</span><span style="color: #757575;">,</span> a_val<span style="color: #757575;">)</span>;
+set_input<span style="color: #757575;">(</span><span style="color: #2aa198;">"B"</span><span style="color: #757575;">,</span> b_val<span style="color: #757575;">)</span>;
+set_input<span style="color: #757575;">(</span><span style="color: #2aa198;">"C"</span><span style="color: #757575;">,</span> c_val<span style="color: #757575;">)</span>;
+run<span style="color: #757575;">()</span>;
+<span style="color: #268bd2; font-weight: bold;">tvm</span>::<span style="color: #268bd2; font-weight: bold;">runtime</span>::<span style="color: #b58900;">NDArray</span> <span style="color: #268bd2;">out</span> = get_output<span style="color: #757575;">(</span>0<span style="color: #757575;">)</span>;
+</pre>
+</div>
+
+<p>
+其中 "run" 的实现为:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span style="color: #b58900;">void</span> <span style="color: #268bd2; font-weight: bold;">GraphExecutor</span>::<span style="color: #268bd2;">Run</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
+  <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">i</span> = 0; i &lt; op_execs_.size<span style="color: #757575;">()</span>; ++i<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>op_execs_[i]<span style="color: #757575;">)</span> op_execs_[i]<span style="color: #757575;">()</span>;
+  <span style="color: #757575;">}</span>
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+而 op_execs_ 即各个 module 中针对 graph 中的 symbol 的具体的实现, 例如
+DNNLJSONRuntime 中的 tvmgen_default_dnnl_main_0
+</p>
+
+<p>
+由于各个 op_execs_ 的输入输出在上一步的 SetupOpExecs 时已经设置好了, 这时只负责执行即可, 不需要再考虑参数和返回值的问题.
+</p>
+
+<p>
+另外, 由于 op_execs_ 是线性执行的, 所以生成 graph 时需要保证是一个拓扑排序
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

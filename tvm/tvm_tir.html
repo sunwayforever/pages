@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TVM TIR</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">TVM TIR</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgeb6aa22">1. TVM TIR</a>
+<ul>
+<li><a href="#org08d13b5">1.1. ir_builder</a></li>
+<li><a href="#org035f20b">1.2. tir.call_extern</a></li>
+<li><a href="#org7c0f739">1.3. tir.call_packed</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgeb6aa22" class="outline-2">
+<h2 id="orgeb6aa22"><span class="section-number-2">1</span> TVM TIR</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org08d13b5" class="outline-3">
+<h3 id="org08d13b5"><span class="section-number-3">1.1</span> ir_builder</h3>
+<div class="outline-text-3" id="text-1-1">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-09-08 18:19</span>
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> te
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+
+<span style="color: #268bd2;">N</span> = 10
+
+<span style="color: #268bd2;">dtype</span> = <span style="color: #2aa198;">"float32"</span>
+<span style="color: #268bd2;">A</span> = te.placeholder<span style="color: #757575;">((</span>N<span style="color: #757575;">,),</span> name=<span style="color: #2aa198;">"A"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">B</span> = te.placeholder<span style="color: #757575;">((</span>N<span style="color: #757575;">,),</span> name=<span style="color: #2aa198;">"B"</span><span style="color: #757575;">)</span>
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">test_ir_builder</span><span style="color: #757575;">(</span>A<span style="color: #757575;">,</span> B<span style="color: #757575;">,</span> C<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">ib</span> = tvm.tir.ir_builder.create<span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">Aptr</span> = ib.buffer_ptr<span style="color: #757575;">(</span>A<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">Bptr</span> = ib.buffer_ptr<span style="color: #757575;">(</span>B<span style="color: #757575;">)</span>
+    <span style="color: #268bd2;">Cptr</span> = ib.buffer_ptr<span style="color: #757575;">(</span>C<span style="color: #757575;">)</span>
+    <span style="color: #859900;">with</span> ib.for_range<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> N<span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"k"</span><span style="color: #757575;">)</span> <span style="color: #859900;">as</span> i:
+        <span style="color: #268bd2;">Cptr</span>[i] = Aptr[i] + Bptr[i]
+    <span style="color: #859900;">return</span> ib.get<span style="color: #757575;">()</span>
+
+
+<span style="color: #268bd2;">C</span> = te.extern<span style="color: #757575;">(</span>
+    A.shape<span style="color: #757575;">,</span>
+    [A<span style="color: #757575;">,</span> B]<span style="color: #757575;">,</span>
+    <span style="color: #859900;">lambda</span> ins<span style="color: #757575;">,</span> outs: test_ir_builder<span style="color: #757575;">(</span>ins[0]<span style="color: #757575;">,</span> ins[1]<span style="color: #757575;">,</span> outs[0]<span style="color: #757575;">),</span>
+    name=<span style="color: #2aa198;">"add"</span><span style="color: #757575;">,</span>
+    dtype=dtype<span style="color: #757575;">,</span>
+<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">s</span> = te.create_schedule<span style="color: #757575;">(</span>C.op<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">fadd</span> = tvm.build<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B<span style="color: #757575;">,</span> C]<span style="color: #757575;">,</span> <span style="color: #2aa198;">"llvm"</span><span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">dev</span> = tvm.cpu<span style="color: #757575;">(</span>0<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">a</span> = tvm.nd.array<span style="color: #757575;">(</span>np.ones<span style="color: #757575;">(</span>N<span style="color: #757575;">)</span>.astype<span style="color: #757575;">(</span>A.dtype<span style="color: #757575;">),</span> dev<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">b</span> = tvm.nd.array<span style="color: #757575;">(</span>np.ones<span style="color: #757575;">(</span>N<span style="color: #757575;">)</span>.astype<span style="color: #757575;">(</span>B.dtype<span style="color: #757575;">),</span> dev<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">c</span> = tvm.nd.array<span style="color: #757575;">(</span>np.zeros<span style="color: #757575;">(</span>N<span style="color: #757575;">,</span> dtype=C.dtype<span style="color: #757575;">),</span> dev<span style="color: #757575;">)</span>
+fadd<span style="color: #757575;">(</span>a<span style="color: #757575;">,</span> b<span style="color: #757575;">,</span> c<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>a<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>b<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>c<span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+[1. 1. 1. 1. 1. 1. 1. 1. 1. 1.]
+[1. 1. 1. 1. 1. 1. 1. 1. 1. 1.]
+[2. 2. 2. 2. 2. 2. 2. 2. 2. 2.]
+</p>
+</div>
+</div>
+
+
+<div id="outline-container-org035f20b" class="outline-3">
+<h3 id="org035f20b"><span class="section-number-3">1.2</span> tir.call_extern</h3>
+<div class="outline-text-3" id="text-1-2">
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> te
+<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">test_ir_builder</span><span style="color: #757575;">(</span>C<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">ib</span> = tvm.tir.ir_builder.create<span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">Cptr</span> = ib.buffer_ptr<span style="color: #757575;">(</span>C<span style="color: #757575;">)</span>
+    <span style="color: #859900;">with</span> ib.for_range<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> 10<span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"i"</span><span style="color: #757575;">)</span> <span style="color: #859900;">as</span> i:
+        <span style="color: #859900;">with</span> ib.for_range<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> 10<span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"j"</span><span style="color: #757575;">)</span> <span style="color: #859900;">as</span> j:
+            <span style="color: #268bd2;">Cptr</span>[i * 10 + j] = tvm.tir.call_extern<span style="color: #757575;">(</span><span style="color: #2aa198;">"int32"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"get_value"</span><span style="color: #757575;">,</span> i * 3 + j * 1<span style="color: #757575;">)</span>
+    <span style="color: #859900;">return</span> ib.get<span style="color: #757575;">()</span>
+
+
+<span style="color: #268bd2;">C</span> = te.extern<span style="color: #757575;">(</span>
+    <span style="color: #757575;">(</span>100<span style="color: #757575;">,),</span>
+    []<span style="color: #757575;">,</span>
+    <span style="color: #859900;">lambda</span> ins<span style="color: #757575;">,</span> outs: test_ir_builder<span style="color: #757575;">(</span>outs[0]<span style="color: #757575;">),</span>
+    name=<span style="color: #2aa198;">"test"</span><span style="color: #757575;">,</span>
+    dtype=<span style="color: #2aa198;">"int32"</span><span style="color: #757575;">,</span>
+<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">s</span> = te.create_schedule<span style="color: #757575;">(</span>C.op<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">fadd</span> = tvm.build<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [C]<span style="color: #757575;">,</span> <span style="color: #2aa198;">"c"</span><span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>fadd.get_source<span style="color: #757575;">())</span>
+</pre>
+</div>
+
+<p>
+// tvm target: c -keys=cpu -link-params=0
+#define TVM_EXPORTS
+#include "tvm/runtime/c_runtime_api.h"
+#include "tvm/runtime/c_backend_api.h"
+#include &lt;math.h&gt;
+#ifdef __cplusplus
+extern "C"
+#endif
+TVM_DLL int32_t default_function(void* args, void* arg_type_ids, int32_t num_args, void* out_ret_value, void* out_ret_tcode, void* resource_handle) {
+  void* arg0 = (((TVMValue*)args)[0].v_handle);
+  int32_t arg0_code = ((int32_t*)arg_type_ids)[(0)];
+  void* test = (((DLTensor*)arg0)[0].data);
+  void* arg0_shape = (((DLTensor*)arg0)[0].shape);
+  void* arg0_strides = (((DLTensor*)arg0)[0].strides);
+  int32_t dev_id = (((DLTensor*)arg0)[0].device.device_id);
+  if (!(arg0_strides == NULL)) {
+  }
+  for (int32_t i = 0; i &lt; 10; ++i) {
+    for (int32_t j = 0; j &lt; 10; ++j) {
+      ((int32_t*)test)[(((i * 10) + j))] = get_value(((i * 3) + j));
+    }
+  }
+  return 0;
+}
+</p>
+
+<p>
+// CodegenC: NOTE: Auto-generated entry function
+#ifdef __cplusplus
+extern "C"
+#endif
+TVM_DLL int32_t __tvm_main__(void* args, int* arg_type_ids, int num_args, void* out_ret_value, int* out_ret_tcode, void* resource_handle) {
+  return default_function(args, arg_type_ids, num_args, out_ret_value, out_ret_tcode, resource_handle);
+}
+</p>
+</div>
+</div>
+
+<div id="outline-container-org7c0f739" class="outline-3">
+<h3 id="org7c0f739"><span class="section-number-3">1.3</span> tir.call_packed</h3>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

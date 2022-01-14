@@ -1,0 +1,392 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:04 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>正则化与过拟合</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">正则化与过拟合</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org6cf5f6e">1. 正则化与过拟合</a>
+<ul>
+<li><a href="#orgfa1803c">1.1. 正则化的直观理解</a></li>
+<li><a href="#org9c53847">1.2. 增加样本</a></li>
+<li><a href="#orgf4be304">1.3. 简化网络</a></li>
+<li><a href="#org25f9ec3">1.4. L2 和 L1 正则化</a>
+<ul>
+<li><a href="#org41edaed">1.4.1. 无正则化</a></li>
+<li><a href="#orgf32c386">1.4.2. L2 正则化</a></li>
+<li><a href="#org9f410ea">1.4.3. L1 正则化</a></li>
+<li><a href="#org185d1d6">1.4.4. 另一种解释</a></li>
+</ul>
+</li>
+<li><a href="#orgdccd31b">1.5. Dropout</a></li>
+<li><a href="#org99b0de2">1.6. Batch Normalization</a></li>
+<li><a href="#org786d634">1.7. pytorch 中使用正则化</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org6cf5f6e" class="outline-2">
+<h2 id="org6cf5f6e"><span class="section-number-2">1</span> 正则化与过拟合</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-orgfa1803c" class="outline-3">
+<h3 id="orgfa1803c"><span class="section-number-3">1.1</span> 正则化的直观理解</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+以 L2 正则化为例, 假设加上损失函数之前:
+</p>
+
+<ul class="org-ul">
+<li>\(loss=C0\)</li>
+
+<li>\(\frac{\partial}{\partial{w_i}}loss= d0\)</li>
+</ul>
+
+<p>
+加上 L2 正则化后:
+</p>
+
+<ul class="org-ul">
+<li>\(loss=C0+\frac{\alpha}{2}\sum{w^2}\)</li>
+
+<li>\(\frac{\partial}{\partial{w_i}}loss= d0+\alpha w_i\)</li>
+</ul>
+
+
+<ol class="org-ol">
+<li>正则化后, 由损失函数的格式可知, w 会变得偏小</li>
+<li>w 变小, 会导致拟合曲线更加平滑. 因为在拟合曲线中, w 是 x 的系数, w 偏小即曲线的斜率会普遍变小, 从而更平滑</li>
+<li>从 svm 的角度来看, L2 正则化项相当于一个约束, 要求 \(||w||\) 为某个值</li>
+<li>w 变小, 导致样本中的少量噪音并不会使损失函数有很大的变化, 从而减小训练时噪音的影响</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org9c53847" class="outline-3">
+<h3 id="org9c53847"><span class="section-number-3">1.2</span> 增加样本</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+正则化是为了解决 overfitting 问题. 模型中的变量与样本的比值越大, 越容易发生
+overfitting. 所以在不减少模型中变量的数目的前提下, 增加样本可以减轻 overfitting
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf4be304" class="outline-3">
+<h3 id="orgf4be304"><span class="section-number-3">1.3</span> 简化网络</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+
+</p>
+<ol class="org-ol">
+<li>减少 ANN hidden layer 的个数</li>
+<li>减少神经元的个数</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org25f9ec3" class="outline-3">
+<h3 id="org25f9ec3"><span class="section-number-3">1.4</span> L2 和 L1 正则化</h3>
+<div class="outline-text-3" id="text-1-4">
+</div>
+<div id="outline-container-org41edaed" class="outline-4">
+<h4 id="org41edaed"><span class="section-number-4">1.4.1</span> 无正则化</h4>
+<div class="outline-text-4" id="text-1-4-1">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<span style="color: #859900;">import</span> matplotlib.pyplot <span style="color: #859900;">as</span> plt
+<span style="color: #859900;">from</span> sklearn.datasets <span style="color: #859900;">import</span> make_moons
+<span style="color: #859900;">from</span> matplotlib.colors <span style="color: #859900;">import</span> ListedColormap
+<span style="color: #859900;">from</span> torch.utils.data <span style="color: #859900;">import</span> Dataset<span style="color: #757575;">,</span> DataLoader
+<span style="color: #859900;">import</span> torch
+
+<span style="color: #268bd2;">model</span> = torch.nn.Sequential<span style="color: #757575;">(</span>
+    torch.nn.Linear<span style="color: #757575;">(</span>2<span style="color: #757575;">,</span> 50<span style="color: #757575;">),</span> torch.nn.ReLU<span style="color: #757575;">(),</span> torch.nn.Linear<span style="color: #757575;">(</span>50<span style="color: #757575;">,</span> 1<span style="color: #757575;">),</span>
+    torch.nn.Sigmoid<span style="color: #757575;">())</span>
+
+
+<span style="color: #859900;">class</span> <span style="color: #b58900;">MoonDataset</span><span style="color: #757575;">(</span>Dataset<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__init__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span>:
+        <span style="color: #268bd2;">X</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">Y</span> = make_moons<span style="color: #757575;">(</span>n_samples=1000<span style="color: #757575;">,</span> noise=0.2<span style="color: #757575;">)</span>
+        <span style="color: #859900;">self</span>.X = torch.from_numpy<span style="color: #757575;">(</span>X<span style="color: #757575;">)</span>.<span style="color: #839496;">float</span><span style="color: #757575;">()</span>
+        <span style="color: #859900;">self</span>.Y = torch.from_numpy<span style="color: #757575;">(</span>Y<span style="color: #757575;">)</span>.<span style="color: #839496;">float</span><span style="color: #757575;">()</span>.view<span style="color: #757575;">(</span>-1<span style="color: #757575;">,</span> 1<span style="color: #757575;">)</span>
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__getitem__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">,</span> index<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">return</span> <span style="color: #859900;">self</span>.X[index]<span style="color: #757575;">,</span> <span style="color: #859900;">self</span>.Y[index]
+
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">__len__</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span><span style="color: #757575;">)</span>:
+        <span style="color: #859900;">return</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span><span style="color: #859900;">self</span>.X<span style="color: #757575;">)</span>
+
+
+<span style="color: #268bd2;">dataset</span> = MoonDataset<span style="color: #757575;">()</span>
+<span style="color: #268bd2;">loader</span> = DataLoader<span style="color: #757575;">(</span>dataset<span style="color: #757575;">,</span> batch_size=100<span style="color: #757575;">)</span>
+
+<span style="color: #268bd2;">criterion</span> = torch.nn.BCELoss<span style="color: #757575;">()</span>
+
+<span style="color: #268bd2;">optimizer</span> = torch.optim.Adam<span style="color: #757575;">(</span>model.parameters<span style="color: #757575;">())</span>
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">add_regularization</span><span style="color: #757575;">(</span>loss<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">return</span> loss
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">train</span><span style="color: #757575;">()</span>:
+    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>1000<span style="color: #757575;">)</span>:
+        <span style="color: #859900;">for</span> x<span style="color: #757575;">,</span> y <span style="color: #859900;">in</span> loader:
+            <span style="color: #268bd2;">loss</span> = criterion<span style="color: #757575;">(</span>model<span style="color: #757575;">(</span>x<span style="color: #757575;">),</span> y<span style="color: #757575;">)</span>
+            <span style="color: #268bd2;">loss</span> = add_regularization<span style="color: #757575;">(</span>loss<span style="color: #757575;">)</span>
+            optimizer.zero_grad<span style="color: #757575;">()</span>
+            loss.backward<span style="color: #757575;">()</span>
+            optimizer.step<span style="color: #757575;">()</span>
+
+<span style="color: #859900;">def</span> <span style="color: #268bd2;">visualize</span><span style="color: #757575;">()</span>:
+    <span style="color: #268bd2;">cm</span> = ListedColormap<span style="color: #757575;">(</span>[<span style="color: #2aa198;">'#FF0000'</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">'#0000FF'</span>]<span style="color: #757575;">)</span>
+
+    plt.subplot<span style="color: #757575;">(</span>121<span style="color: #757575;">)</span>
+    plt.scatter<span style="color: #757575;">(</span>x=dataset.X[:<span style="color: #757575;">,</span> 0]<span style="color: #757575;">,</span> y=dataset.X[:<span style="color: #757575;">,</span> 1]<span style="color: #757575;">,</span> c=dataset.Y[:<span style="color: #757575;">,</span> 0]<span style="color: #757575;">,</span> cmap=cm<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">xx</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">yy</span> = np.meshgrid<span style="color: #757575;">(</span>np.arange<span style="color: #757575;">(</span>-4<span style="color: #757575;">,</span> 4<span style="color: #757575;">,</span> 0.02<span style="color: #757575;">),</span> np.arange<span style="color: #757575;">(</span>-4<span style="color: #757575;">,</span> 4<span style="color: #757575;">,</span> 0.02<span style="color: #757575;">))</span>
+    <span style="color: #268bd2;">X</span> = np.c_[xx.ravel<span style="color: #757575;">(),</span> yy.ravel<span style="color: #757575;">()</span>]
+
+    <span style="color: #268bd2;">y_hat</span> = model<span style="color: #757575;">(</span>torch.from_numpy<span style="color: #757575;">(</span>X<span style="color: #757575;">)</span>.<span style="color: #839496;">float</span><span style="color: #757575;">())</span>.detach<span style="color: #757575;">()</span>.numpy<span style="color: #757575;">()</span>
+    <span style="color: #268bd2;">y_hat</span> = <span style="color: #757575;">(</span>y_hat &gt; 0.5<span style="color: #757575;">)</span>[:<span style="color: #757575;">,</span> 0]
+    <span style="color: #268bd2;">y_hat</span> = y_hat.reshape<span style="color: #757575;">(</span>xx.shape<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">cm</span> = ListedColormap<span style="color: #757575;">(</span>[<span style="color: #2aa198;">'#FF0000'</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">'#0000FF'</span>]<span style="color: #757575;">)</span>
+    plt.contour<span style="color: #757575;">(</span>xx<span style="color: #757575;">,</span> yy<span style="color: #757575;">,</span> y_hat<span style="color: #757575;">,</span> cmap=cm<span style="color: #757575;">)</span>
+
+    <span style="color: #268bd2;">x</span> = <span style="color: #839496;">next</span><span style="color: #757575;">(</span>model.parameters<span style="color: #757575;">())</span>.view<span style="color: #757575;">(</span>-1<span style="color: #757575;">,</span> 1<span style="color: #757575;">)</span>
+    plt.subplot<span style="color: #757575;">(</span>122<span style="color: #757575;">)</span>
+    plt.hist<span style="color: #757575;">(</span>x.detach<span style="color: #757575;">()</span>.numpy<span style="color: #757575;">(),</span> bins=50<span style="color: #757575;">)</span>
+    plt.show<span style="color: #757575;">()</span>
+
+    <span style="color: #859900;">return</span> <span style="color: #839496;">sum</span><span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>
+
+train<span style="color: #757575;">()</span>
+visualize<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<pre class="example">
+tensor([-7.9089])
+</pre>
+
+
+<div id="orgef4c468" class="figure">
+<p><img src="../extra/no_regularization.png" alt="no_regularization.png" />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgf32c386" class="outline-4">
+<h4 id="orgf32c386"><span class="section-number-4">1.4.2</span> L2 正则化</h4>
+<div class="outline-text-4" id="text-1-4-2">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">def</span> <span style="color: #268bd2;">add_regularization</span><span style="color: #757575;">(</span>loss<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">for</span> name<span style="color: #757575;">,</span> param <span style="color: #859900;">in</span> model.named_parameters<span style="color: #757575;">()</span>:
+        <span style="color: #859900;">if</span> <span style="color: #2aa198;">'bias'</span> <span style="color: #859900;">not</span> <span style="color: #859900;">in</span> name:
+            <span style="color: #268bd2;">loss</span> = loss + 0.5 * <span style="color: #757575;">(</span>0.001 * torch.<span style="color: #839496;">sum</span><span style="color: #757575;">(</span>torch.<span style="color: #839496;">pow</span><span style="color: #757575;">(</span>param<span style="color: #757575;">,</span> 2<span style="color: #757575;">)))</span>
+    <span style="color: #859900;">return</span> loss
+
+train<span style="color: #757575;">()</span>
+visualize<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<pre class="example">
+tensor([-5.5809])
+</pre>
+
+
+<div id="org781c6ee" class="figure">
+<p><img src="../extra/l2_regularization.png" alt="l2_regularization.png" />
+</p>
+</div>
+
+<p>
+可以看到 L2 正则化使得 w 的值变得较小
+</p>
+</div>
+</div>
+
+<div id="outline-container-org9f410ea" class="outline-4">
+<h4 id="org9f410ea"><span class="section-number-4">1.4.3</span> L1 正则化</h4>
+<div class="outline-text-4" id="text-1-4-3">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #859900;">def</span> <span style="color: #268bd2;">add_regularization</span><span style="color: #757575;">(</span>loss<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">for</span> name<span style="color: #757575;">,</span> param <span style="color: #859900;">in</span> model.named_parameters<span style="color: #757575;">()</span>:
+        <span style="color: #859900;">if</span> <span style="color: #2aa198;">'bias'</span> <span style="color: #859900;">not</span> <span style="color: #859900;">in</span> name:
+            <span style="color: #268bd2;">loss</span> = loss + <span style="color: #757575;">(</span>0.001 * torch.<span style="color: #839496;">sum</span><span style="color: #757575;">(</span>torch.<span style="color: #839496;">abs</span><span style="color: #757575;">(</span>param<span style="color: #757575;">)))</span>
+    <span style="color: #859900;">return</span> loss
+
+train<span style="color: #757575;">()</span>
+visualize<span style="color: #757575;">()</span>
+</pre>
+</div>
+
+<pre class="example">
+tensor([-7.9170])
+</pre>
+
+
+<div id="org093d743" class="figure">
+<p><img src="../extra/l1_regularization.png" alt="l1_regularization.png" />
+</p>
+</div>
+
+<p>
+L1 正则化:
+</p>
+
+<ul class="org-ul">
+<li>\(loss=C0+\frac{\alpha}{m}\sum{abs(w)}\)</li>
+
+<li><p>
+\(\frac{\partial}{\partial{w_i}}loss= d0+\frac{\alpha}{m}*sgn(w_i)\)
+</p>
+
+<p>
+L1 正则化与 L2 相比, 对 w 的修正是一个定值, 而不像 L2 那样是一个与 w 成比例的值. 这就导致当 w 较小时, L1 修正的范围会比 L2 大, 导致 w 容易减到 0 附近. 当 w
+较大时, L1 修正的范围比 L2 小, 导致 w 较大.
+</p>
+
+<p>
+反映到上面的直方图中, 许多值在零附近, 但值的范围与无正则化时类似.
+</p>
+
+<p>
+所以 L1 会使得 w 比较稀疏, 适合做特征选择 (选择较大的 w 对应的特征)
+</p></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org185d1d6" class="outline-4">
+<h4 id="org185d1d6"><span class="section-number-4">1.4.4</span> 另一种解释</h4>
+<div class="outline-text-4" id="text-1-4-4">
+<p>
+从 SVM 的角度来看, 正则化项可以看作是原优化问题的不等式约束, 例如对于 L2 来说,
+即是 \(\sum{w_i^2} <= C\)
+</p>
+
+<p>
+假设 w 为二维, 而 L2 是把 w 约束在一个圆内, 而 L1 是把 w 约束在一个菱形中.
+</p>
+
+
+<div id="orgee78d60" class="figure">
+<p><img src="../extra/l1_l2_regularization.png" alt="l1_l2_regularization.png" />
+</p>
+</div>
+
+<p>
+可以看到 L1 优化时非常容易取得顶点位置, 导致部分权重为 0
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgdccd31b" class="outline-3">
+<h3 id="orgdccd31b"><span class="section-number-3">1.5</span> Dropout</h3>
+</div>
+
+<div id="outline-container-org99b0de2" class="outline-3">
+<h3 id="org99b0de2"><span class="section-number-3">1.6</span> Batch Normalization</h3>
+</div>
+
+<div id="outline-container-org786d634" class="outline-3">
+<h3 id="org786d634"><span class="section-number-3">1.7</span> pytorch 中使用正则化</h3>
+<div class="outline-text-3" id="text-1-7">
+<p>
+pytorch 通过 optim 的 weight_decay 实现 L2 正则化, 而不是 把 L2 加到 loss 上再进行 backward.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">class</span> <span style="color: #b58900;">SGD</span><span style="color: #757575;">(</span>Optimizer<span style="color: #757575;">)</span>:
+    <span style="color: #859900;">def</span> <span style="color: #268bd2;">step</span><span style="color: #757575;">()</span>:
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">...</span>
+        <span style="color: #859900;">for</span> p <span style="color: #859900;">in</span> group[<span style="color: #2aa198;">'params'</span>]:
+            <span style="color: #268bd2;">d_p</span> = p.grad.data
+            <span style="color: #859900;">if</span> weight_decay != 0:
+                <span style="color: #586e75;"># </span><span style="color: #586e75;">add_ &#20250;&#25226; weight_decay*p.data &#21152;&#21040; p.grad.data &#19978;</span>
+                d_p.add_<span style="color: #757575;">(</span>weight_decay<span style="color: #757575;">,</span> p.data<span style="color: #757575;">)</span>
+        <span style="color: #586e75;"># </span><span style="color: #586e75;">...</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

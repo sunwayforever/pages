@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 11:55 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Coredump Format</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Coredump Format</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org1eda1a4">1. Coredump Format</a>
+<ul>
+<li><a href="#org19a9432">1.1. 格式</a></li>
+<li><a href="#orgb23afef">1.2. note</a>
+<ul>
+<li><a href="#orge054f10">1.2.1. NT_PRSTATUS</a></li>
+<li><a href="#orgefd84d9">1.2.2. NT_PRPSINFO</a></li>
+<li><a href="#org94a87e8">1.2.3. NT_AUXV</a></li>
+<li><a href="#org2298da6">1.2.4. NT_FILE</a></li>
+</ul>
+</li>
+<li><a href="#orgdf4df7e">1.3. 参考</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org1eda1a4" class="outline-2">
+<h2 id="org1eda1a4"><span class="section-number-2">1</span> Coredump Format</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+coredump 是一个 elf 文件, 但它并不包含任何 section, 只包含了几个
+segment, 用来保存寄存器, vma 等信息.
+</p>
+</div>
+
+<div id="outline-container-org19a9432" class="outline-3">
+<h3 id="org19a9432"><span class="section-number-3">1.1</span> 格式</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+它的格式大约是:
+</p>
+<pre class="example" id="org0b56ebb">
+Ehdr
+  struct Elf32_Ehdr {
+    unsigned char e_ident[EI_NIDENT]; // ELF magic
+    Elf32_Half	e_type;  // ET_CORE
+    Elf32_Half	e_machine;  // EM_ARM ...
+    Elf32_Word	e_version;
+    Elf32_Addr	e_entry; // elf entry, coredump 不包含该信息, 所以为 0
+    Elf32_Off	e_phoff; // 后面 program header 相对于文件的 offset,
+                         // 一般来说 program header 紧接在 elf header, 包含多个 program header entry, 所以它的值一般为 sizeof(Elf32_Ehdr)
+    Elf32_Off	e_shoff; // coredump 不包含 segment, 所以这里为 0
+    Elf32_Word	e_flags;
+    Elf32_Half	e_ehsize; // elf header 的大小, 一般为 sizoef(ELf32_Ehdr)
+    Elf32_Half	e_phentsize; // 一个 program header entry 的大小, 一般为 sizeof(Elf32_Phdr)
+    Elf32_Half	e_phnum;   // 包含多少个 program header entry (即包含多少个 segment)
+    Elf32_Half	e_shentsize; // section header 的大小, coredump 中为 0
+    Elf32_Half	e_shnum;
+    Elf32_Half	e_shstrndx;
+  }
+------------------------------
+Phdr
+  // 第一个 program header entry, 一般类型为 PT_NOTE
+  typedef struct {
+    Elf32_Word	p_type;        // 对应的 segment 的类型, coredump 中一般包含一个 PT_NOTE 类型的 segment 和 N 个 PT_LOAD 类型的 segment
+                               // 其中 PT_NOTE segment 用来保存 note 信息 (寄存器, proc 信息, mapping 信息), PT_LOAD 用来 dump vma
+    Elf32_Off	p_offset;      // 对应的 segment 相对于文件的 offset, 这个 offset 在 phdr 之后, -------------------------------------------------------------+
+                               // 在生成 coredump 时, 对 p_offset 的处理是比较麻烦的地方,                                                                    |
+                               // 在计算某个 phdr 的 offset 时, 需要知道前面所有的 segment 的 p_filesz, 以确定它的 offset                                    |
+    Elf32_Addr	p_vaddr;       // 对于 PT_LOAD 类型的 segment, p_vaddr 和 p_memsz 表示 vma 在内存中被映射的位置, PT_NOTE 类型的 segment 没有这个信息         |
+    Elf32_Addr	p_paddr;                                                                                                                                     |
+    Elf32_Word	p_filesz;      // 若 segment 有内容保存在 coredump 中, 则 p_offset 和 p_filesz 表示 segment 在文件中保存的位置, 使用 coredump 时             |
+                               // 可以根据这两个值从 coredump 中读取 segment 的内容. PT_NOTE 的内容一定会保存在 coredump 文件中, 但 PT_LOAD 的内容不         |
+                               // 一定, 例如, 一般来说, 以 VM_SHARED 方式映射 so 的 vma 是不需要保存在 coredump 中的, 因为可以从原始的 so 获得它的内容,      |
+                               // 另外, madvise(DONT_DUMP) 的 vma 也不会保存在 coredump 中                                                                   |
+    Elf32_Word	p_memsz;                                                                                                                                     |
+    Elf32_Word	p_flags;       // 对于 PT_LOAD, 表示 vma 的权限                                                                                              |
+    Elf32_Word	p_align;        // PT_LOAD 类型的 segment header 需要是 PAGE_SIZE align, 所以 p_align 会是 PAGE_SIZE                                         |
+  } Elf32_Phdr;                                                                                                                                              |
+  // 第二个 program header entry, 一般类型为 PT_LOAD, 对应一个 vma 的信息                                                                                    |
+  // 这里要求 PAGE_SIZE 对齐                                                                                                                                 |
+  typedef struct {                                                                                                                                           |
+    Elf32_Word	p_type;                                                                                                                                      |
+    Elf32_Off	p_offset;        -------------------------------------------------------------------------------------------------+                          |
+    Elf32_Addr	p_vaddr;                                                                                                          |                          |
+    Elf32_Addr	p_paddr;                                                                                                          |                          |
+    Elf32_Word	p_filesz;                                                                                                         |                          |
+    Elf32_Word	p_memsz;                                                                                                          |                          |
+    Elf32_Word	p_flags;                                                                                                          |                          |
+    Elf32_Word	p_align;                                                                                                          |                          |
+  } Elf32_Phdr;                                                                                                                   |                          |
+  ...                                                                                                                             |                          |
+------------------------------                                                                                                    |                          |
+Segment                                                                                                                           |                          |
+  note segment    &lt;---------------------------------------------------------------------------------------------------------------+--------------------------+
+    // note segment 包含多个 note, 每个 note 包含 Nhdr, name 和 desc                                                              |
+    Elf32_Nhdr                                                                                                                    |
+      typedef struct {                                                                                                            |
+        Elf32_Word n_namesz;  // note 名字的长度, 一般来说均为 name 均为 "CORE", 所以长度为 5                                     |
+        Elf32_Word n_descsz;  // note desc 的长度                                                                                 |
+        Elf32_Word n_type;    // note 类型, coredump 中一般会用来如下几个类型: NT_PRSTATUS, NT_PRPSINFO, NT_AUXV 和 NT_FILE       |
+      } Elf32_Nhdr;                                                                                                               |
+      name // 4 bytes 对齐                                                                                                        |
+      desc // 4 bytes 对齐                                                                                                        |
+    ... // 其它的 note                                                                                                            |
+  vma segment 1    &lt;--------------------------------------------------------------------------------------------------------------+
+
+  vma segment 2
+
+  ...
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orgb23afef" class="outline-3">
+<h3 id="orgb23afef"><span class="section-number-3">1.2</span> note</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+coredump 中最重要的内容是各种 note 信息
+</p>
+</div>
+
+<div id="outline-container-orge054f10" class="outline-4">
+<h4 id="orge054f10"><span class="section-number-4">1.2.1</span> NT_PRSTATUS</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+NT_PRSTATUS 的 desc 部分的结构与 struct elf_prstatus 一致:
+</p>
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">struct</span> <span style="color: #b58900;">elf_prstatus</span> <span style="color: #757575;">{</span>
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">elf_siginfo</span> <span style="color: #268bd2;">pr_info</span>; <span style="color: #586e75;">/* </span><span style="color: #586e75;">&#20135;&#29983; coredump &#30340;&#20449;&#21495;</span><span style="color: #586e75;"> */</span>
+  <span style="color: #b58900;">short</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">pr_cursig</span>;
+    <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">long</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">pr_sigpend</span>;
+    <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">long</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">pr_sighold</span>;
+    <span style="color: #b58900;">pid_t</span> <span style="color: #268bd2;">pr_pid</span>;               <span style="color: #586e75;">/* </span><span style="color: #586e75;">tid</span><span style="color: #586e75;"> */</span>
+    <span style="color: #b58900;">pid_t</span> <span style="color: #268bd2;">pr_ppid</span>;
+    <span style="color: #b58900;">pid_t</span> <span style="color: #268bd2;">pr_pgrp</span>;
+    <span style="color: #b58900;">pid_t</span> <span style="color: #268bd2;">pr_sid</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">timeval</span> <span style="color: #268bd2;">pr_utime</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">timeval</span> <span style="color: #268bd2;">pr_stime</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">timeval</span> <span style="color: #268bd2;">pr_cutime</span>;
+    <span style="color: #859900;">struct</span> <span style="color: #b58900;">timeval</span> <span style="color: #268bd2;">pr_cstime</span>;
+    <span style="color: #b58900;">elf_gregset_t</span> <span style="color: #268bd2;">pr_reg</span>;       <span style="color: #586e75;">/* </span><span style="color: #586e75;">coredump &#26102;&#21508;&#20010;&#23492;&#23384;&#22120;&#30340;&#20540;, &#21644;</span>
+<span style="color: #586e75;">                                 * sighandler &#30340; ucontext &#20013;&#30340;&#20540;&#26159;&#19968;&#33268;</span>
+<span style="color: #586e75;">                                 * &#30340;</span><span style="color: #586e75;"> */</span>
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">pr_fpvalid</span>;
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+<p>
+每个 prstatus 表示一个线程的状态, 所以多线程的进程产生的 coredump 会包含多个 prstatus
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgefd84d9" class="outline-4">
+<h4 id="orgefd84d9"><span class="section-number-4">1.2.2</span> NT_PRPSINFO</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<p>
+NT_PRPSINFO 的 desc 部分由 struct elf_prpsinfo 表示:
+</p>
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #859900;">struct</span> <span style="color: #b58900;">elf_prpsinfo</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">char</span> <span style="color: #268bd2;">pr_state</span>;
+    <span style="color: #b58900;">char</span> <span style="color: #268bd2;">pr_sname</span>;
+    <span style="color: #b58900;">char</span> <span style="color: #268bd2;">pr_zomb</span>;
+    <span style="color: #b58900;">char</span> <span style="color: #268bd2;">pr_nice</span>;
+    <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">long</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">pr_flag</span>;
+    <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">pr_uid</span>;
+    <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">pr_gid</span>;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">pr_pid</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">pr_ppid</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">pr_pgrp</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">pr_sid</span>;
+    <span style="color: #b58900;">char</span> <span style="color: #268bd2;">pr_fname</span>[16];          <span style="color: #586e75;">/* </span><span style="color: #586e75;">exec &#30340;&#21517;&#23383;</span><span style="color: #586e75;"> */</span>
+    <span style="color: #b58900;">char</span> <span style="color: #268bd2;">pr_psargs</span>[ELF_PRARGSZ]; <span style="color: #586e75;">/* </span><span style="color: #586e75;">args, &#26684;&#24335;&#20026; "argv1[space]argv2[space]..."</span><span style="color: #586e75;"> */</span>
+<span style="color: #757575;">}</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org94a87e8" class="outline-4">
+<h4 id="org94a87e8"><span class="section-number-4">1.2.3</span> NT_AUXV</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<p>
+NT_AUXV 表示 auxiliary vector, 使用 gdb info aux 查看, 其格式为
+uintptr_t auxv[], 数组中依次保存着 key1, val1, key2, val2 &#x2026;
+</p>
+</div>
+</div>
+
+<div id="outline-container-org2298da6" class="outline-4">
+<h4 id="org2298da6"><span class="section-number-4">1.2.4</span> NT_FILE</h4>
+<div class="outline-text-4" id="text-1-2-4">
+<p>
+NT_FILE 保存 mapping 信息, 使用 gdb 的 info proc mapping 可以查看, 其格式为:
+</p>
+<pre class="example" id="orgf5a998f">
+long count     -- how many files are mapped
+long page_size -- units for file offset
+array of [COUNT] elements of
+  long start
+  long end
+  long file offset
+followed by COUNT filenames in ASCII: "FILE1" NUL "FILE2" NUL...
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgdf4df7e" class="outline-3">
+<h3 id="orgdf4df7e"><span class="section-number-3">1.3</span> 参考</h3>
+<div class="outline-text-3" id="text-1-3">
+<ol class="org-ol">
+<li>qemu elfload.c</li>
+<li>kernel elf_core_dump</li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

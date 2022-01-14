@@ -1,0 +1,867 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 12:05 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TVM Target Codegen</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">TVM Target Codegen</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org85ace54">1. <span class="done DONE">DONE</span> <span class="priority">[B]</span> TVM Target Codegen</a>
+<ul>
+<li><a href="#org36590af">1.1. Opencl Codegen Example</a></li>
+<li><a href="#orgbadd596">1.2. Target Codegen Impl</a>
+<ul>
+<li><a href="#orgdef86f8">1.2.1. runtime</a></li>
+<li><a href="#org34a2887">1.2.2. Codegen</a></li>
+<li><a href="#orgfd35a9a">1.2.3. What about the __TVMFuncCall</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org85ace54" class="outline-2">
+<h2 id="org85ace54"><span class="section-number-2">1</span> <span class="done DONE">DONE</span> <span class="priority">[B]</span> TVM Target Codegen</h2>
+<div class="outline-text-2" id="text-1">
+<ul class="org-ul">
+<li>State "DONE"       from "TODO"       <span class="timestamp-wrapper"><span class="timestamp">[2021-08-05 四 15:51]</span></span></li>
+</ul>
+<p>
+Target Codegen 分为以下几类：
+</p>
+
+<ol class="org-ol">
+<li><p>
+基于 LLVM
+</p>
+
+<p>
+包括 llvm, hexagon, arm, x86 等
+</p></li>
+
+<li><p>
+基于源码 (source)
+</p>
+
+<p>
+这类 codegen 会输入源码
+</p>
+
+<p>
+包括：c, opencl, cuda, metal 等
+</p></li>
+</ol>
+
+<p>
+Target Codegen 与 BYOC Codegen 有些相似的地方, 以 opencl target 为例:
+</p>
+
+<ol class="org-ol">
+<li>通过 target.build.opencl 找到 opencl codegen</li>
+<li>编译生成的 symbol 和 opencl kernel 同样通过 SaveToBinary 保存在 elf 中</li>
+<li>运行时也是通过 GetFunction dispatch 到 opencl_module, 后者会通过 opencl 调用对应的 kernel</li>
+</ol>
+</div>
+
+<div id="outline-container-org36590af" class="outline-3">
+<h3 id="org36590af"><span class="section-number-3">1.1</span> Opencl Codegen Example</h3>
+<div class="outline-text-3" id="text-1-1">
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-08-03 11:11</span>
+<span style="color: #859900;">import</span> tvm
+<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+
+<span style="color: #268bd2;">x</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"x"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 1000<span style="color: #757575;">),</span> dtype=<span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
+<span style="color: #268bd2;">y</span> = relay.add<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> x<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">func</span> = relay.Function<span style="color: #757575;">(</span>[x]<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">mod</span> = tvm.IRModule.from_expr<span style="color: #757575;">(</span>func<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+
+<span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>opt_level=3<span style="color: #757575;">)</span>:
+    <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>
+        mod<span style="color: #757575;">,</span> target=<span style="color: #2aa198;">"opencl"</span><span style="color: #757575;">,</span> params=<span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">,</span> target_host=<span style="color: #2aa198;">"llvm"</span>
+    <span style="color: #757575;">)</span>
+
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>graph<span style="color: #757575;">)</span>
+<span style="color: #859900;">print</span><span style="color: #757575;">(</span>lib.imported_modules[0].get_source<span style="color: #757575;">())</span>
+lib.export_library<span style="color: #757575;">(</span><span style="color: #2aa198;">"/tmp/a.elf"</span><span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+def @main(%x: Tensor[(1, 1000), float32]) {
+  add(%x, %x)
+}
+</p>
+
+<p>
+{
+  "nodes": [
+    {
+      "op": "null", 
+      "name": "x", 
+      "inputs": []
+    }, 
+    {
+      "op": "tvm_op", 
+      "name": "tvmgen_default_fused_add", 
+      "attrs": {
+        "num_inputs": "1", 
+        "num_outputs": "1", 
+        "hash": "e28096c8374f91b0", 
+        "flatten_data": "0", 
+        "func_name": "tvmgen_default_fused_add"
+      }, 
+      "inputs": [
+        [
+          0, 
+          0, 
+          0
+        ]
+      ]
+    }
+  ], 
+  "arg_nodes": [0], 
+  "heads": [
+    [
+      1, 
+      0, 
+      0
+    ]
+  ], 
+  "attrs": {
+    "dltype": [
+      "list_str", 
+      [
+        "float32", 
+        "float32"
+      ]
+    ], 
+    "shape": [
+      "list_shape", 
+      [
+        [1, 1000], 
+        [1, 1000]
+      ]
+    ], 
+    "storage_id": [
+      "list_int", 
+      [0, 1]
+    ]
+  }, 
+  "node_row_ptr": [0, 1, 2]
+}
+// Function: tvmgen_default_fused_add_kernel0
+__kernel void tvmgen_default_fused_add_kernel0(__global float* restrict T_add, __global float* restrict placeholder) {
+  if (((((int)get_group_id(0)) * 256) + ((int)get_local_id(0))) &lt; 1000) {
+    T_add[(((((int)get_group_id(0)) * 256) + ((int)get_local_id(0))))] = (placeholder[(((((int)get_group_id(0)) * 256) + ((int)get_local_id(0))))] + placeholder[(((((int)get_group_id(0)) * 256) + ((int)get_local_id(0))))]);
+  }
+}
+</p>
+
+
+<p>
+/tmp/ipykernel_8688/4278027953.py:14: DeprecationWarning: legacy graph executor behavior of producing json / lib / params will be removed in the next release. Please see documents of tvm.contrib.graph_executor.GraphModule for the  new recommended usage.
+  graph, lib, params = relay.build(
+</p>
+
+<div class="org-src-container">
+<pre class="src src-shell">readelf -p .rodata /tmp/a.elf
+objdump -d /tmp/a.elf
+</pre>
+</div>
+
+<p>
+
+</p>
+
+<p>
+String dump of section '.rodata':
+  [    20]  Assert fail: (num_args <code>= 2), tvmgen_default_fused_add: num_args should be 2
+  [    6d]  Assert fail: ((((arg0.code =</code> 3) || (arg0.code <code>= 13)) || (arg0.code =</code> 7)) || (arg0.code <code>= 4)), tvmgen_default_fused_add: Expect arg[0] to be pointer
+  [   105]  Assert fail: ((((arg1.code =</code> 3) || (arg1.code <code>= 13)) || (arg1.code =</code> 7)) || (arg1.code <code>= 4)), tvmgen_default_fused_add: Expect arg[1] to be pointer
+  [   19d]  Assert fail: (2 =</code> tir.tvm_struct_get(arg0, 0, 4)), arg0.ndim is expected to equal 2
+  [   1f2]  Assert fail: (((tir.tvm_struct_get(arg0, 0, 5) <code>= (uint8)2) &amp;&amp; (tir.tvm_struct_get(arg0, 0, 6) =</code> (uint8)32)) &amp;&amp; (tir.tvm_struct_get(arg0, 0, 7) <code>= (uint16)1)), arg0.dtype is expected to be float32
+  [   2b8]  Assert fail: (1 =</code> int32(arg0.shape[0])), Argument arg0.shape[0] has an unsatisfied constraint: (1 <code>= int32(arg0.shape[0]))
+  [   334]  Assert fail: (1000 =</code> int32(arg0.shape[1])), Argument arg0.shape[1] has an unsatisfied constraint: (1000 <code>= int32(arg0.shape[1]))
+  [   3b6]  Assert fail: ((1 =</code> int32(arg0.strides[1])) &amp;&amp; (1000 <code>= int32(arg0.strides[0]))), arg0.strides: expected to be compact array
+  [   433]  Assert fail: ((uint64)0 =</code> tir.tvm_struct_get(arg0, 0, 8)), Argument arg0.byte_offset has an unsatisfied constraint: ((uint64)0 <code>= tir.tvm_struct_get(arg0, 0, 8))
+  [   4d6]  Assert fail: (4 =</code> tir.tvm_struct_get(arg0, 0, 10)), Argument arg0.device_type has an unsatisfied constraint: (4 <code>= tir.tvm_struct_get(arg0, 0, 10))
+  [   56b]  Assert fail: (2 =</code> tir.tvm_struct_get(arg1, 0, 4)), arg1.ndim is expected to equal 2
+  [   5c0]  Assert fail: (((tir.tvm_struct_get(arg1, 0, 5) <code>= (uint8)2) &amp;&amp; (tir.tvm_struct_get(arg1, 0, 6) =</code> (uint8)32)) &amp;&amp; (tir.tvm_struct_get(arg1, 0, 7) <code>= (uint16)1)), arg1.dtype is expected to be float32
+  [   686]  Assert fail: (1 =</code> int32(arg1.shape[0])), Argument arg1.shape[0] has an unsatisfied constraint: (1 <code>= int32(arg1.shape[0]))
+  [   702]  Assert fail: (1000 =</code> int32(arg1.shape[1])), Argument arg1.shape[1] has an unsatisfied constraint: (1000 <code>= int32(arg1.shape[1]))
+  [   784]  Assert fail: ((1 =</code> int32(arg1.strides[1])) &amp;&amp; (1000 <code>= int32(arg1.strides[0]))), arg1.strides: expected to be compact array
+  [   801]  Assert fail: ((uint64)0 =</code> tir.tvm_struct_get(arg1, 0, 8)), Argument arg1.byte_offset has an unsatisfied constraint: ((uint64)0 <code>= tir.tvm_struct_get(arg1, 0, 8))
+  [   8a4]  Assert fail: (4 =</code> tir.tvm_struct_get(arg1, 0, 10)), Argument arg1.device_type has an unsatisfied constraint: (4 <code>= tir.tvm_struct_get(arg1, 0, 10))
+  [   939]  Assert fail: (dev_id =</code> tir.tvm_struct_get(arg1, 0, 9)), Argument arg1.device_id has an unsatisfied constraint: (dev_id == tir.tvm_struct_get(arg1, 0, 9))
+  [   9d4]  __tvm_set_device
+  [   9e5]  tvmgen_default_fused_add_kernel0
+  [   a1e]  _lib^F
+  [   a2a]  opencl^B
+  [   a38]  cl^A
+  [   a42]   
+  [   a4a]  tvmgen_default_fused_add_kernel0
+  [   a7b]  @^A
+  [   a7f]  @^A
+  [   a92]  blockIdx.x^K
+  [   aa4]  threadIdx.x
+  [   ab7]  // Function: tvmgen_default_fused_add_kernel0^J__kernel void tvmgen_default_fused_add_kernel0(__global float* restrict T_add, __global float* restrict placeholder) {^J  if (((((int)get_group_id(0)) * 256) + ((int)get_local_id(0))) &lt; 1000) {^J    T_add[(((((int)get_group_id(0)) * 256) + ((int)get_local_id(0))))] = (placeholder[(((((int)get_group_id(0)) * 256) + ((int)get_local_id(0))))] + placeholder[(((((int)get_group_id(0)) * 256) + ((int)get_local_id(0))))]);^J  }^J}^J^J^L
+  [   c95]  _import_tree^C
+</p>
+
+
+<p>
+/tmp/a.elf:     file format elf64-x86-64
+</p>
+
+
+<p>
+Disassembly of section .init:
+</p>
+
+<p>
+0000000000001000 &lt;_init&gt;:
+    1000:	f3 0f 1e fa          	endbr64 
+    1004:	48 83 ec 08          	sub    $0x8,%rsp
+    1008:	48 8b 05 e9 2f 00 00 	mov    0x2fe9(%rip),%rax        # 3ff8 &lt;__gmon_start__&gt;
+    100f:	48 85 c0             	test   %rax,%rax
+    1012:	74 02                	je     1016 &lt;_init+0x16&gt;
+    1014:	ff d0                	callq  *%rax
+    1016:	48 83 c4 08          	add    $0x8,%rsp
+    101a:	c3                   	retq   
+</p>
+
+<p>
+Disassembly of section .plt:
+</p>
+
+<p>
+0000000000001020 &lt;.plt&gt;:
+    1020:	ff 35 e2 2f 00 00    	pushq  0x2fe2(%rip)        # 4008 &lt;_GLOBAL_OFFSET_TABLE_+0x8&gt;
+    1026:	ff 25 e4 2f 00 00    	jmpq   *0x2fe4(%rip)        # 4010 &lt;_GLOBAL_OFFSET_TABLE_+0x10&gt;
+    102c:	0f 1f 40 00          	nopl   0x0(%rax)
+</p>
+
+<p>
+Disassembly of section .plt.got:
+</p>
+
+<p>
+0000000000001030 &lt;__cxa_finalize@plt&gt;:
+    1030:	ff 25 8a 2f 00 00    	jmpq   *0x2f8a(%rip)        # 3fc0 &lt;__cxa_finalize&gt;
+    1036:	66 90                	xchg   %ax,%ax
+</p>
+
+<p>
+Disassembly of section .text:
+</p>
+
+<p>
+0000000000001040 &lt;deregister_tm_clones&gt;:
+    1040:	48 8d 3d d9 2f 00 00 	lea    0x2fd9(%rip),%rdi        # 4020 &lt;completed.8060&gt;
+    1047:	48 8d 05 d2 2f 00 00 	lea    0x2fd2(%rip),%rax        # 4020 &lt;completed.8060&gt;
+    104e:	48 39 f8             	cmp    %rdi,%rax
+    1051:	74 15                	je     1068 &lt;deregister_tm_clones+0x28&gt;
+    1053:	48 8b 05 7e 2f 00 00 	mov    0x2f7e(%rip),%rax        # 3fd8 &lt;_ITM_deregisterTMCloneTable&gt;
+    105a:	48 85 c0             	test   %rax,%rax
+    105d:	74 09                	je     1068 &lt;deregister_tm_clones+0x28&gt;
+    105f:	ff e0                	jmpq   *%rax
+    1061:	0f 1f 80 00 00 00 00 	nopl   0x0(%rax)
+    1068:	c3                   	retq   
+    1069:	0f 1f 80 00 00 00 00 	nopl   0x0(%rax)
+</p>
+
+<p>
+0000000000001070 &lt;register_tm_clones&gt;:
+    1070:	48 8d 3d a9 2f 00 00 	lea    0x2fa9(%rip),%rdi        # 4020 &lt;completed.8060&gt;
+    1077:	48 8d 35 a2 2f 00 00 	lea    0x2fa2(%rip),%rsi        # 4020 &lt;completed.8060&gt;
+    107e:	48 29 fe             	sub    %rdi,%rsi
+    1081:	48 89 f0             	mov    %rsi,%rax
+    1084:	48 c1 ee 3f          	shr    $0x3f,%rsi
+    1088:	48 c1 f8 03          	sar    $0x3,%rax
+    108c:	48 01 c6             	add    %rax,%rsi
+    108f:	48 d1 fe             	sar    %rsi
+    1092:	74 14                	je     10a8 &lt;register_tm_clones+0x38&gt;
+    1094:	48 8b 05 35 2f 00 00 	mov    0x2f35(%rip),%rax        # 3fd0 &lt;_ITM_registerTMCloneTable&gt;
+    109b:	48 85 c0             	test   %rax,%rax
+    109e:	74 08                	je     10a8 &lt;register_tm_clones+0x38&gt;
+    10a0:	ff e0                	jmpq   *%rax
+    10a2:	66 0f 1f 44 00 00    	nopw   0x0(%rax,%rax,1)
+    10a8:	c3                   	retq   
+    10a9:	0f 1f 80 00 00 00 00 	nopl   0x0(%rax)
+</p>
+
+<p>
+00000000000010b0 &lt;__do_global_dtors_aux&gt;:
+    10b0:	f3 0f 1e fa          	endbr64 
+    10b4:	80 3d 65 2f 00 00 00 	cmpb   $0x0,0x2f65(%rip)        # 4020 &lt;completed.8060&gt;
+    10bb:	75 2b                	jne    10e8 &lt;__do_global_dtors_aux+0x38&gt;
+    10bd:	55                   	push   %rbp
+    10be:	48 83 3d fa 2e 00 00 	cmpq   $0x0,0x2efa(%rip)        # 3fc0 &lt;__cxa_finalize&gt;
+    10c5:	00 
+    10c6:	48 89 e5             	mov    %rsp,%rbp
+    10c9:	74 0c                	je     10d7 &lt;__do_global_dtors_aux+0x27&gt;
+    10cb:	48 8b 3d 46 2f 00 00 	mov    0x2f46(%rip),%rdi        # 4018 &lt;__dso_handle&gt;
+    10d2:	e8 59 ff ff ff       	callq  1030 &lt;__cxa_finalize@plt&gt;
+    10d7:	e8 64 ff ff ff       	callq  1040 &lt;deregister_tm_clones&gt;
+    10dc:	c6 05 3d 2f 00 00 01 	movb   $0x1,0x2f3d(%rip)        # 4020 &lt;completed.8060&gt;
+    10e3:	5d                   	pop    %rbp
+    10e4:	c3                   	retq   
+    10e5:	0f 1f 00             	nopl   (%rax)
+    10e8:	c3                   	retq   
+    10e9:	0f 1f 80 00 00 00 00 	nopl   0x0(%rax)
+</p>
+
+<p>
+00000000000010f0 &lt;frame_dummy&gt;:
+    10f0:	f3 0f 1e fa          	endbr64 
+    10f4:	e9 77 ff ff ff       	jmpq   1070 &lt;register_tm_clones&gt;
+    10f9:	0f 1f 80 00 00 00 00 	nopl   0x0(%rax)
+</p>
+
+<p>
+0000000000001100 &lt;tvmgen_default_fused_add&gt;:
+    1100:	41 57                	push   %r15
+    1102:	41 56                	push   %r14
+    1104:	53                   	push   %rbx
+    1105:	48 83 ec 50          	sub    $0x50,%rsp
+    1109:	83 fa 02             	cmp    $0x2,%edx
+    110c:	0f 85 ce 01 00 00    	jne    12e0 &lt;tvmgen_default_fused_add+0x1e0&gt;
+    1112:	8b 06                	mov    (%rsi),%eax
+    1114:	83 f8 0d             	cmp    $0xd,%eax
+    1117:	0f 87 94 01 00 00    	ja     12b1 &lt;tvmgen_default_fused_add+0x1b1&gt;
+    111d:	b9 98 20 00 00       	mov    $0x2098,%ecx
+    1122:	0f a3 c1             	bt     %eax,%ecx
+    1125:	0f 83 86 01 00 00    	jae    12b1 &lt;tvmgen_default_fused_add+0x1b1&gt;
+    112b:	8b 46 04             	mov    0x4(%rsi),%eax
+    112e:	83 f8 0d             	cmp    $0xd,%eax
+    1131:	0f 87 8a 01 00 00    	ja     12c1 &lt;tvmgen_default_fused_add+0x1c1&gt;
+    1137:	b9 98 20 00 00       	mov    $0x2098,%ecx
+    113c:	0f a3 c1             	bt     %eax,%ecx
+    113f:	0f 83 7c 01 00 00    	jae    12c1 &lt;tvmgen_default_fused_add+0x1c1&gt;
+    1145:	48 8b 37             	mov    (%rdi),%rsi
+    1148:	83 7e 10 02          	cmpl   $0x2,0x10(%rsi)
+    114c:	0f 85 9e 01 00 00    	jne    12f0 &lt;tvmgen_default_fused_add+0x1f0&gt;
+    1152:	66 83 7e 16 01       	cmpw   $0x1,0x16(%rsi)
+    1157:	0f 85 a3 01 00 00    	jne    1300 &lt;tvmgen_default_fused_add+0x200&gt;
+    115d:	80 7e 15 20          	cmpb   $0x20,0x15(%rsi)
+    1161:	0f 85 99 01 00 00    	jne    1300 &lt;tvmgen_default_fused_add+0x200&gt;
+    1167:	80 7e 14 02          	cmpb   $0x2,0x14(%rsi)
+    116b:	0f 85 8f 01 00 00    	jne    1300 &lt;tvmgen_default_fused_add+0x200&gt;
+    1171:	48 8b 46 18          	mov    0x18(%rsi),%rax
+    1175:	83 38 01             	cmpl   $0x1,(%rax)
+    1178:	0f 85 92 01 00 00    	jne    1310 &lt;tvmgen_default_fused_add+0x210&gt;
+    117e:	81 78 08 e8 03 00 00 	cmpl   $0x3e8,0x8(%rax)
+    1185:	0f 85 95 01 00 00    	jne    1320 &lt;tvmgen_default_fused_add+0x220&gt;
+    118b:	48 8b 4f 08          	mov    0x8(%rdi),%rcx
+    118f:	4c 8b 36             	mov    (%rsi),%r14
+    1192:	48 8b 5e 20          	mov    0x20(%rsi),%rbx
+    1196:	48 63 46 0c          	movslq 0xc(%rsi),%rax
+    119a:	4c 8b 39             	mov    (%rcx),%r15
+    119d:	48 8b 79 18          	mov    0x18(%rcx),%rdi
+    11a1:	48 8b 51 20          	mov    0x20(%rcx),%rdx
+    11a5:	48 85 db             	test   %rbx,%rbx
+    11a8:	74 16                	je     11c0 &lt;tvmgen_default_fused_add+0xc0&gt;
+    11aa:	81 3b e8 03 00 00    	cmpl   $0x3e8,(%rbx)
+    11b0:	0f 85 7a 01 00 00    	jne    1330 &lt;tvmgen_default_fused_add+0x230&gt;
+    11b6:	83 7b 08 01          	cmpl   $0x1,0x8(%rbx)
+    11ba:	0f 85 70 01 00 00    	jne    1330 &lt;tvmgen_default_fused_add+0x230&gt;
+    11c0:	48 83 7e 28 00       	cmpq   $0x0,0x28(%rsi)
+    11c5:	0f 85 75 01 00 00    	jne    1340 &lt;tvmgen_default_fused_add+0x240&gt;
+    11cb:	83 7e 08 04          	cmpl   $0x4,0x8(%rsi)
+    11cf:	0f 85 7e 01 00 00    	jne    1353 &lt;tvmgen_default_fused_add+0x253&gt;
+    11d5:	83 79 10 02          	cmpl   $0x2,0x10(%rcx)
+    11d9:	0f 85 87 01 00 00    	jne    1366 &lt;tvmgen_default_fused_add+0x266&gt;
+    11df:	66 83 79 16 01       	cmpw   $0x1,0x16(%rcx)
+    11e4:	0f 85 8f 01 00 00    	jne    1379 &lt;tvmgen_default_fused_add+0x279&gt;
+    11ea:	80 79 15 20          	cmpb   $0x20,0x15(%rcx)
+    11ee:	0f 85 85 01 00 00    	jne    1379 &lt;tvmgen_default_fused_add+0x279&gt;
+    11f4:	80 79 14 02          	cmpb   $0x2,0x14(%rcx)
+    11f8:	0f 85 7b 01 00 00    	jne    1379 &lt;tvmgen_default_fused_add+0x279&gt;
+    11fe:	83 3f 01             	cmpl   $0x1,(%rdi)
+    1201:	0f 85 85 01 00 00    	jne    138c &lt;tvmgen_default_fused_add+0x28c&gt;
+    1207:	81 7f 08 e8 03 00 00 	cmpl   $0x3e8,0x8(%rdi)
+    120e:	0f 85 8b 01 00 00    	jne    139f &lt;tvmgen_default_fused_add+0x29f&gt;
+    1214:	48 85 d2             	test   %rdx,%rdx
+    1217:	74 16                	je     122f &lt;tvmgen_default_fused_add+0x12f&gt;
+    1219:	81 3a e8 03 00 00    	cmpl   $0x3e8,(%rdx)
+    121f:	0f 85 8d 01 00 00    	jne    13b2 &lt;tvmgen_default_fused_add+0x2b2&gt;
+    1225:	83 7a 08 01          	cmpl   $0x1,0x8(%rdx)
+    1229:	0f 85 83 01 00 00    	jne    13b2 &lt;tvmgen_default_fused_add+0x2b2&gt;
+    122f:	48 83 79 28 00       	cmpq   $0x0,0x28(%rcx)
+    1234:	0f 85 8b 01 00 00    	jne    13c5 &lt;tvmgen_default_fused_add+0x2c5&gt;
+    123a:	83 79 08 04          	cmpl   $0x4,0x8(%rcx)
+    123e:	0f 85 94 01 00 00    	jne    13d8 &lt;tvmgen_default_fused_add+0x2d8&gt;
+    1244:	3b 41 0c             	cmp    0xc(%rcx),%eax
+    1247:	0f 85 9e 01 00 00    	jne    13eb &lt;tvmgen_default_fused_add+0x2eb&gt;
+    124d:	48 c7 44 24 28 04 00 	movq   $0x4,0x28(%rsp)
+    1254:	00 00 
+    1256:	48 c7 44 24 14 00 00 	movq   $0x0,0x14(%rsp)
+    125d:	00 00 
+    125f:	48 89 44 24 30       	mov    %rax,0x30(%rsp)
+    1264:	48 8b 3d dd 2d 00 00 	mov    0x2ddd(%rip),%rdi        # 4048 &lt;.tvm_func.__tvm_set_device&gt;
+    126b:	48 85 ff             	test   %rdi,%rdi
+    126e:	0f 84 8a 01 00 00    	je     13fe &lt;tvmgen_default_fused_add+0x2fe&gt;
+    1274:	4c 8d 44 24 38       	lea    0x38(%rsp),%r8
+    1279:	4c 8d 4c 24 1c       	lea    0x1c(%rsp),%r9
+    127e:	48 8b 05 5b 2d 00 00 	mov    0x2d5b(%rip),%rax        # 3fe0 &lt;__TVMFuncCall-0x50&gt;
+    1285:	48 8d 74 24 28       	lea    0x28(%rsp),%rsi
+    128a:	48 8d 54 24 14       	lea    0x14(%rsp),%rdx
+    128f:	b9 02 00 00 00       	mov    $0x2,%ecx
+    1294:	ff 10                	callq  *(%rax)
+    1296:	85 c0                	test   %eax,%eax
+    1298:	75 3c                	jne    12d6 &lt;tvmgen_default_fused_add+0x1d6&gt;
+    129a:	48 8d 7c 24 28       	lea    0x28(%rsp),%rdi
+    129f:	48 8d 54 24 14       	lea    0x14(%rsp),%rdx
+    12a4:	4c 89 fe             	mov    %r15,%rsi
+    12a7:	4c 89 f1             	mov    %r14,%rcx
+    12aa:	e8 91 01 00 00       	callq  1440 &lt;tvmgen_default_fused_add_compute_&gt;
+    12af:	eb 25                	jmp    12d6 &lt;tvmgen_default_fused_add+0x1d6&gt;
+    12b1:	48 8b 05 30 2d 00 00 	mov    0x2d30(%rip),%rax        # 3fe8 &lt;__TVMAPISetLastError-0x58&gt;
+    12b8:	48 8d 3d ae 0d 00 00 	lea    0xdae(%rip),%rdi        # 206d &lt;_fini+0xba9&gt;
+    12bf:	eb 0e                	jmp    12cf &lt;tvmgen_default_fused_add+0x1cf&gt;
+    12c1:	48 8b 05 20 2d 00 00 	mov    0x2d20(%rip),%rax        # 3fe8 &lt;__TVMAPISetLastError-0x58&gt;
+    12c8:	48 8d 3d 36 0e 00 00 	lea    0xe36(%rip),%rdi        # 2105 &lt;_fini+0xc41&gt;
+    12cf:	ff 10                	callq  *(%rax)
+    12d1:	b8 ff ff ff ff       	mov    $0xffffffff,%eax
+    12d6:	48 83 c4 50          	add    $0x50,%rsp
+    12da:	5b                   	pop    %rbx
+    12db:	41 5e                	pop    %r14
+    12dd:	41 5f                	pop    %r15
+    12df:	c3                   	retq   
+    12e0:	48 8b 05 01 2d 00 00 	mov    0x2d01(%rip),%rax        # 3fe8 &lt;__TVMAPISetLastError-0x58&gt;
+    12e7:	48 8d 3d 32 0d 00 00 	lea    0xd32(%rip),%rdi        # 2020 &lt;_fini+0xb5c&gt;
+    12ee:	eb df                	jmp    12cf &lt;tvmgen_default_fused_add+0x1cf&gt;
+    12f0:	48 8b 05 f1 2c 00 00 	mov    0x2cf1(%rip),%rax        # 3fe8 &lt;__TVMAPISetLastError-0x58&gt;
+    12f7:	48 8d 3d 9f 0e 00 00 	lea    0xe9f(%rip),%rdi        # 219d &lt;_fini+0xcd9&gt;
+    12fe:	eb cf                	jmp    12cf &lt;tvmgen_default_fused_add+0x1cf&gt;
+    1300:	48 8b 05 e1 2c 00 00 	mov    0x2ce1(%rip),%rax        # 3fe8 &lt;__TVMAPISetLastError-0x58&gt;
+    1307:	48 8d 3d e4 0e 00 00 	lea    0xee4(%rip),%rdi        # 21f2 &lt;_fini+0xd2e&gt;
+    130e:	eb bf                	jmp    12cf &lt;tvmgen_default_fused_add+0x1cf&gt;
+    1310:	48 8b 05 d1 2c 00 00 	mov    0x2cd1(%rip),%rax        # 3fe8 &lt;__TVMAPISetLastError-0x58&gt;
+    1317:	48 8d 3d 9a 0f 00 00 	lea    0xf9a(%rip),%rdi        # 22b8 &lt;_fini+0xdf4&gt;
+    131e:	eb af                	jmp    12cf &lt;tvmgen_default_fused_add+0x1cf&gt;
+    1320:	48 8b 05 c1 2c 00 00 	mov    0x2cc1(%rip),%rax        # 3fe8 &lt;__TVMAPISetLastError-0x58&gt;
+    1327:	48 8d 3d 06 10 00 00 	lea    0x1006(%rip),%rdi        # 2334 &lt;_fini+0xe70&gt;
+    132e:	eb 9f                	jmp    12cf &lt;tvmgen_default_fused_add+0x1cf&gt;
+    1330:	48 8b 05 b1 2c 00 00 	mov    0x2cb1(%rip),%rax        # 3fe8 &lt;__TVMAPISetLastError-0x58&gt;
+    1337:	48 8d 3d 78 10 00 00 	lea    0x1078(%rip),%rdi        # 23b6 &lt;_fini+0xef2&gt;
+    133e:	eb 8f                	jmp    12cf &lt;tvmgen_default_fused_add+0x1cf&gt;
+    1340:	48 8b 05 a1 2c 00 00 	mov    0x2ca1(%rip),%rax        # 3fe8 &lt;__TVMAPISetLastError-0x58&gt;
+    1347:	48 8d 3d e5 10 00 00 	lea    0x10e5(%rip),%rdi        # 2433 &lt;_fini+0xf6f&gt;
+    134e:	e9 7c ff ff ff       	jmpq   12cf &lt;tvmgen_default_fused_add+0x1cf&gt;
+    1353:	48 8b 05 8e 2c 00 00 	mov    0x2c8e(%rip),%rax        # 3fe8 &lt;__TVMAPISetLastError-0x58&gt;
+    135a:	48 8d 3d 75 11 00 00 	lea    0x1175(%rip),%rdi        # 24d6 &lt;_fini+0x1012&gt;
+    1361:	e9 69 ff ff ff       	jmpq   12cf &lt;tvmgen_default_fused_add+0x1cf&gt;
+    1366:	48 8b 05 7b 2c 00 00 	mov    0x2c7b(%rip),%rax        # 3fe8 &lt;__TVMAPISetLastError-0x58&gt;
+    136d:	48 8d 3d f7 11 00 00 	lea    0x11f7(%rip),%rdi        # 256b &lt;_fini+0x10a7&gt;
+    1374:	e9 56 ff ff ff       	jmpq   12cf &lt;tvmgen_default_fused_add+0x1cf&gt;
+    1379:	48 8b 05 68 2c 00 00 	mov    0x2c68(%rip),%rax        # 3fe8 &lt;__TVMAPISetLastError-0x58&gt;
+    1380:	48 8d 3d 39 12 00 00 	lea    0x1239(%rip),%rdi        # 25c0 &lt;_fini+0x10fc&gt;
+    1387:	e9 43 ff ff ff       	jmpq   12cf &lt;tvmgen_default_fused_add+0x1cf&gt;
+    138c:	48 8b 05 55 2c 00 00 	mov    0x2c55(%rip),%rax        # 3fe8 &lt;__TVMAPISetLastError-0x58&gt;
+    1393:	48 8d 3d ec 12 00 00 	lea    0x12ec(%rip),%rdi        # 2686 &lt;_fini+0x11c2&gt;
+    139a:	e9 30 ff ff ff       	jmpq   12cf &lt;tvmgen_default_fused_add+0x1cf&gt;
+    139f:	48 8b 05 42 2c 00 00 	mov    0x2c42(%rip),%rax        # 3fe8 &lt;__TVMAPISetLastError-0x58&gt;
+    13a6:	48 8d 3d 55 13 00 00 	lea    0x1355(%rip),%rdi        # 2702 &lt;_fini+0x123e&gt;
+    13ad:	e9 1d ff ff ff       	jmpq   12cf &lt;tvmgen_default_fused_add+0x1cf&gt;
+    13b2:	48 8b 05 2f 2c 00 00 	mov    0x2c2f(%rip),%rax        # 3fe8 &lt;__TVMAPISetLastError-0x58&gt;
+    13b9:	48 8d 3d c4 13 00 00 	lea    0x13c4(%rip),%rdi        # 2784 &lt;_fini+0x12c0&gt;
+    13c0:	e9 0a ff ff ff       	jmpq   12cf &lt;tvmgen_default_fused_add+0x1cf&gt;
+    13c5:	48 8b 05 1c 2c 00 00 	mov    0x2c1c(%rip),%rax        # 3fe8 &lt;__TVMAPISetLastError-0x58&gt;
+    13cc:	48 8d 3d 2e 14 00 00 	lea    0x142e(%rip),%rdi        # 2801 &lt;_fini+0x133d&gt;
+    13d3:	e9 f7 fe ff ff       	jmpq   12cf &lt;tvmgen_default_fused_add+0x1cf&gt;
+    13d8:	48 8b 05 09 2c 00 00 	mov    0x2c09(%rip),%rax        # 3fe8 &lt;__TVMAPISetLastError-0x58&gt;
+    13df:	48 8d 3d be 14 00 00 	lea    0x14be(%rip),%rdi        # 28a4 &lt;_fini+0x13e0&gt;
+    13e6:	e9 e4 fe ff ff       	jmpq   12cf &lt;tvmgen_default_fused_add+0x1cf&gt;
+    13eb:	48 8b 05 f6 2b 00 00 	mov    0x2bf6(%rip),%rax        # 3fe8 &lt;__TVMAPISetLastError-0x58&gt;
+    13f2:	48 8d 3d 40 15 00 00 	lea    0x1540(%rip),%rdi        # 2939 &lt;_fini+0x1475&gt;
+    13f9:	e9 d1 fe ff ff       	jmpq   12cf &lt;tvmgen_default_fused_add+0x1cf&gt;
+    13fe:	48 8b 05 c3 2b 00 00 	mov    0x2bc3(%rip),%rax        # 3fc8 &lt;__tvm_module_ctx-0x60&gt;
+    1405:	48 8b 38             	mov    (%rax),%rdi
+    1408:	48 8b 05 e1 2b 00 00 	mov    0x2be1(%rip),%rax        # 3ff0 &lt;__TVMBackendGetFuncFromEnv-0x48&gt;
+    140f:	48 8d 35 be 15 00 00 	lea    0x15be(%rip),%rsi        # 29d4 &lt;_fini+0x1510&gt;
+    1416:	48 8d 54 24 08       	lea    0x8(%rsp),%rdx
+    141b:	ff 10                	callq  *(%rax)
+    141d:	85 c0                	test   %eax,%eax
+    141f:	0f 85 b1 fe ff ff    	jne    12d6 &lt;tvmgen_default_fused_add+0x1d6&gt;
+    1425:	48 8b 7c 24 08       	mov    0x8(%rsp),%rdi
+    142a:	48 89 3d 17 2c 00 00 	mov    %rdi,0x2c17(%rip)        # 4048 &lt;.tvm_func.__tvm_set_device&gt;
+    1431:	e9 3e fe ff ff       	jmpq   1274 &lt;tvmgen_default_fused_add+0x174&gt;
+    1436:	90                   	nop
+    1437:	90                   	nop
+    1438:	90                   	nop
+    1439:	90                   	nop
+    143a:	90                   	nop
+    143b:	90                   	nop
+    143c:	90                   	nop
+    143d:	90                   	nop
+    143e:	90                   	nop
+    143f:	90                   	nop
+</p>
+
+<p>
+0000000000001440 &lt;tvmgen_default_fused_add_compute_&gt;:
+    1440:	41 56                	push   %r14
+    1442:	53                   	push   %rbx
+    1443:	50                   	push   %rax
+    1444:	49 89 d6             	mov    %rdx,%r14
+    1447:	48 89 fb             	mov    %rdi,%rbx
+    144a:	48 89 37             	mov    %rsi,(%rdi)
+    144d:	48 89 4f 08          	mov    %rcx,0x8(%rdi)
+    1451:	0f 28 05 a8 0b 00 00 	movaps 0xba8(%rip),%xmm0        # 2000 &lt;_fini+0xb3c&gt;
+    1458:	0f 11 47 10          	movups %xmm0,0x10(%rdi)
+    145c:	0f 28 05 ad 0b 00 00 	movaps 0xbad(%rip),%xmm0        # 2010 &lt;_fini+0xb4c&gt;
+    1463:	0f 11 02             	movups %xmm0,(%rdx)
+    1466:	48 8b 3d e3 2b 00 00 	mov    0x2be3(%rip),%rdi        # 4050 &lt;.tvm_func.tvmgen_default_fused_add_kernel0&gt;
+    146d:	48 85 ff             	test   %rdi,%rdi
+    1470:	74 24                	je     1496 &lt;tvmgen_default_fused_add_compute_+0x56&gt;
+    1472:	48 8b 05 67 2b 00 00 	mov    0x2b67(%rip),%rax        # 3fe0 &lt;__TVMFuncCall-0x50&gt;
+    1479:	4c 8d 43 20          	lea    0x20(%rbx),%r8
+    147d:	4d 8d 4e 10          	lea    0x10(%r14),%r9
+    1481:	48 89 de             	mov    %rbx,%rsi
+    1484:	4c 89 f2             	mov    %r14,%rdx
+    1487:	b9 04 00 00 00       	mov    $0x4,%ecx
+    148c:	ff 10                	callq  *(%rax)
+    148e:	48 83 c4 08          	add    $0x8,%rsp
+    1492:	5b                   	pop    %rbx
+    1493:	41 5e                	pop    %r14
+    1495:	c3                   	retq   
+    1496:	48 8b 05 2b 2b 00 00 	mov    0x2b2b(%rip),%rax        # 3fc8 &lt;__tvm_module_ctx-0x60&gt;
+    149d:	48 8b 38             	mov    (%rax),%rdi
+    14a0:	48 8b 05 49 2b 00 00 	mov    0x2b49(%rip),%rax        # 3ff0 &lt;__TVMBackendGetFuncFromEnv-0x48&gt;
+    14a7:	48 8d 35 37 15 00 00 	lea    0x1537(%rip),%rsi        # 29e5 &lt;_fini+0x1521&gt;
+    14ae:	48 89 e2             	mov    %rsp,%rdx
+    14b1:	ff 10                	callq  *(%rax)
+    14b3:	85 c0                	test   %eax,%eax
+    14b5:	75 d7                	jne    148e &lt;tvmgen_default_fused_add_compute_+0x4e&gt;
+    14b7:	48 8b 3c 24          	mov    (%rsp),%rdi
+    14bb:	48 89 3d 8e 2b 00 00 	mov    %rdi,0x2b8e(%rip)        # 4050 &lt;.tvm_func.tvmgen_default_fused_add_kernel0&gt;
+    14c2:	eb ae                	jmp    1472 &lt;tvmgen_default_fused_add_compute_+0x32&gt;
+</p>
+
+<p>
+Disassembly of section .fini:
+</p>
+
+<p>
+00000000000014c4 &lt;_fini&gt;:
+    14c4:	f3 0f 1e fa          	endbr64 
+    14c8:	48 83 ec 08          	sub    $0x8,%rsp
+    14cc:	48 83 c4 08          	add    $0x8,%rsp
+    14d0:	c3                   	retq   
+</p>
+
+<p>
+从上面输出的信息可以得到以下结论:
+</p>
+
+<ol class="org-ol">
+<li>llvm 生成了 host 端的  tvmgen_default_fused_add 和 tvmgen_default_fused_add_compute_</li>
+<li>opencl runtime 会通过 tvmgen_default_fused_add_kernel0 这个 symbol 执行
+opencl kernel</li>
+<li>tvmgen_default_fused_add_compute_ 通过 __TVMFuncCall 来调用
+tvmgen_default_fused_add_kernel0, 后者由 opencl runtime 来响应, 最终调用到
+opencl kernel</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgbadd596" class="outline-3">
+<h3 id="orgbadd596"><span class="section-number-3">1.2</span> Target Codegen Impl</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-orgdef86f8" class="outline-4">
+<h4 id="orgdef86f8"><span class="section-number-4">1.2.1</span> runtime</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+target runtime 的逻辑 与 <a href="tvm_byoc_codegen.html#org3e5bab2">BYOC Runtime</a> 完全相同:
+</p>
+
+<ol class="org-ol">
+<li><p>
+根据 elf 中的 __tvm_dev_mblob 加载 runtime.module.loadbinary<sub>tkey</sub>, 由后者生成对应的 runtime (或者叫 ModuleNode)
+</p>
+
+<p>
+<a href="file:///home/sunway/source/tvm/src/runtime/opencl/opencl_module.cc#orgab20a71">file:///home/sunway/source/tvm/src/runtime/opencl/opencl_module.cc#orgab20a71</a>
+</p></li>
+
+<li><p>
+runtime 的 GetFunction 负责真正的调用, 以 opencl 为例, 负责通过 opencl 启动对应的 kernel
+</p>
+
+<p>
+<a href="file:///home/sunway/source/tvm/src/runtime/opencl/opencl_module.cc#org8e4b211">file:///home/sunway/source/tvm/src/runtime/opencl/opencl_module.cc#org8e4b211</a>
+</p></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org34a2887" class="outline-4">
+<h4 id="org34a2887"><span class="section-number-4">1.2.2</span> Codegen</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<p>
+codegen 与 <a href="tvm_byoc_codegen.html#orgc3953d7">Relay Codegen</a> 相比更简化一些, 因为它不需要 annotate. 其它的步骤比如
+</p>
+
+<ul class="org-ul">
+<li><p>
+注册 codegen
+</p>
+
+<p>
+<a href="file:///home/sunway/source/tvm/src/target/source/codegen_opencl.cc#orgbc5a26e">file:///home/sunway/source/tvm/src/target/source/codegen_opencl.cc#orgbc5a26e</a>
+</p></li>
+
+<li><p>
+编译
+</p>
+
+<p>
+<a href="file:///home/sunway/source/tvm/src/target/codegen.cc#orgeaca4ea">file:///home/sunway/source/tvm/src/target/codegen.cc#orgeaca4ea</a>
+</p></li>
+
+<li>SaveToBinary</li>
+</ul>
+
+<p>
+与 Relay Codegen 基本类似  
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgfd35a9a" class="outline-4">
+<h4 id="orgfd35a9a"><span class="section-number-4">1.2.3</span> What about the __TVMFuncCall</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<p>
+以 opencl 为例, 除了通过 opencl codegen 生成了一些 symbol (例如
+tvmgen_default_fused_add_kernel0) 外, 还有一些 host 端代码通过 __TVMFuncCall 来调用这些 symbol.
+</p>
+</div>
+
+<div id="outline-container-orge0cdf44" class="outline-5">
+<h5 id="orge0cdf44"><span class="section-number-5">1.2.3.1</span> __TVMFuncCall 在哪儿</h5>
+<div class="outline-text-5" id="text-1-2-3-1">
+<div class="org-src-container">
+<pre class="src src-shell">readelf -a /tmp/a.elf|grep __TVMFuncCall -B 20
+objdump -D /tmp/a.elf|grep 4030 -B 20
+</pre>
+</div>
+
+<p>
+0x0000000000000005 (STRTAB)             0x3a8
+0x0000000000000006 (SYMTAB)             0x2a0
+0x000000000000000a (STRSZ)              205 (bytes)
+0x000000000000000b (SYMENT)             24 (bytes)
+0x0000000000000003 (PLTGOT)             0x4000
+0x0000000000000007 (RELA)               0x478
+0x0000000000000008 (RELASZ)             264 (bytes)
+0x0000000000000009 (RELAENT)            24 (bytes)
+0x000000006ffffff9 (RELACOUNT)          3
+0x0000000000000000 (NULL)               0x0
+</p>
+
+<p>
+Relocation section '.rela.dyn' at offset 0x478 contains 11 entries:
+  Offset          Info           Type           Sym. Value    Sym. Name + Addend
+000000003e60  000000000008 R_X86_64_RELATIVE                    10f0
+000000003e68  000000000008 R_X86_64_RELATIVE                    10b0
+000000004018  000000000008 R_X86_64_RELATIVE                    4018
+000000003fc0  000100000006 R_X86_64_GLOB_DAT 0000000000000000 __cxa_finalize + 0
+000000003fc8  000600000006 R_X86_64_GLOB_DAT 0000000000004028 __tvm_module_ctx + 0
+000000003fd0  000200000006 R_X86_64_GLOB_DAT 0000000000000000 _ITM_registerTMCloneTa + 0
+000000003fd8  000300000006 R_X86_64_GLOB_DAT 0000000000000000 _ITM_deregisterTMClone + 0
+000000003fe0  000a00000006 R_X86_64_GLOB_DAT 0000000000004030 __TVMFuncCall + 0
+000000003fe8  000700000006 R_X86_64_GLOB_DAT 0000000000004040 __TVMAPISetLastError + 0
+000000003ff0  000900000006 R_X86_64_GLOB_DAT 0000000000004038 <span class="underline"><span class="underline">TVMBackendGetFuncFro + 0
+000000003ff8  000400000006 R_X86_64_GLOB_DAT 0000000000000000 __gmon_start</span></span> + 0
+</p>
+
+<p>
+The decoding of unwind sections for machine type Advanced Micro Devices X86-64 is not currently supported.
+</p>
+
+<p>
+Symbol table '.dynsym' contains 11 entries:
+   Num:    Value          Size Type    Bind   Vis      Ndx Name
+     0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND 
+     1: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND __cxa_finalize
+     2: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND _ITM_registerTMCloneTable
+     3: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND <span class="underline">ITM_deregisterTMCloneTab
+     4: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND <span class="underline">_gmon_start</span></span>
+     5: 0000000000001100   822 FUNC    GLOBAL DEFAULT    9 tvmgen_default_fused_add
+     6: 0000000000004028     8 OBJECT  WEAK   DEFAULT   20 __tvm_module_ctx
+     7: 0000000000004040     8 OBJECT  WEAK   DEFAULT   20 __TVMAPISetLastError
+     8: 0000000000002a06   715 OBJECT  GLOBAL DEFAULT   11 __tvm_dev_mblob
+     9: 0000000000004038     8 OBJECT  WEAK   DEFAULT   20 __TVMBackendGetFuncFromEn
+    10: 0000000000004030     8 OBJECT  WEAK   DEFAULT   20 __TVMFuncCall
+&#x2013;
+    37: 0000000000004048     8 OBJECT  LOCAL  DEFAULT   20 .tvm_func.__tvm_set_devic
+    38: 0000000000004050     8 OBJECT  LOCAL  DEFAULT   20 .tvm_func.tvmgen_default_
+    39: 0000000000001440   132 FUNC    LOCAL  DEFAULT    9 tvmgen_default_fused_add_
+    40: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS devc
+    41: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS crtstuff.c
+    42: 0000000000002db8     0 OBJECT  LOCAL  DEFAULT   13 <span class="underline"><span class="underline">FRAME_END</span></span>
+    43: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS 
+    44: 0000000000003e70     0 OBJECT  LOCAL  DEFAULT   16 <span class="underline">DYNAMIC
+    45: 0000000000004020     0 OBJECT  LOCAL  DEFAULT   19 <span class="underline">_TMC_END</span></span>
+    46: 0000000000004018     0 OBJECT  LOCAL  DEFAULT   19 __dso_handle
+    47: 0000000000001000     0 FUNC    LOCAL  DEFAULT    6 _init
+    48: 0000000000002cd4     0 NOTYPE  LOCAL  DEFAULT   12 __GNU_EH_FRAME_HDR
+    49: 00000000000014c4     0 FUNC    LOCAL  DEFAULT   10 <span class="underline">fini
+    50: 0000000000004000     0 OBJECT  LOCAL  DEFAULT   18 _GLOBAL_OFFSET_TABLE</span>
+    51: 0000000000001100   822 FUNC    GLOBAL DEFAULT    9 tvmgen_default_fused_add
+    52: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND __cxa_finalize
+    53: 0000000000004028     8 OBJECT  WEAK   DEFAULT   20 __tvm_module_ctx
+    54: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND _ITM_registerTMCloneTable
+    55: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND _ITM_deregisterTMCloneTab
+    56: 0000000000002a06   715 OBJECT  GLOBAL DEFAULT   11 __tvm_dev_mblob
+    57: 0000000000004030     8 OBJECT  WEAK   DEFAULT   20 __TVMFuncCall
+0000000000004000 &lt;_GLOBAL_OFFSET_TABLE_&gt;:
+    4000:	70 3e                	jo     4040 &lt;__TVMAPISetLastError&gt;
+	&#x2026;
+</p>
+
+<p>
+Disassembly of section .data:
+</p>
+
+<p>
+0000000000004018 &lt;__dso_handle&gt;:
+    4018:	18 40 00             	sbb    %al,0x0(%rax)
+    401b:	00 00                	add    %al,(%rax)
+    401d:	00 00                	add    %al,(%rax)
+	&#x2026;
+</p>
+
+<p>
+Disassembly of section .bss:
+</p>
+
+<p>
+0000000000004020 &lt;completed.8060&gt;:
+	&#x2026;
+</p>
+
+<p>
+0000000000004028 &lt;__tvm_module_ctx&gt;:
+	&#x2026;
+</p>
+
+<p>
+0000000000004030 &lt;__TVMFuncCall&gt;:
+</p>
+
+<p>
+可见 __TVMFuncCall 是一个 dynsym (类似于 libc 中的 print), 调用这个符号时最终会用
+.bss 中 0x4030 处的值做为函数的地址.
+</p>
+
+<p>
+实现这一目标分为两步:
+</p>
+
+<ol class="org-ol">
+<li><p>
+llvm 初始化一个名为 __TVMFuncCall 的全局变量, 并生成了对这个全局变量对应的地址的调用
+</p>
+
+<p>
+<a href="file:///home/sunway/source/tvm/src/target/llvm/codegen_cpu.cc#org7dfb474">file:///home/sunway/source/tvm/src/target/llvm/codegen_cpu.cc#org7dfb474</a>
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++">gv_tvm_func_call_ = InitContextPtr<span style="color: #757575;">(</span>ftype_tvm_func_call_-&gt;getPointerTo<span style="color: #757575;">(),</span> <span style="color: #2aa198;">"__TVMFuncCall"</span><span style="color: #757575;">)</span>;
+  <span style="color: #268bd2; font-weight: bold;">llvm</span>::<span style="color: #b58900;">GlobalVariable</span>* <span style="color: #268bd2;">gv</span> = <span style="color: #859900;">new</span> <span style="color: #268bd2; font-weight: bold;">llvm</span>::<span style="color: #b58900;">GlobalVariable</span><span style="color: #757575;">(</span>
+    *module_<span style="color: #757575;">,</span> p_type<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">false</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">llvm</span>::<span style="color: #268bd2; font-weight: bold;">GlobalValue</span>::LinkOnceAnyLinkage<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">nullptr</span><span style="color: #757575;">,</span> name<span style="color: #757575;">)</span>;
+  gv-&gt;setInitializer<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">llvm</span>::<span style="color: #268bd2; font-weight: bold;">Constant</span>::getNullValue<span style="color: #757575;">(</span>p_type<span style="color: #757575;">))</span>;
+
+
+<span style="color: #268bd2; font-weight: bold;">llvm</span>::<span style="color: #b58900;">BasicBlock</span>* <span style="color: #268bd2; font-weight: bold;">CodeGenCPU</span>::<span style="color: #268bd2;">MakeCallPacked</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">Array</span>&lt;PrimExpr&gt;&amp; <span style="color: #268bd2;">args</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">llvm</span>::<span style="color: #b58900;">Value</span>** <span style="color: #268bd2;">rvalue</span><span style="color: #757575;">,</span>
+                                             <span style="color: #268bd2; font-weight: bold;">llvm</span>::<span style="color: #b58900;">Value</span>** <span style="color: #268bd2;">ret_tcode</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">DataType</span>&amp; <span style="color: #268bd2;">r_type</span><span style="color: #757575;">,</span>
+                                             <span style="color: #859900;">const</span> <span style="color: #b58900;">int64_t</span> <span style="color: #268bd2;">begin</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">int64_t</span> <span style="color: #268bd2;">end</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+  <span style="color: #859900;">auto</span> <span style="color: #268bd2;">call_callee</span> = RuntimeTVMFuncCall<span style="color: #757575;">()</span>;
+  builder_-&gt;CreateCall<span style="color: #757575;">(</span>
+      call_callee<span style="color: #757575;">,</span> <span style="color: #757575;">{</span>handle<span style="color: #757575;">,</span> arg_value<span style="color: #757575;">,</span> arg_tcode<span style="color: #757575;">,</span> ConstInt32<span style="color: #757575;">(</span>nargs<span style="color: #757575;">),</span> ret_value<span style="color: #757575;">,</span> *ret_tcode<span style="color: #757575;">})</span>
+  ...          
+</pre>
+</div></li>
+
+<li><p>
+tvm runtime 会负责在运行时用真正的 TVMFuncCall 来初始化 __TVMFuncCall
+</p>
+
+<p>
+<a href="file:///home/sunway/source/tvm/src/runtime/library_module.cc#orga6cc9f2">file:///home/sunway/source/tvm/src/runtime/library_module.cc#orga6cc9f2</a>
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++">TVM_INIT_CONTEXT_FUNC<span style="color: #757575;">(</span>TVMFuncCall<span style="color: #757575;">)</span>;
+  <span style="color: #586e75;">// </span><span style="color: #586e75;">fgetsymbol &#22312;&#36825;&#37324;&#23454;&#38469;&#23601;&#26159; dlsym</span>
+  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #859900;">auto</span>* <span style="color: #268bd2;">fp</span> = <span style="color: #859900;">reinterpret_cast</span>&lt;<span style="color: #859900;">decltype</span><span style="color: #757575;">(</span>&amp;FuncName<span style="color: #757575;">)</span>*&gt;<span style="color: #757575;">(</span>fgetsymbol<span style="color: #757575;">(</span><span style="color: #2aa198;">"__"</span> #FuncName<span style="color: #757575;">)))</span> <span style="color: #757575;">{</span> \
+    *fp = FuncName;                                                                    \
+  <span style="color: #757575;">}</span>
+</pre>
+</div></li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

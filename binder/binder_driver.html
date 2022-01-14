@@ -1,0 +1,1700 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-14 五 11:54 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Binder Driver</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Binder Driver</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org19c1ff3">1. Binder Driver</a>
+<ul>
+<li><a href="#org210d286">1.1. binder_proc</a>
+<ul>
+<li><a href="#org2b27847">1.1.1. binder_proc 结构体的初始化</a></li>
+<li><a href="#org7014f5d">1.1.2. binder_proc 的清除</a></li>
+</ul>
+</li>
+<li><a href="#org17922ff">1.2. binder_node</a></li>
+<li><a href="#org7d9fb30">1.3. binder_ref</a></li>
+<li><a href="#org8a479b3">1.4. binder_proc, binder_node, binder_ref 的关系:</a></li>
+<li><a href="#org2cefde9">1.5. binder_node 和 binder_ref 的初始化</a>
+<ul>
+<li><a href="#orge16b5dd">1.5.1. 总结</a></li>
+</ul>
+</li>
+<li><a href="#orge7be2c1">1.6. binder_node 和 binder_ref 的删除/释放</a></li>
+<li><a href="#org19c9cbd">1.7. binder driver command protocol</a></li>
+<li><a href="#org76e5feb">1.8. binder_thread</a>
+<ul>
+<li><a href="#orgd2bcb78">1.8.1. looper binder_thread 初始化</a></li>
+</ul>
+</li>
+<li><a href="#org1660a5e">1.9. binder_buffer</a>
+<ul>
+<li><a href="#org7370aae">1.9.1. binder_buffer 的初始化</a></li>
+<li><a href="#org3cd1986">1.9.2. binder_buffer 的释放</a></li>
+<li><a href="#org7e6ec76">1.9.3. 页表</a></li>
+<li><a href="#org23d2e75">1.9.4. best-fit</a></li>
+</ul>
+</li>
+<li><a href="#org702c115">1.10. binder_transaction_data</a></li>
+<li><a href="#orge368500">1.11. flat_binder_object</a></li>
+<li><a href="#orga9f5609">1.12. binder_transaction &amp; binder_work</a></li>
+<li><a href="#orgf03e74a">1.13. binder 引用计数</a>
+<ul>
+<li><a href="#org15ff093">1.13.1. reference 相关场景</a></li>
+</ul>
+</li>
+<li><a href="#org2ffc03f">1.14. binder death</a>
+<ul>
+<li><a href="#orgf48013d">1.14.1. DeathRecipient</a></li>
+<li><a href="#orgdaad512">1.14.2. send failed reply</a></li>
+</ul>
+</li>
+<li><a href="#orgaf8a84b">1.15. binder stats</a></li>
+<li><a href="#org080b080">1.16. TF_ONE_WAY</a>
+<ul>
+<li><a href="#orgf9c3927">1.16.1. oneway 关键字</a></li>
+<li><a href="#orged8e902">1.16.2. TF_ONE_WAY 的实现</a></li>
+<li><a href="#org21e42b7">1.16.3. async_transaction</a></li>
+<li><a href="#org0095938">1.16.4. 总结</a></li>
+</ul>
+</li>
+<li><a href="#org3d8ac5c">1.17. binder 优先级相关</a>
+<ul>
+<li><a href="#org6b6e909">1.17.1. binder_lock</a></li>
+<li><a href="#orgdb68845">1.17.2. binder_set_nice</a></li>
+</ul>
+</li>
+<li><a href="#org64edd1f">1.18. service_manager</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org19c1ff3" class="outline-2">
+<h2 id="org19c1ff3"><span class="section-number-2">1</span> Binder Driver</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+Binder driver 中几个最重要的数据结构:
+</p>
+<ul class="org-ul">
+<li>binder_proc</li>
+<li>binder_node</li>
+<li>binder_ref</li>
+<li>binder_thread</li>
+<li>binder_transaction</li>
+<li>binder_transaction_data</li>
+<li>binder_work</li>
+</ul>
+</div>
+
+<div id="outline-container-org210d286" class="outline-3">
+<h3 id="org210d286"><span class="section-number-3">1.1</span> binder_proc</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+binder_proc 是 binder driver 中处于最顶层的数据结构, 它代表了一个与 binder
+driver 打交道的进程, 任意一个和 binder 打交道的进程, 不管是 server 还是 client,
+在 kernel 都有且只有一个 binder_proc 结构与之对应.
+</p>
+
+<p>
+binder_proc 主要成员包括:
+</p>
+
+<ul class="org-ul">
+<li>files
+与进程的 task_struct 中的 files 相同, 通过 binder 传递 fd (文件描述符)时需要使用该成员</li>
+
+<li>VMA
+与进程 task_struct 中的 mm 相同, 分配/释放 binder buffer 时需要使用该成员</li>
+
+<li>nodes
+该进程"拥有"的 binder_node, 可以暂且把一个 binder_node 看作进程对外提供的一个 service, 所以 nodes 相当于该进程对外提供的所有 service.</li>
+
+<li>threads
+进程中所有的 binder_thread, 这些 binder_thread 是一些真正的 worker thread,
+binder_node 所代表的 service 就是在这些线程中执行任务的.</li>
+
+<li>buffers, free_buffers, allocated_buffers
+每个进程有固定大小的 buffer (1M-8K), 用来保存 binder 调用时的参数和返回值</li>
+
+<li>refs_by_desc, refs_by_node
+这两个结构体是两根红黑树, 树结点的 value 都是 binder_ref, 但对于 refs_by_desc 树,
+结点的 key 是 binder_ref.desc, 对于 refs_by_node, key 是 binder_node</li>
+</ul>
+</div>
+
+<div id="outline-container-org2b27847" class="outline-4">
+<h4 id="org2b27847"><span class="section-number-4">1.1.1</span> binder_proc 结构体的初始化</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+binder_proc 代表一个与 binder 打交道的进程, 不论 binder server 或是 binder
+client, 都有且仅有一个 binder_proc 与之对应.
+</p>
+
+<pre class="example" id="orge65d512">
+binder_proc 的初始化:
+ProccessState::self()
+  new ProcessState()
+    open /dev/binder
+      // binder.c
+      binder_open()
+        kmalloc(proc)
+          filp-&gt;private_data=proc
+</pre>
+
+<p>
+filp-&gt;private_data 是进程私有数据, 每当进程通过系统调用进入 kernel 时, driver
+代码总是可以通过 task_struct-&gt;filp-&gt;private_data 轻松找到该进程对应的
+binder_proc
+</p>
+</div>
+</div>
+
+<div id="outline-container-org7014f5d" class="outline-4">
+<h4 id="org7014f5d"><span class="section-number-4">1.1.2</span> binder_proc 的清除</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+当进程终止时, binder_proc 会被 driver 清除.
+</p>
+
+<p>
+当进程终止时 (正常退出或因为信号异常退出), kernel 会负责关闭该进程打开的所有文件描述符, 因为进程通过打开过/dev/binder, 所以 kernel 会关闭该文件描述符,
+这个动作会导致 driver 的 binder_release 函数被调用:
+</p>
+
+<pre class="example" id="orgbbbe693">
+binder_release()
+  binder_proc proc = filp-&gt;private_data;
+  // service manager 进程挂掉了...
+  if (binder_context_mgr_node-&gt;proc==proc):
+    binder_context_mgr_node=NULL;
+  // 释放该进程所有的 binder_thread
+  // 释放该进程所有 binder_node,同时通知使用这些 binder_node (service) 的所
+  // 有 binder_ref (client):  这个 binder 挂掉了 (binder.linkToDeath)
+  foreach (node: proc-&gt;nodes):
+    // 从 proc-&gt;nodes 中删除该 node
+    rb_erase(node, proc-&gt;nodes)
+    // 如果该 node 没有任何 binder_ref 使用它 (service 没有任何 client)
+    if (hlist_empty (node-&gt;refs)):
+      kfree(node);
+    else:
+      foreach (ref:node-&gt;refs):
+        // linkToDeath
+        if (ref-&gt;death):
+          // 给 ref-&gt;proc-&gt;todo 添加一个 work(通知它 node 已经 dead),
+          // 并唤醒 ref 所在的进程
+          list_add_tail(ref-&gt;death-&gt;...)
+          wake_up_interruptible(ref-&gt;proc-&gt;wait);
+  // 释放所有的 binder_ref
+  // 释放所有的 binder_buffer
+  // 最后释放 binder_proc 结构体本身
+  kfree(proc)
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org17922ff" class="outline-3">
+<h3 id="org17922ff"><span class="section-number-3">1.2</span> binder_node</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+从用户的角度看,binder_node 代表一个 service, 它与 c++ binder 的
+BBinder 对象有一一对应关系.
+</p>
+
+<p>
+binder_node 的主要成员有:
+</p>
+
+<ul class="org-ul">
+<li><p>
+binder_proc proc
+</p>
+
+<p>
+表示这个 binder_node 属于哪个进程. 即这个 service 是哪个进程提供的.
+</p></li>
+
+<li><p>
+cookie
+</p>
+
+<p>
+这个 binder_node 对应的用户空间的 c++ BBinder 对象的地址
+</p></li>
+
+<li><p>
+refs
+</p>
+
+<p>
+还记得前面提到的 binder_proc 被清除时如何处理 linkToDeath 的么?
+</p></li>
+</ul>
+
+<p>
+binder_node 与 binder_proc 的关系:
+</p>
+
+<pre class="example" id="org1f7285b">
+             +----------------------+
++----------+&gt;+  server binder_proc  +-&lt;------------+
+|            +-----------+----------+              |
+|              +---------+------------+            |
+|              |     rb_root nodes    |            |
+|              +----------------------+            |
+|                 --/      \--                     |
+|                --/        \--                    |
+|               --/          \--                   |
+|               -/            \-                   |
+|     +------------+          +------------+       |
+|     | rb_node 1  |          |  rb_node 2 |       |
+|     +------------+          +------------+       |
++-----+  proc      |          |    proc    +-------+
+      +------------+          +------------+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org7d9fb30" class="outline-3">
+<h3 id="org7d9fb30"><span class="section-number-3">1.3</span> binder_ref</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+从用户的角度看, binder_ref 代表一个 client, 它与 c++ binder 的 BpBinder 一一对应.
+</p>
+
+<p>
+binder_ref 的主要成员有:
+</p>
+
+<ul class="org-ul">
+<li><p>
+binder_proc * proc
+</p>
+
+<p>
+binder_ref 所在的进程 (使用这个 client 的进程)
+</p></li>
+
+<li><p>
+binder_node * node
+</p>
+
+<p>
+这个 binder_ref 所指向的 binder_node (client 对应的 service)
+</p></li>
+
+<li>uint32_t desc</li>
+
+<li><p>
+rb_node_desc/rb_node_node
+</p>
+
+<p>
+与 binder_proc 的 refs_by_desc/refs_by_node 配合, 以便 binder_proc 可以根据
+desc/node 很快的找到 desc/node 对应的 binder_ref
+</p>
+
+<p>
+desc 即 "descriptor"
+</p>
+
+<p>
+binder_ref 与 binder_node 实际上指的一个东西,即所谓的"一体两面", binder_node 是从 server 的角度来看, 而 binder_ref 是从 client 的角度来看.
+</p>
+
+<p>
+binder_ref 代表一个 client 端的 proxy, binder_node 类似于 server 端的 stub.
+</p>
+
+<p>
+binder_node 与 binder_ref 是`一对多`的关系, 一个进程的某一个 binder_node 可能有多个进程的多个 binder_ref 引用它, 即多个进程的 client 使用同一个进程的同一个 service.
+</p></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org8a479b3" class="outline-3">
+<h3 id="org8a479b3"><span class="section-number-3">1.4</span> binder_proc, binder_node, binder_ref 的关系:</h3>
+<div class="outline-text-3" id="text-1-4">
+<pre class="example" id="org3d562a9">
+          +--------------------+           +--------------------+                  +--------------------+
++--------&gt;+ server binder_proc |           |client1 binder_proc |                  |client2 binder_proc |
+|         +--------------------+           +--------------------+                  +--------------------+
+|         |    rb_root nodes   |           |   refs_by_desc     +---+              |   refs_by_desc     +---+
+|         +---------+----------+           +--------------------+   |              +--------------------+   |
+|                   |                      |   refs_by_node     +-+ |              |   refs_by_node     +-+ |
+|  +----------------+                      +--------------------+ | |              +--------------------+ | |
+|  |                                                              | |                                     | |
+|  |                                                              | |                                     | |
+|  |    +-----------+                       +----------------+    | |               +----------------+    | |
+|  |    |binder_node|&lt;-----+-----+          |  binder_ref    |    | |               |  binder_ref    |    | |
+|  |    +-----------+      |     |          +----------------+    | |               +----------------+    | |
+|  +---&gt;+  rb_node  |      |     |          |   desc         |    | |               |   desc         |    | |
+|       +-----------+      |     |          +----------------+    | |               +----------------+    | |
++-------+   proc    |      |     |          |  rb_node_desc  |&lt;---+-+               |  rb_node_desc  |&lt;---+-+
+        +-----------+      |     |          +----------------+    |                 +----------------+    |
+                           |     |          |  rb_node_node  |&lt;---+                 |  rb_node_node  |&lt;---+
+                           |     |          +----------------+                      +----------------+
+                           |     +----------+  node          |      +---------------+  node          |
+                           |                +----------------+      |               +----------------+
+                           +----------------------------------------+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org2cefde9" class="outline-3">
+<h3 id="org2cefde9"><span class="section-number-3">1.5</span> binder_node 和 binder_ref 的初始化</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+binder_node 的初始化是通过 binder_new_node
+</p>
+
+<p>
+binder_ref 的初始化是通过 binder_get_ref_for_node
+</p>
+
+<p>
+binder_driver 的 binder_transaction 函数在处理 flat_binder_object 时会负责 binder_node 和 binder_ref 的初始化
+</p>
+
+<pre class="example" id="org0527a3e">
+binder_transaction()
+  // 处理 flat_binder_object
+  switch (fp-&gt;type) {
+    case BINDER_TYPE_BINDER:
+    case BINDER_TYPE_WEAK_BINDER:
+      struct binder_node *node = binder_get_node(proc, fp-&gt;binder);
+      // 当前 proc 打算通过 parcel 将一个 binder stub 传递给另一个进程
+      if (node == NULL):
+        // 在当前 proc 中创建 binder_node
+        node = binder_new_node(proc, fp-&gt;binder, fp-&gt;cookie);
+
+      // 在 target_proc 中查看是否已经存在一个对应的 binder_ref,
+      // 若不存在, 则在 target_proc 中新建一个 binder_ref
+      ref = binder_get_ref_for_node(target_proc, node);
+      fp-&gt;type = BINDER_TYPE_HANDLE;
+      // 修改原 flat_binder_object 的 handle 为 target_proc 中对应的 binder_ref 的 desc
+      fp-&gt;handle = ref-&gt;desc;
+
+    case BINDER_TYPE_HANDLE:
+    case BINDER_TYPE_WEAK_HANDLE:
+      struct binder_ref *ref = binder_get_ref(proc, fp-&gt;handle);
+      // proc 要传递 ref, 则 ref 必定存在于 proc 中
+      assert (ref != NULL);
+      if (ref-&gt;node-&gt;proc == target_proc):
+        // ref-&gt;node-&gt;proc == target_proc, 表示要传递的 ref 的 node 已经位于 target_proc,
+        // 则 target_proc 已经可以直接访问 ref 对应的 node 了, 下面只需要将 flat_binder_object
+        // 中的 ref 直接修改为相应的 node.
+        fp-&gt;type = BINDER_TYPE_BINDER;
+        fp-&gt;binder = ref-&gt;node-&gt;ptr;
+        fp-&gt;cookie = ref-&gt;node-&gt;cookie;
+      else:
+        // ref-&gt;node 不存在 target_proc, target_proc 需要通过一个新的 binder_ref 引用这个 node
+        struct binder_ref *new_ref;
+        new_ref = binder_get_ref_for_node(target_proc, ref-&gt;node);
+        fp-&gt;handle = new_ref-&gt;desc;
+</pre>
+
+<p>
+binder_node 和 binder_ref 在 parcel 中传递导致 target_proc 中相应的
+bindrr_node 和 binder_ref 被初始化, 例如:
+</p>
+
+<ol class="org-ol">
+<li>service_manager 的 addService 方法, 要 add 的 service 是
+BINDER_TYPE_BINDER 类型 (BBinder), 导致调用者自己的 proc 中生成对应的 binder_node, 同时 service_manager 的 proc 生成对应的 binder_ref</li>
+
+<li>service_maanger 的 getService 方法, 需要返回一个 binder, driver 在处理类型为 BINDER_TYPE_HANDLE 的 flat_binder_object 时会在调用者的
+proc 中生成对应的 binder_ref (假设该 binder_node-&gt;proc != target_proc)</li>
+
+<li>bindService, 与 getService 类似.</li>
+</ol>
+</div>
+
+<div id="outline-container-orge16b5dd" class="outline-4">
+<h4 id="orge16b5dd"><span class="section-number-4">1.5.1</span> 总结</h4>
+<div class="outline-text-4" id="text-1-5-1">
+<p>
+node, ref 的初始化发生在 flat_binder_object 转换期间, 是 "按需" 初始化的.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orge7be2c1" class="outline-3">
+<h3 id="orge7be2c1"><span class="section-number-3">1.6</span> binder_node 和 binder_ref 的删除/释放</h3>
+<div class="outline-text-3" id="text-1-6">
+<p>
+ref 和 node 的删除的过程类似于基于引用计数的 GC 过程, 主要是通过
+binder_dec_ref 和 binder_dec_node.
+</p>
+
+<p>
+具体参考 binder 引用计数.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org19c9cbd" class="outline-3">
+<h3 id="org19c9cbd"><span class="section-number-3">1.7</span> binder driver command protocol</h3>
+<div class="outline-text-3" id="text-1-7">
+<p>
+binder driver 与上层 IPCThreadState 通过一系统的 binder driver command
+来通讯, 上层与 driver 通过 IPCTheadState 中的 mIn 和 mOut 两个 parcel
+进行数据交换, command 会先被写入这两个 parcel, 然后根据 command 的不同,再写入其它数据 (例如, 若 command 为 BC_TRANSACTION, 则后续会写入一个
+binder_transaction_data)
+</p>
+
+<p>
+常用的 command 包括:
+</p>
+
+<ul class="org-ul">
+<li>BC_XXX
+<ul class="org-ul">
+<li>BC_TRANSACTION</li>
+<li>BC_REPLY</li>
+<li>BC_FREE_BUFFER</li>
+<li>BC_CLEAR_DEATH_NOTIFICATION</li>
+<li>&#x2026;</li>
+</ul></li>
+<li>BR_XXX
+<ul class="org-ul">
+<li>BR_TRANSACTION</li>
+<li>BR_REPLY</li>
+<li>BR_TRANSACTION_COMPLETE</li>
+<li>BR_DEAD_BINDER</li>
+<li>&#x2026;</li>
+</ul></li>
+</ul>
+
+<p>
+所有的 BC_XXX 命令都是 user -&gt; kernel, 所有的 BR_XXX 命令都是 kernel
+-&gt; user
+</p>
+</div>
+</div>
+
+<div id="outline-container-org76e5feb" class="outline-3">
+<h3 id="org76e5feb"><span class="section-number-3">1.8</span> binder_thread</h3>
+<div class="outline-text-3" id="text-1-8">
+<p>
+binder_thread 有两个含义:
+</p>
+
+<ol class="org-ol">
+<li>kernel 中的 binder_thread 数据结构</li>
+
+<li>IPCTheadState 发起的 binder thread #xxx 线程 (looper binder_thread)</li>
+</ol>
+
+<p>
+kernel 每次处理 binder_transaction 时都需要在 kernel 中有一个和当前
+thread 对应的 binder_thread.
+</p>
+
+<p>
+若当前进程对应的是 client, 则 client 线程对应的 binder_thread 并不会在
+proc-&gt; wait 上等待, 它们是 transaction 的发起方, 只会在
+binder_thread_write 完之后在 thread-&gt;todo 上取任务, 后者对应之前
+transaction 的返回结果.
+</p>
+
+<p>
+若当前进程是上层 IPCTheadState 注册的 binder thread #xxx, 它们是
+transaction 的接收方, 则它们最终会通过 binder_thread_read 阻塞在
+proc-&gt;wait 上, 接受 server binder_proc 的调度 (等待 client 唤醒), 并且应用层的 joinThreadPool 会保证这个 looper binder_thread 响应一次
+transaction 后会再次 loop, 在 proc-&gt;wait 继续阻塞.
+</p>
+</div>
+
+<div id="outline-container-orgd2bcb78" class="outline-4">
+<h4 id="orgd2bcb78"><span class="section-number-4">1.8.1</span> looper binder_thread 初始化</h4>
+<div class="outline-text-4" id="text-1-8-1">
+<p>
+looper binder_thread 都是由应用层发起并且阻塞在 proc-&gt;wait 上的. 
+具体的, 都是通过 IPCTheadState.joinThreadPool.
+</p>
+
+<p>
+每个需要 binder 通讯的进程(无论 server 或 client), 都需要至少有一个
+looper binder_thread:
+</p>
+
+<ul class="org-ul">
+<li>server 需要 looper, 因为 looper 需要被唤醒以处理 transaction</li>
+
+<li>client 也需要 looper, 因为 client 也存在需要主动被唤醒的情况, 比如
+death notification</li>
+</ul>
+
+<p>
+native 程序都需要主动调用 IPCTheadState.joinThreadPool
+java 程序不需要, 因为 zygote 已经做了这一步.
+</p>
+
+<p>
+除了应用主动启动 looper binder_thread, binder driver 还可以通过
+BR_SPAWN_LOOPER 要求应用启动一个 looper. 
+</p>
+</div>
+
+<div id="outline-container-org354aabb" class="outline-5">
+<h5 id="org354aabb"><span class="section-number-5">1.8.1.1</span> joinThreadPool</h5>
+</div>
+
+<div id="outline-container-org5234997" class="outline-5">
+<h5 id="org5234997"><span class="section-number-5">1.8.1.2</span> BR_SPAWN_LOOPER</h5>
+<div class="outline-text-5" id="text-1-8-1-2">
+<p>
+proc 有几个和 looper binder_thread 有关的统计数据:
+</p>
+
+<ol class="org-ol">
+<li><p>
+max_threads
+</p>
+
+<p>
+应用层通过 ioctl(BINDER_SET_MAX_THREADS) 设置的最大的 looper 数量,
+默认为 15
+</p></li>
+
+<li><p>
+ready_threads
+</p>
+
+<p>
+阻塞在 proc-&gt;wait 上的 looper 个数, 这些 looper 等待被 transaction
+唤醒, 所以为 "ready" 状态
+</p>
+
+<pre class="example" id="org3a81269">
+binder_thread_read:
+  wait_for_proc_work = thread-&gt;transaction_stack == NULL &amp;&amp; list_empty(&amp;thread-&gt;todo);
+  if (wait_for_proc_work):
+    proc-&gt;ready_threads++;
+
+  // wait_event_interruptible
+  // ...
+  // looper 被唤醒
+  if (wait_for_proc_work):
+    proc-&gt;ready_threads--;
+</pre></li>
+
+<li><p>
+requested_threads &amp; requested_threads_started
+</p>
+
+<p>
+requested_threads 指 driver 已经发出 BR_SPAWN_LOOPER, 但还没有真正启动的 looper 个数, 即"等待启动" 的状态
+</p>
+
+<p>
+requested_threads_started 指上层通过 BC_REGISTER_LOOPER 启动的
+looper 个数, 因为每个进程的都存在一个通过 BC_ENTER_LOOPER 启动的
+looper, 所以当前进程已经启动的 looper 个数实际上
+requested_threads_started + 1
+</p>
+
+<pre class="example" id="orgb524cd7">
+binder_thread_read:
+  // ...
+  // 从 proc-&gt;wait 唤醒并装备好 binder_transaction_data
+  if spawn looper is needed:
+    proc-&gt;requested_threads++;
+    put_user(BR_SPAWN_LOOPER, (uint32_t __user *)buffer)
+
+binder_thread_write:
+  case BC_REGISTER_LOOPER:
+    // BC_REGISTER_LOOPER 一定是应用层为了响应 driver 的 BR_SPAWN_LOOPER 请求导致的
+    assert (proc-&gt;requested_threads != 0)
+    // requested_threads 与 requested_threads_started 是此消彼长的关系           
+    proc-&gt;requested_threads--;
+    proc-&gt;requested_threads_started++;
+</pre></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org051717a" class="outline-5">
+<h5 id="org051717a"><span class="section-number-5">1.8.1.3</span> 何时需要 spawn looper</h5>
+<div class="outline-text-5" id="text-1-8-1-3">
+<pre class="example" id="org9decd5e">
+proc-&gt;requested_threads + proc-&gt;ready_threads == 0 &amp;&amp; proc-&gt;requested_threads_started &lt; proc-&gt;max_threads
+
+requested_threads + ready_threads == 0, 实际就是 requested_threads == 0 &amp;&amp; ready_threads == 0, 即
+1. requested_threads 为 0 , 表示不存在 "正在启动" 的 looper
+2. ready_threads, 表示已经启动的 looper 中没有 ready 的, 都在忙着处理别的 transaction.
+这种情况下如果再来一个 transaction 必然会在 proc-&gt;todo 上等待.
+
+proc-&gt;requested_threads_started &lt; proc-&gt;max_threads, 表示当前启动 looper 不超过 max_threads
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org1660a5e" class="outline-3">
+<h3 id="org1660a5e"><span class="section-number-3">1.9</span> binder_buffer</h3>
+<div class="outline-text-3" id="text-1-9">
+<ul class="org-ul">
+<li>binder_buffer is used during ONE binder transaction to save
+request(in the target_proc's) and reply data (in the host_proc's)
+and this buffer is mmap to user-mode directly. so that user-mode
+BBinder can access binder_buffer directly.</li>
+
+<li>every binder_proc has it's own buffer, size limited to 1M-8k, driver
+will allocate one binder_buffer from the buffer for every
+transaction.</li>
+
+<li>one binder_proc's bind_buffers are organized in rb_tree, every node
+control a sized buffer.</li>
+
+<li>the rb_tree use `best-fit` rule to allocate binder_buffer, and can
+`merge/split` on demand to reduce external memory fragmentation.</li>
+</ul>
+
+<p>
+all buffers are in a continuous memory block:
+</p>
+
+<pre class="example" id="orgc500930">
+0                       1K      	       	       	       	       	 1M-8K
++----------------------------------------------------------------+-------+
+|   data1: 1K,allocated |   data2: 2k, free |   data3 521k, alloc| ....  |
++----------------------------------------------------------------+-------+
+</pre>
+
+<p>
+binder_buffer(s) are organized by
+buffers/free_buffers/allocated_buffers in rb_tree
+</p>
+
+<pre class="example" id="org9c45dc9">
+                          +-----------------+
+                          |     binder_proc |
+                          +-----------------+
++-------------------------+     buffers     |
+|                         +-----------------+
+|  +----------------------+ free_buffers    |
+|  |                      +-----------------+
+|  |                      |allocated_buffers+------------------------+
+|  |                      +-----------------+                        |
+|  |                                                                 |
+|  |                                                                 |
+|  |   +---------------------+             +---------------------+   |
+|  |   |  binder_buffer      |             |  binder_buffer      |   |
+|  |   +---------------------+             +---------------------+   |
+|  +--&gt;+rb_node(free or not) |             |rb_node(free or not) |&lt;--+
+|      +---------------------+             +---------------------+
++-----&gt;+   list_head entry   +------------&gt;|   list_head entry   |
+       +---------------------+             +---------------------+
+       |   data_size         |             |   data_size         |
+       +---------------------+             +---------------------+
+       |   data[0]           |             |   data[0]           |
+       +---------------------+             +---------------------+
+</pre>
+
+<p>
+client data are mmap to SERVER's binder_buffer.
+</p>
+
+<pre class="example" id="org458100f">
+ User mode   +-----------------+                                       +-----------------+
+             |   process A     |                                       |   process B     |
+             +-----------------+            copy_from_user()           +-----------------+
+             |   Parcel data   +------------------------+              |                 |
+             +-----------------+                        |              +-------------^---+
+                                                        |                            |
+--------------------------------------------------------+----------------------+---------------
+                   binder driver                        |                      |
+ Kernel mode       +------------------------------------+----------------------+-------------+
+                   |                                    V                      |             |
+                   |     +----------------+          +--+-------------+        |             |
+                   |     | binder_proc B  |   +-----&gt;+ binder_buffer  +--------+             |
+                   |     +----------------+   |      +----------------+   mmap to B process  |
+                   |     |  allocated_buf +---+      |  parcel data   |                      |
+                   |     |                |          |  from A        |                      |
+                   |     |                |          +----------------+                      |
+                   |     +----------------+                                                  |
+                   +-------------------------------------------------------------------------+
+</pre>
+</div>
+
+<div id="outline-container-org7370aae" class="outline-4">
+<h4 id="org7370aae"><span class="section-number-4">1.9.1</span> binder_buffer 的初始化</h4>
+<div class="outline-text-4" id="text-1-9-1">
+<p>
+上层是通过 mmap 访问 binder_buffer 的.
+</p>
+
+<pre class="example" id="org6b505d9">
+ProcessState.cpp
+======
+ProcessState::ProcessState()
+  // #define BINDER_VM_SIZE ((1*1024*1024) - (4096 *2))
+  mVMStart = mmap(0, BINDER_VM_SIZE, PROT_READ, MAP_PRIVATE | MAP_NORESERVE, mDriverFD, 0);
+</pre>
+</div>
+
+<div id="outline-container-org3921c3e" class="outline-5">
+<h5 id="org3921c3e"><span class="section-number-5">1.9.1.1</span> 1M-8k</h5>
+<div class="outline-text-5" id="text-1-9-1-1">
+<p>
+BINDER_VM_SIZE 大小为 1M-8k, 为什么要减 8K?
+</p>
+
+<p>
+因为 binder_buffer 在内核空间中通过 vmalloc 分配, kernel 在每个
+vmalloc 区域后会插入一个 guard page (4K), 但我看不出来为什么要减 8K 而不是 4K &#x2026;
+</p>
+
+<blockquote>
+<p>
+Modify the binder to request 1M - 2 pages instead of 1M.  The backing store
+in the kernel requires a guard page, so 1M allocations fragment memory very
+badly.  Subtracting a couple of pages so that they fit in a power of
+two allows the kernel to make more efficient use of its virtual address space.
+</p>
+</blockquote>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org3cd1986" class="outline-4">
+<h4 id="org3cd1986"><span class="section-number-4">1.9.2</span> binder_buffer 的释放</h4>
+<div class="outline-text-4" id="text-1-9-2">
+<p>
+binder_buffer 的释放是通过 Parcel::freeData, 具体参考 Parcel::freeData
+</p>
+</div>
+</div>
+
+<div id="outline-container-org7e6ec76" class="outline-4">
+<h4 id="org7e6ec76"><span class="section-number-4">1.9.3</span> 页表</h4>
+<div class="outline-text-4" id="text-1-9-3">
+<ol class="org-ol">
+<li>上层建立 vma 后, driver 需要分配物理页. binder driver 会在
+binder_alloc_buf 时直接分配物理页, 而不采用 nopage 的方式.</li>
+
+<li>为了便于 driver 访问 binder_buffer, binder_buffer 会同时存在于进程页表与内核页表中, 并且 driver 会保证两个页表指向相同的物理页 (如果不使用内核页表, driver 代表 client 访问 server 的 binder_buffer 会比较麻烦)</li>
+</ol>
+
+<pre class="example" id="org7d162f0">
+binder_mmap
+======
+binder_mmap:
+  // vma 对应 kernel 已经分配好的进程页表
+  // area 对应 driver 分配的内核页表
+  // get_vm_area 相当于不分配物理页 vmalloc, 所以这个 area 的线性地址范围大约是 3G+896M ~ 4G
+  area = get_vm_area(vma-&gt;vm_end - vma-&gt;vm_start, VM_IOREMAP);
+  // proc-&gt;buffer 是 binder_buffer 在 kernel 中的线性地址   
+  proc-&gt;buffer = area-&gt;addr;
+  // user_buffer_offset 用来做两个地址的转换
+  proc-&gt;user_buffer_offset = vma-&gt;vm_start - (uintptr_t)proc-&gt;buffer;
+
+binder_alloc_buf
+======
+binder_alloc_buf:
+  // 先从 free_buffers 中分配一个 binder_buffer
+  // 然后通过 binder_update_page_range 分配物理内存并修改页表
+  binder_update_page_range(proc, buffer-&gt;data /* start */, end_page_addr /* end */)
+    vma = proc-&gt;vma;
+    // 这里的 start 是内核地址空间中 binder_buffer 的首地址
+    for (page_addr = start; page_addr &lt; end; page_addr += PAGE_SIZE):
+      // 直接分配一个物理页, 不再信赖 page fault.
+      *page = alloc_page(GFP_KERNEL | __GFP_HIGHMEM | __GFP_ZERO);
+      // 在 kernel 页表插入一项且其物理页为 page
+      tmp_area.addr = page_addr;
+      tmp_area.size = PAGE_SIZE + PAGE_SIZE /* guard page? */;
+      page_array_ptr = page;
+      map_vm_area(&amp;tmp_area, PAGE_KERNEL, &amp;page_array_ptr);
+      // 修改 target_proc 的进程页表,将物理页也指向 page
+      user_page_addr = (uintptr_t)page_addr + proc-&gt;user_buffer_offset;
+      vm_insert_page(vma, user_page_addr, page[0]);
+
+
+client tr -&gt; server binder_buffer
+======
+binder_transaction:
+  copy_from_user(t-&gt;buffer-&gt;data, tr-&gt;data.ptr.buffer, tr-&gt;data_size)
+
+
+server binder_buffer -&gt; server tr
+======
+binder_thread_read:
+  tr.data.ptr.buffer = (void *)t-&gt;buffer-&gt;data + proc-&gt;user_buffer_offset;
+</pre>
+
+<p>
+内核地址空间中 binder_buffer 的地址:
+</p>
+
+<pre class="example" id="org8c3d6a8">
+[    3.399371] sunway: proc-&gt;buffer: f3800000
+[    3.409164] sunway: proc-&gt;buffer: f2fc0000
+[    3.771656] sunway: proc-&gt;buffer: f3900000
+[    3.873044] sunway: proc-&gt;buffer: f3a00000
+[    3.898036] sunway: proc-&gt;buffer: f3b00000
+[    4.002905] sunway: proc-&gt;buffer: f3c00000
+[    4.059095] sunway: proc-&gt;buffer: f3d00000
+[    4.076636] sunway: proc-&gt;buffer: f3e00000
+[    4.346371] sunway: proc-&gt;buffer: f4700000
+[    8.574031] sunway: proc-&gt;buffer: f4500000
+[   11.818651] sunway: proc-&gt;buffer: f4600000
+[   11.837406] sunway: proc-&gt;buffer: f4d00000
+[   11.852474] sunway: proc-&gt;buffer: f5500000
+[   11.877071] sunway: proc-&gt;buffer: f5600000
+[   12.689051] sunway: proc-&gt;buffer: f2d00000
+[   13.131303] sunway: proc-&gt;buffer: f3700000
+[   13.196740] sunway: proc-&gt;buffer: f3f00000
+[   13.220509] sunway: proc-&gt;buffer: f4b00000
+[   13.241774] sunway: proc-&gt;buffer: f4f00000
+[   13.251766] sunway: proc-&gt;buffer: f5700000
+[   13.467537] sunway: proc-&gt;buffer: f5b00000
+[   13.679431] sunway: proc-&gt;buffer: f5f00000
+[   13.731342] sunway: proc-&gt;buffer: f6500000
+[   13.928822] sunway: proc-&gt;buffer: f6600000
+[   14.070935] sunway: proc-&gt;buffer: f6700000
+[   14.773066] sunway: proc-&gt;buffer: f0a00000
+[   14.864689] sunway: proc-&gt;buffer: f0b00000
+[   15.016303] sunway: proc-&gt;buffer: f0c00000
+[   15.104307] sunway: proc-&gt;buffer: f0d00000
+[   15.305597] sunway: proc-&gt;buffer: f0e00000
+[   15.370854] sunway: proc-&gt;buffer: f0f00000
+[   15.513454] sunway: proc-&gt;buffer: f2100000
+[   15.681259] sunway: proc-&gt;buffer: f2200000
+[   15.752318] sunway: proc-&gt;buffer: f2300000
+[   73.915009] sunway: proc-&gt;buffer: f2400000
+</pre>
+
+<p>
+这些地址都为 3.8G 以上 (get_vm_area) 并且有许多 (N5上有 35个), 如果当前有
+100 多个 java 进程, 或者将 binder_buffer 增大到 5M 会如何 &#x2026;
+</p>
+
+<p>
+binder_buffer使用内核页表(get_vm_area)的实现方式决定了:
+</p>
+
+<ol class="org-ol">
+<li>binder_buffer 不能太大</li>
+
+<li>java 进程不能太多.</li>
+</ol>
+
+<p>
+另外, binder_buffer 的大小也限制了 binder_thread 的数量.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org23d2e75" class="outline-4">
+<h4 id="org23d2e75"><span class="section-number-4">1.9.4</span> best-fit</h4>
+</div>
+</div>
+
+<div id="outline-container-org702c115" class="outline-3">
+<h3 id="org702c115"><span class="section-number-3">1.10</span> binder_transaction_data</h3>
+<div class="outline-text-3" id="text-1-10">
+<p>
+binder_transaction_data 是 kernel 和 user space 都需要使用的数据结构,
+它是两者交换数据的桥梁
+</p>
+
+<p>
+binder_transaction_data stores request/reply data, and in most time,
+is bitwise copied to binder_buffer, but there are several exceptions:
+</p>
+
+<ul class="org-ul">
+<li><p>
+Binder
+</p>
+
+<p>
+The BBinder wrote in binder_transaction_data is transformed to
+BpBinder and vice versa
+</p></li>
+
+<li><p>
+file descriptor
+</p>
+
+<p>
+new file descriptor is created in the target process, and old file
+descriptor is transformed to the newly created one.
+</p></li>
+</ul>
+
+<pre class="example" id="org6dc3bc9">
+
+*binder_transaction_data*
+
+ +-------------+------+-----------+------+----------+-------------+---------+-----------+-----------+-----------+
+ |   target    |      |   code    |      |          |             |         |           |           |           |
+ | (handle/ptr)|cookie| (command) | flags|sender_pid| sender_euid |data_size|offset_size| buffer_ptr|offset_ptr |
+ +-------------+------+-----------+------+----------+-------------+---------+-----------+-----------+-----------+
+                                                                                              |           |
+  +-------------------------------------------------------------------------------------------+    +------+
+  | -+---------+----+--------------+--------+-----+-----+------+-----+----------                   v
+  |  | type    |flag| binder/handle| cookie | ....|type | flag | ... |                             +-----+--+-------+--------------
+  &gt;--+(binder, |    |              |        |     |     |      |     | normal data (int,...)       | offset1|offset2| ...
+     | handler,|    |              |        |     |     |      |     |                             +---+----+---+---+--------------
+     | fd..)   |    |              |        |     |     |      |     |                                 |        |
+     ^---------+----+--------------+--------+-----^-----+------+-----+---------                        |        |
+     |    *flat_binder_object*                    |                                                    |        |
+     +--------------------------------------------+----------------------------------------------------+        |
+                                                  +-------------------------------------------------------------+
+
+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orge368500" class="outline-3">
+<h3 id="orge368500"><span class="section-number-3">1.11</span> flat_binder_object</h3>
+<div class="outline-text-3" id="text-1-11">
+<p>
+parcel 内部使用 flat_binder_object 来表示 fd, binder, handle 这些特殊的 "object".
+</p>
+
+<p>
+正常情况下, parcel 的数据都是平铺在 parcel-&gt;mData 中, 例如 int, float,
+string 等. 但 fd, binder, handle 这些特殊的 object 都是以
+flat_binder_object 的形式平铺在 mData 中的. binder driver 需要使用这些信息对它们进行特殊处理. 
+</p>
+
+<p>
+另外, parcel 中的 mObjects (即 binder_transaction_data 中的 offsets)
+是针对 flat_binder_object 的一个索引, 这样 binder driver 在处理
+binder_transaction_data 时可以"快速"的找到所有的 flat_binder_object 以便进行特殊处理 (参考 binder_transaction 函数)
+</p>
+</div>
+</div>
+
+<div id="outline-container-orga9f5609" class="outline-3">
+<h3 id="orga9f5609"><span class="section-number-3">1.12</span> binder_transaction &amp; binder_work</h3>
+<div class="outline-text-3" id="text-1-12">
+<p>
+binder_transaction 和 binder_work 是 binder_thread 之间沟通的桥梁.
+</p>
+
+<ol class="org-ol">
+<li>client binder thread 要唤醒 proc-&gt;wait 上的 looper binder thread 前,需要将数据 (binder_transaction_data) 封装在 binder_transaction 中, 并把这个 binder_transaction push 到它的 binder_transaction_stack, 然后通过将 transaction 对应 binder_work 加到 proc-&gt;todo 的形式通知
+looper, 后续 looper 被唤醒后可以从 proc-&gt;todo 中获得
+binder_transaction</li>
+
+<li>looper 被唤醒后会从 binder_transaction 中获得
+binder_transaction_data,并将这个 binder_transaction push 到它自己的
+binder_transaction_stack.</li>
+
+<li>looper 需要唤醒之前的 client binder thread 之前, 需要根据它自己的
+binder_transaction_stack 找到 client binder thread, 然后再构造新的
+binder_transaction (包括需要返回的 binder_transaction_data) 和
+binder_work, 然后把 binder_work 加到 client_thread-&gt;todo 中, 后续
+client_thread 被唤醒后可以在 thread-&gt;todo 中获得 binder_transaction</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgf03e74a" class="outline-3">
+<h3 id="orgf03e74a"><span class="section-number-3">1.13</span> binder 引用计数</h3>
+<div class="outline-text-3" id="text-1-13">
+<p>
+binder 通过引用计数来控制 binder_ref/binder_node 的释放.
+</p>
+
+<p>
+binder 引用计数涉及到两个部分内容:
+</p>
+
+<ul class="org-ul">
+<li>C++ 层面的 BpBinder / RefBase / StrongPointer(sp)</li>
+<li>driver 层面 binder_ref/binder_node 的引用计数</li>
+</ul>
+
+<p>
+binder_node, binder_ref, BpBinder(RefBase, sp) 三者之间的对应关系:
+</p>
+
+<ol class="org-ol">
+<li>BpBinder 本身是 RefBase, 应用层的多个 BpBinder 的 StrongPointer
+(sp) 可以指向同一个 BpBinder. 通过 RefBase 自身的引用计数, 应用层的一些工作不必进入到 driver.</li>
+<li>同一个进程的多个 RefBase (BpBinder) 对应一个 binder_ref</li>
+<li>不同进程的多个 binder_ref 对应一个 binder_node</li>
+</ol>
+
+<p>
+以上三种多对一的关系导致了三级的引用计数
+</p>
+
+<ol class="org-ol">
+<li>RefBase
+
+<ul class="org-ul">
+<li>incStrong</li>
+<li>decStrong</li>
+</ul></li>
+
+<li>binder_ref
+
+<ol class="org-ol">
+<li>BC_ACQUIRE
+<ul class="org-ul">
+<li>binder_inc_ref</li>
+</ul></li>
+
+<li>BC_RELEASE
+<ul class="org-ul">
+<li>binder_dec_ref</li>
+</ul></li>
+</ol></li>
+
+<li>binder_node
+
+<ul class="org-ul">
+<li>binder_inc_node</li>
+<li>binder_dec_node</li>
+</ul></li>
+</ol>
+
+<p>
+dec_level_n 大致是:
+</p>
+
+<pre class="example" id="org3ee0b17">
+dec_level_n:
+  local_count --              // level_n_1
+  if (local_count == 0):      // level_n_2
+    release_resource          // level_n_3
+    dec_level_(n++)           // level_n_4
+</pre>
+
+<p>
+inc_level_n 大致是:
+</p>
+
+<pre class="example" id="orge32ec53">
+inc_level_n:
+  if (local_count == 0):
+    inc_level_(n++)
+  local_count ++
+</pre>
+</div>
+
+<div id="outline-container-org15ff093" class="outline-4">
+<h4 id="org15ff093"><span class="section-number-4">1.13.1</span> reference 相关场景</h4>
+<div class="outline-text-4" id="text-1-13-1">
+</div>
+<div id="outline-container-org1a2a6ab" class="outline-5">
+<h5 id="org1a2a6ab"><span class="section-number-5">1.13.1.1</span> 引用计数的 release/dec</h5>
+<div class="outline-text-5" id="text-1-13-1-1">
+</div>
+<ol class="org-ol">
+<li><a id="org53c5dd2"></a>Java 层 BinderProxy 被 finalize<br />
+<div class="outline-text-6" id="text-1-13-1-1-1">
+<pre class="example" id="orgb45a29f">
+RefBase: level_1
+==================
+Binder.finalize()
+  android_os_BinderProxy_destroy(JNIEnv* env, jobject obj)
+    BpBinder.decStrong()
+      c = android_atomic_dec(&amp;refs-&gt;mStrong)               // level_1_1
+      if (c == 1):                                         // level_1_2
+        const_cast&lt;RefBase*&gt;(this)-&gt;onLastStrongRef(id)    
+          IPCThreadState::decStrongHandle()
+            mOut.writeInt32(BC_RELEASE);                   // level_1_4
+
+binder_ref: level_2
+==================
+binder_thread_write
+  case BC_RELEASE:
+    binder_dec_ref(ref, 1);
+      ref-&gt;strong--;                                       // level_2_1     
+      if (ref-&gt;strong == 0):                               // level_2_2
+        binder_delete_ref()                                // level_2_3
+        binder_dec_node(ref-&gt;node, strong, 1);             // level_2_4
+
+
+binder_node: level_3
+==================
+binder_dec_node
+  node-&gt;internal_strong_refs--;                            // level_3_1
+  if node-&gt;internal_strong_refs == 0:                      // level_3_2
+    rb_erase(&amp;node-&gt;rb_node, &amp;node-&gt;proc-&gt;nodes);          // level_3_3
+</pre>
+</div>
+</li>
+</ol>
+</div>
+
+<div id="outline-container-org1bc327f" class="outline-5">
+<h5 id="org1bc327f"><span class="section-number-5">1.13.1.2</span> 引用计数的 acquire/inc</h5>
+<div class="outline-text-5" id="text-1-13-1-2">
+</div>
+<ol class="org-ol">
+<li><a id="org075d3e1"></a>binder_ref 的 acquire<br />
+<div class="outline-text-6" id="text-1-13-1-2-1">
+<p>
+存在两种情况:
+</p>
+
+<ol class="org-ol">
+<li>binder_transaction 对 flat_binder_object 处理时会调用 binder_inc_ref
+增加 binder_ref 的引用计数</li>
+
+<li><p>
+因为 service_manger 对应的 handle 固定为 0, 所以应用一般不需要在
+parcel 中传递它, 所以上层要获得 service_manger 的 BpBinder 时需要显式 acquire, 例如 ProcessState::getContextObject
+</p>
+
+<pre class="example" id="org81a8d08">
+ProcessState::getContextObject
+  getStrongProxyForHandle(0)
+    b = new BpBinder(0);
+    sp&lt;IBinder&gt; result = b;
+    // sp 为 StrongPointer 的意思, 它的一个赋值构造函数为:
+      sp&lt;T&gt;::sp(T* other):
+        other-&gt;incStrong(this);                  
+          RefBase::onFirstRef();
+            IPCThreadState::incStrongHandle(0);
+              mOut.writeInt32(BC_ACQUIRE);
+    return result;
+</pre></li>
+</ol>
+</div>
+</li>
+</ol>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org2ffc03f" class="outline-3">
+<h3 id="org2ffc03f"><span class="section-number-3">1.14</span> binder death</h3>
+<div class="outline-text-3" id="text-1-14">
+<p>
+一般情况下, 进程退出(正常或异常)时 kernel 会负责关闭所有的 fd, 当
+/dev/binder 对应的 fd 被关闭时, 会触发 binder 的 death 流程.
+</p>
+
+<pre class="example" id="orgb8654f7">
+close(binder_fd)
+  driver::binder_release()
+    driver::binder_deferred_release()
+</pre>
+</div>
+
+<div id="outline-container-orgf48013d" class="outline-4">
+<h4 id="orgf48013d"><span class="section-number-4">1.14.1</span> DeathRecipient</h4>
+<div class="outline-text-4" id="text-1-14-1">
+</div>
+<div id="outline-container-orgf1aebdb" class="outline-5">
+<h5 id="orgf1aebdb"><span class="section-number-5">1.14.1.1</span> binder death 如何触发 DeathRecipient</h5>
+<div class="outline-text-5" id="text-1-14-1-1">
+<pre class="example" id="orgaf15092">
+driver::binder_deferred_release()
+  foreach node-&gt;refs:
+    if (ref-&gt;death):
+      ref-&gt;death-&gt;work.type = BINDER_WORK_DEAD_BINDER;
+      list_add_tail(&amp;ref-&gt;death-&gt;work.entry, &amp;ref-&gt;proc-&gt;todo);
+      wake_up_interruptible(&amp;ref-&gt;proc-&gt;wait);
+</pre>
+
+<p>
+当 proxy 端的 binder_thread 被唤醒后, 它会读到一个 BR_DEAD_BINDER 命令.
+</p>
+
+<pre class="example" id="org913eaba">
+binder_thread_read:
+  case BINDER_WORK_DEAD_BINDER:
+    death = container_of(w, struct binder_ref_death, work);
+    cmd = BR_DEAD_BINDER;
+    put_user(cmd, (uint32_t __user *)ptr)
+    put_user(death-&gt;cookie, (void * __user *)ptr)
+
+  IPCThreadState.waitForResponse
+    // cmd = BR_DEAD_BINDER        
+    cmd = (uint32_t)mIn.readInt32();
+    IPCThreadState::executeCommand(cmd)
+      case BR_DEAD_BINDER:
+        // 读到 death-&gt;cookie, 即 BpBinder 的地址
+        BpBinder *proxy = (BpBinder*)mIn.readInt32();
+        proxy-&gt;sendObituary();
+          foreach ob in mObituaries:
+            ob.recipient.binderDead()
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org7b8e8ca" class="outline-5">
+<h5 id="org7b8e8ca"><span class="section-number-5">1.14.1.2</span> 注册 DeathRecipient</h5>
+<div class="outline-text-5" id="text-1-14-1-2">
+<pre class="example" id="orgb6f82f0">
+BpBinder.linkToDeath
+  Obituary ob;
+  ob.recipient = recipient;
+  IPCTheadState::requestDeathNotification(mHandle, BpBinder);
+    mOut.writeInt32(BC_REQUEST_DEATH_NOTIFICATION);
+    mOut.writeInt32((int32_t)handle);
+    // BpBinder's 的地址被保存到 ref-&gt;deaht-&gt;cookie
+    mOut.writeInt32((int32_t)BpBinder); 
+      driver::BC_REQUEST_DEATH_NOTIFICATION
+        ref-&gt;death-&gt;cookie=*cookie*; ;;BpBinder's local address
+  mObituaries-&gt;add(ob);
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgdaad512" class="outline-4">
+<h4 id="orgdaad512"><span class="section-number-4">1.14.2</span> send failed reply</h4>
+<div class="outline-text-4" id="text-1-14-2">
+<p>
+client 正在等待 server 唤醒它, 但 server 挂掉了, client 怎么办? server
+会 send failed reply.
+</p>
+
+<pre class="example" id="orge298042">
+server:
+======
+binder_deferred_release:
+  for each binder_thread (thread) in proc-&gt;threads:
+    binder_free_thread(proc, thread);
+      t = thread-&gt;transaction_stack;
+      if (t &amp;&amp; t-&gt;to_thread == thread):
+        // t-&gt;to_thread == thread, 表示:
+        // 1. looper thread 正在处理一个 transaction t
+        // 2. t 是一个与 looper 相关的 client thread, 这个 thread
+        // 要被 send_failed_reply, 因为后面的 binder_release_work 并不
+        // 会处理这个 client thread
+        send_reply = t;
+      if (send_reply):
+        binder_send_failed_reply(send_reply, BR_DEAD_REPLY);
+          target_thread = t-&gt;from;
+          target_thread-&gt;return_error = BR_DEAD_REPLY;
+          wake_up_interruptible(&amp;target_thread-&gt;wait);
+          // GOTO !HERE!
+
+  binder_release_work(&amp;proc-&gt;todo);          
+    for each BINDER_WORK_TRANSACTION (w) in list:
+      t = container_of(w, struct binder_transaction, work);
+      binder_send_failed_reply(t, BR_DEAD_REPLY);
+        // GOTO !HERE!
+
+client:
+======
+android_os_BinderProxy_transact:
+  status_t err = target-&gt;transact(code, *data, reply, flags);
+    return IPCThreadState::self()-&gt;transact()
+      return waitForResponse(reply);
+        talkWithDriver()
+          binder_thread_read:
+            // !HERE!
+            if no work in thread-&gt;todo:
+              goto retry
+            retry:
+              if (thread-&gt;return_error != BR_OK &amp;&amp; ptr &lt; end):
+                put_user(thread-&gt;return_error, (uint32_t __user *)ptr)
+                return -EFAULT;
+        // 这里 cmd = BR_DEAD_REPLY
+        cmd = (uint32_t)mIn.readInt32();
+        switch cmd:
+        case BR_DEAD_REPLY:
+          err = DEAD_OBJECT;
+          goto finish;
+  // target-&gt;transact 返回 err 为 BR_DEAD_REPLY, 根据 err 抛 java exception           
+  if (err != NO_ERROR &amp;&amp; err != UNKNOWN_TRANSACTION):
+    // err = DEAD_OBJECT
+    signalExceptionForError(err);
+      switch (err):
+      case DEAD_OBJECT:
+        jniThrowException(env, "android/os/DeadObjectException")
+      default:
+        // 这里可能是 RemoteException 的主要来源?
+        jniThrowException(env, canThrowRemoteException
+          ? "android/os/RemoteException" : "java/lang/RuntimeException", msg.string());
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgaf8a84b" class="outline-3">
+<h3 id="orgaf8a84b"><span class="section-number-3">1.15</span> binder stats</h3>
+<div class="outline-text-3" id="text-1-15">
+<pre class="example" id="orgd1e3746">
+/sys/kernel/debug/binder/
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org080b080" class="outline-3">
+<h3 id="org080b080"><span class="section-number-3">1.16</span> TF_ONE_WAY</h3>
+<div class="outline-text-3" id="text-1-16">
+</div>
+<div id="outline-container-orgf9c3927" class="outline-4">
+<h4 id="orgf9c3927"><span class="section-number-4">1.16.1</span> oneway 关键字</h4>
+<div class="outline-text-4" id="text-1-16-1">
+<p>
+TF_ONE_WAY 是上层 transact 函数的参数, 表示不需要等待对方返回. 在 aidl
+中可以用 oneway 关键字:
+</p>
+
+<pre class="example" id="orgf1be995">
+test.aidl
+oneway int test();
+</pre>
+
+<p>
+生成的 java 代码为:
+</p>
+<div class="org-src-container">
+<pre class="src src-java"><span style="color: #859900;">public</span> <span style="color: #b58900;">int</span> <span style="color: #268bd2;">x</span><span style="color: #757575;">()</span> <span style="color: #859900;">throws</span> <span style="color: #268bd2; font-weight: bold;">android</span>.<span style="color: #268bd2; font-weight: bold;">os</span>.<span style="color: #b58900;">RemoteException</span> <span style="color: #757575;">{</span>
+    <span style="color: #268bd2; font-weight: bold;">android</span>.<span style="color: #268bd2; font-weight: bold;">os</span>.<span style="color: #b58900;">Parcel</span> <span style="color: #268bd2;">_data</span> = <span style="color: #268bd2; font-weight: bold;">android</span>.<span style="color: #268bd2; font-weight: bold;">os</span>.Parcel.obtain<span style="color: #757575;">()</span>;
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">_result</span>;
+    <span style="color: #859900;">try</span> <span style="color: #757575;">{</span>
+        _data.writeInterfaceToken<span style="color: #757575;">(</span>DESCRIPTOR<span style="color: #757575;">)</span>;
+        mRemote.transact<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">Stub</span>.TRANSACTION_x<span style="color: #757575;">,</span> _data<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">null</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">android</span>.<span style="color: #268bd2; font-weight: bold;">os</span>.<span style="color: #268bd2; font-weight: bold;">IBinder</span>.FLAG_ONEWAY<span style="color: #757575;">)</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">finally</span> <span style="color: #757575;">{</span>
+        _data.recycle<span style="color: #757575;">()</span>;
+    <span style="color: #757575;">}</span>
+    <span style="color: #859900;">return</span> _result;
+<span style="color: #757575;">}</span>
+</pre>
+</div>
+
+<p>
+可见, 使用了 oneway 后对方的返回值是忽略的, 因为 transact 时传入的
+reply 为 null, 是无法拿到返回值的. 
+</p>
+</div>
+</div>
+
+<div id="outline-container-orged8e902" class="outline-4">
+<h4 id="orged8e902"><span class="section-number-4">1.16.2</span> TF_ONE_WAY 的实现</h4>
+<div class="outline-text-4" id="text-1-16-2">
+<p>
+TF_ONE_WAY 表示 transaction 是更早的返回而不等待, 具体在哪里返回?
+</p>
+
+<pre class="example" id="orge4e20c0">
+client 端的 binder_transaction():
+  // 在唤醒 proc-&gt;wait 之前
+  tcomplete-&gt;type = BINDER_WORK_TRANSACTION_COMPLETE;
+  // 放了一个类型为 BINDER_WORK_TRANSACTION_COMPLETE 的 binder_work 在自身 thread-&gt;todo
+  list_add(&amp;tcomplete-&gt;entry, &amp;thread-&gt;todo);
+  // 唤醒 proc-&gt;wait 并返回, 然后 client 端会接着调用 binder_thread_read
+
+client 端的 binder_thread_read():
+  // 这里为 false, 因为两个条件都不满足... thread-&gt;todo 上有上一步放上的 tcomplete
+  wait_for_proc_work = thread-&gt;transaction_stack == NULL &amp;&amp; list_empty(&amp;thread-&gt;todo);
+  if (wait_for_proc_work):
+    // 这里不会走...(looper 才会走这一步)
+    wait_event_freezable_exclusive(proc-&gt;wait, binder_has_proc_work(proc, thread));
+
+  // 因为 thread-&gt;todo 上有一个 tcomplete, 所以 binder_has_thread_work 为真,
+  // wait_event_freezable 会直接返回而不会等待.
+  wait_event_freezable(thread-&gt;wait, binder_has_thread_work(thread));
+  while (1):
+    // 从 thread-&gt;todo 中拿到 tcomplete 这个 work, 第一次进入 while 时
+    // 这里成立
+    if (!list_empty(&amp;thread-&gt;todo)):
+      w = list_first_entry(&amp;thread-&gt;todo, struct binder_work, entry);
+    else if (!list_empty(&amp;proc-&gt;todo) &amp;&amp; wait_for_proc_work)        
+      w = list_first_entry(&amp;proc-&gt;todo, struct binder_work, entry);
+    else:
+      // 再次进行 while 时这里会成立 ...
+      break;
+
+    switch (w-&gt;type):
+      case BINDER_WORK_TRANSACTION_COMPLETE:
+        cmd = BR_TRANSACTION_COMPLETE;
+        put_user(cmd, (uint32_t __user *)ptr)
+    // w 不是不一个 BINDER_WORK_TRANSACTION, 所以这里条件成立, 回到 while 开头 ...    
+    if (!t)
+      continue;        
+  // while 结束, binder_thread_read 返回  
+
+client 端的 IPCThreadState.transact
+  IPCThreadState.transact()
+    if ((flags &amp; TF_ONE_WAY) != 0):
+      waitForResponse(NULL, NULL);
+        while (1):
+          talkWithDriver()
+          cmd = (uint32_t)mIn.readInt32();
+          switch (cmd):
+            case BR_TRANSACTION_COMPLETE:
+              // 这里 reply, acquireResult 为 null, 不会等待 BR_REPLY, 而是直接跳出循环返回   
+              if (!reply &amp;&amp; !acquireResult) goto finish;
+</pre>
+
+
+<p>
+所有的 client transaction 在 binder_thread_read 真正阻塞在
+thread-&gt;wait 之前, 都会先返回 BR_TRANSACTION_COMPLETE 给上层, 上层的
+while 循环会再次 talkWithDriver 以便第二次真正在 thread-&gt;wait 上阻塞.
+</p>
+
+<p>
+不论是否为 TF_ONE_WAY, BINDER_WORK_TRANSACTION_COMPLETE 的流程都会走一遍, 不同的是, TF_ONE_WAY 会阻止第二次的 talkWithDriver, 从而避免阻塞. 
+</p>
+
+<p>
+另外, 除了 TF_ONE_WAY, target proc 的 sendReply 也是使用相同的方法
+(waitForResponse(NULL, NULL)), 因为 sendReply 后 target proc 不需要再阻塞的&#x2026;因为没人会唤醒它. 
+</p>
+</div>
+</div>
+
+<div id="outline-container-org21e42b7" class="outline-4">
+<h4 id="org21e42b7"><span class="section-number-4">1.16.3</span> async_transaction</h4>
+<div class="outline-text-4" id="text-1-16-3">
+<p>
+正常情况下, binder_transaction () 时会将 binder_work 挂在 proc-&gt;todo
+上, 并立即通过 proc-&gt;wait 唤醒一个 looper 来处理这个 binder_work. 
+</p>
+
+<p>
+但若当前 transaction 有 TF_ONE_WAY 标记, 则这个 binder_work 会被挂在
+target_node-&gt;async_todo 上, 并且不唤醒任何 looper. 
+</p>
+
+<p>
+target_node-&gt;async_todo 上的 binder_work 何时被处理?
+</p>
+
+<pre class="example" id="orgc91ca5c">
+binder_thread_write
+  // 所有 looper 在处理 transaction 时都必定会调用 BC_FREE_BUFFER
+  case BC_FREE_BUFFER:
+    if (buffer-&gt;async_transaction &amp;&amp; buffer-&gt;target_node):
+      // 从 target_node-&gt;async_todo 上取一个任务加到 thread-&gt;todo
+      // 后续的 binder_thread_read 会取到这个任务并执行
+      list_move_tail(buffer-&gt;target_node-&gt;async_todo.next, &amp;thread-&gt;todo);
+
+</pre>
+
+<p>
+可见, async_transaction 是通过 BC_FREE_BUFFER 触发的, 参考后面对data
+parcel 的 freeData 的说明, async_transaction 最终还是会由looper binder
+thread 去处理.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0095938" class="outline-4">
+<h4 id="org0095938"><span class="section-number-4">1.16.4</span> 总结</h4>
+<div class="outline-text-4" id="text-1-16-4">
+<p>
+收到 BR_TRANSACTION_COMPLETE 表示 target proc 的 looper 已经被唤醒,上层可以决定是否需要再次 talkWithDriver 以等待 target proc 的 looper 返回.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org3d8ac5c" class="outline-3">
+<h3 id="org3d8ac5c"><span class="section-number-3">1.17</span> binder 优先级相关</h3>
+<div class="outline-text-3" id="text-1-17">
+<p>
+binder driver 工作时会考虑 client 进程的优先级, 主要有两方面:
+</p>
+
+<ol class="org-ol">
+<li><p>
+binder_lock
+</p>
+
+<p>
+binder driver 中的大部分函数都需要通过 binder_lock/binder_unlock 来加以保护, 而 binder_lock 时会根据 client 进程的优先级决定谁先获得
+lock
+</p></li>
+
+<li><p>
+binder_set_nice
+</p>
+
+<p>
+client 进程的优先级会通过 binder_transaction 传递给 server, server
+会通过 binder_set_nice "继承" client 的优先级.
+</p></li>
+</ol>
+</div>
+
+<div id="outline-container-org6b6e909" class="outline-4">
+<h4 id="org6b6e909"><span class="section-number-4">1.17.1</span> binder_lock</h4>
+<div class="outline-text-4" id="text-1-17-1">
+<p>
+大部分 binder driver 的函数都需要用 binder_lock 来保护, 主要的是
+binder_ioctl: binder_ioctl 一开始就会调用 binder_lock, 直到阻塞到
+binder_thread_read 前才会释放 binder_lock. 即, server 应用层代码并不持有 binder_lock.
+</p>
+
+<p>
+aosp 的 binder_lock 实现上使用了 rt_mutex_lock, 而 rt_mutex_lock 本身就会根据进程优先级决定谁先获得 lock
+</p>
+
+<p>
+注: android 6.0 似乎把 rt_mutex_lock 又修改为 mutex_lock 了, (见 msm
+kernel 的这个提交: b378873b7f2c96141b72b59fc4ce73c1f60b98e2)
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgdb68845" class="outline-4">
+<h4 id="orgdb68845"><span class="section-number-4">1.17.2</span> binder_set_nice</h4>
+<div class="outline-text-4" id="text-1-17-2">
+<p>
+binder driver 通过 binder_transaction 中实现了优先级继承
+</p>
+
+<ol class="org-ol">
+<li><p>
+client 的优先级保存在 binder_transaction 中
+</p>
+
+<pre class="example" id="orgce432dc">
+binder_transaction:
+  // client 的优先级保存在 t-&gt;priority 中
+  t-&gt;priority = task_nice(current);
+  // 将 t 通知给某个 looper 并唤醒
+  list_add_tail(&amp;t-&gt;work.entry, proc-&gt;todo);
+  wake_up_interruptible(target_wait);
+</pre></li>
+
+<li><p>
+looper 拿到这个优先级并做相应设置
+</p>
+
+<pre class="example" id="orgda37e47">
+binder_thread_read:
+  // looper
+  if (wait_for_proc_work):
+    // looper 阻塞时使用其默认优先级
+    binder_set_nice(proc-&gt;default_priority);
+  // ...
+  // looper 被唤醒
+  // looper 保存旧的优先级
+  t-&gt;saved_priority = task_nice(current);
+  // 若 TF_ONE_WAY (async transaction), 则不修改优先级
+  if  (! t-&gt;flags &amp; TF_ONE_WAY):
+    binder_set_nice(min(target_node-&gt;min_priority,t-&gt;priority));
+  // 后续 server 被唤醒  
+  cmd = BR_TRANSACTION;
+</pre></li>
+
+<li><p>
+looper 返回数据给 client 并恢复其优先级
+</p>
+
+<pre class="example" id="orga5e94e2">
+binder_transaction:
+  if (reply):
+    binder_set_nice(in_reply_to-&gt;saved_priority);
+</pre></li>
+
+<li><p>
+binder_node-&gt;min_priority
+</p>
+
+<p>
+binder_node-&gt;min_priority 表示 server 在执行这个 binder_node 时优先级至少为 min_priority,这个值是在 binder_node 初始化时估计
+flat_binder_object 的 flag 决定的, 最终决定它的是
+parcel.flatten_binder
+</p>
+
+<pre class="example" id="org66b1430">
+Parcle::flatten_binder:
+  // 看起来目前这个 0x7f 是写死的...所以每个 binder_node
+  // 的 min_priority 都会是 0x7f
+  obj.flags = 0x7f | FLAT_BINDER_FLAG_ACCEPTS_FDS;
+  // ...
+</pre></li>
+</ol>
+</div>
+
+<div id="outline-container-orga1b7fb9" class="outline-5">
+<h5 id="orga1b7fb9"><span class="section-number-5">1.17.2.1</span> 综上</h5>
+<div class="outline-text-5" id="text-1-17-2-1">
+<ul class="org-ul">
+<li>通过 binder_transaction-&gt;priority, client 可以将它的优先级传递给
+server</li>
+
+<li>通过 binder_transaction-&gt;saved_priority, server 可以恢复其优先级</li>
+
+<li>另外, parcel 在传递 binder_node 时可以配置一个 min_priority, 但目前看起来是一个固定值.</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org64edd1f" class="outline-3">
+<h3 id="org64edd1f"><span class="section-number-3">1.18</span> service_manager</h3>
+<div class="outline-text-3" id="text-1-18">
+<p>
+refere to:
+</p>
+
+<ol class="org-ol">
+<li>binder_become_context_manager</li>
+<li>ProcessState::getContextObject</li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>
