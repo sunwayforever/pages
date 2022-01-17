@@ -3,7 +3,7 @@
 "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
-<!-- 2022-01-14 五 19:43 -->
+<!-- 2022-01-17 一 14:20 -->
 <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Faster RCNN</title>
@@ -73,7 +73,8 @@
 </ul>
 </li>
 <li><a href="#org7b53e53">1.2. ROIPooling</a></li>
-<li><a href="#org0e51430">1.3. Selective Search</a></li>
+<li><a href="#org0ff0d66">1.3. ROIAlign</a></li>
+<li><a href="#org0e51430">1.4. Selective Search</a></li>
 </ul>
 </li>
 </ul>
@@ -155,7 +156,7 @@ label
 <h4 id="orgb73e1c5"><span class="section-number-4">1.1.4</span> loss</h4>
 <div class="outline-text-4" id="text-1-1-4">
 
-<div id="org0f18870" class="figure">
+<div id="org0720d1a" class="figure">
 <p><img src="../extra/rpn_loss.png" alt="rpn_loss.png" />
 </p>
 </div>
@@ -186,6 +187,18 @@ label
 <p>
 通过 RPN 得到 region 后, 后面需要做 classification, 即判断这个 region 里具体是什么物体.
 </p>
+
+<p>
+在实践中, 并非所有的 rpn region 都会参与 roi_pooling:
+</p>
+
+<ol class="org-ol">
+<li>通过 NMS (threshold 为 0.7) 保留大约 2000 个 region (NMS 在 faster-rcnn 中进行了两个, 一次在 rpn 之后, 另一次在输出最终结果时)</li>
+
+<li>只选择 top-N 个 region</li>
+
+<li>只选择 objectness confidence 超过一定 threshold 的 region</li>
+</ol>
 
 <p>
 region 的尺寸是不确定的, 但 classifer 要求特定尺寸的输入, 有两种做法.
@@ -228,9 +241,54 @@ ROIPooling 实际相当于工作在 feature map 上的 resize
 </div>
 </div>
 
-<div id="outline-container-org0e51430" class="outline-3">
-<h3 id="org0e51430"><span class="section-number-3">1.3</span> Selective Search</h3>
+<div id="outline-container-org0ff0d66" class="outline-3">
+<h3 id="org0ff0d66"><span class="section-number-3">1.3</span> ROIAlign</h3>
 <div class="outline-text-3" id="text-1-3">
+<p>
+roi_pooling 有两次取整的过程, 导致出现误差, 这种误差相当于一种量化误差.
+</p>
+
+<ol class="org-ol">
+<li>需要把 region 缩放到 feature map 上, 如果不能整除, 会进行取整, 导致 region 出现偏移</li>
+
+<li><p>
+计算 pooling 的 stride 时需要取整, 例如 region 为 (9,9), pooling要求输出
+(2,2), 则会产生下面的 pooling 分割结果
+</p>
+
+<pre class="example" id="org6519549">
+4 5
+5 4
+</pre></li>
+</ol>
+
+<p>
+为了解决上面的问题, 提出 roi_allign 的方法, 计算坐标时保留小数, 但最后使用双线性插值 (<a href="https://en.wikipedia.org/wiki/Bilinear_interpolation">bilinear interpolation</a>) 获得浮点数坐标上的像素值
+</p>
+
+
+<div id="orgc5b6b8b" class="figure">
+<p><img src="../extra/roi_align.png" alt="roi_align.png" />
+</p>
+</div>
+
+<ol class="org-ol">
+<li>上图最外层的框是 region proposal 的结果, 左上角为 (1.3, 0.9), 右下角为 (3.3, 4.1)</li>
+<li>假设需要生成 (2,2) 的 pooling, 所以 stride 为 (1, 1.6) (即 (3.3-1.3)/2,
+(4.1-0.9)/2)</li>
+<li>所以左上角的小框的坐标为 (1.3, 0.9), (2.3, 2.5)</li>
+<li>在左上角小框平均采样 4 个点 A, B, C, D (4 是可以配置的常量), 取决于框的大小</li>
+<li>左上角的 A 为 (1.633, 1.433)</li>
+<li>取和 A 相邻的四个点 (1,1), (1,2), (2,1), (2.2), 通过 bilinear interpolation
+计算出它的值</li>
+<li>对 A, B, C, D 计算 max 做为 pooling 的结果</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0e51430" class="outline-3">
+<h3 id="org0e51430"><span class="section-number-3">1.4</span> Selective Search</h3>
+<div class="outline-text-3" id="text-1-4">
 <p>
 <a href="http://www.huppelen.nl/publications/selectiveSearchDraft.pdf">Selective Search for Object Recognition</a> 2012
 </p>
@@ -260,7 +318,7 @@ selective search 需要迭代执行, 速度非常慢, 基本需要 1~3 秒, 而 
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-01-07 五 00:00<br />
-Last updated: 2022-01-14 五 12:16</p>
+Last updated: 2022-01-17 一 14:18</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
