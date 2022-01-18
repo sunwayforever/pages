@@ -1,0 +1,362 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-18 二 16:24 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Layer Shape Propagation</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Layer Shape Propagation</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org0a822d1">1. Layer Shape Propagation</a>
+<ul>
+<li><a href="#orgb23fd65">1.1. Problem</a></li>
+<li><a href="#orgb4091c0">1.2. Layer Shape</a>
+<ul>
+<li><a href="#org253e523">1.2.1. Convolution/Pooling/Deconvolution</a></li>
+<li><a href="#orgf9b0c77">1.2.2. Spatial Pyramid Pooling</a></li>
+<li><a href="#org21c9570">1.2.3. Crop</a></li>
+<li><a href="#orgf4d9de3">1.2.4. LSTM</a></li>
+<li><a href="#org433b45c">1.2.5. Inner Product</a></li>
+<li><a href="#org43c23fc">1.2.6. Batch Normalization</a></li>
+<li><a href="#org56436af">1.2.7. Reshape</a></li>
+<li><a href="#orgd4bbc43">1.2.8. Slice</a></li>
+<li><a href="#org9fdc636">1.2.9. Eltwise/Softmax/Split/Concat/Tile/Flatten/Activations</a></li>
+<li><a href="#orge5ea808">1.2.10. Reduction/Argmax</a></li>
+<li><a href="#orgb4e24c2">1.2.11. Other</a></li>
+</ul>
+</li>
+<li><a href="#orga9506e6">1.3. Layer Flops</a></li>
+<li><a href="#orgd863b52">1.4. Case Study</a></li>
+<li><a href="#org99ea2c8">1.5. Conclution</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0a822d1" class="outline-2">
+<h2 id="org0a822d1"><span class="section-number-2">1</span> Layer Shape Propagation</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-orgb23fd65" class="outline-3">
+<h3 id="orgb23fd65"><span class="section-number-3">1.1</span> Problem</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+假设模型输入是图片, 修改 input 的 H,W (不修改 C) 会如何影响后续 layer 的输出尺寸和算力?
+</p>
+
+<p>
+模型中的 layer 大约有以下三种情形:
+</p>
+
+<ol class="org-ol">
+<li>layer 支持可变的 input shape
+
+<ol class="org-ol">
+<li>layer 的 input * N 导致 output * N</li>
+
+<li>input * N 但是 output 不变</li>
+</ol></li>
+
+<li>layer 不支持 input shape 改变</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgb4091c0" class="outline-3">
+<h3 id="orgb4091c0"><span class="section-number-3">1.2</span> Layer Shape</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-org253e523" class="outline-4">
+<h4 id="org253e523"><span class="section-number-4">1.2.1</span> Convolution/Pooling/Deconvolution</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+Convolution 和 Pooling 基本属于 case 1.1, 但有一个例外: padding
+</p>
+
+<p>
+同样的 padding 搭配不同的 input shape 有时会因为 input+padding 无法整除 stride
+而出错, 例如:
+</p>
+
+<p>
+input=10, padding=1, stride=3, filter=3 时, ouput=(10+2-3)/3=3
+</p>
+
+<p>
+当 input 变为 11 时, (11+2-3)/3 无法整除, 导致出错.
+</p>
+
+<p>
+ps. 某些 framework 如 tensorflow, pytorch 在定义模型时可以通过 `same` 或 `valid`
+padding 自动计算 padding 值, 但是最终导出的模型里 padding 会变成计算后的结果.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf9b0c77" class="outline-4">
+<h4 id="orgf9b0c77"><span class="section-number-4">1.2.2</span> Spatial Pyramid Pooling</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<p>
+case 1.2, 因为它是根据 input shape 计算它的 stride, 以保证 output
+shape 是确定的. 所以 SPP 会导致 input shape 的变化无法向后传递.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org21c9570" class="outline-4">
+<h4 id="org21c9570"><span class="section-number-4">1.2.3</span> Crop</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<p>
+case 1.2, 它的 output shape 总是由 crop 的参数决定的
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf4d9de3" class="outline-4">
+<h4 id="orgf4d9de3"><span class="section-number-4">1.2.4</span> LSTM</h4>
+<div class="outline-text-4" id="text-1-2-4">
+<p>
+LSTM Layer 的 input 为 [B, L, C], 输出为 [B, L, H], C 转换为 H 是由多个全连接完成的, 所以它属于 case 2
+</p>
+</div>
+</div>
+
+<div id="outline-container-org433b45c" class="outline-4">
+<h4 id="org433b45c"><span class="section-number-4">1.2.5</span> Inner Product</h4>
+<div class="outline-text-4" id="text-1-2-5">
+<p>
+属于 case 2, 因为它的 input/output shape 是固定的.
+</p>
+
+<p>
+即使修改了它的 input shape 使它能与前一层的输出匹配, 它对后续的层也有会类似于 1.2 的效果, 因为的它输出尺寸是固定的.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org43c23fc" class="outline-4">
+<h4 id="org43c23fc"><span class="section-number-4">1.2.6</span> Batch Normalization</h4>
+<div class="outline-text-4" id="text-1-2-6">
+<p>
+Batch Normalization 都属于 case 1.1, 虽然有的实现 (例如 tensorflow, pytorch) 会包含额外的 alpha, beta 参数, 用来做 scale 和 bias, 但这两个参数的 shape 与
+channel 一致, 并不会变化.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org56436af" class="outline-4">
+<h4 id="org56436af"><span class="section-number-4">1.2.7</span> Reshape</h4>
+<div class="outline-text-4" id="text-1-2-7">
+<p>
+Reshape 如果 reshape_param 包含 -1, 则属于 case 1.1, 否则属于 case 2
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgd4bbc43" class="outline-4">
+<h4 id="orgd4bbc43"><span class="section-number-4">1.2.8</span> Slice</h4>
+<div class="outline-text-4" id="text-1-2-8">
+<p>
+slice 会把 input 按下标分割为几份, 例如总数为 50, 下标为 10, 20, 30, 40, 就会分割成 5 份, 每份 10 个. 如果 slice 的 axis 是 feature map, 则 slice 可以认为属于
+case 2, 否则属于 case 1.1
+</p>
+</div>
+</div>
+
+<div id="outline-container-org9fdc636" class="outline-4">
+<h4 id="org9fdc636"><span class="section-number-4">1.2.9</span> Eltwise/Softmax/Split/Concat/Tile/Flatten/Activations</h4>
+<div class="outline-text-4" id="text-1-2-9">
+<p>
+case 1.1
+</p>
+</div>
+</div>
+
+<div id="outline-container-orge5ea808" class="outline-4">
+<h4 id="orge5ea808"><span class="section-number-4">1.2.10</span> Reduction/Argmax</h4>
+<div class="outline-text-4" id="text-1-2-10">
+<p>
+若 axis 为 channel, 则属于 case 1.1, 否则属于 case 1.2
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgb4e24c2" class="outline-4">
+<h4 id="orgb4e24c2"><span class="section-number-4">1.2.11</span> Other</h4>
+<div class="outline-text-4" id="text-1-2-11">
+<p>
+以上列举的是 caffe 的常用算子, 除些以外还有一些自定义或其它框架包含的算子:
+</p>
+
+<ol class="org-ol">
+<li><p>
+ROIFilter/ROIAlign
+</p>
+
+<p>
+case 1.2
+</p></li>
+
+<li><p>
+GolbalAveragePooling
+</p>
+
+<p>
+和 SPP 类似, case 1.2
+</p></li>
+
+<li><p>
+NMS
+</p>
+
+<p>
+case 1.2
+</p></li>
+</ol>
+
+<p>
+另外, 有些框架例如 pytorch 在定义模型时看起来像是 case 1.1, 但因为它导出成
+torchscript/onnx 时一般通过 trace 方式, 所以导出的模型会变成 case 2, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #859900;">for</span> <span style="color: #839496;">slice</span> <span style="color: #859900;">in</span> <span style="color: #839496;">input</span>:
+    <span style="color: #268bd2;">output</span>[i] = conv2d<span style="color: #757575;">(</span><span style="color: #839496;">slice</span><span style="color: #757575;">)</span>
+</pre>
+</div>
+
+<p>
+看起来 input 是支持任意长度, 但通过 trace 导出时会变成这样:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #586e75;"># </span><span style="color: #586e75;">&#20551;&#35774;&#23548;&#20986;&#26102;&#25552;&#20379;&#30340; input &#38271;&#24230;&#20026; 3</span>
+<span style="color: #268bd2;">slice_1</span> = <span style="color: #839496;">input</span>[0]
+<span style="color: #268bd2;">slice_2</span> = <span style="color: #839496;">input</span>[1]
+<span style="color: #268bd2;">slice_3</span> = <span style="color: #839496;">input</span>[2]
+<span style="color: #268bd2;">output_1</span> = conv2d<span style="color: #757575;">(</span>slice_1<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">output_2</span> = conv2d<span style="color: #757575;">(</span>slice_2<span style="color: #757575;">)</span>
+<span style="color: #268bd2;">output_3</span> = conv2d<span style="color: #757575;">(</span>slice_3<span style="color: #757575;">)</span>
+<span style="color: #586e75;"># </span><span style="color: #586e75;">...</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orga9506e6" class="outline-3">
+<h3 id="orga9506e6"><span class="section-number-3">1.3</span> Layer Flops</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+计算 flops 时一般只考虑 conv/deconv/fc, 其中贡献算力最多的是 conv/deconv, 而
+conv/deconv 的 flops 与 H*W 成正比, 如果能保证中间各个 layer 都属于 case 1.1 (以确保 conv 的输入是 case 1.1), 则可以估计最终算力也属于 case 1.1
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgd863b52" class="outline-3">
+<h3 id="orgd863b52"><span class="section-number-3">1.4</span> Case Study</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+以 apollo 的 dark_scnn 为例, 这个模型的输入是 640x480, 把它修改成 2560x1920 (H,W
+各乘 4) 后, 模型会因为尺寸不匹配而报错, 因为 scnn 模型中包含一个 message_passing
+层, 它做的是事情是:
+</p>
+
+<pre class="example" id="org7210ede">
+1. 按 H 方向切成 H 个 (C,1,W) 的 slice
+2. out[0]=slice[0]
+3. out[1]=slice[1]+conv(out[0])
+4. out[2]=slice[2]+conv(out[1])
+...
+</pre>
+
+<p>
+当输入是 640x480 时, 会分成 60 个 slice, 但是当输入变为 16 倍时, 这里需要分成
+240 个 slice 才可以. 修改模型加入 240 个 slice 后, 可以计算出算力是之前的 16 倍,
+因为这个模型并不存在 case 1.2 的 layer
+</p>
+</div>
+</div>
+
+<div id="outline-container-org99ea2c8" class="outline-3">
+<h3 id="org99ea2c8"><span class="section-number-3">1.5</span> Conclution</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+理论上, H*W 增加 N 倍后, 如果只是为了模型中各层的尺寸能匹配而修改模型, 那么最终算力变化多少没有什么估算的依据, 因为有 case 1.2 的存在.
+</p>
+
+<p>
+但是在实际应用中, case 1.2 的 layer 有的只对 c 进行操作, 或者与模型的输入尺寸有内在联系, 例如
+</p>
+
+<ol class="org-ol">
+<li>faster-rcnn 中的 ROIFilter 层 (类似于 SPP) 用来把 region proposal 通过
+pooling 转换成固定大小的 region, 例如 32x32. 当输入图片变大的, region 其实也应该变大, 因为 feature map 的分辨率实际上提高了</li>
+
+<li>faster-rcnn 的 rpn 生成 region proposal 后会先通过 NMS 和排序的方法只保留
+top-N 个 region proposal, 当输入尺寸变大, 保留更多的 region proposal 可能也是有意义的?</li>
+</ol>
+
+<p>
+综上, 大约给出一个粗略的结论: 输入面积乘 N 时算力大约也需要乘 N
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway (sunwayforever@gmail.com)<br />
+Date: 2022-01-17 一 00:00<br />
+Last updated: 2022-01-18 二 16:23</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
+<br />
+
+           <div id="disqus_thread"></div>
+           <script>
+
+           (function() { // DON'T EDIT BELOW THIS LINE
+                    var d = document, s = d.createElement('script');
+                    s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+                    s.setAttribute('data-timestamp', +new Date());
+                    (d.head || d.body).appendChild(s);
+                    })();
+           </script>
+</div>
+</body>
+</html>
