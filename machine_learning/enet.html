@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-01-19 三 11:51 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ENet</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Wei Sun (孙伟)" />
+<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">ENet</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgca75c8a">1. ENet</a>
+<ul>
+<li><a href="#orgb0bc132">1.1. Network</a>
+<ul>
+<li><a href="#orgdb5a526">1.1.1. initial</a></li>
+<li><a href="#orgaff8ff9">1.1.2. bottleneck</a></li>
+</ul>
+</li>
+<li><a href="#org8bfbc5e">1.2. Upsample</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgca75c8a" class="outline-2">
+<h2 id="orgca75c8a"><span class="section-number-2">1</span> ENet</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="https://arxiv.org/pdf/1606.02147.pdf">https://arxiv.org/pdf/1606.02147.pdf</a>
+</p>
+
+<p>
+<a href="https://github.com/TimoSaemann/ENet">https://github.com/TimoSaemann/ENet</a>
+</p>
+
+<p>
+ENet 是一个注重推理速度的 semantic segmentation 模型
+</p>
+
+<p>
+ENet 做为一个 semantic segmentation 模型, 大部分和 scnn 类似, 只是它针对网络的结构做了许多 trick
+</p>
+</div>
+
+<div id="outline-container-orgb0bc132" class="outline-3">
+<h3 id="orgb0bc132"><span class="section-number-3">1.1</span> Network</h3>
+<div class="outline-text-3" id="text-1-1">
+
+<div id="org2af2ba1" class="figure">
+<p><img src="../extra/enet.png" alt="enet.png" />
+</p>
+</div>
+
+<p>
+假设网络的输入为 512x512.
+</p>
+
+<p>
+ENet 的网络基本就是一个标准的 encoder-decoder 结构, 并且参考了 <a href="https://arxiv.org/pdf/1512.03385.pdf">resnet</a> 和
+<a href="https://arxiv.org/pdf/1512.00567.pdf">inception_v2</a> 的设计
+</p>
+</div>
+
+<div id="outline-container-orgdb5a526" class="outline-4">
+<h4 id="orgdb5a526"><span class="section-number-4">1.1.1</span> initial</h4>
+<div class="outline-text-4" id="text-1-1-1">
+
+<div id="orgdf398aa" class="figure">
+<p><img src="../extra/enet_initial.png" alt="enet_initial.png" />
+</p>
+</div>
+
+<p>
+输入数据为 (3, 512, 512), 通过 initial 层后变为 (16, 256, 256), 这里没有直接做
+pooling 而是参考了 inception_v2 的设计.
+</p>
+
+<p>
+为了避免 pooling 导致的信息:
+</p>
+
+<ol class="org-ol">
+<li>一种方法是先增大 feature 规模 (例如通过 1x1 conv2d, 或者类似 <a href="point_pillars.html#org15b3dc1">pillar</a> 的作法)
+获得冗余数据, 然后再做 pooling.</li>
+
+<li>另一种方法是 initial 这种并行 pooling 的方法, 即一路做 pooling, 另一路做
+stride 2 的 conv2d, 然后两者 concat, 这种做法和 <a href="scnn.html#orgef1c0ec">FCN</a> 的 concat 两个 pooling 的做法有些类似.</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgaff8ff9" class="outline-4">
+<h4 id="orgaff8ff9"><span class="section-number-4">1.1.2</span> bottleneck</h4>
+<div class="outline-text-4" id="text-1-1-2">
+
+<div id="orga85c35b" class="figure">
+<p><img src="../extra/enet_bottlenet.png" alt="enet_bottlenet.png" />
+</p>
+</div>
+
+<p>
+bottlenet 类似于 resnet 的 bottlenet 结构, 做了一点修改:
+</p>
+
+<p>
+bottleneck 可以有不同的 type:
+</p>
+
+<ol class="org-ol">
+<li><p>
+downsampling
+</p>
+
+<p>
+bottleneck 第一个 1x1 conv2 变成 2x2, stride=2, 且左边分支加上一个
+maxpooling, 用来做一个 2x 的 downsample, 这种结构和 initial 的并行 pooling 结构类似
+</p></li>
+
+<li><p>
+dilated
+</p>
+
+<p>
+bottleneck 中间的 conv 变成 dilated conv, 这个和 <a href="scnn.html#orgef1c0ec">dilated net</a> 类似
+</p></li>
+
+<li><p>
+asymmetric
+</p>
+
+<p>
+bottleneck 中间的 conv 变成 factorized conv, 例如 5x5 kernel 变 5x1 和 1x5 两个kernel, 在保持 receptive field 大小不变的基础上降低了计算量. 参考了
+inception_v2
+</p></li>
+
+<li><p>
+upsampling
+</p>
+
+<p>
+和 downsampling 相反: bottleneck 中间的 conv 变成 deconv, 同时左边分支加一个
+max_unpooling
+</p></li>
+</ol>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org8bfbc5e" class="outline-3">
+<h3 id="org8bfbc5e"><span class="section-number-3">1.2</span> Upsample</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+upsamle 主要有四种方法:
+</p>
+
+<ol class="org-ol">
+<li>interpolation</li>
+
+<li>deconv</li>
+
+<li><p>
+unpooling
+</p>
+
+<p>
+unpooling 是对原值重复或补零,以填充出更多数据
+</p></li>
+
+<li><p>
+max unpooling
+</p>
+
+<p>
+如果前面是通过 max pooling 做的 downsample, 则后面可以用 max unpooling 做
+upsample, 它与普通 unpooling 的区别是它会利用之前做 max pooling 时的索引
+</p>
+
+
+<div id="orgfbe287b" class="figure">
+<p><img src="../extra/max_unpooling.png" alt="max_unpooling.png" />
+</p>
+</div></li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway (sunwayforever@gmail.com)<br />
+Date: 2022-01-19 三 00:00<br />
+Last updated: 2022-01-19 三 11:51</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
+<br />
+
+           <div id="disqus_thread"></div>
+           <script>
+
+           (function() { // DON'T EDIT BELOW THIS LINE
+                    var d = document, s = d.createElement('script');
+                    s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+                    s.setAttribute('data-timestamp', +new Date());
+                    (d.head || d.body).appendChild(s);
+                    })();
+           </script>
+</div>
+</body>
+</html>
