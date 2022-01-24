@@ -3,13 +3,14 @@
 "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
-<!-- 2022-01-14 五 19:44 -->
+<!-- 2022-01-24 Mon 19:33 -->
 <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>TVM Target Codegen</title>
 <meta name="generator" content="Org mode" />
 <meta name="author" content="Wei Sun (孙伟)" />
-<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
 <script type="text/javascript">
 // @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
 <!--/*--><![CDATA[/*><!--*/
@@ -40,14 +41,14 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#orgb2f4592">1. TVM Target Codegen</a>
+<li><a href="#org0e29c98">1. TVM Target Codegen</a>
 <ul>
-<li><a href="#org1d85688">1.1. Opencl Codegen Example</a></li>
-<li><a href="#org52c6be9">1.2. Target Codegen Impl</a>
+<li><a href="#orge41c367">1.1. Opencl Codegen Example</a></li>
+<li><a href="#orgcafc5f4">1.2. Target Codegen Impl</a>
 <ul>
-<li><a href="#orgfcdcb84">1.2.1. runtime</a></li>
-<li><a href="#org0d317fa">1.2.2. Codegen</a></li>
-<li><a href="#orgbf5a5b8">1.2.3. What about the __TVMFuncCall</a></li>
+<li><a href="#orgb189890">1.2.1. runtime</a></li>
+<li><a href="#org4bc68f4">1.2.2. Codegen</a></li>
+<li><a href="#org2b9e00b">1.2.3. What about the __TVMFuncCall</a></li>
 </ul>
 </li>
 </ul>
@@ -56,12 +57,9 @@
 </div>
 </div>
 
-<div id="outline-container-orgb2f4592" class="outline-2">
-<h2 id="orgb2f4592"><span class="section-number-2">1</span> TVM Target Codegen</h2>
+<div id="outline-container-org0e29c98" class="outline-2">
+<h2 id="org0e29c98"><span class="section-number-2">1</span> TVM Target Codegen</h2>
 <div class="outline-text-2" id="text-1">
-<ul class="org-ul">
-<li>State "DONE"       from "TODO"       <span class="timestamp-wrapper"><span class="timestamp">[2021-08-05 四 15:51]</span></span></li>
-</ul>
 <p>
 Target Codegen 分为以下几类：
 </p>
@@ -95,34 +93,35 @@ Target Codegen 与 BYOC Codegen 有些相似的地方, 以 opencl target 为例:
 <ol class="org-ol">
 <li>通过 target.build.opencl 找到 opencl codegen</li>
 <li>编译生成的 symbol 和 opencl kernel 同样通过 SaveToBinary 保存在 elf 中</li>
-<li>运行时也是通过 GetFunction dispatch 到 opencl_module, 后者会通过 opencl 调用对应的 kernel</li>
+<li>运行时也是通过 GetFunction dispatch 到 opencl_module, 后者会通过 opencl 调用
+对应的 kernel</li>
 </ol>
 </div>
 
-<div id="outline-container-org1d85688" class="outline-3">
-<h3 id="org1d85688"><span class="section-number-3">1.1</span> Opencl Codegen Example</h3>
+<div id="outline-container-orge41c367" class="outline-3">
+<h3 id="orge41c367"><span class="section-number-3">1.1</span> Opencl Codegen Example</h3>
 <div class="outline-text-3" id="text-1-1">
 <div class="org-src-container">
-<pre class="src src-ipython"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
-<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
-<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-08-03 11:11</span>
-<span style="color: #859900;">import</span> tvm
-<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+<pre class="src src-ipython">#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# 2021-08-03 11:11
+import tvm
+from tvm import relay
 
-<span style="color: #268bd2;">x</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"x"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 1000<span style="color: #757575;">),</span> dtype=<span style="color: #2aa198;">"float32"</span><span style="color: #757575;">)</span>
-<span style="color: #268bd2;">y</span> = relay.add<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> x<span style="color: #757575;">)</span>
-<span style="color: #268bd2;">func</span> = relay.Function<span style="color: #757575;">(</span>[x]<span style="color: #757575;">,</span> y<span style="color: #757575;">)</span>
-<span style="color: #268bd2;">mod</span> = tvm.IRModule.from_expr<span style="color: #757575;">(</span>func<span style="color: #757575;">)</span>
-<span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+x = relay.var("x", shape=(1, 1000), dtype="float32")
+y = relay.add(x, x)
+func = relay.Function([x], y)
+mod = tvm.IRModule.from_expr(func)
+print(mod)
 
-<span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>opt_level=3<span style="color: #757575;">)</span>:
-    <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>
-        mod<span style="color: #757575;">,</span> target=<span style="color: #2aa198;">"opencl"</span><span style="color: #757575;">,</span> params=<span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">,</span> target_host=<span style="color: #2aa198;">"llvm"</span>
-    <span style="color: #757575;">)</span>
+with tvm.transform.PassContext(opt_level=3):
+    graph, lib, params = relay.build(
+        mod, target="opencl", params=None, target_host="llvm"
+    )
 
-<span style="color: #859900;">print</span><span style="color: #757575;">(</span>graph<span style="color: #757575;">)</span>
-<span style="color: #859900;">print</span><span style="color: #757575;">(</span>lib.imported_modules[0].get_source<span style="color: #757575;">())</span>
-lib.export_library<span style="color: #757575;">(</span><span style="color: #2aa198;">"/tmp/a.elf"</span><span style="color: #757575;">)</span>
+print(graph)
+print(lib.imported_modules[0].get_source())
+lib.export_library("/tmp/a.elf")
 </pre>
 </div>
 
@@ -606,42 +605,44 @@ opencl kernel</li>
 </div>
 </div>
 
-<div id="outline-container-org52c6be9" class="outline-3">
-<h3 id="org52c6be9"><span class="section-number-3">1.2</span> Target Codegen Impl</h3>
+<div id="outline-container-orgcafc5f4" class="outline-3">
+<h3 id="orgcafc5f4"><span class="section-number-3">1.2</span> Target Codegen Impl</h3>
 <div class="outline-text-3" id="text-1-2">
 </div>
-<div id="outline-container-orgfcdcb84" class="outline-4">
-<h4 id="orgfcdcb84"><span class="section-number-4">1.2.1</span> runtime</h4>
+<div id="outline-container-orgb189890" class="outline-4">
+<h4 id="orgb189890"><span class="section-number-4">1.2.1</span> runtime</h4>
 <div class="outline-text-4" id="text-1-2-1">
 <p>
-target runtime 的逻辑 与 <a href="tvm_byoc_codegen.html#orgcfefb71">BYOC Runtime</a> 完全相同:
+target runtime 的逻辑 与 <a href="tvm_byoc_codegen.html#orgfebc6fc">BYOC Runtime</a> 完全相同:
 </p>
 
 <ol class="org-ol">
 <li><p>
-根据 elf 中的 __tvm_dev_mblob 加载 runtime.module.loadbinary<sub>tkey</sub>, 由后者生成对应的 runtime (或者叫 ModuleNode)
+根据 elf 中的 __tvm_dev_mblob 加载 runtime.module.loadbinary<sub>tkey</sub>, 由后者生
+成对应的 runtime (或者叫 ModuleNode)
 </p>
 
 <p>
-<a href="file:///home/sunway/source/tvm/src/runtime/opencl/opencl_module.cc#orgd6fc86a">file:///home/sunway/source/tvm/src/runtime/opencl/opencl_module.cc#orgd6fc86a</a>
+<a href="file:///home/sunway/source/tvm/src/runtime/opencl/opencl_module.cc#org0b479d9">file:///home/sunway/source/tvm/src/runtime/opencl/opencl_module.cc#org0b479d9</a>
 </p></li>
 
 <li><p>
-runtime 的 GetFunction 负责真正的调用, 以 opencl 为例, 负责通过 opencl 启动对应的 kernel
+runtime 的 GetFunction 负责真正的调用, 以 opencl 为例, 负责通过 opencl 启动对
+应的 kernel
 </p>
 
 <p>
-<a href="file:///home/sunway/source/tvm/src/runtime/opencl/opencl_module.cc#org4cc84f7">file:///home/sunway/source/tvm/src/runtime/opencl/opencl_module.cc#org4cc84f7</a>
+<a href="file:///home/sunway/source/tvm/src/runtime/opencl/opencl_module.cc#org3214f89">file:///home/sunway/source/tvm/src/runtime/opencl/opencl_module.cc#org3214f89</a>
 </p></li>
 </ol>
 </div>
 </div>
 
-<div id="outline-container-org0d317fa" class="outline-4">
-<h4 id="org0d317fa"><span class="section-number-4">1.2.2</span> Codegen</h4>
+<div id="outline-container-org4bc68f4" class="outline-4">
+<h4 id="org4bc68f4"><span class="section-number-4">1.2.2</span> Codegen</h4>
 <div class="outline-text-4" id="text-1-2-2">
 <p>
-codegen 与 <a href="tvm_byoc_codegen.html#orge64980f">Relay Codegen</a> 相比更简化一些, 因为它不需要 annotate. 其它的步骤比如
+codegen 与 <a href="tvm_byoc_codegen.html#org65acba7">Relay Codegen</a> 相比更简化一些, 因为它不需要 annotate. 其它的步骤比如
 </p>
 
 <ul class="org-ul">
@@ -650,7 +651,7 @@ codegen 与 <a href="tvm_byoc_codegen.html#orge64980f">Relay Codegen</a> 相比�
 </p>
 
 <p>
-<a href="file:///home/sunway/source/tvm/src/target/source/codegen_opencl.cc#org385dc75">file:///home/sunway/source/tvm/src/target/source/codegen_opencl.cc#org385dc75</a>
+<a href="file:///home/sunway/source/tvm/src/target/source/codegen_opencl.cc#orga48a0da">file:///home/sunway/source/tvm/src/target/source/codegen_opencl.cc#orga48a0da</a>
 </p></li>
 
 <li><p>
@@ -658,7 +659,7 @@ codegen 与 <a href="tvm_byoc_codegen.html#orge64980f">Relay Codegen</a> 相比�
 </p>
 
 <p>
-<a href="file:///home/sunway/source/tvm/src/target/codegen.cc#orgf9f2e5c">file:///home/sunway/source/tvm/src/target/codegen.cc#orgf9f2e5c</a>
+<a href="file:///home/sunway/source/tvm/src/target/codegen.cc#org3c37c22">file:///home/sunway/source/tvm/src/target/codegen.cc#org3c37c22</a>
 </p></li>
 
 <li>SaveToBinary</li>
@@ -670,17 +671,18 @@ codegen 与 <a href="tvm_byoc_codegen.html#orge64980f">Relay Codegen</a> 相比�
 </div>
 </div>
 
-<div id="outline-container-orgbf5a5b8" class="outline-4">
-<h4 id="orgbf5a5b8"><span class="section-number-4">1.2.3</span> What about the __TVMFuncCall</h4>
+<div id="outline-container-org2b9e00b" class="outline-4">
+<h4 id="org2b9e00b"><span class="section-number-4">1.2.3</span> What about the __TVMFuncCall</h4>
 <div class="outline-text-4" id="text-1-2-3">
 <p>
 以 opencl 为例, 除了通过 opencl codegen 生成了一些 symbol (例如
-tvmgen_default_fused_add_kernel0) 外, 还有一些 host 端代码通过 __TVMFuncCall 来调用这些 symbol.
+tvmgen_default_fused_add_kernel0) 外, 还有一些 host 端代码通过 __TVMFuncCall 来
+调用这些 symbol.
 </p>
 </div>
 
-<div id="outline-container-orgfd01fcb" class="outline-5">
-<h5 id="orgfd01fcb"><span class="section-number-5">1.2.3.1</span> __TVMFuncCall 在哪儿</h5>
+<div id="outline-container-orga0295d1" class="outline-5">
+<h5 id="orga0295d1"><span class="section-number-5">1.2.3.1</span> __TVMFuncCall 在哪儿</h5>
 <div class="outline-text-5" id="text-1-2-3-1">
 <div class="org-src-container">
 <pre class="src src-shell">readelf -a /tmp/a.elf|grep __TVMFuncCall -B 20
@@ -803,26 +805,27 @@ Disassembly of section .bss:
 
 <ol class="org-ol">
 <li><p>
-llvm 初始化一个名为 __TVMFuncCall 的全局变量, 并生成了对这个全局变量对应的地址的调用
+llvm 初始化一个名为 __TVMFuncCall 的全局变量, 并生成了对这个全局变量对应的地
+址的调用
 </p>
 
 <p>
-<a href="file:///home/sunway/source/tvm/src/target/llvm/codegen_cpu.cc#org4a32c36">file:///home/sunway/source/tvm/src/target/llvm/codegen_cpu.cc#org4a32c36</a>
+<a href="file:///home/sunway/source/tvm/src/target/llvm/codegen_cpu.cc#orgdfb0301">file:///home/sunway/source/tvm/src/target/llvm/codegen_cpu.cc#orgdfb0301</a>
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c++">gv_tvm_func_call_ = InitContextPtr<span style="color: #757575;">(</span>ftype_tvm_func_call_-&gt;getPointerTo<span style="color: #757575;">(),</span> <span style="color: #2aa198;">"__TVMFuncCall"</span><span style="color: #757575;">)</span>;
-  <span style="color: #268bd2; font-weight: bold;">llvm</span>::<span style="color: #b58900;">GlobalVariable</span>* <span style="color: #268bd2;">gv</span> = <span style="color: #859900;">new</span> <span style="color: #268bd2; font-weight: bold;">llvm</span>::<span style="color: #b58900;">GlobalVariable</span><span style="color: #757575;">(</span>
-    *module_<span style="color: #757575;">,</span> p_type<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">false</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">llvm</span>::<span style="color: #268bd2; font-weight: bold;">GlobalValue</span>::LinkOnceAnyLinkage<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">nullptr</span><span style="color: #757575;">,</span> name<span style="color: #757575;">)</span>;
-  gv-&gt;setInitializer<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">llvm</span>::<span style="color: #268bd2; font-weight: bold;">Constant</span>::getNullValue<span style="color: #757575;">(</span>p_type<span style="color: #757575;">))</span>;
+<pre class="src src-c++">gv_tvm_func_call_ = InitContextPtr(ftype_tvm_func_call_-&gt;getPointerTo(), <span style="font-style: italic;">"__TVMFuncCall"</span>);
+  <span style="font-weight: bold; text-decoration: underline;">llvm</span>::<span style="font-weight: bold; text-decoration: underline;">GlobalVariable</span>* <span style="font-weight: bold; font-style: italic;">gv</span> = <span style="font-weight: bold;">new</span> <span style="font-weight: bold; text-decoration: underline;">llvm</span>::<span style="font-weight: bold; text-decoration: underline;">GlobalVariable</span>(
+    *module_, p_type, <span style="font-weight: bold; text-decoration: underline;">false</span>, <span style="font-weight: bold; text-decoration: underline;">llvm</span>::<span style="font-weight: bold; text-decoration: underline;">GlobalValue</span>::LinkOnceAnyLinkage, <span style="font-weight: bold; text-decoration: underline;">nullptr</span>, name);
+  gv-&gt;setInitializer(<span style="font-weight: bold; text-decoration: underline;">llvm</span>::<span style="font-weight: bold; text-decoration: underline;">Constant</span>::getNullValue(p_type));
 
 
-<span style="color: #268bd2; font-weight: bold;">llvm</span>::<span style="color: #b58900;">BasicBlock</span>* <span style="color: #268bd2; font-weight: bold;">CodeGenCPU</span>::<span style="color: #268bd2;">MakeCallPacked</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">Array</span>&lt;PrimExpr&gt;&amp; <span style="color: #268bd2;">args</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">llvm</span>::<span style="color: #b58900;">Value</span>** <span style="color: #268bd2;">rvalue</span><span style="color: #757575;">,</span>
-                                             <span style="color: #268bd2; font-weight: bold;">llvm</span>::<span style="color: #b58900;">Value</span>** <span style="color: #268bd2;">ret_tcode</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">DataType</span>&amp; <span style="color: #268bd2;">r_type</span><span style="color: #757575;">,</span>
-                                             <span style="color: #859900;">const</span> <span style="color: #b58900;">int64_t</span> <span style="color: #268bd2;">begin</span><span style="color: #757575;">,</span> <span style="color: #859900;">const</span> <span style="color: #b58900;">int64_t</span> <span style="color: #268bd2;">end</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
-  <span style="color: #859900;">auto</span> <span style="color: #268bd2;">call_callee</span> = RuntimeTVMFuncCall<span style="color: #757575;">()</span>;
-  builder_-&gt;CreateCall<span style="color: #757575;">(</span>
-      call_callee<span style="color: #757575;">,</span> <span style="color: #757575;">{</span>handle<span style="color: #757575;">,</span> arg_value<span style="color: #757575;">,</span> arg_tcode<span style="color: #757575;">,</span> ConstInt32<span style="color: #757575;">(</span>nargs<span style="color: #757575;">),</span> ret_value<span style="color: #757575;">,</span> *ret_tcode<span style="color: #757575;">})</span>
+<span style="font-weight: bold; text-decoration: underline;">llvm</span>::<span style="font-weight: bold; text-decoration: underline;">BasicBlock</span>* <span style="font-weight: bold; text-decoration: underline;">CodeGenCPU</span>::<span style="font-weight: bold;">MakeCallPacked</span>(<span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">Array</span>&lt;PrimExpr&gt;&amp; <span style="font-weight: bold; font-style: italic;">args</span>, <span style="font-weight: bold; text-decoration: underline;">llvm</span>::<span style="font-weight: bold; text-decoration: underline;">Value</span>** <span style="font-weight: bold; font-style: italic;">rvalue</span>,
+                                             <span style="font-weight: bold; text-decoration: underline;">llvm</span>::<span style="font-weight: bold; text-decoration: underline;">Value</span>** <span style="font-weight: bold; font-style: italic;">ret_tcode</span>, <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">DataType</span>&amp; <span style="font-weight: bold; font-style: italic;">r_type</span>,
+                                             <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">int64_t</span> <span style="font-weight: bold; font-style: italic;">begin</span>, <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">int64_t</span> <span style="font-weight: bold; font-style: italic;">end</span>) {
+  <span style="font-weight: bold;">auto</span> <span style="font-weight: bold; font-style: italic;">call_callee</span> = RuntimeTVMFuncCall();
+  builder_-&gt;CreateCall(
+      call_callee, {handle, arg_value, arg_tcode, ConstInt32(nargs), ret_value, *ret_tcode})
   ...          
 </pre>
 </div></li>
@@ -832,15 +835,15 @@ tvm runtime 会负责在运行时用真正的 TVMFuncCall 来初始化 __TVMFunc
 </p>
 
 <p>
-<a href="file:///home/sunway/source/tvm/src/runtime/library_module.cc#org6d14a0c">file:///home/sunway/source/tvm/src/runtime/library_module.cc#org6d14a0c</a>
+<a href="file:///home/sunway/source/tvm/src/runtime/library_module.cc#org5256c50">file:///home/sunway/source/tvm/src/runtime/library_module.cc#org5256c50</a>
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c++">TVM_INIT_CONTEXT_FUNC<span style="color: #757575;">(</span>TVMFuncCall<span style="color: #757575;">)</span>;
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">fgetsymbol &#22312;&#36825;&#37324;&#23454;&#38469;&#23601;&#26159; dlsym</span>
-  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #859900;">auto</span>* <span style="color: #268bd2;">fp</span> = <span style="color: #859900;">reinterpret_cast</span>&lt;<span style="color: #859900;">decltype</span><span style="color: #757575;">(</span>&amp;FuncName<span style="color: #757575;">)</span>*&gt;<span style="color: #757575;">(</span>fgetsymbol<span style="color: #757575;">(</span><span style="color: #2aa198;">"__"</span> #FuncName<span style="color: #757575;">)))</span> <span style="color: #757575;">{</span> \
+<pre class="src src-c++">TVM_INIT_CONTEXT_FUNC(TVMFuncCall);
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">fgetsymbol &#22312;&#36825;&#37324;&#23454;&#38469;&#23601;&#26159; dlsym</span>
+  <span style="font-weight: bold;">if</span> (<span style="font-weight: bold;">auto</span>* <span style="font-weight: bold; font-style: italic;">fp</span> = <span style="font-weight: bold;">reinterpret_cast</span>&lt;<span style="font-weight: bold;">decltype</span>(&amp;FuncName)*&gt;(fgetsymbol(<span style="font-style: italic;">"__"</span> #FuncName))) { \
     *fp = FuncName;                                                                    \
-  <span style="color: #757575;">}</span>
+  }
 </pre>
 </div></li>
 </ol>
@@ -853,21 +856,21 @@ tvm runtime 会负责在运行时用真正的 TVMFuncCall 来初始化 __TVMFunc
 <div id="postamble" class="status">
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
-Date: 2021-08-04 三 00:00<br />
-Last updated: 2021-10-19 二 15:06</p>
+Date: 2021-08-04 Wed 00:00<br />
+Last updated: 2022-01-24 Mon 19:28</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
-           <div id="disqus_thread"></div>
-           <script>
+<div id="disqus_thread"></div>
+<script>
 
-           (function() { // DON'T EDIT BELOW THIS LINE
-                    var d = document, s = d.createElement('script');
-                    s.src = '//sunwayforever-github-io.disqus.com/embed.js';
-                    s.setAttribute('data-timestamp', +new Date());
-                    (d.head || d.body).appendChild(s);
-                    })();
-           </script>
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
 </div>
 </body>
 </html>

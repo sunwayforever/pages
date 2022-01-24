@@ -3,13 +3,14 @@
 "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
-<!-- 2022-01-14 五 19:43 -->
+<!-- 2022-01-24 Mon 19:33 -->
 <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>TVM Quantization</title>
 <meta name="generator" content="Org mode" />
 <meta name="author" content="Wei Sun (孙伟)" />
-<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
 <script type="text/javascript">
 // @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
 <!--/*--><![CDATA[/*><!--*/
@@ -62,17 +63,17 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#orge2cc9e2">1. TVM Quantization</a>
+<li><a href="#orgfd2ad7d">1. TVM Quantization</a>
 <ul>
-<li><a href="#orgce0a9d2">1.1. relay.quantize</a></li>
-<li><a href="#orgbabe27b">1.2. relay.qnn</a>
+<li><a href="#org3a4fd2c">1.1. relay.quantize</a></li>
+<li><a href="#org434983b">1.2. relay.qnn</a>
 <ul>
-<li><a href="#org693dc24">1.2.1. QnnMulCanonicalize</a></li>
+<li><a href="#org3a41001">1.2.1. QnnMulCanonicalize</a></li>
 </ul>
 </li>
-<li><a href="#org04e5722">1.3. Quantization and BYOC</a>
+<li><a href="#org2fda26c">1.3. Quantization and BYOC</a>
 <ul>
-<li><a href="#org2975394">1.3.1. cmsisnn</a></li>
+<li><a href="#org80bd158">1.3.1. cmsisnn</a></li>
 </ul>
 </li>
 </ul>
@@ -81,8 +82,8 @@
 </div>
 </div>
 
-<div id="outline-container-orge2cc9e2" class="outline-2">
-<h2 id="orge2cc9e2"><span class="section-number-2">1</span> TVM Quantization</h2>
+<div id="outline-container-orgfd2ad7d" class="outline-2">
+<h2 id="orgfd2ad7d"><span class="section-number-2">1</span> TVM Quantization</h2>
 <div class="outline-text-2" id="text-1">
 <p>
 <a href="file:///home/sunway/Gitbox/code/hello_world/hello_tvm/graph_runner/run_model.py">file:///home/sunway/Gitbox/code/hello_world/hello_tvm/graph_runner/run_model.py</a>
@@ -98,8 +99,8 @@ TVM 对量化的支持分为两种:
 </ol>
 </div>
 
-<div id="outline-container-orgce0a9d2" class="outline-3">
-<h3 id="orgce0a9d2"><span class="section-number-3">1.1</span> relay.quantize</h3>
+<div id="outline-container-org3a4fd2c" class="outline-3">
+<h3 id="org3a4fd2c"><span class="section-number-3">1.1</span> relay.quantize</h3>
 <div class="outline-text-3" id="text-1-1">
 <p>
 <a href="https://tvm.apache.org/docs/tutorials/frontend/deploy_quantized.html">https://tvm.apache.org/docs/tutorials/frontend/deploy_quantized.html</a>
@@ -116,130 +117,130 @@ quantize 分为三步：
 </ol>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="color: #268bd2;">calibrate_pass</span> = tvm.transform.module_pass<span style="color: #757575;">(</span>
-    calibrate<span style="color: #757575;">(</span>dataset<span style="color: #757575;">),</span> opt_level=1<span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"QuantizeCalibrate"</span>
-<span style="color: #757575;">)</span>
-<span style="color: #268bd2;">quant_passes</span> = [
-    partition<span style="color: #757575;">(),</span>
-    annotate<span style="color: #757575;">(),</span>
-    calibrate_pass<span style="color: #757575;">,</span>
-    tvm.relay.transform.InferType<span style="color: #757575;">(),</span>
-    realize<span style="color: #757575;">(),</span>
+<pre class="src src-python"><span style="font-weight: bold; font-style: italic;">calibrate_pass</span> = tvm.transform.module_pass(
+    calibrate(dataset), opt_level=1, name=<span style="font-style: italic;">"QuantizeCalibrate"</span>
+)
+<span style="font-weight: bold; font-style: italic;">quant_passes</span> = [
+    partition(),
+    annotate(),
+    calibrate_pass,
+    tvm.relay.transform.InferType(),
+    realize(),
 ]
 
-<span style="color: #268bd2;">quantize_seq</span> = tvm.transform.Sequential<span style="color: #757575;">(</span>quant_passes<span style="color: #757575;">)</span>
-<span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>
-    opt_level=3<span style="color: #757575;">,</span>
-    required_pass=[<span style="color: #2aa198;">"QuantizeAnnotate"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"QuantizeCalibrate"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"QuantizeRealize"</span>]<span style="color: #757575;">,</span>
-<span style="color: #757575;">)</span>:
-    <span style="color: #859900;">with</span> quantize_context<span style="color: #757575;">()</span>:
-        <span style="color: #268bd2;">mod</span> = quantize_seq<span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
+<span style="font-weight: bold; font-style: italic;">quantize_seq</span> = tvm.transform.Sequential(quant_passes)
+<span style="font-weight: bold;">with</span> tvm.transform.PassContext(
+    opt_level=3,
+    required_pass=[<span style="font-style: italic;">"QuantizeAnnotate"</span>, <span style="font-style: italic;">"QuantizeCalibrate"</span>, <span style="font-style: italic;">"QuantizeRealize"</span>],
+):
+    <span style="font-weight: bold;">with</span> quantize_context():
+        <span style="font-weight: bold; font-style: italic;">mod</span> = quantize_seq(mod)
 </pre>
 </div>
 </div>
 
-<div id="outline-container-orgd532c99" class="outline-5">
-<h5 id="orgd532c99"><span class="section-number-5">1.1.0.1</span> calibrate</h5>
+<div id="outline-container-org4742a34" class="outline-5">
+<h5 id="org4742a34"><span class="section-number-5">1.1.0.1</span> calibrate</h5>
 <div class="outline-text-5" id="text-1-1-0-1">
 <div class="org-src-container">
-<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">calibrate</span><span style="color: #757575;">(</span>dataset=<span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">)</span>:
-    <span style="color: #859900;">def</span> <span style="color: #268bd2;">wrapped_func</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> _<span style="color: #757575;">)</span>:
-        <span style="color: #268bd2;">cfg</span> = quantize.current_qconfig<span style="color: #757575;">()</span>
+<pre class="src src-python"><span style="font-weight: bold;">def</span> <span style="font-weight: bold;">calibrate</span>(dataset=<span style="font-weight: bold; text-decoration: underline;">None</span>):
+    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">wrapped_func</span>(mod, _):
+        <span style="font-weight: bold; font-style: italic;">cfg</span> = quantize.current_qconfig()
 
-        <span style="color: #859900;">if</span> cfg.calibrate_mode == <span style="color: #2aa198;">"kl_divergence"</span>:
-            <span style="color: #268bd2;">input_scale_func</span> = _kl_scale<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> dataset<span style="color: #757575;">)</span>
-        <span style="color: #859900;">elif</span> cfg.calibrate_mode == <span style="color: #2aa198;">"global_scale"</span>:
-            <span style="color: #268bd2;">input_scale_func</span> = _global_scale
-        <span style="color: #859900;">elif</span> cfg.calibrate_mode == <span style="color: #2aa198;">"percentile"</span>:
-            <span style="color: #268bd2;">input_scale_func</span> = _percentile_scale<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> dataset<span style="color: #757575;">)</span>
+        <span style="font-weight: bold;">if</span> cfg.calibrate_mode == <span style="font-style: italic;">"kl_divergence"</span>:
+            <span style="font-weight: bold; font-style: italic;">input_scale_func</span> = _kl_scale(mod, dataset)
+        <span style="font-weight: bold;">elif</span> cfg.calibrate_mode == <span style="font-style: italic;">"global_scale"</span>:
+            <span style="font-weight: bold; font-style: italic;">input_scale_func</span> = _global_scale
+        <span style="font-weight: bold;">elif</span> cfg.calibrate_mode == <span style="font-style: italic;">"percentile"</span>:
+            <span style="font-weight: bold; font-style: italic;">input_scale_func</span> = _percentile_scale(mod, dataset)
 
-        <span style="color: #859900;">if</span> cfg.weight_scale == <span style="color: #2aa198;">"max"</span>:
-            <span style="color: #268bd2;">weight_scale_func</span> = _max_scale
-        <span style="color: #859900;">elif</span> cfg.weight_scale == <span style="color: #2aa198;">"power2"</span>:
-            <span style="color: #268bd2;">weight_scale_func</span> = _power2_scale
+        <span style="font-weight: bold;">if</span> cfg.weight_scale == <span style="font-style: italic;">"max"</span>:
+            <span style="font-weight: bold; font-style: italic;">weight_scale_func</span> = _max_scale
+        <span style="font-weight: bold;">elif</span> cfg.weight_scale == <span style="font-style: italic;">"power2"</span>:
+            <span style="font-weight: bold; font-style: italic;">weight_scale_func</span> = _power2_scale
 
-        <span style="color: #859900;">return</span> _set_params<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> input_scale_func<span style="color: #757575;">,</span> weight_scale_func<span style="color: #757575;">)</span>
+        <span style="font-weight: bold;">return</span> _set_params(mod, input_scale_func, weight_scale_func)
 
-    <span style="color: #859900;">return</span> wrapped_func
+    <span style="font-weight: bold;">return</span> wrapped_func
 
 
 _set_params:
-    <span style="color: #586e75;"># </span><span style="color: #586e75;">nbit &#40664;&#35748;&#30340;&#23450;&#20041;&#22312; ~/source/tvm/python/tvm/relay/quantize/quantize.py, &#20363;&#22914;</span>
-    <span style="color: #586e75;">#      </span><span style="color: #586e75;">"nbit_input": 8,</span>
-    <span style="color: #586e75;">#      </span><span style="color: #586e75;">"nbit_weight": 8,</span>
-    <span style="color: #586e75;">#      </span><span style="color: #586e75;">"nbit_activation": 32,</span>
-    <span style="color: #268bd2;">nbit</span> = cfg.get_nbit_by_kind<span style="color: #757575;">(</span>kind<span style="color: #757575;">)</span>
-    <span style="color: #268bd2;">valid_bit</span> = nbit - attrs.sign
-    <span style="color: #859900;">if</span> kind == quantize.QAnnotateKind.WEIGHT:
-        <span style="color: #268bd2;">scale</span> = weight_scale_func<span style="color: #757575;">(</span>expr<span style="color: #757575;">)</span>
-    <span style="color: #859900;">else</span>:
-        <span style="color: #268bd2;">scale</span> = input_scale_func<span style="color: #757575;">(</span>expr<span style="color: #757575;">)</span>
+    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">nbit &#40664;&#35748;&#30340;&#23450;&#20041;&#22312; ~/source/tvm/python/tvm/relay/quantize/quantize.py, &#20363;&#22914;</span>
+    <span style="font-weight: bold; font-style: italic;">#      </span><span style="font-weight: bold; font-style: italic;">"nbit_input": 8,</span>
+    <span style="font-weight: bold; font-style: italic;">#      </span><span style="font-weight: bold; font-style: italic;">"nbit_weight": 8,</span>
+    <span style="font-weight: bold; font-style: italic;">#      </span><span style="font-weight: bold; font-style: italic;">"nbit_activation": 32,</span>
+    <span style="font-weight: bold; font-style: italic;">nbit</span> = cfg.get_nbit_by_kind(kind)
+    <span style="font-weight: bold; font-style: italic;">valid_bit</span> = nbit - attrs.sign
+    <span style="font-weight: bold;">if</span> kind == quantize.QAnnotateKind.WEIGHT:
+        <span style="font-weight: bold; font-style: italic;">scale</span> = weight_scale_func(expr)
+    <span style="font-weight: bold;">else</span>:
+        <span style="font-weight: bold; font-style: italic;">scale</span> = input_scale_func(expr)
 
-    <span style="color: #586e75;"># </span><span style="color: #586e75;">&#36825;&#37324;&#26174;&#31034; tvm &#30340;&#37327;&#21270;&#26159;&#23545;&#31216;&#37327;&#21270;, &#19978;&#38754;&#35745;&#31639;&#30340; scale &#22312;&#21407;&#29702;&#19978;&#24212;&#35813;&#31561;&#20110;</span>
-    <span style="color: #586e75;"># </span><span style="color: #586e75;">np.max(np.abs(orig_data))</span>
+    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#36825;&#37324;&#26174;&#31034; tvm &#30340;&#37327;&#21270;&#26159;&#23545;&#31216;&#37327;&#21270;, &#19978;&#38754;&#35745;&#31639;&#30340; scale &#22312;&#21407;&#29702;&#19978;&#24212;&#35813;&#31561;&#20110;</span>
+    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">np.max(np.abs(orig_data))</span>
 
-    <span style="color: #268bd2;">valid_range</span> = 2 ** valid_bit
-    <span style="color: #268bd2;">const_params</span>[ndom_scale] = _make_const<span style="color: #757575;">(</span>scale / valid_range<span style="color: #757575;">)</span>
-    <span style="color: #268bd2;">const_params</span>[nclip_min] = _make_const<span style="color: #757575;">(</span>-<span style="color: #757575;">(</span>valid_range - 1<span style="color: #757575;">))</span>
-    <span style="color: #268bd2;">const_params</span>[nclip_max] = _make_const<span style="color: #757575;">((</span>valid_range - 1<span style="color: #757575;">))</span>
+    <span style="font-weight: bold; font-style: italic;">valid_range</span> = 2 ** valid_bit
+    <span style="font-weight: bold; font-style: italic;">const_params</span>[ndom_scale] = _make_const(scale / valid_range)
+    <span style="font-weight: bold; font-style: italic;">const_params</span>[nclip_min] = _make_const(-(valid_range - 1))
+    <span style="font-weight: bold; font-style: italic;">const_params</span>[nclip_max] = _make_const((valid_range - 1))
 </pre>
 </div>
 </div>
 
 <ol class="org-ol">
-<li><a id="orgadb2c2e"></a>percentile<br />
+<li><a id="org5e77bca"></a>percentile<br />
 <div class="outline-text-6" id="text-1-1-0-1-1">
 <div class="org-src-container">
-<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">_percentile_scale</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> dataset<span style="color: #757575;">)</span>:
-    <span style="color: #268bd2;">cfg</span> = quantize.current_qconfig<span style="color: #757575;">()</span>
-    <span style="color: #268bd2;">chunk_by</span> = cfg.calibrate_chunk_by
-    <span style="color: #268bd2;">scales</span> = []
-    <span style="color: #859900;">for</span> samples <span style="color: #859900;">in</span> collect_stats<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> dataset<span style="color: #757575;">,</span> chunk_by<span style="color: #757575;">)</span>:
-        logging.info<span style="color: #757575;">(</span><span style="color: #2aa198;">"finding threshold with percentile for calibration..."</span><span style="color: #757575;">)</span>
-        <span style="color: #859900;">with</span> mp.Pool<span style="color: #757575;">()</span> <span style="color: #859900;">as</span> pool:
-            <span style="color: #268bd2;">scales</span> += <span style="color: #839496;">list</span><span style="color: #757575;">(</span>pool.<span style="color: #839496;">map</span><span style="color: #757575;">(</span>_find_scale_by_percentile<span style="color: #757575;">,</span> samples<span style="color: #757575;">))</span>
+<pre class="src src-python"><span style="font-weight: bold;">def</span> <span style="font-weight: bold;">_percentile_scale</span>(mod, dataset):
+    <span style="font-weight: bold; font-style: italic;">cfg</span> = quantize.current_qconfig()
+    <span style="font-weight: bold; font-style: italic;">chunk_by</span> = cfg.calibrate_chunk_by
+    <span style="font-weight: bold; font-style: italic;">scales</span> = []
+    <span style="font-weight: bold;">for</span> samples <span style="font-weight: bold;">in</span> collect_stats(mod, dataset, chunk_by):
+        logging.info(<span style="font-style: italic;">"finding threshold with percentile for calibration..."</span>)
+        <span style="font-weight: bold;">with</span> mp.Pool() <span style="font-weight: bold;">as</span> pool:
+            <span style="font-weight: bold; font-style: italic;">scales</span> += <span style="font-weight: bold;">list</span>(pool.<span style="font-weight: bold;">map</span>(_find_scale_by_percentile, samples))
 
-    <span style="color: #859900;">def</span> <span style="color: #268bd2;">func</span><span style="color: #757575;">(</span>_<span style="color: #757575;">)</span>:
-        <span style="color: #586e75;"># </span><span style="color: #586e75;">func &#36820;&#22238;&#27599;&#19968;&#23618;&#30340; scale (&#23454;&#38469;&#19978;&#30456;&#24403;&#20110;&#27599;&#23618;&#30340;`&#26368;&#22823;&#20540;`, &#21518;&#32493;&#20250;&#36890;&#36807;</span>
-        <span style="color: #586e75;"># </span><span style="color: #586e75;">scale/valid_range &#33719;&#24471;&#26368;&#32456;&#30340; scale)</span>
-        <span style="color: #268bd2;">scale</span> = scales[func.scale_idx]
-        <span style="color: #268bd2;">func.scale_idx</span> += 1
-        <span style="color: #859900;">return</span> scale
+    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">func</span>(_):
+        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">func &#36820;&#22238;&#27599;&#19968;&#23618;&#30340; scale (&#23454;&#38469;&#19978;&#30456;&#24403;&#20110;&#27599;&#23618;&#30340;`&#26368;&#22823;&#20540;`, &#21518;&#32493;&#20250;&#36890;&#36807;</span>
+        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">scale/valid_range &#33719;&#24471;&#26368;&#32456;&#30340; scale)</span>
+        <span style="font-weight: bold; font-style: italic;">scale</span> = scales[func.scale_idx]
+        <span style="font-weight: bold; font-style: italic;">func.scale_idx</span> += 1
+        <span style="font-weight: bold;">return</span> scale
 
-    <span style="color: #268bd2;">func.scale_idx</span> = 0
+    <span style="font-weight: bold; font-style: italic;">func.scale_idx</span> = 0
 
-    <span style="color: #859900;">return</span> func
-
-
-<span style="color: #586e75;"># </span><span style="color: #586e75;">&#20351;&#29992; calibrate_dataset &#33719;&#24471;&#27599;&#19968;&#23618;&#30340;&#36755;&#20986;</span>
-<span style="color: #859900;">def</span> <span style="color: #268bd2;">collect_stats</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> dataset<span style="color: #757575;">,</span> chunk_by=-1<span style="color: #757575;">)</span>:
-    <span style="color: #268bd2;">runtime</span> = _get_profile_runtime<span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
-    <span style="color: #268bd2;">num_outputs</span> = runtime.get_num_outputs<span style="color: #757575;">()</span>
-
-    <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> num_outputs<span style="color: #757575;">,</span> chunk_by<span style="color: #757575;">)</span>:
-        <span style="color: #268bd2;">outputs</span> = [[] <span style="color: #859900;">for</span> i <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span><span style="color: #839496;">min</span><span style="color: #757575;">(</span>chunk_by<span style="color: #757575;">,</span> num_outputs - i<span style="color: #757575;">))</span>]
-        <span style="color: #859900;">for</span> batch <span style="color: #859900;">in</span> dataset:
-            runtime.set_input<span style="color: #757575;">(</span>**batch<span style="color: #757575;">)</span>
-            runtime.run<span style="color: #757575;">()</span>
-            <span style="color: #859900;">for</span> j <span style="color: #859900;">in</span> <span style="color: #839496;">range</span><span style="color: #757575;">(</span>i<span style="color: #757575;">,</span> <span style="color: #839496;">min</span><span style="color: #757575;">(</span>i + chunk_by<span style="color: #757575;">,</span> num_outputs<span style="color: #757575;">))</span>:
-                outputs[j - i].append<span style="color: #757575;">(</span>runtime.get_output<span style="color: #757575;">(</span>j<span style="color: #757575;">)</span>.numpy<span style="color: #757575;">())</span>
-        <span style="color: #859900;">yield</span> [np.concatenate<span style="color: #757575;">(</span>output<span style="color: #757575;">)</span>.reshape<span style="color: #757575;">(</span>-1<span style="color: #757575;">)</span> <span style="color: #859900;">for</span> output <span style="color: #859900;">in</span> outputs]
+    <span style="font-weight: bold;">return</span> func
 
 
-<span style="color: #586e75;"># </span><span style="color: #586e75;">&#36825;&#20010;&#20989;&#25968;&#30456;&#24403;&#20110;&#19968;&#20010; get_k_largest &#20989;&#25968;, &#20854;&#20013; k=percentile*(arr.size), &#29992;&#26469;&#36991;&#20813;</span>
-<span style="color: #586e75;"># </span><span style="color: #586e75;">&#20010;&#21035;&#26497;&#22823;&#30340;&#20540;&#36896;&#25104;&#37327;&#21270;&#35823;&#24046;</span>
-<span style="color: #586e75;"># </span><span style="color: #586e75;">file:~/Gitbox/code/leetcode/go/src/kth_largest_element_in_an_array/kth_largest_element_in_an_array.go</span>
-<span style="color: #859900;">def</span> <span style="color: #268bd2;">_find_scale_by_percentile</span><span style="color: #757575;">(</span>arr<span style="color: #757575;">,</span> percentile=0.99999<span style="color: #757575;">)</span>:
-    <span style="color: #859900;">assert</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>arr<span style="color: #757575;">,</span> np.ndarray<span style="color: #757575;">)</span>
-    <span style="color: #268bd2;">x</span> = np.<span style="color: #839496;">abs</span><span style="color: #757575;">(</span>arr<span style="color: #757575;">)</span>
-    <span style="color: #268bd2;">max_k</span> = <span style="color: #839496;">int</span><span style="color: #757575;">(</span>x.size * percentile<span style="color: #757575;">)</span>
-    <span style="color: #859900;">return</span> np.partition<span style="color: #757575;">(</span>x<span style="color: #757575;">,</span> max_k<span style="color: #757575;">)</span>[max_k]
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#20351;&#29992; calibrate_dataset &#33719;&#24471;&#27599;&#19968;&#23618;&#30340;&#36755;&#20986;</span>
+<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">collect_stats</span>(mod, dataset, chunk_by=-1):
+    <span style="font-weight: bold; font-style: italic;">runtime</span> = _get_profile_runtime(mod)
+    <span style="font-weight: bold; font-style: italic;">num_outputs</span> = runtime.get_num_outputs()
+
+    <span style="font-weight: bold;">for</span> i <span style="font-weight: bold;">in</span> <span style="font-weight: bold;">range</span>(0, num_outputs, chunk_by):
+        <span style="font-weight: bold; font-style: italic;">outputs</span> = [[] <span style="font-weight: bold;">for</span> i <span style="font-weight: bold;">in</span> <span style="font-weight: bold;">range</span>(<span style="font-weight: bold;">min</span>(chunk_by, num_outputs - i))]
+        <span style="font-weight: bold;">for</span> batch <span style="font-weight: bold;">in</span> dataset:
+            runtime.set_input(**batch)
+            runtime.run()
+            <span style="font-weight: bold;">for</span> j <span style="font-weight: bold;">in</span> <span style="font-weight: bold;">range</span>(i, <span style="font-weight: bold;">min</span>(i + chunk_by, num_outputs)):
+                outputs[j - i].append(runtime.get_output(j).numpy())
+        <span style="font-weight: bold;">yield</span> [np.concatenate(output).reshape(-1) <span style="font-weight: bold;">for</span> output <span style="font-weight: bold;">in</span> outputs]
+
+
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#36825;&#20010;&#20989;&#25968;&#30456;&#24403;&#20110;&#19968;&#20010; get_k_largest &#20989;&#25968;, &#20854;&#20013; k=percentile*(arr.size), &#29992;&#26469;&#36991;&#20813;</span>
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#20010;&#21035;&#26497;&#22823;&#30340;&#20540;&#36896;&#25104;&#37327;&#21270;&#35823;&#24046;</span>
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">file:~/Gitbox/code/leetcode/go/src/kth_largest_element_in_an_array/kth_largest_element_in_an_array.go</span>
+<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">_find_scale_by_percentile</span>(arr, percentile=0.99999):
+    <span style="font-weight: bold;">assert</span> <span style="font-weight: bold;">isinstance</span>(arr, np.ndarray)
+    <span style="font-weight: bold; font-style: italic;">x</span> = np.<span style="font-weight: bold;">abs</span>(arr)
+    <span style="font-weight: bold; font-style: italic;">max_k</span> = <span style="font-weight: bold;">int</span>(x.size * percentile)
+    <span style="font-weight: bold;">return</span> np.partition(x, max_k)[max_k]
 </pre>
 </div>
 </div>
 </li>
 
-<li><a id="org4b5cf11"></a>kl_divergence<br />
+<li><a id="org15588f6"></a>kl_divergence<br />
 <div class="outline-text-6" id="text-1-1-0-1-2">
 <p>
 KL divergence 的定义: \(KL(p,q)=\sum\big({p_i*log\frac{p_i}{q_i}}\big)\)
@@ -257,7 +258,7 @@ kl_divergence 则选择能够 minimize(kl_divergence) 的 saturation
 <a href="https://on-demand.gputechconf.com/gtc/2017/presentation/s7310-8-bit-inference-with-tensorrt.pdf">https://on-demand.gputechconf.com/gtc/2017/presentation/s7310-8-bit-inference-with-tensorrt.pdf</a>
 </p>
 
-<pre class="example" id="orgc1347ed">
+<pre class="example" id="org2340d31">
 Input: abs(FP32) histogram H with 2048 bins: bin[0], …, bin[2047]
 
 for i in range( 128 , 2048 ):
@@ -270,27 +271,27 @@ for i in range( 128 , 2048 ):
 </pre>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
-<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
-<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-08-23 22:25</span>
-<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<pre class="src src-python"><span style="font-weight: bold; font-style: italic;">#</span><span style="font-weight: bold; font-style: italic;">!/usr/bin/env python3</span>
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">-*- coding: utf-8 -*-</span>
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">2021-08-23 22:25</span>
+<span style="font-weight: bold;">import</span> numpy <span style="font-weight: bold;">as</span> np
 
 
-<span style="color: #859900;">def</span> <span style="color: #268bd2;">kl_divergence</span><span style="color: #757575;">(</span>p<span style="color: #757575;">,</span> q<span style="color: #757575;">)</span>:
-    <span style="color: #859900;">return</span> np.<span style="color: #839496;">sum</span><span style="color: #757575;">(</span>p * np.log<span style="color: #757575;">(</span>p / q<span style="color: #757575;">))</span>
+<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">kl_divergence</span>(p, q):
+    <span style="font-weight: bold;">return</span> np.<span style="font-weight: bold;">sum</span>(p * np.log(p / q))
 
 
-<span style="color: #859900;">def</span> <span style="color: #268bd2;">check</span><span style="color: #757575;">(</span>P<span style="color: #757575;">,</span> target_bins<span style="color: #757575;">)</span>:
-    <span style="color: #268bd2;">Q</span> = np.array<span style="color: #757575;">(</span>[np.average<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span> <span style="color: #859900;">for</span> x <span style="color: #859900;">in</span> np.split<span style="color: #757575;">(</span>P<span style="color: #757575;">,</span> target_bins<span style="color: #757575;">)</span>]<span style="color: #757575;">)</span>
-    <span style="color: #268bd2;">Q</span> = np.repeat<span style="color: #757575;">(</span>Q<span style="color: #757575;">,</span> <span style="color: #839496;">len</span><span style="color: #757575;">(</span>P<span style="color: #757575;">)</span> // target_bins<span style="color: #757575;">)</span>
+<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">check</span>(P, target_bins):
+    <span style="font-weight: bold; font-style: italic;">Q</span> = np.array([np.average(x) <span style="font-weight: bold;">for</span> x <span style="font-weight: bold;">in</span> np.split(P, target_bins)])
+    <span style="font-weight: bold; font-style: italic;">Q</span> = np.repeat(Q, <span style="font-weight: bold;">len</span>(P) // target_bins)
 
-    <span style="color: #859900;">return</span> kl_divergence<span style="color: #757575;">(</span>P / np.<span style="color: #839496;">sum</span><span style="color: #757575;">(</span>P<span style="color: #757575;">),</span> Q / np.<span style="color: #839496;">sum</span><span style="color: #757575;">(</span>Q<span style="color: #757575;">))</span>
+    <span style="font-weight: bold;">return</span> kl_divergence(P / np.<span style="font-weight: bold;">sum</span>(P), Q / np.<span style="font-weight: bold;">sum</span>(Q))
 
 
-<span style="color: #859900;">if</span> <span style="color: #839496;">__name__</span> == <span style="color: #2aa198;">"__main__"</span>:
-    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>check<span style="color: #757575;">(</span>np.array<span style="color: #757575;">(</span>[1<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 3<span style="color: #757575;">,</span> 4<span style="color: #757575;">,</span> 5<span style="color: #757575;">,</span> 6<span style="color: #757575;">,</span> 7<span style="color: #757575;">,</span> 8]<span style="color: #757575;">),</span> 2<span style="color: #757575;">))</span>
-    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>check<span style="color: #757575;">(</span>np.array<span style="color: #757575;">(</span>[1<span style="color: #757575;">,</span> 3<span style="color: #757575;">,</span> 5<span style="color: #757575;">,</span> 7<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 4<span style="color: #757575;">,</span> 6<span style="color: #757575;">,</span> 8]<span style="color: #757575;">),</span> 2<span style="color: #757575;">))</span>
-    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>check<span style="color: #757575;">(</span>np.array<span style="color: #757575;">(</span>[2<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 6<span style="color: #757575;">,</span> 6<span style="color: #757575;">,</span> 6<span style="color: #757575;">,</span> 6]<span style="color: #757575;">),</span> 2<span style="color: #757575;">))</span>
+<span style="font-weight: bold;">if</span> <span style="font-weight: bold;">__name__</span> == <span style="font-style: italic;">"__main__"</span>:
+    <span style="font-weight: bold;">print</span>(check(np.array([1, 2, 3, 4, 5, 6, 7, 8]), 2))
+    <span style="font-weight: bold;">print</span>(check(np.array([1, 3, 5, 7, 2, 4, 6, 8]), 2))
+    <span style="font-weight: bold;">print</span>(check(np.array([2, 2, 2, 2, 6, 6, 6, 6]), 2))
 </pre>
 </div>
 
@@ -302,7 +303,7 @@ for i in range( 128 , 2048 ):
 </div>
 </li>
 
-<li><a id="org26aa02a"></a>global_scale<br />
+<li><a id="org3a5420c"></a>global_scale<br />
 <div class="outline-text-6" id="text-1-1-0-1-3">
 <p>
 global_scale 实际上是假设每层的`最大值`都是相同的值, 例如 8 或 16, 所以它不需要
@@ -310,9 +311,9 @@ calibrate_dataset
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">_global_scale</span><span style="color: #757575;">(</span>sq_call<span style="color: #757575;">)</span>:
-    <span style="color: #268bd2;">cfg</span> = quantize.current_qconfig<span style="color: #757575;">()</span>
-    <span style="color: #859900;">return</span> cfg.global_scale
+<pre class="src src-python"><span style="font-weight: bold;">def</span> <span style="font-weight: bold;">_global_scale</span>(sq_call):
+    <span style="font-weight: bold; font-style: italic;">cfg</span> = quantize.current_qconfig()
+    <span style="font-weight: bold;">return</span> cfg.global_scale
 </pre>
 </div>
 </div>
@@ -320,17 +321,17 @@ calibrate_dataset
 </ol>
 </div>
 
-<div id="outline-container-orgd646ddd" class="outline-5">
-<h5 id="orgd646ddd"><span class="section-number-5">1.1.0.2</span> annotate</h5>
+<div id="outline-container-orgc35592b" class="outline-5">
+<h5 id="orgc35592b"><span class="section-number-5">1.1.0.2</span> annotate</h5>
 </div>
 
-<div id="outline-container-orgb8a0d7d" class="outline-5">
-<h5 id="orgb8a0d7d"><span class="section-number-5">1.1.0.3</span> realize</h5>
+<div id="outline-container-org9c836fa" class="outline-5">
+<h5 id="org9c836fa"><span class="section-number-5">1.1.0.3</span> realize</h5>
 </div>
 </div>
 
-<div id="outline-container-orgbabe27b" class="outline-3">
-<h3 id="orgbabe27b"><span class="section-number-3">1.2</span> relay.qnn</h3>
+<div id="outline-container-org434983b" class="outline-3">
+<h3 id="org434983b"><span class="section-number-3">1.2</span> relay.qnn</h3>
 <div class="outline-text-3" id="text-1-2">
 <p>
 <a href="https://tvm.apache.org/docs/tutorials/frontend/deploy_prequantized.html">https://tvm.apache.org/docs/tutorials/frontend/deploy_prequantized.html</a>#
@@ -342,94 +343,91 @@ relay IR, 它是在原来的 relay 之前通过 tvm 的 Canonicalize 机制添�
 </p>
 
 <p>
-例如, 一个 qnn.mul 会通过 QnnMulCanonicalize 函数转换成多个 relay.ir 的操作,用来把 frontend 的量化方式转换为 tvm 的量化方式. QnnMulCanonicalize 是通过
+例如, 一个 qnn.mul 会通过 QnnMulCanonicalize 函数转换成多个 relay.ir 的操作,用来
+把 frontend 的量化方式转换为 tvm 的量化方式. QnnMulCanonicalize 是通过
 relay::qnn::transform::Legalize 被执行的
 </p>
 </div>
 
-<div id="outline-container-org693dc24" class="outline-4">
-<h4 id="org693dc24"><span class="section-number-4">1.2.1</span> QnnMulCanonicalize</h4>
+<div id="outline-container-org3a41001" class="outline-4">
+<h4 id="org3a41001"><span class="section-number-4">1.2.1</span> QnnMulCanonicalize</h4>
 <div class="outline-text-4" id="text-1-2-1">
-<ul class="org-ul">
-<li>State "DONE"       from "TODO"       <span class="timestamp-wrapper"><span class="timestamp">[2021-09-22 三 18:46]</span></span></li>
-</ul>
 </div>
-
-<div id="outline-container-org98e6af2" class="outline-5">
-<h5 id="org98e6af2"><span class="section-number-5">1.2.1.1</span> Example</h5>
+<div id="outline-container-org06f6f52" class="outline-5">
+<h5 id="org06f6f52"><span class="section-number-5">1.2.1.1</span> Example</h5>
 <div class="outline-text-5" id="text-1-2-1-1">
 <p>
 <a href="file:///home/sunway/source/tvm/tests/python/relay/test_op_qnn_mul.py">file:~/source/tvm/tests/python/relay/test_op_qnn_mul.py</a>
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
-<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
-<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-09-22 16:20</span>
+<pre class="src src-python"><span style="font-weight: bold; font-style: italic;">#</span><span style="font-weight: bold; font-style: italic;">!/usr/bin/env python3</span>
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">-*- coding: utf-8 -*-</span>
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">2021-09-22 16:20</span>
 
-<span style="color: #859900;">import</span> tvm
-<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> te
-<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
-<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> relay
+<span style="font-weight: bold;">import</span> tvm
+<span style="font-weight: bold;">from</span> tvm <span style="font-weight: bold;">import</span> te
+<span style="font-weight: bold;">import</span> numpy <span style="font-weight: bold;">as</span> np
+<span style="font-weight: bold;">from</span> tvm <span style="font-weight: bold;">import</span> relay
 
-<span style="color: #268bd2;">x_data</span> = np.array<span style="color: #757575;">((</span>1<span style="color: #757575;">,</span> 153<span style="color: #757575;">,</span> 2<span style="color: #757575;">,</span> 178<span style="color: #757575;">))</span>.reshape<span style="color: #757575;">((</span>1<span style="color: #757575;">,</span> 4<span style="color: #757575;">))</span>
-<span style="color: #268bd2;">y_data</span> = np.array<span style="color: #757575;">((</span>204<span style="color: #757575;">,</span> 178<span style="color: #757575;">,</span> 1<span style="color: #757575;">,</span> 8<span style="color: #757575;">))</span>.reshape<span style="color: #757575;">((</span>1<span style="color: #757575;">,</span> 4<span style="color: #757575;">))</span>
+<span style="font-weight: bold; font-style: italic;">x_data</span> = np.array((1, 153, 2, 178)).reshape((1, 4))
+<span style="font-weight: bold; font-style: italic;">y_data</span> = np.array((204, 178, 1, 8)).reshape((1, 4))
 
-<span style="color: #268bd2;">x_scale</span> = <span style="color: #268bd2;">y_scale</span> = <span style="color: #268bd2;">z_scale</span> = 0.00784314
-<span style="color: #268bd2;">x_zero_point</span> = <span style="color: #268bd2;">y_zero_point</span> = <span style="color: #268bd2;">z_zero_point</span> = 127
-
-
-<span style="color: #859900;">def</span> <span style="color: #268bd2;">dequant</span><span style="color: #757575;">(</span>data<span style="color: #757575;">,</span> scale<span style="color: #757575;">,</span> zp<span style="color: #757575;">)</span>:
-    <span style="color: #859900;">return</span> scale * <span style="color: #757575;">(</span>np.asarray<span style="color: #757575;">(</span>data<span style="color: #757575;">)</span> - zp<span style="color: #757575;">)</span>
+<span style="font-weight: bold; font-style: italic;">x_scale</span> = <span style="font-weight: bold; font-style: italic;">y_scale</span> = <span style="font-weight: bold; font-style: italic;">z_scale</span> = 0.00784314
+<span style="font-weight: bold; font-style: italic;">x_zero_point</span> = <span style="font-weight: bold; font-style: italic;">y_zero_point</span> = <span style="font-weight: bold; font-style: italic;">z_zero_point</span> = 127
 
 
-<span style="color: #859900;">def</span> <span style="color: #268bd2;">quant</span><span style="color: #757575;">(</span>data<span style="color: #757575;">,</span> scale<span style="color: #757575;">,</span> zp<span style="color: #757575;">)</span>:
-    <span style="color: #268bd2;">z</span> = np.around<span style="color: #757575;">(</span>data / scale + zp<span style="color: #757575;">)</span>
-    <span style="color: #268bd2;">q_min</span> = np.iinfo<span style="color: #757575;">(</span>np.uint8<span style="color: #757575;">)</span>.<span style="color: #839496;">min</span>
-    <span style="color: #268bd2;">q_max</span> = np.iinfo<span style="color: #757575;">(</span>np.uint8<span style="color: #757575;">)</span>.<span style="color: #839496;">max</span>
-    <span style="color: #859900;">return</span> np.clip<span style="color: #757575;">(</span>z<span style="color: #757575;">,</span> q_min<span style="color: #757575;">,</span> q_max<span style="color: #757575;">)</span>
+<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">dequant</span>(data, scale, zp):
+    <span style="font-weight: bold;">return</span> scale * (np.asarray(data) - zp)
 
 
-<span style="color: #859900;">def</span> <span style="color: #268bd2;">mul_manually</span><span style="color: #757575;">()</span>:
-    <span style="color: #859900;">return</span> quant<span style="color: #757575;">(</span>
-        dequant<span style="color: #757575;">(</span>x_data<span style="color: #757575;">,</span> x_scale<span style="color: #757575;">,</span> x_zero_point<span style="color: #757575;">)</span> * dequant<span style="color: #757575;">(</span>y_data<span style="color: #757575;">,</span> y_scale<span style="color: #757575;">,</span> y_zero_point<span style="color: #757575;">),</span>
-        z_scale<span style="color: #757575;">,</span>
-        z_zero_point<span style="color: #757575;">,</span>
-    <span style="color: #757575;">)</span>
+<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">quant</span>(data, scale, zp):
+    <span style="font-weight: bold; font-style: italic;">z</span> = np.around(data / scale + zp)
+    <span style="font-weight: bold; font-style: italic;">q_min</span> = np.iinfo(np.uint8).<span style="font-weight: bold;">min</span>
+    <span style="font-weight: bold; font-style: italic;">q_max</span> = np.iinfo(np.uint8).<span style="font-weight: bold;">max</span>
+    <span style="font-weight: bold;">return</span> np.clip(z, q_min, q_max)
 
 
-<span style="color: #859900;">if</span> <span style="color: #839496;">__name__</span> == <span style="color: #2aa198;">"__main__"</span>:
-    <span style="color: #268bd2;">x</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"x"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 4<span style="color: #757575;">),</span> dtype=<span style="color: #2aa198;">"uint8"</span><span style="color: #757575;">)</span>
-    <span style="color: #268bd2;">y</span> = relay.var<span style="color: #757575;">(</span><span style="color: #2aa198;">"y"</span><span style="color: #757575;">,</span> shape=<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> 4<span style="color: #757575;">),</span> dtype=<span style="color: #2aa198;">"uint8"</span><span style="color: #757575;">)</span>
-    <span style="color: #268bd2;">z</span> = relay.qnn.op.mul<span style="color: #757575;">(</span>
-        lhs=x<span style="color: #757575;">,</span>
-        rhs=y<span style="color: #757575;">,</span>
-        lhs_scale=relay.const<span style="color: #757575;">(</span>x_scale<span style="color: #757575;">,</span> <span style="color: #2aa198;">"float32"</span><span style="color: #757575;">),</span>
-        lhs_zero_point=relay.const<span style="color: #757575;">(</span>x_zero_point<span style="color: #757575;">,</span> <span style="color: #2aa198;">"int32"</span><span style="color: #757575;">),</span>
-        rhs_scale=relay.const<span style="color: #757575;">(</span>y_scale<span style="color: #757575;">,</span> <span style="color: #2aa198;">"float32"</span><span style="color: #757575;">),</span>
-        rhs_zero_point=relay.const<span style="color: #757575;">(</span>y_zero_point<span style="color: #757575;">,</span> <span style="color: #2aa198;">"int32"</span><span style="color: #757575;">),</span>
-        output_scale=relay.const<span style="color: #757575;">(</span>z_scale<span style="color: #757575;">,</span> <span style="color: #2aa198;">"float32"</span><span style="color: #757575;">),</span>
-        output_zero_point=relay.const<span style="color: #757575;">(</span>z_zero_point<span style="color: #757575;">,</span> <span style="color: #2aa198;">"int32"</span><span style="color: #757575;">),</span>
-    <span style="color: #757575;">)</span>
+<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">mul_manually</span>():
+    <span style="font-weight: bold;">return</span> quant(
+        dequant(x_data, x_scale, x_zero_point) * dequant(y_data, y_scale, y_zero_point),
+        z_scale,
+        z_zero_point,
+    )
 
-    <span style="color: #268bd2;">func</span> = relay.Function<span style="color: #757575;">(</span>[x<span style="color: #757575;">,</span> y]<span style="color: #757575;">,</span> z<span style="color: #757575;">)</span>
-    <span style="color: #268bd2;">mod</span> = tvm.IRModule.from_expr<span style="color: #757575;">(</span>func<span style="color: #757575;">)</span>
-    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"----------before qnn transform----------"</span><span style="color: #757575;">)</span>
-    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
-    <span style="color: #268bd2;">mod</span> = relay.transform.InferType<span style="color: #757575;">()(</span>mod<span style="color: #757575;">)</span>
-    <span style="color: #268bd2;">mod</span> = relay.qnn.transform.CanonicalizeOps<span style="color: #757575;">()(</span>mod<span style="color: #757575;">)</span>
-    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"----------after qnn transform----------"</span><span style="color: #757575;">)</span>
-    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>mod<span style="color: #757575;">)</span>
-    <span style="color: #268bd2;">func</span> = mod[<span style="color: #2aa198;">"main"</span>]
 
-    <span style="color: #268bd2;">intrp</span> = relay.create_executor<span style="color: #757575;">(</span><span style="color: #2aa198;">"graph"</span><span style="color: #757575;">,</span> device=tvm.cpu<span style="color: #757575;">(</span>0<span style="color: #757575;">),</span> target=<span style="color: #2aa198;">"llvm"</span><span style="color: #757575;">)</span>
-    <span style="color: #268bd2;">op_res</span> = intrp.evaluate<span style="color: #757575;">(</span>func<span style="color: #757575;">)(</span>x_data<span style="color: #757575;">,</span> y_data<span style="color: #757575;">)</span>
+<span style="font-weight: bold;">if</span> <span style="font-weight: bold;">__name__</span> == <span style="font-style: italic;">"__main__"</span>:
+    <span style="font-weight: bold; font-style: italic;">x</span> = relay.var(<span style="font-style: italic;">"x"</span>, shape=(1, 4), dtype=<span style="font-style: italic;">"uint8"</span>)
+    <span style="font-weight: bold; font-style: italic;">y</span> = relay.var(<span style="font-style: italic;">"y"</span>, shape=(1, 4), dtype=<span style="font-style: italic;">"uint8"</span>)
+    <span style="font-weight: bold; font-style: italic;">z</span> = relay.qnn.op.mul(
+        lhs=x,
+        rhs=y,
+        lhs_scale=relay.const(x_scale, <span style="font-style: italic;">"float32"</span>),
+        lhs_zero_point=relay.const(x_zero_point, <span style="font-style: italic;">"int32"</span>),
+        rhs_scale=relay.const(y_scale, <span style="font-style: italic;">"float32"</span>),
+        rhs_zero_point=relay.const(y_zero_point, <span style="font-style: italic;">"int32"</span>),
+        output_scale=relay.const(z_scale, <span style="font-style: italic;">"float32"</span>),
+        output_zero_point=relay.const(z_zero_point, <span style="font-style: italic;">"int32"</span>),
+    )
 
-    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"----------"</span><span style="color: #757575;">)</span>
-    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>op_res.numpy<span style="color: #757575;">())</span>
-    <span style="color: #859900;">print</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"----------"</span><span style="color: #757575;">)</span>
-    <span style="color: #268bd2;">golden</span> = mul_manually<span style="color: #757575;">()</span>
-    <span style="color: #859900;">print</span><span style="color: #757575;">(</span>golden.astype<span style="color: #757575;">(</span><span style="color: #2aa198;">"uint8"</span><span style="color: #757575;">))</span>
+    <span style="font-weight: bold; font-style: italic;">func</span> = relay.Function([x, y], z)
+    <span style="font-weight: bold; font-style: italic;">mod</span> = tvm.IRModule.from_expr(func)
+    <span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"----------before qnn transform----------"</span>)
+    <span style="font-weight: bold;">print</span>(mod)
+    <span style="font-weight: bold; font-style: italic;">mod</span> = relay.transform.InferType()(mod)
+    <span style="font-weight: bold; font-style: italic;">mod</span> = relay.qnn.transform.CanonicalizeOps()(mod)
+    <span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"----------after qnn transform----------"</span>)
+    <span style="font-weight: bold;">print</span>(mod)
+    <span style="font-weight: bold; font-style: italic;">func</span> = mod[<span style="font-style: italic;">"main"</span>]
+
+    <span style="font-weight: bold; font-style: italic;">intrp</span> = relay.create_executor(<span style="font-style: italic;">"graph"</span>, device=tvm.cpu(0), target=<span style="font-style: italic;">"llvm"</span>)
+    <span style="font-weight: bold; font-style: italic;">op_res</span> = intrp.evaluate(func)(x_data, y_data)
+
+    <span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"----------"</span>)
+    <span style="font-weight: bold;">print</span>(op_res.numpy())
+    <span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"----------"</span>)
+    <span style="font-weight: bold; font-style: italic;">golden</span> = mul_manually()
+    <span style="font-weight: bold;">print</span>(golden.astype(<span style="font-style: italic;">"uint8"</span>))
 </pre>
 </div>
 
@@ -468,39 +466,39 @@ def @main(%x: Tensor[(1, 4), uint8], %y: Tensor[(1, 4), uint8]) -&gt; Tensor[(1,
 </div>
 </div>
 
-<div id="outline-container-orge98ee9b" class="outline-5">
-<h5 id="orge98ee9b"><span class="section-number-5">1.2.1.2</span> How is `QnnMulCanonicalize` invoked</h5>
+<div id="outline-container-org339765e" class="outline-5">
+<h5 id="org339765e"><span class="section-number-5">1.2.1.2</span> How is `QnnMulCanonicalize` invoked</h5>
 <div class="outline-text-5" id="text-1-2-1-2">
 <div class="org-src-container">
-<pre class="src src-C++">QNN_REGISTER_BINARY_OP<span style="color: #757575;">(</span><span style="color: #2aa198;">"mul"</span><span style="color: #757575;">)</span>
-    .describe<span style="color: #757575;">(</span><span style="color: #2aa198;">"Elementwise mul with with broadcasting for quantized tensors."</span><span style="color: #757575;">)</span>
-    .set_support_level<span style="color: #757575;">(</span>11<span style="color: #757575;">)</span>
-    .set_attr&lt;FTVMLegalize&gt;<span style="color: #757575;">(</span><span style="color: #2aa198;">"FTVMQnnCanonicalize"</span><span style="color: #757575;">,</span> QnnMulCanonicalize<span style="color: #757575;">)</span>;
+<pre class="src src-C++">QNN_REGISTER_BINARY_OP(<span style="font-style: italic;">"mul"</span>)
+    .describe(<span style="font-style: italic;">"Elementwise mul with with broadcasting for quantized tensors."</span>)
+    .set_support_level(11)
+    .set_attr&lt;FTVMLegalize&gt;(<span style="font-style: italic;">"FTVMQnnCanonicalize"</span>, QnnMulCanonicalize);
 
-<span style="color: #b58900;">Pass</span> <span style="color: #268bd2;">Legalize</span><span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
-  <span style="color: #b58900;">Array</span>&lt;<span style="color: #b58900;">Pass</span>&gt; <span style="color: #268bd2;">pass_seqs</span>;
-  pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">relay</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::Legalize<span style="color: #757575;">(</span><span style="color: #2aa198;">"FTVMQnnLegalize"</span><span style="color: #757575;">))</span>;
-  pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">relay</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::Legalize<span style="color: #757575;">(</span><span style="color: #2aa198;">"FTVMQnnCanonicalize"</span><span style="color: #757575;">))</span>;
-  <span style="color: #268bd2; font-weight: bold;">relay</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::<span style="color: #b58900;">Pass</span> <span style="color: #268bd2;">seq</span> = <span style="color: #268bd2; font-weight: bold;">relay</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::Sequential<span style="color: #757575;">(</span>pass_seqs<span style="color: #757575;">)</span>;
-  <span style="color: #859900;">return</span> seq;
-<span style="color: #757575;">}</span>
+<span style="font-weight: bold; text-decoration: underline;">Pass</span> <span style="font-weight: bold;">Legalize</span>() {
+  <span style="font-weight: bold; text-decoration: underline;">Array</span>&lt;<span style="font-weight: bold; text-decoration: underline;">Pass</span>&gt; <span style="font-weight: bold; font-style: italic;">pass_seqs</span>;
+  pass_seqs.push_back(<span style="font-weight: bold; text-decoration: underline;">relay</span>::<span style="font-weight: bold; text-decoration: underline;">transform</span>::Legalize(<span style="font-style: italic;">"FTVMQnnLegalize"</span>));
+  pass_seqs.push_back(<span style="font-weight: bold; text-decoration: underline;">relay</span>::<span style="font-weight: bold; text-decoration: underline;">transform</span>::Legalize(<span style="font-style: italic;">"FTVMQnnCanonicalize"</span>));
+  <span style="font-weight: bold; text-decoration: underline;">relay</span>::<span style="font-weight: bold; text-decoration: underline;">transform</span>::<span style="font-weight: bold; text-decoration: underline;">Pass</span> <span style="font-weight: bold; font-style: italic;">seq</span> = <span style="font-weight: bold; text-decoration: underline;">relay</span>::<span style="font-weight: bold; text-decoration: underline;">transform</span>::Sequential(pass_seqs);
+  <span style="font-weight: bold;">return</span> seq;
+}
 
-<span style="color: #b58900;">Array</span>&lt;<span style="color: #b58900;">Pass</span>&gt; <span style="color: #268bd2;">GetPassPrefix</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">Map</span>&lt;<span style="color: #268bd2; font-weight: bold;">tvm</span>::Integer<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">tvm</span>::Target&gt;&amp; <span style="color: #268bd2;">targets</span><span style="color: #757575;">,</span> <span style="color: #b58900;">bool</span> <span style="color: #268bd2;">is_vm</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
-  <span style="color: #b58900;">Array</span>&lt;<span style="color: #b58900;">Pass</span>&gt; <span style="color: #268bd2;">pass_seqs</span>;
-  <span style="color: #b58900;">Array</span>&lt;<span style="color: #268bd2; font-weight: bold;">runtime</span>::String&gt; <span style="color: #268bd2;">entry_functions</span><span style="color: #757575;">{</span><span style="color: #2aa198;">"main"</span><span style="color: #757575;">}</span>;
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">..</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">Run all dialect legalization passes.</span>
-  pass_seqs.push_back<span style="color: #757575;">(</span><span style="color: #268bd2; font-weight: bold;">relay</span>::<span style="color: #268bd2; font-weight: bold;">qnn</span>::<span style="color: #268bd2; font-weight: bold;">transform</span>::Legalize<span style="color: #757575;">())</span>;
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
-<span style="color: #757575;">}</span>
+<span style="font-weight: bold; text-decoration: underline;">Array</span>&lt;<span style="font-weight: bold; text-decoration: underline;">Pass</span>&gt; <span style="font-weight: bold;">GetPassPrefix</span>(<span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">Map</span>&lt;<span style="font-weight: bold; text-decoration: underline;">tvm</span>::Integer, <span style="font-weight: bold; text-decoration: underline;">tvm</span>::Target&gt;&amp; <span style="font-weight: bold; font-style: italic;">targets</span>, <span style="font-weight: bold; text-decoration: underline;">bool</span> <span style="font-weight: bold; font-style: italic;">is_vm</span>) {
+  <span style="font-weight: bold; text-decoration: underline;">Array</span>&lt;<span style="font-weight: bold; text-decoration: underline;">Pass</span>&gt; <span style="font-weight: bold; font-style: italic;">pass_seqs</span>;
+  <span style="font-weight: bold; text-decoration: underline;">Array</span>&lt;<span style="font-weight: bold; text-decoration: underline;">runtime</span>::String&gt; <span style="font-weight: bold; font-style: italic;">entry_functions</span>{<span style="font-style: italic;">"main"</span>};
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">..</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">Run all dialect legalization passes.</span>
+  pass_seqs.push_back(<span style="font-weight: bold; text-decoration: underline;">relay</span>::<span style="font-weight: bold; text-decoration: underline;">qnn</span>::<span style="font-weight: bold; text-decoration: underline;">transform</span>::Legalize());
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">...</span>
+}
 
 </pre>
 </div>
 </div>
 </div>
 
-<div id="outline-container-org4efa482" class="outline-5">
-<h5 id="org4efa482"><span class="section-number-5">1.2.1.3</span> What `QnnMulCanonicalize` does</h5>
+<div id="outline-container-orgb5424b0" class="outline-5">
+<h5 id="orgb5424b0"><span class="section-number-5">1.2.1.3</span> What `QnnMulCanonicalize` does</h5>
 <div class="outline-text-5" id="text-1-2-1-3">
 <p>
 relay.qnn.mul 不能直接转换成 mul, 因为 relay.mul 只支持对称量化.
@@ -515,7 +513,7 @@ relay.qnn.mul 不能直接转换成 mul, 因为 relay.mul 只支持对称量化.
 \(Z_q=\frac{X_sY_s}{Z_s}(X_q-127)(Y_q-127)+127\)
 </p>
 
-<pre class="example" id="org907f975">
+<pre class="example" id="org824096c">
 def @main(%x: Tensor[(1, 4), uint8], %y: Tensor[(1, 4), uint8]) -&gt; Tensor[(1, 4), uint8] {
   //...
   %2 = subtract(%0, 127 /* ty=int32 */) /* ty=Tensor[(1, 4), int32] */;
@@ -534,12 +532,12 @@ def @main(%x: Tensor[(1, 4), uint8], %y: Tensor[(1, 4), uint8]) -&gt; Tensor[(1,
 </div>
 </div>
 
-<div id="outline-container-org04e5722" class="outline-3">
-<h3 id="org04e5722"><span class="section-number-3">1.3</span> Quantization and BYOC</h3>
+<div id="outline-container-org2fda26c" class="outline-3">
+<h3 id="org2fda26c"><span class="section-number-3">1.3</span> Quantization and BYOC</h3>
 <div class="outline-text-3" id="text-1-3">
 </div>
-<div id="outline-container-org2975394" class="outline-4">
-<h4 id="org2975394"><span class="section-number-4">1.3.1</span> cmsisnn</h4>
+<div id="outline-container-org80bd158" class="outline-4">
+<h4 id="org80bd158"><span class="section-number-4">1.3.1</span> cmsisnn</h4>
 <div class="outline-text-4" id="text-1-3-1">
 <p>
 tvm 的 cmsisnn 依赖于 qnn 及 cmsisnn 的 xxx_s8 系列的 api 来实现对量化的支持
@@ -552,21 +550,21 @@ tvm 的 cmsisnn 依赖于 qnn 及 cmsisnn 的 xxx_s8 系列的 api 来实现对�
 <div id="postamble" class="status">
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
-Date: 2021-08-05 四 00:00<br />
-Last updated: 2021-10-12 二 15:23</p>
+Date: 2021-08-05 Thu 00:00<br />
+Last updated: 2022-01-24 Mon 19:27</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
-           <div id="disqus_thread"></div>
-           <script>
+<div id="disqus_thread"></div>
+<script>
 
-           (function() { // DON'T EDIT BELOW THIS LINE
-                    var d = document, s = d.createElement('script');
-                    s.src = '//sunwayforever-github-io.disqus.com/embed.js';
-                    s.setAttribute('data-timestamp', +new Date());
-                    (d.head || d.body).appendChild(s);
-                    })();
-           </script>
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
 </div>
 </body>
 </html>

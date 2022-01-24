@@ -3,13 +3,14 @@
 "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
-<!-- 2022-01-14 五 19:44 -->
+<!-- 2022-01-24 Mon 19:33 -->
 <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>TVM VTA</title>
 <meta name="generator" content="Org mode" />
 <meta name="author" content="Wei Sun (孙伟)" />
-<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
 <script type="text/javascript">
 // @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
 <!--/*--><![CDATA[/*><!--*/
@@ -40,20 +41,20 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#org1d99c87">1. TVM VTA</a>
+<li><a href="#org636eca3">1. TVM VTA</a>
 <ul>
-<li><a href="#orgb1d1e39">1.1. Overview</a></li>
-<li><a href="#orgb11c16b">1.2. vta.build</a>
+<li><a href="#orge137a10">1.1. Overview</a></li>
+<li><a href="#orgc2c8acb">1.2. vta.build</a>
 <ul>
-<li><a href="#orgfe3aadb">1.2.1. tir.add_lower_pass</a></li>
-<li><a href="#orgfea60ff">1.2.2. InjectALUIntrin</a></li>
-<li><a href="#org284558c">1.2.3. Heterogeneous Execution</a></li>
+<li><a href="#orgf1e98b3">1.2.1. tir.add_lower_pass</a></li>
+<li><a href="#org65b9054">1.2.2. InjectALUIntrin</a></li>
+<li><a href="#orgd66e5de">1.2.3. Heterogeneous Execution</a></li>
 </ul>
 </li>
-<li><a href="#orgfcc9591">1.3. VTA Driver</a></li>
-<li><a href="#orge785fd3">1.4. MISC</a>
+<li><a href="#orgcc57388">1.3. VTA Driver</a></li>
+<li><a href="#org91b84b0">1.4. MISC</a>
 <ul>
-<li><a href="#org36a1242">1.4.1. vta 与 opencl target 的区别</a></li>
+<li><a href="#org0e5096f">1.4.1. vta 与 opencl target 的区别</a></li>
 </ul>
 </li>
 </ul>
@@ -62,75 +63,72 @@
 </div>
 </div>
 
-<div id="outline-container-org1d99c87" class="outline-2">
-<h2 id="org1d99c87"><span class="section-number-2">1</span> TVM VTA</h2>
+<div id="outline-container-org636eca3" class="outline-2">
+<h2 id="org636eca3"><span class="section-number-2">1</span> TVM VTA</h2>
 <div class="outline-text-2" id="text-1">
-<ul class="org-ul">
-<li>State "DONE"       from "TODO"       <span class="timestamp-wrapper"><span class="timestamp">[2021-09-13 一 16:06]</span></span></li>
-</ul>
 <p>
 <a href="https://arxiv.org/pdf/1807.04188.pdf">https://arxiv.org/pdf/1807.04188.pdf</a>
 </p>
 </div>
 
-<div id="outline-container-orgb1d1e39" class="outline-3">
-<h3 id="orgb1d1e39"><span class="section-number-3">1.1</span> Overview</h3>
+<div id="outline-container-orge137a10" class="outline-3">
+<h3 id="orge137a10"><span class="section-number-3">1.1</span> Overview</h3>
 <div class="outline-text-3" id="text-1-1">
 <div class="org-src-container">
-<pre class="src src-ipython"><span style="color: #859900;">import</span> os
-<span style="color: #859900;">import</span> tvm
-<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> te
-<span style="color: #859900;">import</span> vta
-<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<pre class="src src-ipython">import os
+import tvm
+from tvm import te
+import vta
+import numpy as np
 
-<span style="color: #268bd2;">env</span> = vta.get_env<span style="color: #757575;">()</span>
+env = vta.get_env()
 
-<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> rpc
-<span style="color: #859900;">from</span> tvm.contrib <span style="color: #859900;">import</span> utils
-<span style="color: #859900;">from</span> vta.testing <span style="color: #859900;">import</span> simulator
+from tvm import rpc
+from tvm.contrib import utils
+from vta.testing import simulator
 
-<span style="color: #268bd2;">remote</span> = rpc.LocalSession<span style="color: #757575;">()</span>
+remote = rpc.LocalSession()
 
-<span style="color: #586e75;"># </span><span style="color: #586e75;">Output channel factor m - total 64 x 16 = 1024 output channels</span>
-<span style="color: #268bd2;">m</span> = 64
-<span style="color: #586e75;"># </span><span style="color: #586e75;">Batch factor o - total 1 x 1 = 1</span>
-<span style="color: #268bd2;">o</span> = 1
-<span style="color: #268bd2;">A</span> = te.placeholder<span style="color: #757575;">((</span>o<span style="color: #757575;">,</span> m<span style="color: #757575;">,</span> env.BATCH<span style="color: #757575;">,</span> env.BLOCK_OUT<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"A"</span><span style="color: #757575;">,</span> dtype=env.acc_dtype<span style="color: #757575;">)</span>
-<span style="color: #268bd2;">B</span> = te.placeholder<span style="color: #757575;">((</span>o<span style="color: #757575;">,</span> m<span style="color: #757575;">,</span> env.BATCH<span style="color: #757575;">,</span> env.BLOCK_OUT<span style="color: #757575;">),</span> name=<span style="color: #2aa198;">"B"</span><span style="color: #757575;">,</span> dtype=env.acc_dtype<span style="color: #757575;">)</span>
+# Output channel factor m - total 64 x 16 = 1024 output channels
+m = 64
+# Batch factor o - total 1 x 1 = 1
+o = 1
+A = te.placeholder((o, m, env.BATCH, env.BLOCK_OUT), name="A", dtype=env.acc_dtype)
+B = te.placeholder((o, m, env.BATCH, env.BLOCK_OUT), name="B", dtype=env.acc_dtype)
 
-<span style="color: #586e75;"># </span><span style="color: #586e75;">A copy buffer</span>
-<span style="color: #268bd2;">A_buf</span> = te.compute<span style="color: #757575;">((</span>o<span style="color: #757575;">,</span> m<span style="color: #757575;">,</span> env.BATCH<span style="color: #757575;">,</span> env.BLOCK_OUT<span style="color: #757575;">),</span> <span style="color: #859900;">lambda</span> *i: A<span style="color: #757575;">(</span>*i<span style="color: #757575;">),</span> <span style="color: #2aa198;">"A_buf"</span><span style="color: #757575;">)</span>
-<span style="color: #586e75;"># </span><span style="color: #586e75;">B copy buffer</span>
-<span style="color: #268bd2;">B_buf</span> = te.compute<span style="color: #757575;">((</span>o<span style="color: #757575;">,</span> m<span style="color: #757575;">,</span> env.BATCH<span style="color: #757575;">,</span> env.BLOCK_OUT<span style="color: #757575;">),</span> <span style="color: #859900;">lambda</span> *i: B<span style="color: #757575;">(</span>*i<span style="color: #757575;">),</span> <span style="color: #2aa198;">"B_buf"</span><span style="color: #757575;">)</span>
+# A copy buffer
+A_buf = te.compute((o, m, env.BATCH, env.BLOCK_OUT), lambda *i: A(*i), "A_buf")
+# B copy buffer
+B_buf = te.compute((o, m, env.BATCH, env.BLOCK_OUT), lambda *i: B(*i), "B_buf")
 
-<span style="color: #268bd2;">C_buf</span> = te.compute<span style="color: #757575;">(</span>
-    <span style="color: #757575;">(</span>o<span style="color: #757575;">,</span> m<span style="color: #757575;">,</span> env.BATCH<span style="color: #757575;">,</span> env.BLOCK_OUT<span style="color: #757575;">),</span>
-    <span style="color: #859900;">lambda</span> *i: A_buf<span style="color: #757575;">(</span>*i<span style="color: #757575;">)</span>.astype<span style="color: #757575;">(</span>env.acc_dtype<span style="color: #757575;">)</span> + B_buf<span style="color: #757575;">(</span>*i<span style="color: #757575;">)</span>.astype<span style="color: #757575;">(</span>env.acc_dtype<span style="color: #757575;">),</span>
-    name=<span style="color: #2aa198;">"C_buf"</span><span style="color: #757575;">,</span>
-<span style="color: #757575;">)</span>
+C_buf = te.compute(
+    (o, m, env.BATCH, env.BLOCK_OUT),
+    lambda *i: A_buf(*i).astype(env.acc_dtype) + B_buf(*i).astype(env.acc_dtype),
+    name="C_buf",
+)
 
-<span style="color: #268bd2;">C</span> = te.compute<span style="color: #757575;">(</span>
-    <span style="color: #757575;">(</span>o<span style="color: #757575;">,</span> m<span style="color: #757575;">,</span> env.BATCH<span style="color: #757575;">,</span> env.BLOCK_OUT<span style="color: #757575;">),</span>
-    <span style="color: #859900;">lambda</span> *i: C_buf<span style="color: #757575;">(</span>*i<span style="color: #757575;">)</span>.astype<span style="color: #757575;">(</span>env.inp_dtype<span style="color: #757575;">),</span>
-    name=<span style="color: #2aa198;">"C"</span><span style="color: #757575;">,</span>
-<span style="color: #757575;">)</span>
+C = te.compute(
+    (o, m, env.BATCH, env.BLOCK_OUT),
+    lambda *i: C_buf(*i).astype(env.inp_dtype),
+    name="C",
+)
 
-<span style="color: #268bd2;">s</span> = te.create_schedule<span style="color: #757575;">(</span>C.op<span style="color: #757575;">)</span>
+s = te.create_schedule(C.op)
 
-s[A_buf].set_scope<span style="color: #757575;">(</span>env.acc_scope<span style="color: #757575;">)</span>
-s[B_buf].set_scope<span style="color: #757575;">(</span>env.acc_scope<span style="color: #757575;">)</span>
-s[C_buf].set_scope<span style="color: #757575;">(</span>env.acc_scope<span style="color: #757575;">)</span>
+s[A_buf].set_scope(env.acc_scope)
+s[B_buf].set_scope(env.acc_scope)
+s[C_buf].set_scope(env.acc_scope)
 
-s[A_buf].pragma<span style="color: #757575;">(</span>s[A_buf].op.axis[0]<span style="color: #757575;">,</span> env.dma_copy<span style="color: #757575;">)</span>
-s[B_buf].pragma<span style="color: #757575;">(</span>s[B_buf].op.axis[0]<span style="color: #757575;">,</span> env.dma_copy<span style="color: #757575;">)</span>
-s[C].pragma<span style="color: #757575;">(</span>s[C].op.axis[0]<span style="color: #757575;">,</span> env.dma_copy<span style="color: #757575;">)</span>
+s[A_buf].pragma(s[A_buf].op.axis[0], env.dma_copy)
+s[B_buf].pragma(s[B_buf].op.axis[0], env.dma_copy)
+s[C].pragma(s[C].op.axis[0], env.dma_copy)
 
-s[C_buf].pragma<span style="color: #757575;">(</span>C_buf.op.axis[0]<span style="color: #757575;">,</span> env.alu<span style="color: #757575;">)</span>
+s[C_buf].pragma(C_buf.op.axis[0], env.alu)
 
-<span style="color: #859900;">print</span><span style="color: #757575;">(</span>vta.lower<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B<span style="color: #757575;">,</span> C]<span style="color: #757575;">,</span> simple_mode=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">))</span>
+print(vta.lower(s, [A, B, C], simple_mode=True))
 
-<span style="color: #268bd2;">my_vadd</span> = vta.build<span style="color: #757575;">(</span>s<span style="color: #757575;">,</span> [A<span style="color: #757575;">,</span> B<span style="color: #757575;">,</span> C]<span style="color: #757575;">,</span> <span style="color: #2aa198;">"ext_dev"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"llvm"</span><span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"my_vadd"</span><span style="color: #757575;">)</span>
-my_vadd.save<span style="color: #757575;">(</span><span style="color: #2aa198;">"/tmp/my_vadd.o"</span><span style="color: #757575;">)</span>
+my_vadd = vta.build(s, [A, B, C], "ext_dev", "llvm", name="my_vadd")
+my_vadd.save("/tmp/my_vadd.o")
 </pre>
 </div>
 
@@ -160,7 +158,7 @@ primfn(A_1: handle, B_1: handle, C_1: handle) -&gt; ()
 </p>
 
 <div class="org-src-container">
-<pre class="src src-bash">objdump -dr /tmp/my_vadd.o |grep -A200 my_vadd_compute_<span style="color: #2aa198;">\&gt;</span>:
+<pre class="src src-bash">objdump -dr /tmp/my_vadd.o |grep -A200 my_vadd_compute_<span style="font-style: italic;">\&gt;</span>:
 </pre>
 </div>
 
@@ -268,71 +266,71 @@ primfn(A_1: handle, B_1: handle, C_1: handle) -&gt; ()
 </div>
 </div>
 
-<div id="outline-container-orgb11c16b" class="outline-3">
-<h3 id="orgb11c16b"><span class="section-number-3">1.2</span> vta.build</h3>
+<div id="outline-container-orgc2c8acb" class="outline-3">
+<h3 id="orgc2c8acb"><span class="section-number-3">1.2</span> vta.build</h3>
 <div class="outline-text-3" id="text-1-2">
 </div>
-<div id="outline-container-orgfe3aadb" class="outline-4">
-<h4 id="orgfe3aadb"><span class="section-number-4">1.2.1</span> tir.add_lower_pass</h4>
+<div id="outline-container-orgf1e98b3" class="outline-4">
+<h4 id="orgf1e98b3"><span class="section-number-4">1.2.1</span> tir.add_lower_pass</h4>
 <div class="outline-text-4" id="text-1-2-1">
 <p>
 vta.build 是在 tvm.build 基础上通过 add_lower_pass 添加了一些自定义 pass, 根据
 tir stmt 的 pragma 可以生成新的对 tir 完成对 vta runtime 调用, vta.build 通过
-tir.add_lower_pass 添加的 pass 会在 <a href="tvm_build.html#orgb968aba">LowerWithPassList</a> 时会被调用到
+tir.add_lower_pass 添加的 pass 会在 <a href="tvm_build.html#org03e4b07">LowerWithPassList</a> 时会被调用到
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">build</span><span style="color: #757575;">(</span>*args<span style="color: #757575;">,</span> **kwargs<span style="color: #757575;">)</span>:
-    <span style="color: #268bd2;">pass_ctx</span> = tvm.transform.PassContext.current<span style="color: #757575;">()</span>
-    <span style="color: #859900;">with</span> build_config<span style="color: #757575;">()</span>:
-        <span style="color: #859900;">return</span> tvm.build<span style="color: #757575;">(</span>*args<span style="color: #757575;">,</span> **kwargs<span style="color: #757575;">)</span>
+<pre class="src src-python"><span style="font-weight: bold;">def</span> <span style="font-weight: bold;">build</span>(*args, **kwargs):
+    <span style="font-weight: bold; font-style: italic;">pass_ctx</span> = tvm.transform.PassContext.current()
+    <span style="font-weight: bold;">with</span> build_config():
+        <span style="font-weight: bold;">return</span> tvm.build(*args, **kwargs)
 
 
-<span style="color: #859900;">def</span> <span style="color: #268bd2;">build_config</span><span style="color: #757575;">(</span>debug_flag=0<span style="color: #757575;">,</span> **kwargs<span style="color: #757575;">)</span>:
-    <span style="color: #2aa198;">"""Build a build config for VTA.</span>
-<span style="color: #2aa198;">    Example</span>
-<span style="color: #2aa198;">    --------</span>
-<span style="color: #2aa198;">    .. code-block:: python</span>
+<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">build_config</span>(debug_flag=0, **kwargs):
+    <span style="font-style: italic;">"""Build a build config for VTA.</span>
+<span style="font-style: italic;">    Example</span>
+<span style="font-style: italic;">    --------</span>
+<span style="font-style: italic;">    .. code-block:: python</span>
 
-<span style="color: #2aa198;">      # build a vta module.</span>
-<span style="color: #2aa198;">      with vta.build_config():</span>
-<span style="color: #2aa198;">          vta_module = tvm.build(s, ...)</span>
-<span style="color: #2aa198;">    """</span>
-    <span style="color: #268bd2;">env</span> = get_env<span style="color: #757575;">()</span>
+<span style="font-style: italic;">      # build a vta module.</span>
+<span style="font-style: italic;">      with vta.build_config():</span>
+<span style="font-style: italic;">          vta_module = tvm.build(s, ...)</span>
+<span style="font-style: italic;">    """</span>
+    <span style="font-weight: bold; font-style: italic;">env</span> = get_env()
 
-    <span style="color: #b58900;">@tvm.tir.transform.prim_func_pass</span><span style="color: #757575;">(</span>opt_level=0<span style="color: #757575;">)</span>
-    <span style="color: #859900;">def</span> <span style="color: #268bd2;">add_debug</span><span style="color: #757575;">(</span>f<span style="color: #757575;">,</span> *_<span style="color: #757575;">)</span>:
-        <span style="color: #268bd2;">debug</span> = tvm.tir.call_extern<span style="color: #757575;">(</span>
-            <span style="color: #2aa198;">"int32"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"VTASetDebugMode"</span><span style="color: #757575;">,</span> env.dev.command_handle<span style="color: #757575;">,</span> debug_flag
-        <span style="color: #757575;">)</span>
+    <span style="font-weight: bold; text-decoration: underline;">@tvm.tir.transform.prim_func_pass</span>(opt_level=0)
+    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">add_debug</span>(f, *_):
+        <span style="font-weight: bold; font-style: italic;">debug</span> = tvm.tir.call_extern(
+            <span style="font-style: italic;">"int32"</span>, <span style="font-style: italic;">"VTASetDebugMode"</span>, env.dev.command_handle, debug_flag
+        )
 
-        <span style="color: #859900;">return</span> f.with_body<span style="color: #757575;">(</span>tvm.tir.stmt_seq<span style="color: #757575;">(</span>debug<span style="color: #757575;">,</span> f.body<span style="color: #757575;">))</span>
+        <span style="font-weight: bold;">return</span> f.with_body(tvm.tir.stmt_seq(debug, f.body))
 
-    <span style="color: #268bd2;">pass_list</span> = [
-        <span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> transform.InjectConv2DTransposeSkip<span style="color: #757575;">()),</span>
-        <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> transform.InjectDMAIntrin<span style="color: #757575;">()),</span>
-        <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> transform.InjectSkipCopy<span style="color: #757575;">()),</span>
-        <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> transform.AnnotateALUCoProcScope<span style="color: #757575;">()),</span>
-        <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> tvm.tir.transform.LiftAttrScope<span style="color: #757575;">(</span><span style="color: #2aa198;">"coproc_uop_scope"</span><span style="color: #757575;">)),</span>
-        <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> transform.LiftAllocToScopeBegin<span style="color: #757575;">()),</span>
-        <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> tvm.tir.transform.LiftAttrScope<span style="color: #757575;">(</span><span style="color: #2aa198;">"coproc_scope"</span><span style="color: #757575;">)),</span>
-        <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> transform.InjectCoProcSync<span style="color: #757575;">()),</span>
-        <span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> EarlyRewrite<span style="color: #757575;">()),</span>
+    <span style="font-weight: bold; font-style: italic;">pass_list</span> = [
+        (0, transform.InjectConv2DTransposeSkip()),
+        (1, transform.InjectDMAIntrin()),
+        (1, transform.InjectSkipCopy()),
+        (1, transform.AnnotateALUCoProcScope()),
+        (1, tvm.tir.transform.LiftAttrScope(<span style="font-style: italic;">"coproc_uop_scope"</span>)),
+        (1, transform.LiftAllocToScopeBegin()),
+        (1, tvm.tir.transform.LiftAttrScope(<span style="font-style: italic;">"coproc_scope"</span>)),
+        (1, transform.InjectCoProcSync()),
+        (1, EarlyRewrite()),
     ]
-    pass_list.append<span style="color: #757575;">((</span>2<span style="color: #757575;">,</span> transform.InjectALUIntrin<span style="color: #757575;">()))</span>
-    pass_list.append<span style="color: #757575;">((</span>3<span style="color: #757575;">,</span> tvm.tir.transform.LowerDeviceStorageAccessInfo<span style="color: #757575;">()))</span>
-    pass_list.append<span style="color: #757575;">((</span>3<span style="color: #757575;">,</span> transform.FoldUopLoop<span style="color: #757575;">()))</span>
-    pass_list.append<span style="color: #757575;">((</span>3<span style="color: #757575;">,</span> transform.CPUAccessRewrite<span style="color: #757575;">()))</span>
-    <span style="color: #268bd2;">config</span> = <span style="color: #757575;">{</span><span style="color: #2aa198;">"tir.add_lower_pass"</span>: pass_list<span style="color: #757575;">}</span>
+    pass_list.append((2, transform.InjectALUIntrin()))
+    pass_list.append((3, tvm.tir.transform.LowerDeviceStorageAccessInfo()))
+    pass_list.append((3, transform.FoldUopLoop()))
+    pass_list.append((3, transform.CPUAccessRewrite()))
+    <span style="font-weight: bold; font-style: italic;">config</span> = {<span style="font-style: italic;">"tir.add_lower_pass"</span>: pass_list}
 
-    <span style="color: #859900;">return</span> tvm.transform.PassContext<span style="color: #757575;">(</span>config=config<span style="color: #757575;">,</span> **kwargs<span style="color: #757575;">)</span>
+    <span style="font-weight: bold;">return</span> tvm.transform.PassContext(config=config, **kwargs)
 </pre>
 </div>
 </div>
 </div>
 
-<div id="outline-container-orgfea60ff" class="outline-4">
-<h4 id="orgfea60ff"><span class="section-number-4">1.2.2</span> InjectALUIntrin</h4>
+<div id="outline-container-org65b9054" class="outline-4">
+<h4 id="org65b9054"><span class="section-number-4">1.2.2</span> InjectALUIntrin</h4>
 <div class="outline-text-4" id="text-1-2-2">
 <p>
 InjectALUIntrin 可以把 `alu` pragma 指示的 tir 替换成对 vta runtime 中
@@ -340,87 +338,87 @@ VTAUopPush 等的调用
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="color: #859900;">def</span> <span style="color: #268bd2;">InjectALUIntrin</span><span style="color: #757575;">()</span>:
-    <span style="color: #859900;">def</span> <span style="color: #268bd2;">_ftransform</span><span style="color: #757575;">(</span>func<span style="color: #757575;">,</span> mod<span style="color: #757575;">,</span> ctx<span style="color: #757575;">)</span>:
-        <span style="color: #268bd2;">env</span> = get_env<span style="color: #757575;">()</span>
-        <span style="color: #268bd2;">idxm</span> = tvm.tir.indexmod
-        <span style="color: #268bd2;">analyzer</span> = tvm.arith.Analyzer<span style="color: #757575;">()</span>
+<pre class="src src-python"><span style="font-weight: bold;">def</span> <span style="font-weight: bold;">InjectALUIntrin</span>():
+    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">_ftransform</span>(func, mod, ctx):
+        <span style="font-weight: bold; font-style: italic;">env</span> = get_env()
+        <span style="font-weight: bold; font-style: italic;">idxm</span> = tvm.tir.indexmod
+        <span style="font-weight: bold; font-style: italic;">analyzer</span> = tvm.arith.Analyzer()
 
-        <span style="color: #859900;">def</span> <span style="color: #268bd2;">_do_fold</span><span style="color: #757575;">(</span>stmt<span style="color: #757575;">)</span>:
-            <span style="color: #586e75;"># </span><span style="color: #586e75;">...</span>
-            <span style="color: #586e75;"># </span><span style="color: #586e75;">the `alu` pragma</span>
-            <span style="color: #859900;">if</span> _match_pragma<span style="color: #757575;">(</span>stmt<span style="color: #757575;">,</span> <span style="color: #2aa198;">"alu"</span><span style="color: #757575;">)</span>:
-                <span style="color: #586e75;"># </span><span style="color: #586e75;">Get to the innermost loop body</span>
-                <span style="color: #268bd2;">loop_body</span> = stmt.body
-                <span style="color: #268bd2;">nest_size</span> = 0
-                <span style="color: #859900;">while</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>loop_body<span style="color: #757575;">,</span> tvm.tir.For<span style="color: #757575;">)</span>:
-                    <span style="color: #268bd2;">loop_body</span> = loop_body.body
-                    <span style="color: #268bd2;">nest_size</span> += 1
-                <span style="color: #586e75;"># </span><span style="color: #586e75;">...</span>
-                <span style="color: #859900;">if</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>loop_body.value<span style="color: #757575;">,</span> tvm.tir.Add<span style="color: #757575;">)</span>:
-                    <span style="color: #268bd2;">alu_opcode</span> = env.dev.ALU_OPCODE_ADD
-                    <span style="color: #268bd2;">lhs</span> = loop_body.value.a
-                    <span style="color: #268bd2;">rhs</span> = loop_body.value.b
-                <span style="color: #859900;">elif</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>loop_body.value<span style="color: #757575;">,</span> tvm.tir.Sub<span style="color: #757575;">)</span>:
-                    <span style="color: #268bd2;">alu_opcode</span> = env.dev.ALU_OPCODE_SUB
-                    <span style="color: #268bd2;">lhs</span> = loop_body.value.a
-                    <span style="color: #268bd2;">rhs</span> = loop_body.value.b
-                <span style="color: #859900;">elif</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>loop_body.value<span style="color: #757575;">,</span> tvm.tir.Mul<span style="color: #757575;">)</span>:
-                    <span style="color: #268bd2;">alu_opcode</span> = env.dev.ALU_OPCODE_MUL
-                    <span style="color: #268bd2;">lhs</span> = loop_body.value.a
-                    <span style="color: #268bd2;">rhs</span> = loop_body.value.b
-                <span style="color: #859900;">elif</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>loop_body.value<span style="color: #757575;">,</span> tvm.tir.Min<span style="color: #757575;">)</span>:
-                    <span style="color: #268bd2;">alu_opcode</span> = env.dev.ALU_OPCODE_MIN
-                    <span style="color: #268bd2;">lhs</span> = loop_body.value.a
-                    <span style="color: #268bd2;">rhs</span> = loop_body.value.b
-                <span style="color: #859900;">elif</span> <span style="color: #839496;">isinstance</span><span style="color: #757575;">(</span>loop_body.value<span style="color: #757575;">,</span> tvm.tir.Max<span style="color: #757575;">)</span>:
-                    <span style="color: #268bd2;">alu_opcode</span> = env.dev.ALU_OPCODE_MAX
-                    <span style="color: #268bd2;">lhs</span> = loop_body.value.a
-                    <span style="color: #268bd2;">rhs</span> = loop_body.value.b
-                <span style="color: #586e75;"># </span><span style="color: #586e75;">...</span>
-                <span style="color: #586e75;"># </span><span style="color: #586e75;">Insert ALU micro-ops</span>
-                <span style="color: #268bd2;">irb</span> = tvm.tir.ir_builder.create<span style="color: #757575;">()</span>
-                <span style="color: #859900;">for</span> idx<span style="color: #757575;">,</span> extent <span style="color: #859900;">in</span> <span style="color: #839496;">enumerate</span><span style="color: #757575;">(</span>extents<span style="color: #757575;">)</span>:
-                    irb.emit<span style="color: #757575;">(</span>
-                        tvm.tir.call_extern<span style="color: #757575;">(</span>
-                            <span style="color: #2aa198;">"int32"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"VTAUopLoopBegin"</span><span style="color: #757575;">,</span> extent<span style="color: #757575;">,</span> dst_coeff[idx]<span style="color: #757575;">,</span> src_coeff[idx]<span style="color: #757575;">,</span> 0
-                        <span style="color: #757575;">)</span>
-                    <span style="color: #757575;">)</span>
-                <span style="color: #268bd2;">use_imm</span> = <span style="color: #839496;">int</span><span style="color: #757575;">(</span>use_imm<span style="color: #757575;">)</span>
-                irb.emit<span style="color: #757575;">(</span>
-                    tvm.tir.call_intrin<span style="color: #757575;">(</span>
-                        <span style="color: #2aa198;">"int32"</span><span style="color: #757575;">,</span>
-                        <span style="color: #2aa198;">"tir.vta.uop_push"</span><span style="color: #757575;">,</span>
-                        1<span style="color: #757575;">,</span>
-                        0<span style="color: #757575;">,</span>
-                        dst_coeff[<span style="color: #839496;">len</span><span style="color: #757575;">(</span>dst_coeff<span style="color: #757575;">)</span> - 1]<span style="color: #757575;">,</span>
-                        src_coeff[<span style="color: #839496;">len</span><span style="color: #757575;">(</span>src_coeff<span style="color: #757575;">)</span> - 1]<span style="color: #757575;">,</span>
-                        0<span style="color: #757575;">,</span>
-                        alu_opcode<span style="color: #757575;">,</span>
-                        use_imm<span style="color: #757575;">,</span>
-                        imm_val<span style="color: #757575;">,</span>
-                    <span style="color: #757575;">)</span>
-                <span style="color: #757575;">)</span>
-                <span style="color: #859900;">for</span> extent <span style="color: #859900;">in</span> extents:
-                    irb.emit<span style="color: #757575;">(</span>tvm.tir.call_extern<span style="color: #757575;">(</span><span style="color: #2aa198;">"int32"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"VTAUopLoopEnd"</span><span style="color: #757575;">))</span>
-                <span style="color: #859900;">return</span> irb.get<span style="color: #757575;">()</span>
-            <span style="color: #859900;">return</span> stmt
+        <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">_do_fold</span>(stmt):
+            <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">...</span>
+            <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">the `alu` pragma</span>
+            <span style="font-weight: bold;">if</span> _match_pragma(stmt, <span style="font-style: italic;">"alu"</span>):
+                <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">Get to the innermost loop body</span>
+                <span style="font-weight: bold; font-style: italic;">loop_body</span> = stmt.body
+                <span style="font-weight: bold; font-style: italic;">nest_size</span> = 0
+                <span style="font-weight: bold;">while</span> <span style="font-weight: bold;">isinstance</span>(loop_body, tvm.tir.For):
+                    <span style="font-weight: bold; font-style: italic;">loop_body</span> = loop_body.body
+                    <span style="font-weight: bold; font-style: italic;">nest_size</span> += 1
+                <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">...</span>
+                <span style="font-weight: bold;">if</span> <span style="font-weight: bold;">isinstance</span>(loop_body.value, tvm.tir.Add):
+                    <span style="font-weight: bold; font-style: italic;">alu_opcode</span> = env.dev.ALU_OPCODE_ADD
+                    <span style="font-weight: bold; font-style: italic;">lhs</span> = loop_body.value.a
+                    <span style="font-weight: bold; font-style: italic;">rhs</span> = loop_body.value.b
+                <span style="font-weight: bold;">elif</span> <span style="font-weight: bold;">isinstance</span>(loop_body.value, tvm.tir.Sub):
+                    <span style="font-weight: bold; font-style: italic;">alu_opcode</span> = env.dev.ALU_OPCODE_SUB
+                    <span style="font-weight: bold; font-style: italic;">lhs</span> = loop_body.value.a
+                    <span style="font-weight: bold; font-style: italic;">rhs</span> = loop_body.value.b
+                <span style="font-weight: bold;">elif</span> <span style="font-weight: bold;">isinstance</span>(loop_body.value, tvm.tir.Mul):
+                    <span style="font-weight: bold; font-style: italic;">alu_opcode</span> = env.dev.ALU_OPCODE_MUL
+                    <span style="font-weight: bold; font-style: italic;">lhs</span> = loop_body.value.a
+                    <span style="font-weight: bold; font-style: italic;">rhs</span> = loop_body.value.b
+                <span style="font-weight: bold;">elif</span> <span style="font-weight: bold;">isinstance</span>(loop_body.value, tvm.tir.Min):
+                    <span style="font-weight: bold; font-style: italic;">alu_opcode</span> = env.dev.ALU_OPCODE_MIN
+                    <span style="font-weight: bold; font-style: italic;">lhs</span> = loop_body.value.a
+                    <span style="font-weight: bold; font-style: italic;">rhs</span> = loop_body.value.b
+                <span style="font-weight: bold;">elif</span> <span style="font-weight: bold;">isinstance</span>(loop_body.value, tvm.tir.Max):
+                    <span style="font-weight: bold; font-style: italic;">alu_opcode</span> = env.dev.ALU_OPCODE_MAX
+                    <span style="font-weight: bold; font-style: italic;">lhs</span> = loop_body.value.a
+                    <span style="font-weight: bold; font-style: italic;">rhs</span> = loop_body.value.b
+                <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">...</span>
+                <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">Insert ALU micro-ops</span>
+                <span style="font-weight: bold; font-style: italic;">irb</span> = tvm.tir.ir_builder.create()
+                <span style="font-weight: bold;">for</span> idx, extent <span style="font-weight: bold;">in</span> <span style="font-weight: bold;">enumerate</span>(extents):
+                    irb.emit(
+                        tvm.tir.call_extern(
+                            <span style="font-style: italic;">"int32"</span>, <span style="font-style: italic;">"VTAUopLoopBegin"</span>, extent, dst_coeff[idx], src_coeff[idx], 0
+                        )
+                    )
+                <span style="font-weight: bold; font-style: italic;">use_imm</span> = <span style="font-weight: bold;">int</span>(use_imm)
+                irb.emit(
+                    tvm.tir.call_intrin(
+                        <span style="font-style: italic;">"int32"</span>,
+                        <span style="font-style: italic;">"tir.vta.uop_push"</span>,
+                        1,
+                        0,
+                        dst_coeff[<span style="font-weight: bold;">len</span>(dst_coeff) - 1],
+                        src_coeff[<span style="font-weight: bold;">len</span>(src_coeff) - 1],
+                        0,
+                        alu_opcode,
+                        use_imm,
+                        imm_val,
+                    )
+                )
+                <span style="font-weight: bold;">for</span> extent <span style="font-weight: bold;">in</span> extents:
+                    irb.emit(tvm.tir.call_extern(<span style="font-style: italic;">"int32"</span>, <span style="font-style: italic;">"VTAUopLoopEnd"</span>))
+                <span style="font-weight: bold;">return</span> irb.get()
+            <span style="font-weight: bold;">return</span> stmt
 
-        <span style="color: #859900;">return</span> func.with_body<span style="color: #757575;">(</span>
-            tvm.tir.stmt_functor.ir_transform<span style="color: #757575;">(</span>func.body<span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">None</span><span style="color: #757575;">,</span> _do_fold<span style="color: #757575;">,</span> [<span style="color: #2aa198;">"tir.AttrStmt"</span>]<span style="color: #757575;">)</span>
-        <span style="color: #757575;">)</span>
+        <span style="font-weight: bold;">return</span> func.with_body(
+            tvm.tir.stmt_functor.ir_transform(func.body, <span style="font-weight: bold; text-decoration: underline;">None</span>, _do_fold, [<span style="font-style: italic;">"tir.AttrStmt"</span>])
+        )
 
-    <span style="color: #859900;">return</span> tvm.tir.transform.prim_func_pass<span style="color: #757575;">(</span>
-        _ftransform<span style="color: #757575;">,</span> opt_level=0<span style="color: #757575;">,</span> name=<span style="color: #2aa198;">"tir.vta.InjectALUIntrin"</span>
-    <span style="color: #757575;">)</span>
+    <span style="font-weight: bold;">return</span> tvm.tir.transform.prim_func_pass(
+        _ftransform, opt_level=0, name=<span style="font-style: italic;">"tir.vta.InjectALUIntrin"</span>
+    )
 
 </pre>
 </div>
 </div>
 </div>
 
-<div id="outline-container-org284558c" class="outline-4">
-<h4 id="org284558c"><span class="section-number-4">1.2.3</span> Heterogeneous Execution</h4>
+<div id="outline-container-orgd66e5de" class="outline-4">
+<h4 id="orgd66e5de"><span class="section-number-4">1.2.3</span> Heterogeneous Execution</h4>
 <div class="outline-text-4" id="text-1-2-3">
 <p>
 通过把 relay 编译成 vta 和 cpu 混合的操作, 可以达到 cpu/vta 异构执行的目的
@@ -433,11 +431,12 @@ relay.build 可以支持 vta:
 <ol class="org-ol">
 <li><p>
 `tvm/vta/python/top` 中包含了针对 vta 的 topi 实现, 它会针对 `vta` 这个
-device 定义自己的 compute 和 schedule, 其中 schedule 里会向上面 te 的例子一样使用 pragma 标记 vta 支持的操作 (alu, copy_dma, GEMM 等)
+device 定义自己的 compute 和 schedule, 其中 schedule 里会向上面 te 的例子一样
+使用 pragma 标记 vta 支持的操作 (alu, copy_dma, GEMM 等)
 </p>
 
 <p>
-<a href="file:///home/sunway/source/tvm/vta/python/vta/top/op.py#orgaece250">file:///home/sunway/source/tvm/vta/python/vta/top/op.py#orgaece250</a>
+<a href="file:///home/sunway/source/tvm/vta/python/vta/top/op.py#org9602074">file:///home/sunway/source/tvm/vta/python/vta/top/op.py#org9602074</a>
 </p></li>
 
 <li><p>
@@ -446,19 +445,19 @@ tir.add_lower_pass 来处理那些 pragma
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="color: #586e75;"># </span><span style="color: #586e75;">env.target_host &#20026; llvm</span>
-<span style="color: #586e75;"># </span><span style="color: #586e75;">env.target &#20026; ext_dev -keys=vta,cpu -device=vta -model=sim_1x16_i8w8a32_15_15_18_17</span>
-<span style="color: #859900;">with</span> vta.build_config<span style="color: #757575;">(</span>opt_level=3<span style="color: #757575;">,</span> disabled_pass=<span style="color: #757575;">{</span><span style="color: #2aa198;">"AlterOpLayout"</span><span style="color: #757575;">})</span>:
-    <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>
-        relay_prog<span style="color: #757575;">,</span> target=env.target<span style="color: #757575;">,</span> params=params<span style="color: #757575;">,</span> target_host=env.target_host
-    <span style="color: #757575;">)</span>
+<pre class="src src-python"><span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">env.target_host &#20026; llvm</span>
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">env.target &#20026; ext_dev -keys=vta,cpu -device=vta -model=sim_1x16_i8w8a32_15_15_18_17</span>
+<span style="font-weight: bold;">with</span> vta.build_config(opt_level=3, disabled_pass={<span style="font-style: italic;">"AlterOpLayout"</span>}):
+    <span style="font-weight: bold; font-style: italic;">graph</span>, <span style="font-weight: bold; font-style: italic;">lib</span>, <span style="font-weight: bold; font-style: italic;">params</span> = relay.build(
+        relay_prog, target=env.target, params=params, target_host=env.target_host
+    )
 </pre>
 </div></li>
 </ol>
 </div>
 
-<div id="outline-container-org322b771" class="outline-5">
-<h5 id="org322b771"><span class="section-number-5">1.2.3.1</span> graph_pack</h5>
+<div id="outline-container-org22cf86f" class="outline-5">
+<h5 id="org22cf86f"><span class="section-number-5">1.2.3.1</span> graph_pack</h5>
 <div class="outline-text-5" id="text-1-2-3-1">
 <p>
 由于 vta 支持的操作非常少 (只支持整型的 mul,add,&#x2026;, 以及 dense 和 conv2d), 所以
@@ -471,7 +470,8 @@ graph_pack 函数提供了两个功能:
 
 <ol class="org-ol">
 <li>annotation, 通过 relay.annotation.on_device 修改 relay IR, 标记上哪些 relay
-IR 需要由 vta 执行 (on_device annotation 最终在 relay.build 由处理)</li>
+IR 需要由 vta 执行 (on_device annotation 最终在 relay.build 由
+处理)</li>
 
 <li>graph_pack, 根据 vta 的配置对数据进行 reshape, 以便后续 schedule 时能应用
 tensorize</li>
@@ -487,67 +487,68 @@ NCHW 中的 C, 对 dense 来说是 output size, 这个限制非常大, 直接限
 
 <li>它认为 conv2d 一定是 NCHW 格式, 所以 tflite 的 conv2d <b>无法</b> 用 vta 来执行</li>
 
-<li>通过 (start_name, stop_name), (annot_start_name, annot_end_name) 参数来决定哪些 ir 需要处理, 但不太好用</li>
+<li>通过 (start_name, stop_name), (annot_start_name, annot_end_name) 参数来决定哪
+些 ir 需要处理, 但不太好用</li>
 </ol>
 </div>
 </div>
 
-<div id="outline-container-orgf2d97d8" class="outline-5">
-<h5 id="orgf2d97d8"><span class="section-number-5">1.2.3.2</span> Example</h5>
+<div id="outline-container-org3e1ace4" class="outline-5">
+<h5 id="org3e1ace4"><span class="section-number-5">1.2.3.2</span> Example</h5>
 <div class="outline-text-5" id="text-1-2-3-2">
 <div class="org-src-container">
-<pre class="src src-python"><span style="color: #586e75;">#</span><span style="color: #586e75;">!/usr/bin/env python3</span>
-<span style="color: #586e75;"># </span><span style="color: #586e75;">-*- coding: utf-8 -*-</span>
-<span style="color: #586e75;"># </span><span style="color: #586e75;">2021-09-08 18:19</span>
-<span style="color: #859900;">from</span> mxnet.gluon.model_zoo <span style="color: #859900;">import</span> vision
-<span style="color: #859900;">import</span> numpy <span style="color: #859900;">as</span> np
+<pre class="src src-python"><span style="font-weight: bold; font-style: italic;">#</span><span style="font-weight: bold; font-style: italic;">!/usr/bin/env python3</span>
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">-*- coding: utf-8 -*-</span>
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">2021-09-08 18:19</span>
+<span style="font-weight: bold;">from</span> mxnet.gluon.model_zoo <span style="font-weight: bold;">import</span> vision
+<span style="font-weight: bold;">import</span> numpy <span style="font-weight: bold;">as</span> np
 
-<span style="color: #859900;">import</span> tvm
-<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> te
-<span style="color: #859900;">from</span> tvm <span style="color: #859900;">import</span> rpc<span style="color: #757575;">,</span> autotvm<span style="color: #757575;">,</span> relay
-<span style="color: #859900;">from</span> tvm.contrib <span style="color: #859900;">import</span> graph_executor<span style="color: #757575;">,</span> utils<span style="color: #757575;">,</span> download<span style="color: #757575;">,</span> graph_runtime
-<span style="color: #859900;">from</span> tvm.contrib.debugger <span style="color: #859900;">import</span> debug_executor
-<span style="color: #859900;">from</span> tvm.relay <span style="color: #859900;">import</span> transform
+<span style="font-weight: bold;">import</span> tvm
+<span style="font-weight: bold;">from</span> tvm <span style="font-weight: bold;">import</span> te
+<span style="font-weight: bold;">from</span> tvm <span style="font-weight: bold;">import</span> rpc, autotvm, relay
+<span style="font-weight: bold;">from</span> tvm.contrib <span style="font-weight: bold;">import</span> graph_executor, utils, download, graph_runtime
+<span style="font-weight: bold;">from</span> tvm.contrib.debugger <span style="font-weight: bold;">import</span> debug_executor
+<span style="font-weight: bold;">from</span> tvm.relay <span style="font-weight: bold;">import</span> transform
 
-<span style="color: #859900;">import</span> vta
-<span style="color: #859900;">from</span> vta.top <span style="color: #859900;">import</span> graph_pack
+<span style="font-weight: bold;">import</span> vta
+<span style="font-weight: bold;">from</span> vta.top <span style="font-weight: bold;">import</span> graph_pack
 
-<span style="color: #268bd2;">env</span> = vta.get_env<span style="color: #757575;">()</span>
-<span style="color: #268bd2;">target</span> = env.target
+<span style="font-weight: bold; font-style: italic;">env</span> = vta.get_env()
+<span style="font-weight: bold; font-style: italic;">target</span> = env.target
 
-<span style="color: #268bd2;">dtype_dict</span> = <span style="color: #757575;">{</span><span style="color: #2aa198;">"data"</span>: <span style="color: #2aa198;">"float32"</span><span style="color: #757575;">}</span>
-<span style="color: #268bd2;">shape_dict</span> = <span style="color: #757575;">{</span><span style="color: #2aa198;">"data"</span>: <span style="color: #757575;">(</span>env.BATCH<span style="color: #757575;">,</span> 3<span style="color: #757575;">,</span> 224<span style="color: #757575;">,</span> 224<span style="color: #757575;">)}</span>
+<span style="font-weight: bold; font-style: italic;">dtype_dict</span> = {<span style="font-style: italic;">"data"</span>: <span style="font-style: italic;">"float32"</span>}
+<span style="font-weight: bold; font-style: italic;">shape_dict</span> = {<span style="font-style: italic;">"data"</span>: (env.BATCH, 3, 224, 224)}
 
-<span style="color: #268bd2;">gluon_model</span> = vision.get_model<span style="color: #757575;">(</span><span style="color: #2aa198;">"resnet18_v1"</span><span style="color: #757575;">,</span> pretrained=<span style="color: #268bd2; font-weight: bold;">True</span><span style="color: #757575;">)</span>
-<span style="color: #268bd2;">mod</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.frontend.from_mxnet<span style="color: #757575;">(</span>gluon_model<span style="color: #757575;">,</span> shape_dict<span style="color: #757575;">)</span>
+<span style="font-weight: bold; font-style: italic;">gluon_model</span> = vision.get_model(<span style="font-style: italic;">"resnet18_v1"</span>, pretrained=<span style="font-weight: bold; text-decoration: underline;">True</span>)
+<span style="font-weight: bold; font-style: italic;">mod</span>, <span style="font-weight: bold; font-style: italic;">params</span> = relay.frontend.from_mxnet(gluon_model, shape_dict)
 
-shape_dict.update<span style="color: #757575;">({</span>k: v.shape <span style="color: #859900;">for</span> k<span style="color: #757575;">,</span> v <span style="color: #859900;">in</span> params.items<span style="color: #757575;">()})</span>
-dtype_dict.update<span style="color: #757575;">({</span>k: <span style="color: #839496;">str</span><span style="color: #757575;">(</span>v.dtype<span style="color: #757575;">)</span> <span style="color: #859900;">for</span> k<span style="color: #757575;">,</span> v <span style="color: #859900;">in</span> params.items<span style="color: #757575;">()})</span>
+shape_dict.update({k: v.shape <span style="font-weight: bold;">for</span> k, v <span style="font-weight: bold;">in</span> params.items()})
+dtype_dict.update({k: <span style="font-weight: bold;">str</span>(v.dtype) <span style="font-weight: bold;">for</span> k, v <span style="font-weight: bold;">in</span> params.items()})
 
-<span style="color: #859900;">with</span> tvm.transform.PassContext<span style="color: #757575;">(</span>opt_level=3<span style="color: #757575;">)</span>:
-    <span style="color: #859900;">with</span> relay.quantize.qconfig<span style="color: #757575;">(</span>global_scale=8.0<span style="color: #757575;">,</span> skip_conv_layers=[0]<span style="color: #757575;">)</span>:
-        <span style="color: #268bd2;">mod</span> = relay.quantize.quantize<span style="color: #757575;">(</span>mod<span style="color: #757575;">,</span> params=params<span style="color: #757575;">)</span>
-    <span style="color: #268bd2;">relay_prog</span> = graph_pack<span style="color: #757575;">(</span>
-        mod[<span style="color: #2aa198;">"main"</span>]<span style="color: #757575;">,</span>
-        env.BATCH<span style="color: #757575;">,</span>
-        env.BLOCK_OUT<span style="color: #757575;">,</span>
-        env.WGT_WIDTH<span style="color: #757575;">,</span>
-        start_name=<span style="color: #2aa198;">"nn.max_pool2d"</span><span style="color: #757575;">,</span>
-        stop_name=<span style="color: #2aa198;">"nn.global_avg_pool2d"</span><span style="color: #757575;">,</span>
-        annot_start_name=<span style="color: #2aa198;">"nn.conv2d"</span><span style="color: #757575;">,</span>
-        annot_end_name=<span style="color: #2aa198;">"annotation.stop_fusion"</span><span style="color: #757575;">,</span>        
-        device_annot=<span style="color: #757575;">(</span>env.TARGET == <span style="color: #2aa198;">"intelfocl"</span> <span style="color: #859900;">or</span> env.TARGET == <span style="color: #2aa198;">"sim"</span><span style="color: #757575;">),</span>
-    <span style="color: #757575;">)</span>
+<span style="font-weight: bold;">with</span> tvm.transform.PassContext(opt_level=3):
+    <span style="font-weight: bold;">with</span> relay.quantize.qconfig(global_scale=8.0, skip_conv_layers=[0]):
+        <span style="font-weight: bold; font-style: italic;">mod</span> = relay.quantize.quantize(mod, params=params)
+    <span style="font-weight: bold; font-style: italic;">relay_prog</span> = graph_pack(
+        mod[<span style="font-style: italic;">"main"</span>],
+        env.BATCH,
+        env.BLOCK_OUT,
+        env.WGT_WIDTH,
+        start_name=<span style="font-style: italic;">"nn.max_pool2d"</span>,
+        stop_name=<span style="font-style: italic;">"nn.global_avg_pool2d"</span>,
+        annot_start_name=<span style="font-style: italic;">"nn.conv2d"</span>,
+        annot_end_name=<span style="font-style: italic;">"annotation.stop_fusion"</span>,        
+        device_annot=(env.TARGET == <span style="font-style: italic;">"intelfocl"</span> <span style="font-weight: bold;">or</span> env.TARGET == <span style="font-style: italic;">"sim"</span>),
+    )
 
-<span style="color: #859900;">print</span><span style="color: #757575;">(</span>relay_prog<span style="color: #757575;">)</span>
+<span style="font-weight: bold;">print</span>(relay_prog)
 
-<span style="color: #859900;">with</span> vta.build_config<span style="color: #757575;">(</span>opt_level=3<span style="color: #757575;">,</span> disabled_pass=<span style="color: #757575;">{</span><span style="color: #2aa198;">"AlterOpLayout"</span><span style="color: #757575;">})</span>:
-    <span style="color: #268bd2;">graph</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">lib</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">params</span> = relay.build<span style="color: #757575;">(</span>
-        relay_prog<span style="color: #757575;">,</span>
-        target=<span style="color: #757575;">{</span><span style="color: #2aa198;">"cpu"</span>: env.target_vta_cpu<span style="color: #757575;">,</span> <span style="color: #2aa198;">"ext_dev"</span>: target<span style="color: #757575;">},</span>
-        params=params<span style="color: #757575;">,</span>
-        target_host=env.target_host<span style="color: #757575;">,</span>
-    <span style="color: #757575;">)</span>
+<span style="font-weight: bold;">with</span> vta.build_config(opt_level=3, disabled_pass={<span style="font-style: italic;">"AlterOpLayout"</span>}):
+    <span style="font-weight: bold; font-style: italic;">graph</span>, <span style="font-weight: bold; font-style: italic;">lib</span>, <span style="font-weight: bold; font-style: italic;">params</span> = relay.build(
+        relay_prog,
+        target={<span style="font-style: italic;">"cpu"</span>: env.target_vta_cpu, <span style="font-style: italic;">"ext_dev"</span>: target},
+        params=params,
+        target_host=env.target_host,
+    )
 </pre>
 </div>
 
@@ -1202,7 +1203,7 @@ nn.conv2d pack 的结果
 data_layout 变成为 NCHW1n16c, 其中 16c 表示 512 的 channels 变成为 16x(512/16)
 </p>
 
-<pre class="example" id="org394bb19">
+<pre class="example" id="orgf8efbeb">
 %566 = nn.conv2d(%564, %565, padding=[1, 1, 1, 1], channels=512, kernel_size=[3, 3], data_layout="NCHW1n16c", kernel_layout="OIHW16o16i", out_dtype="int32") /* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] */;
 </pre></li>
 
@@ -1222,10 +1223,10 @@ nn.relu 添加了一个 on_device 的属性, 表示 relay build 时对这个 nn.
 因为指定了 `keys=vta,cpu`,relay.build 查找 strategy 时会把 cpu 做为 fallback,
 所以即使前面 annotate 时把 vta 不支持的 relay IR 比如 nn.relu 标记为
 on_device(env.target), 但编译时最终还是会用 cpu 的 strategy 去编译
-(<a href="file:///home/sunway/source/tvm/python/tvm/target/generic_func.py#org727d82a">file:///home/sunway/source/tvm/python/tvm/target/generic_func.py#org727d82a</a>)
+(<a href="file:///home/sunway/source/tvm/python/tvm/target/generic_func.py#org9d499dd">file:///home/sunway/source/tvm/python/tvm/target/generic_func.py#org9d499dd</a>)
 </p>
 
-<pre class="example" id="org68e92be">
+<pre class="example" id="orga67a83d">
 %617 = nn.relu(%616) /* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] */;
 %618 = on_device(%617, meta[relay.attrs.OnDeviceAttrs][299]) /* ty=Tensor[(1, 32, 7, 7, 1, 16), int32] */;
 </pre></li>
@@ -1235,8 +1236,8 @@ on_device(env.target), 但编译时最终还是会用 cpu 的 strategy 去编译
 </div>
 </div>
 
-<div id="outline-container-orgfcc9591" class="outline-3">
-<h3 id="orgfcc9591"><span class="section-number-3">1.3</span> VTA Driver</h3>
+<div id="outline-container-orgcc57388" class="outline-3">
+<h3 id="orgcc57388"><span class="section-number-3">1.3</span> VTA Driver</h3>
 <div class="outline-text-3" id="text-1-3">
 <p>
 vta.build 时通过 add_lower_pass 添加自定义 pass, 根据 tir 的 pragma 信息把 tir
@@ -1266,8 +1267,8 @@ VTAPushALUOp 先生成 instruction 放在 insn_queue_ 中
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c++"><span style="color: #b58900;">void</span> <span style="color: #268bd2;">PushALUUop</span><span style="color: #757575;">(</span><span style="color: #b58900;">UopKernel</span>* <span style="color: #268bd2;">kernel</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
-    <span style="color: #b58900;">VTAAluInsn</span>* <span style="color: #268bd2;">insn</span> = insn_queue_.CreateAluInsn<span style="color: #757575;">()</span>;
+<pre class="src src-c++"><span style="font-weight: bold; text-decoration: underline;">void</span> <span style="font-weight: bold;">PushALUUop</span>(<span style="font-weight: bold; text-decoration: underline;">UopKernel</span>* <span style="font-weight: bold; font-style: italic;">kernel</span>) {
+    <span style="font-weight: bold; text-decoration: underline;">VTAAluInsn</span>* <span style="font-weight: bold; font-style: italic;">insn</span> = insn_queue_.CreateAluInsn();
     insn-&gt;opcode = VTA_OPCODE_ALU;
     insn-&gt;reset_reg = kernel-&gt;reset_out_;
     insn-&gt;uop_bgn = kernel-&gt;sram_begin_;
@@ -1275,16 +1276,16 @@ VTAPushALUOp 先生成 instruction 放在 insn_queue_ 中
     insn-&gt;alu_opcode = kernel-&gt;opcode_;
     insn-&gt;use_imm = kernel-&gt;use_imm_;
     insn-&gt;imm = kernel-&gt;imm_val_;
-    <span style="color: #859900;">const</span> <span style="color: #268bd2; font-weight: bold;">std</span>::<span style="color: #b58900;">vector</span>&lt;<span style="color: #268bd2; font-weight: bold;">UopKernel</span>::LoopEntry&gt;&amp; <span style="color: #268bd2;">loop</span> = kernel-&gt;loop<span style="color: #757575;">()</span>;
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
+    <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">std</span>::<span style="font-weight: bold; text-decoration: underline;">vector</span>&lt;<span style="font-weight: bold; text-decoration: underline;">UopKernel</span>::LoopEntry&gt;&amp; <span style="font-weight: bold; font-style: italic;">loop</span> = kernel-&gt;loop();
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">...</span>
     insn-&gt;iter_out = loop[0].extent;
     insn-&gt;dst_factor_out = loop[0].dst_factor;
     insn-&gt;src_factor_out = loop[0].src_factor;
     insn-&gt;iter_in = loop[1].extent;
     insn-&gt;dst_factor_in = loop[1].dst_factor;
     insn-&gt;src_factor_in = loop[1].src_factor;
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">...</span>
-<span style="color: #757575;">}</span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">...</span>
+}
 </pre>
 </div></li>
 
@@ -1293,15 +1294,15 @@ VTASynchronize 会把 insn_queue_ 从本地复制到 fpga, 然后再让 fpga 执
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c++"><span style="color: #b58900;">void</span> <span style="color: #268bd2;">Synchronize</span><span style="color: #757575;">(</span><span style="color: #b58900;">uint32_t</span> <span style="color: #268bd2;">wait_cycles</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
-    insn_queue_.AutoReadBarrier<span style="color: #757575;">()</span>;
-        <span style="color: #586e75;">// </span><span style="color: #586e75;">dram_buffer_ &#26159;&#26412;&#22320;&#30340;&#19968;&#20010; std::vector</span>
-        <span style="color: #586e75;">// </span><span style="color: #586e75;">fpga_buff_ &#26159;&#36890;&#36807; VTAMemAlloc &#20998;&#37197;&#30340; fpga &#19978;&#30340;&#20869;&#23384;</span>
-        VTAMemCopyFromHost<span style="color: #757575;">(</span>fpga_buff_<span style="color: #757575;">,</span> dram_buffer_.data<span style="color: #757575;">(),</span> buff_size<span style="color: #757575;">)</span>;
+<pre class="src src-c++"><span style="font-weight: bold; text-decoration: underline;">void</span> <span style="font-weight: bold;">Synchronize</span>(<span style="font-weight: bold; text-decoration: underline;">uint32_t</span> <span style="font-weight: bold; font-style: italic;">wait_cycles</span>) {
+    insn_queue_.AutoReadBarrier();
+        <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">dram_buffer_ &#26159;&#26412;&#22320;&#30340;&#19968;&#20010; std::vector</span>
+        <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">fpga_buff_ &#26159;&#36890;&#36807; VTAMemAlloc &#20998;&#37197;&#30340; fpga &#19978;&#30340;&#20869;&#23384;</span>
+        VTAMemCopyFromHost(fpga_buff_, dram_buffer_.data(), buff_size);
 
-    VTADeviceRun<span style="color: #757575;">(</span>
-        device_<span style="color: #757575;">,</span> insn_queue_.dram_phy_addr<span style="color: #757575;">(),</span> insn_queue_.count<span style="color: #757575;">(),</span> wait_cycles<span style="color: #757575;">)</span>;
-<span style="color: #757575;">}</span>
+    VTADeviceRun(
+        device_, insn_queue_.dram_phy_addr(), insn_queue_.count(), wait_cycles);
+}
 </pre>
 </div></li>
 </ol>
@@ -1319,12 +1320,12 @@ VTA driver 提供的功能主要有:
 </div>
 </div>
 
-<div id="outline-container-orge785fd3" class="outline-3">
-<h3 id="orge785fd3"><span class="section-number-3">1.4</span> MISC</h3>
+<div id="outline-container-org91b84b0" class="outline-3">
+<h3 id="org91b84b0"><span class="section-number-3">1.4</span> MISC</h3>
 <div class="outline-text-3" id="text-1-4">
 </div>
-<div id="outline-container-org36a1242" class="outline-4">
-<h4 id="org36a1242"><span class="section-number-4">1.4.1</span> vta 与 opencl target 的区别</h4>
+<div id="outline-container-org0e5096f" class="outline-4">
+<h4 id="org0e5096f"><span class="section-number-4">1.4.1</span> vta 与 opencl target 的区别</h4>
 <div class="outline-text-4" id="text-1-4-1">
 <p>
 vta 无法像 opencl 一样支持所有的操作, 它的方式称为 heterogeneous execution:
@@ -1338,7 +1339,7 @@ vta 无法像 opencl 一样支持所有的操作, 它的方式称为 heterogeneo
 </p>
 
 <p>
-opencl 也支持 heterogeneous execution: <a href="tvm_graph_executor.html#org974cd16">GraphExecutorCodegen</a>
+opencl 也支持 heterogeneous execution: <a href="tvm_graph_executor.html#org2f2272d">GraphExecutorCodegen</a>
 </p></li>
 
 <li>vta build 是在 target.build.llvm 基础上通过 tir.add_lower_pass 加入几个自定义
@@ -1353,21 +1354,21 @@ target.build.opencl</li>
 <div id="postamble" class="status">
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
-Date: 2021-09-08 三 00:00<br />
-Last updated: 2021-10-08 五 10:13</p>
+Date: 2021-09-08 Wed 00:00<br />
+Last updated: 2022-01-24 Mon 19:29</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
-           <div id="disqus_thread"></div>
-           <script>
+<div id="disqus_thread"></div>
+<script>
 
-           (function() { // DON'T EDIT BELOW THIS LINE
-                    var d = document, s = d.createElement('script');
-                    s.src = '//sunwayforever-github-io.disqus.com/embed.js';
-                    s.setAttribute('data-timestamp', +new Date());
-                    (d.head || d.body).appendChild(s);
-                    })();
-           </script>
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
 </div>
 </body>
 </html>
