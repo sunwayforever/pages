@@ -3,7 +3,7 @@
 "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
-<!-- 2022-01-25 二 15:54 -->
+<!-- 2022-01-25 Tue 16:12 -->
 <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Linux Kernel: Synchronization</title>
@@ -41,32 +41,32 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#org0598832">1. Linux Kernel: Synchronization</a>
+<li><a href="#orgea4fc6c">1. Linux Kernel: Synchronization</a>
 <ul>
-<li><a href="#orged848ed">1.1. 内核抢占</a></li>
-<li><a href="#org9053606">1.2. 原子操作</a>
+<li><a href="#org7f34c3c">1.1. 内核抢占</a></li>
+<li><a href="#org66c2d80">1.2. 原子操作</a>
 <ul>
-<li><a href="#org3035e20">1.2.1. 单核 (UP)</a></li>
-<li><a href="#orgae00e33">1.2.2. 多核 (MP)</a></li>
-<li><a href="#org5d3d980">1.2.3. 高级语言中的原子操作</a></li>
+<li><a href="#org88e7472">1.2.1. 单核 (UP)</a></li>
+<li><a href="#org683a0f7">1.2.2. 多核 (MP)</a></li>
+<li><a href="#org739f846">1.2.3. 高级语言中的原子操作</a></li>
 </ul>
 </li>
-<li><a href="#orgdbc5fff">1.3. 屏障</a>
+<li><a href="#orgd6c6050">1.3. 屏障</a>
 <ul>
-<li><a href="#org7014592">1.3.1. 内存屏障</a></li>
-<li><a href="#orga1dcd0b">1.3.2. 优化屏障</a></li>
+<li><a href="#org2305442">1.3.1. 内存屏障</a></li>
+<li><a href="#org452bbfc">1.3.2. 优化屏障</a></li>
 </ul>
 </li>
-<li><a href="#org4956315">1.4. 自旋锁</a>
+<li><a href="#org7360cb5">1.4. 自旋锁</a>
 <ul>
-<li><a href="#org573c4e2">1.4.1. spin_lock</a></li>
-<li><a href="#org5c9d81e">1.4.2. spin_unlock</a></li>
+<li><a href="#org331a069">1.4.1. spin_lock</a></li>
+<li><a href="#org2f30ac8">1.4.2. spin_unlock</a></li>
 </ul>
 </li>
-<li><a href="#org8daacf6">1.5. 信号量</a>
+<li><a href="#orgcc19b92">1.5. 信号量</a>
 <ul>
-<li><a href="#org87b950b">1.5.1. kernel 中的 semaphore</a></li>
-<li><a href="#org63a42d7">1.5.2. 信号量与自旋锁</a></li>
+<li><a href="#org1c989b4">1.5.1. kernel 中的 semaphore</a></li>
+<li><a href="#org80f82fc">1.5.2. 信号量与自旋锁</a></li>
 </ul>
 </li>
 </ul>
@@ -74,15 +74,15 @@
 </ul>
 </div>
 </div>
-<div id="outline-container-org0598832" class="outline-2">
-<h2 id="org0598832"><span class="section-number-2">1</span> Linux Kernel: Synchronization</h2>
+<div id="outline-container-orgea4fc6c" class="outline-2">
+<h2 id="orgea4fc6c"><span class="section-number-2">1</span> Linux Kernel: Synchronization</h2>
 <div class="outline-text-2" id="text-1">
 </div>
-<div id="outline-container-orged848ed" class="outline-3">
-<h3 id="orged848ed"><span class="section-number-3">1.1</span> 内核抢占</h3>
+<div id="outline-container-org7f34c3c" class="outline-3">
+<h3 id="org7f34c3c"><span class="section-number-3">1.1</span> 内核抢占</h3>
 <div class="outline-text-3" id="text-1-1">
 <p>
-内核抢占 (kernel preemption) 在 <a href="interrupt.html#org3921890">ret_from_intr</a> 时已经描述过, 简单的说,
+内核抢占 (kernel preemption) 在 <a href="interrupt.html#orga7a02d8">ret_from_intr</a> 时已经描述过, 简单的说,
 内核抢占是指:
 </p>
 
@@ -109,22 +109,22 @@ resume_kernel
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #268bd2;">#ifdef</span> CONFIG_PREEMPT
-<span style="color: #268bd2;">ENTRY</span><span style="color: #757575;">(</span><span style="color: #b58900;">resume_kernel</span><span style="color: #757575;">)</span>
-    <span style="color: #b58900;">cli</span>
-    <span style="color: #268bd2;">cmpl</span> $0<span style="color: #757575;">,</span><span style="color: #268bd2;">TI_preempt_count</span><span style="color: #757575;">(</span>%ebp<span style="color: #757575;">)</span>  # non-zero preempt_count ?
+<pre class="src src-c"><span style="font-weight: bold;">#ifdef</span> CONFIG_PREEMPT
+<span style="font-weight: bold;">ENTRY</span>(resume_kernel)
+    <span style="font-weight: bold; text-decoration: underline;">cli</span>
+    <span style="font-weight: bold; font-style: italic;">cmpl</span> $0,<span style="font-weight: bold;">TI_preempt_count</span>(%ebp)      # non-zero preempt_count ?
     jnz restore_all
 need_resched:
-    movl TI_flags<span style="color: #757575;">(</span>%ebp<span style="color: #757575;">),</span> %ecx   # need_resched set ?
-    testb $_TIF_NEED_RESCHED<span style="color: #757575;">,</span> %cl
+    movl TI_flags(%ebp), %ecx   # need_resched set ?
+    testb $_TIF_NEED_RESCHED, %cl
     jz restore_all
-    testl $IF_MASK<span style="color: #757575;">,</span>EFLAGS<span style="color: #757575;">(</span>%esp<span style="color: #757575;">)</span>     # interrupts off <span style="color: #757575;">(</span><span style="color: #b58900;">exception</span> <span style="color: #268bd2;">path</span><span style="color: #757575;">)</span> ?
+    testl $IF_MASK,EFLAGS(%esp)     # interrupts off (<span style="font-weight: bold; text-decoration: underline;">exception</span> <span style="font-weight: bold; font-style: italic;">path</span>) ?
     jz restore_all
     call preempt_schedule_irq
     jmp need_resched
-<span style="color: #268bd2;">#else</span>
-<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">resume_kernel</span>       restore_all
-<span style="color: #268bd2;">#endif</span>
+<span style="font-weight: bold;">#else</span>
+<span style="font-weight: bold;">#define</span> <span style="font-weight: bold; font-style: italic;">resume_kernel</span>           restore_all
+<span style="font-weight: bold;">#endif</span>
 </pre>
 </div>
 
@@ -135,7 +135,9 @@ need_resched:
 
 <p>
 当 CONFIG_PREEMPT 为真时, resume_kernel 会先检查
-thread_info-&gt;preempt_cout, 若 preempt_count 为 0, 表示可以进行内核抢占, 则根据 TIF_NEED_RESCHED 标记决定是否调用 reschedule 来调度另一个进程执行
+thread_info-&gt;preempt_cout, 若 preempt_count 为 0, 表示可以进行内核
+抢占, 则根据 TIF_NEED_RESCHED 标记决定是否调用 reschedule 来调度另
+一个进程执行
 </p></li>
 
 <li><p>
@@ -143,7 +145,8 @@ preempt_count
 </p>
 
 <p>
-preempt_count 是 thread_info 的一个成员, 大小为 4 字节, 但它的值并不仅仅用来表示 `preempt_count`:
+preempt_count 是 thread_info 的一个成员, 大小为 4 字节, 但它的值并不
+仅仅用来表示 `preempt_count`:
 </p>
 
 <p>
@@ -206,35 +209,40 @@ resume_kernel 时要求 preempt_count 为 0 才能进行内核抢占, 也就要�
 </ol>
 
 <p>
-以上三点实际上意味着 kernel 只有在执行 syscall 时被打断 (而不是在执行 softirq 或 hardirq 时被打断) 且 preempt_enable 时才能发生内核抢占
+以上三点实际上意味着 kernel 只有在执行 syscall 时被打断 (而不是在执
+行 softirq 或 hardirq 时被打断) 且 preempt_enable 时才能发生内核抢占
 </p></li>
 </ol>
 </div>
 </div>
 
-<div id="outline-container-org9053606" class="outline-3">
-<h3 id="org9053606"><span class="section-number-3">1.2</span> 原子操作</h3>
+<div id="outline-container-org66c2d80" class="outline-3">
+<h3 id="org66c2d80"><span class="section-number-3">1.2</span> 原子操作</h3>
 <div class="outline-text-3" id="text-1-2">
 <p>
 x86 上原子操作 (aotmic operations) 的分类:
 </p>
 </div>
 
-<div id="outline-container-org3035e20" class="outline-4">
-<h4 id="org3035e20"><span class="section-number-4">1.2.1</span> 单核 (UP)</h4>
+<div id="outline-container-org88e7472" class="outline-4">
+<h4 id="org88e7472"><span class="section-number-4">1.2.1</span> 单核 (UP)</h4>
 <div class="outline-text-4" id="text-1-2-1">
 <p>
 单核系统上决定一个操作是不是原子操作的主要因素是 interrupt. 一般情况下,
-CPU 每执行一条指令都会检查是否发生了 interrupt, 所以单条指令一般都是原子操作, 但有一个例外: 带有 rep 前缀 (f2, f3) 的指令会重复执行, 且每次重复时都会检查是否有 interrupt, 所以这种指令不是原子操作
+CPU 每执行一条指令都会检查是否发生了 interrupt, 所以单条指令一般都是原
+子操作, 但有一个例外: 带有 rep 前缀 (f2, f3) 的指令会重复执行, 且每次
+重复时都会检查是否有 interrupt, 所以这种指令不是原子操作
 </p>
 </div>
 </div>
 
-<div id="outline-container-orgae00e33" class="outline-4">
-<h4 id="orgae00e33"><span class="section-number-4">1.2.2</span> 多核 (MP)</h4>
+<div id="outline-container-org683a0f7" class="outline-4">
+<h4 id="org683a0f7"><span class="section-number-4">1.2.2</span> 多核 (MP)</h4>
 <div class="outline-text-4" id="text-1-2-2">
 <p>
-多核系统决定一个操作是否是原子操作的主要因素并不是 interrupt, 因为单条指令虽然不会被 interrupt 打断, 但却可能因为多核同时执行的原因变成非原子操作.
+多核系统决定一个操作是否是原子操作的主要因素并不是 interrupt, 因为单条
+指令虽然不会被 interrupt 打断, 但却可能因为多核同时执行的原因变成非原
+子操作.
 </p>
 
 <p>
@@ -278,14 +286,15 @@ ca-3, cb-3, 则最后 mem 的值是 [mem]+1 而不是 [mem]+2
 </ol>
 
 <p>
-针对 inc, add, dec, sub, xchg 等 Read-Modify-Write 类的指令, x86 提供了一个 LOCK 前缀<sup><a id="fnr.1" class="footref" href="#fn.1">1</a></sup>, 可以锁住 memory bus, 其它 CPU 无法再操作内存, 所以有
+针对 inc, add, dec, sub, xchg 等 Read-Modify-Write 类的指令, x86 提供
+了一个 LOCK 前缀<sup><a id="fnr.1" class="footref" href="#fn.1">1</a></sup>, 可以锁住 memory bus, 其它 CPU 无法再操作内存, 所以有
 LOCK 前缀的 Read-Modify-Write 指令是原子的.
 </p>
 </div>
 </div>
 
-<div id="outline-container-org5d3d980" class="outline-4">
-<h4 id="org5d3d980"><span class="section-number-4">1.2.3</span> 高级语言中的原子操作</h4>
+<div id="outline-container-org739f846" class="outline-4">
+<h4 id="org739f846"><span class="section-number-4">1.2.3</span> 高级语言中的原子操作</h4>
 <div class="outline-text-4" id="text-1-2-3">
 <p>
 一般情况下, 高级语言中的"疑似"原子操作的语句很多时候不是原子操作, 例如:
@@ -297,8 +306,8 @@ x = xxxx
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #b58900;">int</span> <span style="color: #268bd2;">x</span> = 10;
-<span style="color: #b58900;">int64_t</span> <span style="color: #268bd2;">y</span> = 10000000000000000;
+<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">x</span> = 10;
+<span style="font-weight: bold; text-decoration: underline;">int64_t</span> <span style="font-weight: bold; font-style: italic;">y</span> = 10000000000000000;
 </pre>
 </div>
 
@@ -307,9 +316,9 @@ x = xxxx
 </p>
 
 <div class="org-src-container">
-<pre class="src src-asm"><span style="color: #268bd2;">movl</span>    <span style="color: #859900;">$10</span><span style="color: #757575;">,</span> -12<span style="color: #757575;">(</span><span style="color: #268bd2;">%ebp</span><span style="color: #757575;">)</span>
-<span style="color: #268bd2;">movl</span>    <span style="color: #859900;">$1874919424</span><span style="color: #757575;">,</span> -24<span style="color: #757575;">(</span><span style="color: #268bd2;">%ebp</span><span style="color: #757575;">)</span>
-<span style="color: #268bd2;">movl</span>    <span style="color: #859900;">$2328306</span><span style="color: #757575;">,</span> -20<span style="color: #757575;">(</span><span style="color: #268bd2;">%ebp</span><span style="color: #757575;">)</span>
+<pre class="src src-asm"><span style="font-weight: bold;">movl</span>    <span style="font-weight: bold;">$10</span>, -12(<span style="font-weight: bold; font-style: italic;">%ebp</span>)
+<span style="font-weight: bold;">movl</span>    <span style="font-weight: bold;">$1874919424</span>, -24(<span style="font-weight: bold; font-style: italic;">%ebp</span>)
+<span style="font-weight: bold;">movl</span>    <span style="font-weight: bold;">$2328306</span>, -20(<span style="font-weight: bold; font-style: italic;">%ebp</span>)
 </pre>
 </div>
 
@@ -332,9 +341,9 @@ x++ 也可能被编译为:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-asm"><span style="color: #268bd2;">mov</span> [mem] <span style="color: #268bd2;">%eax</span>
-<span style="color: #268bd2;">inc</span> <span style="color: #859900;">%eax</span>
-<span style="color: #268bd2;">mov</span> <span style="color: #859900;">%eax</span> [mem]
+<pre class="src src-asm"><span style="font-weight: bold;">mov</span> [mem] <span style="font-weight: bold; font-style: italic;">%eax</span>
+<span style="font-weight: bold;">inc</span> <span style="font-weight: bold;">%eax</span>
+<span style="font-weight: bold;">mov</span> <span style="font-weight: bold;">%eax</span> [mem]
 </pre>
 </div>
 
@@ -344,35 +353,37 @@ x++ 也可能被编译为:
 </ol>
 
 <p>
-所以高级语言中的基本操作无法保证是否是原子操作, 因此 kernel 使用汇编实现了一系统的 atomic_xxx 函数, 以支持原子操作, 例如:
+所以高级语言中的基本操作无法保证是否是原子操作, 因此 kernel 使用汇编实
+现了一系统的 atomic_xxx 函数, 以支持原子操作, 例如:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #859900;">static</span> __inline__ <span style="color: #b58900;">void</span> <span style="color: #268bd2;">atomic_add</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">i</span><span style="color: #757575;">,</span> <span style="color: #b58900;">atomic_t</span> *<span style="color: #268bd2;">v</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
-    <span style="color: #859900;">__asm__</span> __volatile__<span style="color: #757575;">(</span>
-        LOCK <span style="color: #2aa198;">"addl %1,%0"</span>
-        :<span style="color: #2aa198;">"=m"</span> <span style="color: #757575;">(</span>v-&gt;counter<span style="color: #757575;">)</span>
-        :<span style="color: #2aa198;">"ir"</span> <span style="color: #757575;">(</span>i<span style="color: #757575;">),</span> <span style="color: #2aa198;">"m"</span> <span style="color: #757575;">(</span>v-&gt;counter<span style="color: #757575;">))</span>;
-<span style="color: #757575;">}</span>
+<pre class="src src-c"><span style="font-weight: bold;">static</span> __inline__ <span style="font-weight: bold; text-decoration: underline;">void</span> <span style="font-weight: bold;">atomic_add</span>(<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">i</span>, <span style="font-weight: bold; text-decoration: underline;">atomic_t</span> *<span style="font-weight: bold; font-style: italic;">v</span>) {
+    <span style="font-weight: bold;">__asm__</span> __volatile__(
+        LOCK <span style="font-style: italic;">"addl %1,%0"</span>
+        :<span style="font-style: italic;">"=m"</span> (v-&gt;counter)
+        :<span style="font-style: italic;">"ir"</span> (i), <span style="font-style: italic;">"m"</span> (v-&gt;counter));
+}
 </pre>
 </div>
 </div>
 </div>
 </div>
 
-<div id="outline-container-orgdbc5fff" class="outline-3">
-<h3 id="orgdbc5fff"><span class="section-number-3">1.3</span> 屏障</h3>
+<div id="outline-container-orgd6c6050" class="outline-3">
+<h3 id="orgd6c6050"><span class="section-number-3">1.3</span> 屏障</h3>
 <div class="outline-text-3" id="text-1-3">
 <p>
-屏障 (barrier, fence) 是和乱序执行有关的概念. 编译器和 CPU 为了优化代码通常会采用乱序执行的方式, 乱序执行能充分的利用 CPU 的流水线功能
+屏障 (barrier, fence) 是和乱序执行有关的概念. 编译器和 CPU 为了优化代
+码通常会采用乱序执行的方式, 乱序执行能充分的利用 CPU 的流水线功能
 (<a href="https://en.wikipedia.org/wiki/Bubble_(computing)">pipeline stall 问题</a>), 例如原始代码为:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-asm"><span style="color: #268bd2;">mov</span> <span style="color: #859900;">%0</span> [mem1]
-<span style="color: #268bd2;">add</span> <span style="color: #859900;">%1</span> [mem1]
-<span style="color: #268bd2;">mov</span> <span style="color: #859900;">%2</span> [mem2]
-<span style="color: #268bd2;">mov</span> <span style="color: #859900;">%3</span> [mem3]
+<pre class="src src-asm"><span style="font-weight: bold;">mov</span> <span style="font-weight: bold;">%0</span> [mem1]
+<span style="font-weight: bold;">add</span> <span style="font-weight: bold;">%1</span> [mem1]
+<span style="font-weight: bold;">mov</span> <span style="font-weight: bold;">%2</span> [mem2]
+<span style="font-weight: bold;">mov</span> <span style="font-weight: bold;">%3</span> [mem3]
 </pre>
 </div>
 
@@ -381,24 +392,26 @@ x++ 也可能被编译为:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-asm"><span style="color: #268bd2;">mov</span> <span style="color: #859900;">%0</span> [mem1]
-<span style="color: #268bd2;">mov</span> <span style="color: #859900;">%2</span> [mem2]
-<span style="color: #268bd2;">mov</span> <span style="color: #859900;">%3</span> [mem3]
-<span style="color: #268bd2;">add</span> <span style="color: #859900;">%1</span> [mem1]
+<pre class="src src-asm"><span style="font-weight: bold;">mov</span> <span style="font-weight: bold;">%0</span> [mem1]
+<span style="font-weight: bold;">mov</span> <span style="font-weight: bold;">%2</span> [mem2]
+<span style="font-weight: bold;">mov</span> <span style="font-weight: bold;">%3</span> [mem3]
+<span style="font-weight: bold;">add</span> <span style="font-weight: bold;">%1</span> [mem1]
 </pre>
 </div>
 
 <p>
-因为原始代码中第二行 add 指令会造成 pipeline stall 问题, 如果程序由于逻辑上的原因要求第二行必须不能被乱序优化怎么办? 解决的方法就是 memory
+因为原始代码中第二行 add 指令会造成 pipeline stall 问题, 如果程序由于
+逻辑上的原因要求第二行必须不能被乱序优化怎么办? 解决的方法就是 memory
 barrier
 </p>
 </div>
 
-<div id="outline-container-org7014592" class="outline-4">
-<h4 id="org7014592"><span class="section-number-4">1.3.1</span> 内存屏障</h4>
+<div id="outline-container-org2305442" class="outline-4">
+<h4 id="org2305442"><span class="section-number-4">1.3.1</span> 内存屏障</h4>
 <div class="outline-text-4" id="text-1-3-1">
 <p>
-内存屏障 (memory barrier), 是一类 CPU 指令, 这些指令会禁止 CPU 乱序执行, CPU 会保证 memory barrier 之前的指令先执行完才会执行 memory
+内存屏障 (memory barrier), 是一类 CPU 指令, 这些指令会禁止 CPU 乱序执
+行, CPU 会保证 memory barrier 之前的指令先执行完才会执行 memory
 barrier 之后的指令.
 </p>
 
@@ -421,17 +434,18 @@ Kernel 提供了一个 mb 宏做为 memory barrier, 其实现为:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">mb</span><span style="color: #757575;">()</span> alternative<span style="color: #757575;">(</span><span style="color: #2aa198;">"lock; addl $0,0(%%esp)"</span><span style="color: #757575;">,</span> <span style="color: #2aa198;">"mfence"</span><span style="color: #757575;">,</span> X86_FEATURE_XMM2<span style="color: #757575;">)</span>
+<pre class="src src-c"><span style="font-weight: bold;">#define</span> <span style="font-weight: bold;">mb</span>() alternative(<span style="font-style: italic;">"lock; addl $0,0(%%esp)"</span>, <span style="font-style: italic;">"mfence"</span>, X86_FEATURE_XMM2)
 </pre>
 </div>
 </div>
 </div>
 
-<div id="outline-container-orga1dcd0b" class="outline-4">
-<h4 id="orga1dcd0b"><span class="section-number-4">1.3.2</span> 优化屏障</h4>
+<div id="outline-container-org452bbfc" class="outline-4">
+<h4 id="org452bbfc"><span class="section-number-4">1.3.2</span> 优化屏障</h4>
 <div class="outline-text-4" id="text-1-3-2">
 <p>
-除了 memory barrier, 还存在一种叫做优化屏障 (optimization barrier) 的屏障, 这种 barrier 并不是一种 CPU 指令, 而是给编译器的一个提示.
+除了 memory barrier, 还存在一种叫做优化屏障 (optimization barrier) 的
+屏障, 这种 barrier 并不是一种 CPU 指令, 而是给编译器的一个提示.
 </p>
 
 <p>
@@ -439,7 +453,7 @@ kernel 提供了一个 barrier 宏做为 optimization barrier:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">barrier</span><span style="color: #757575;">()</span> <span style="color: #859900;">__asm__</span> __volatile__<span style="color: #757575;">(</span><span style="color: #2aa198;">""</span>: : :<span style="color: #2aa198;">"memory"</span><span style="color: #757575;">)</span>
+<pre class="src src-c"><span style="font-weight: bold;">#define</span> <span style="font-weight: bold;">barrier</span>() <span style="font-weight: bold;">__asm__</span> __volatile__(<span style="font-style: italic;">""</span>: : :<span style="font-style: italic;">"memory"</span>)
 </pre>
 </div>
 
@@ -448,29 +462,36 @@ kernel 提供了一个 barrier 宏做为 optimization barrier:
 </p>
 
 <ol class="org-ol">
-<li>__volatile__ 阻止编译器 barrier 这条指令与它之前或之后的指令交换位置, 导致编译器无法把 barrier 之后的指令移到到 barrier 之前, 反之亦然</li>
+<li>__volatile__ 阻止编译器 barrier 这条指令与它之前或之后的指令交换位
+置, 导致编译器无法把 barrier 之后的指令移到到 barrier 之前, 反之亦
+然</li>
 
-<li>"memory" 的意义为告诉编译器: barrier 之后的代码应该认为所有内存都可能已经被修改了, 所以不能再用之前寄存器的值来代替内存访问, 看起来
-optimization barrier 和 volatile 用来修饰变量时的意义类似, 只不过它不仅仅是针对某一个变量, 而是针对整块的代码.</li>
+<li>"memory" 的意义为告诉编译器: barrier 之后的代码应该认为所有内存都可
+能已经被修改了, 所以不能再用之前寄存器的值来代替内存访问, 看起来
+optimization barrier 和 volatile 用来修饰变量时的意义类似, 只不过它
+不仅仅是针对某一个变量, 而是针对整块的代码.</li>
 </ol>
 
 <p>
 optimization barrier 阻止了编译器生成乱序的代码, memory barrier 阻止
-CPU 乱序执行, 通过两者的配合, 可以确保程序确实是以代码上显示的逻辑和顺序在运行.
+CPU 乱序执行, 通过两者的配合, 可以确保程序确实是以代码上显示的逻辑和顺
+序在运行.
 </p>
 </div>
 </div>
 </div>
 
-<div id="outline-container-org4956315" class="outline-3">
-<h3 id="org4956315"><span class="section-number-3">1.4</span> 自旋锁</h3>
+<div id="outline-container-org7360cb5" class="outline-3">
+<h3 id="org7360cb5"><span class="section-number-3">1.4</span> 自旋锁</h3>
 <div class="outline-text-3" id="text-1-4">
 <p>
-在介绍自旋锁 (spin lock) 之前, 先考虑一下在单核下不使用锁如何来保护临界区 (critical region)
+在介绍自旋锁 (spin lock) 之前, 先考虑一下在单核下不使用锁如何来保护临
+界区 (critical region)
 </p>
 
 <ol class="org-ol">
-<li>如果不支持内核抢占, 且临界区不会被 interrupt 使用, 则不需要任何措施保护临界区</li>
+<li>如果不支持内核抢占, 且临界区不会被 interrupt 使用, 则不需要任何措施
+保护临界区</li>
 
 <li>如果支持内核抢占, 且临界区不会被 interrupt 使用, 则通过
 preempt_disable 就可以保护临界区了</li>
@@ -479,7 +500,8 @@ preempt_disable 就可以保护临界区了</li>
 通过 local_irq_disable 关中断就可以了. 因为:
 
 <ol class="org-ol">
-<li>若当前是 exception 正在使用临界区, 则关中断可以防止 interrupt 使用它</li>
+<li>若当前是 exception 正在使用临界区, 则关中断可以防止 interrupt 使
+用它</li>
 
 <li>若当前是 interrupt 正在使用临界区,
 
@@ -489,7 +511,8 @@ preempt_disable 就可以保护临界区了</li>
 已经被 CPU mask off 了).</li>
 
 <li>若其它种 irq handler 也会使用临界区, 则通过关中断可以防止其它
-interrupt 使用它. 而且 interrupt 返回前, exception 是不会执行的, 也就无法使用临界区</li>
+interrupt 使用它. 而且 interrupt 返回前, exception 是不会执行
+的, 也就无法使用临界区</li>
 </ul></li>
 </ol></li>
 </ol>
@@ -499,42 +522,44 @@ interrupt 使用它. 而且 interrupt 返回前, exception 是不会执行的, �
 </p>
 
 <p>
-但是到了多核下仅仅用上面两种方法是无法保护临界区的: 禁用内核抢占和关中断后其它 CPU 还是可以执行临界区的代码, 这时就需要 spin lock 来做额外的保护了
+但是到了多核下仅仅用上面两种方法是无法保护临界区的: 禁用内核抢占和关中
+断后其它 CPU 还是可以执行临界区的代码, 这时就需要 spin lock 来做额外的
+保护了
 </p>
 </div>
 
-<div id="outline-container-org573c4e2" class="outline-4">
-<h4 id="org573c4e2"><span class="section-number-4">1.4.1</span> spin_lock</h4>
+<div id="outline-container-org331a069" class="outline-4">
+<h4 id="org331a069"><span class="section-number-4">1.4.1</span> spin_lock</h4>
 <div class="outline-text-4" id="text-1-4-1">
 <p>
 spin_lock 是由 BUILD_LOCK_OPS 这个宏定义的
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">spin_lock</span>:
-  <span style="color: #268bd2;">preempt_disable</span><span style="color: #757575;">()</span>;
-  <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>;;<span style="color: #757575;">)</span>:
-    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>likely<span style="color: #757575;">(</span>_raw_spin_trylock<span style="color: #757575;">(</span>lock<span style="color: #757575;">)))</span>:
-      <span style="color: #859900;">break</span>;
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509; _raw_spin_trylock &#36820;&#22238; 0, &#34920;&#31034; spin lock &#26159; locked &#29366;&#24577;, &#21017;&#22312;</span>
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">while &#20013; spin, &#30452;&#21040; spin_lock-&gt;slock &#20026; 1, &#28982;&#21518;&#20877;&#27425;&#23581;&#35797;.</span>
-    <span style="color: #586e75;">// </span>
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#22312; spin &#30340;&#36807;&#31243;&#20013;, &#20869;&#26680;&#25250;&#21344;&#26159;&#24320;&#21551;&#30340;, &#22240;&#20026;&#27492;&#26102;&#20195;&#30721;&#24182;&#27809;&#26377;&#22312;&#20020;&#30028;&#21306;&#20013;.</span>
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#19968;&#26086; _raw_spin_trylock &#25104;&#21151;, &#20869;&#26680;&#25250;&#21344;&#19968;&#23450;&#26159;&#20851;&#38381;&#30340;    </span>
-    <span style="color: #268bd2;">preempt_enable</span><span style="color: #757575;">()</span>;
-    <span style="color: #859900;">while</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>spin_can_lock<span style="color: #757575;">(</span>lock<span style="color: #757575;">))</span>:
-      cpu_relax<span style="color: #757575;">()</span>;
-    <span style="color: #268bd2;">preempt_disable</span><span style="color: #757575;">()</span>;
+<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">spin_lock</span>:
+  <span style="font-weight: bold;">preempt_disable</span>();
+  <span style="font-weight: bold;">for</span> (;;):
+    <span style="font-weight: bold;">if</span> (likely(_raw_spin_trylock(lock))):
+      <span style="font-weight: bold;">break</span>;
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#33509; _raw_spin_trylock &#36820;&#22238; 0, &#34920;&#31034; spin lock &#26159; locked &#29366;&#24577;, &#21017;&#22312;</span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">while &#20013; spin, &#30452;&#21040; spin_lock-&gt;slock &#20026; 1, &#28982;&#21518;&#20877;&#27425;&#23581;&#35797;.</span>
+    <span style="font-weight: bold; font-style: italic;">// </span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#22312; spin &#30340;&#36807;&#31243;&#20013;, &#20869;&#26680;&#25250;&#21344;&#26159;&#24320;&#21551;&#30340;, &#22240;&#20026;&#27492;&#26102;&#20195;&#30721;&#24182;&#27809;&#26377;&#22312;&#20020;&#30028;&#21306;&#20013;.</span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#19968;&#26086; _raw_spin_trylock &#25104;&#21151;, &#20869;&#26680;&#25250;&#21344;&#19968;&#23450;&#26159;&#20851;&#38381;&#30340;    </span>
+    <span style="font-weight: bold;">preempt_enable</span>();
+    <span style="font-weight: bold;">while</span> (!spin_can_lock(lock)):
+      cpu_relax();
+    <span style="font-weight: bold;">preempt_disable</span>();
 </pre>
 </div>
 </div>
 
-<div id="outline-container-org08ea16c" class="outline-5">
-<h5 id="org08ea16c"><span class="section-number-5">1.4.1.1</span> UP 上的 spin_lock</h5>
+<div id="outline-container-org0aa93ce" class="outline-5">
+<h5 id="org0aa93ce"><span class="section-number-5">1.4.1.1</span> UP 上的 spin_lock</h5>
 <div class="outline-text-5" id="text-1-4-1-1">
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509; CONFIG_SMP &#20026; false, &#21363; UP, &#21017; _raw_spin_trylock &#30452;&#25509;&#36820;&#22238; 1</span>
-<span style="color: #268bd2;">#define</span> <span style="color: #268bd2;">_raw_spin_trylock</span><span style="color: #757575;">(</span><span style="color: #268bd2;">lock</span><span style="color: #757575;">)</span> <span style="color: #757575;">(((</span><span style="color: #b58900;">void</span><span style="color: #757575;">)(</span>lock<span style="color: #757575;">),</span> 1<span style="color: #757575;">))</span>
+<pre class="src src-c"><span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#33509; CONFIG_SMP &#20026; false, &#21363; UP, &#21017; _raw_spin_trylock &#30452;&#25509;&#36820;&#22238; 1</span>
+<span style="font-weight: bold;">#define</span> <span style="font-weight: bold;">_raw_spin_trylock</span>(<span style="font-weight: bold; font-style: italic;">lock</span>) (((<span style="font-weight: bold; text-decoration: underline;">void</span>)(lock), 1))
 </pre>
 </div>
 
@@ -544,34 +569,34 @@ spin_lock 是由 BUILD_LOCK_OPS 这个宏定义的
 </div>
 </div>
 
-<div id="outline-container-org21ba8bf" class="outline-5">
-<h5 id="org21ba8bf"><span class="section-number-5">1.4.1.2</span> MP 上的 spin_lock</h5>
+<div id="outline-container-org71cbb89" class="outline-5">
+<h5 id="org71cbb89"><span class="section-number-5">1.4.1.2</span> MP 上的 spin_lock</h5>
 <div class="outline-text-5" id="text-1-4-1-2">
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #586e75;">// </span><span style="color: #586e75;">&#22312; MP &#19978;, _raw_spin_trylock &#23558; spin_lock-&gt;slock &#32622;&#20026; 0, &#24182;&#36820;&#22238; slock</span>
-<span style="color: #586e75;">// </span><span style="color: #586e75;">&#30340;&#26087;&#20540;</span>
-<span style="color: #586e75;">// </span>
-<span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509;&#26087;&#20540;&#20026; 1, &#35828;&#26126; spin lock &#26159; unlocked &#29366;&#24577;, _raw_spin_trylock &#36820;&#22238; 1,</span>
-<span style="color: #586e75;">// </span><span style="color: #586e75;">&#19978;&#23618;&#30340; spin_lock &#36820;&#22238;, &#33719;&#24471; spin_lock.</span>
-<span style="color: #586e75;">// </span>
-<span style="color: #586e75;">// </span><span style="color: #586e75;">&#33509;&#26087;&#20540;&#20026; 0, &#35828;&#26126; spin lock &#26159; locked &#29366;&#24577;, _raw_spin_trylock &#36820;&#22238; 0,</span>
-<span style="color: #586e75;">// </span><span style="color: #586e75;">&#19978;&#23618; spin_lock &#32487;&#32493;&#24490;&#29615;</span>
-<span style="color: #586e75;">// </span>
-<span style="color: #b58900;">int</span> <span style="color: #268bd2;">_raw_spin_trylock</span><span style="color: #757575;">(</span><span style="color: #b58900;">spinlock_t</span> *<span style="color: #268bd2;">lock</span><span style="color: #757575;">)</span>:
-  <span style="color: #b58900;">char</span> oldval;
-  <span style="color: #859900;">__asm__</span> __volatile__<span style="color: #757575;">(</span>
-      <span style="color: #2aa198;">"xchgb %b0,%1"</span>
-      :<span style="color: #2aa198;">"=q"</span> <span style="color: #757575;">(</span>oldval<span style="color: #757575;">),</span> <span style="color: #2aa198;">"=m"</span> <span style="color: #757575;">(</span>lock-&gt;slock<span style="color: #757575;">)</span>
-      :<span style="color: #2aa198;">"0"</span> <span style="color: #757575;">(</span>0<span style="color: #757575;">)</span> : <span style="color: #2aa198;">"memory"</span><span style="color: #757575;">)</span>;
-  <span style="color: #859900;">return</span> oldval &gt; 0;
+<pre class="src src-c"><span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#22312; MP &#19978;, _raw_spin_trylock &#23558; spin_lock-&gt;slock &#32622;&#20026; 0, &#24182;&#36820;&#22238; slock</span>
+<span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#30340;&#26087;&#20540;</span>
+<span style="font-weight: bold; font-style: italic;">// </span>
+<span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#33509;&#26087;&#20540;&#20026; 1, &#35828;&#26126; spin lock &#26159; unlocked &#29366;&#24577;, _raw_spin_trylock &#36820;&#22238; 1,</span>
+<span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#19978;&#23618;&#30340; spin_lock &#36820;&#22238;, &#33719;&#24471; spin_lock.</span>
+<span style="font-weight: bold; font-style: italic;">// </span>
+<span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#33509;&#26087;&#20540;&#20026; 0, &#35828;&#26126; spin lock &#26159; locked &#29366;&#24577;, _raw_spin_trylock &#36820;&#22238; 0,</span>
+<span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#19978;&#23618; spin_lock &#32487;&#32493;&#24490;&#29615;</span>
+<span style="font-weight: bold; font-style: italic;">// </span>
+<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold;">_raw_spin_trylock</span>(<span style="font-weight: bold; text-decoration: underline;">spinlock_t</span> *<span style="font-weight: bold; font-style: italic;">lock</span>):
+  <span style="font-weight: bold; text-decoration: underline;">char</span> oldval;
+  <span style="font-weight: bold;">__asm__</span> __volatile__(
+      <span style="font-style: italic;">"xchgb %b0,%1"</span>
+      :<span style="font-style: italic;">"=q"</span> (oldval), <span style="font-style: italic;">"=m"</span> (lock-&gt;slock)
+      :<span style="font-style: italic;">"0"</span> (0) : <span style="font-style: italic;">"memory"</span>);
+  <span style="font-weight: bold;">return</span> oldval &gt; 0;
 </pre>
 </div>
 </div>
 </div>
 </div>
 
-<div id="outline-container-org5c9d81e" class="outline-4">
-<h4 id="org5c9d81e"><span class="section-number-4">1.4.2</span> spin_unlock</h4>
+<div id="outline-container-org2f30ac8" class="outline-4">
+<h4 id="org2f30ac8"><span class="section-number-4">1.4.2</span> spin_unlock</h4>
 <div class="outline-text-4" id="text-1-4-2">
 <p>
 UP 上的 spin_unlock 等同于 preempt_enable
@@ -582,20 +607,21 @@ MP 上的 spin_unlock 为:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">spin_unlock</span>:
-  movb $1<span style="color: #757575;">,</span> slp-&gt;slock
-  preempt_enable<span style="color: #757575;">()</span>;
+<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">spin_unlock</span>:
+  movb $1, slp-&gt;slock
+  preempt_enable();
 </pre>
 </div>
 </div>
 </div>
 </div>
 
-<div id="outline-container-org8daacf6" class="outline-3">
-<h3 id="org8daacf6"><span class="section-number-3">1.5</span> 信号量</h3>
+<div id="outline-container-orgcc19b92" class="outline-3">
+<h3 id="orgcc19b92"><span class="section-number-3">1.5</span> 信号量</h3>
 <div class="outline-text-3" id="text-1-5">
 <p>
-信号量 (semaphore) 是同步原语 (synchronization primitives) <sup><a id="fnr.2" class="footref" href="#fn.2">2</a></sup> 的一种, 实际上, 许多其它的同步原语 (mutex, lock, &#x2026;) 都可以用信号量来实现,
+信号量 (semaphore) 是同步原语 (synchronization primitives) <sup><a id="fnr.2" class="footref" href="#fn.2">2</a></sup> 的一
+种, 实际上, 许多其它的同步原语 (mutex, lock, &#x2026;) 都可以用信号量来实现,
 例如 mutex 可以用二元信号量 (binary semaphore) 来实现.
 </p>
 
@@ -621,113 +647,117 @@ V/up 操作
 </p>
 
 <p>
-将 count 加 1, 若 count &gt; 0, 则返回, 否则唤醒之前因为 P 操作等待的进程
+将 count 加 1, 若 count &gt; 0, 则返回, 否则唤醒之前因为 P 操作等待
+的进程
 </p></li>
 </ul>
 
 <p>
-可见 count 可以看作是 "可用资源的数量", 而负值的 count 可以看作是 "需求的资源的数量"
+可见 count 可以看作是 "可用资源的数量", 而负值的 count 可以看作是 "需
+求的资源的数量"
 </p>
 </div>
 
-<div id="outline-container-org87b950b" class="outline-4">
-<h4 id="org87b950b"><span class="section-number-4">1.5.1</span> kernel 中的 semaphore</h4>
+<div id="outline-container-org1c989b4" class="outline-4">
+<h4 id="org1c989b4"><span class="section-number-4">1.5.1</span> kernel 中的 semaphore</h4>
 <div class="outline-text-4" id="text-1-5-1">
 </div>
-<div id="outline-container-orgc67241e" class="outline-5">
-<h5 id="orgc67241e"><span class="section-number-5">1.5.1.1</span> down</h5>
+<div id="outline-container-orga303c15" class="outline-5">
+<h5 id="orga303c15"><span class="section-number-5">1.5.1.1</span> down</h5>
 <div class="outline-text-5" id="text-1-5-1-1">
 <div class="org-src-container">
-<pre class="src src-asm"><span style="color: #268bd2;">down</span>:
-    <span style="color: #859900;">movl</span> $sem-&gt;count<span style="color: #757575;">,</span><span style="color: #268bd2;">%ecx</span>
+<pre class="src src-asm"><span style="font-weight: bold;">down</span>:
+        <span style="font-weight: bold;">movl</span> $sem-&gt;count,<span style="font-weight: bold; font-style: italic;">%ecx</span>
         # &#23558; count &#20943; 1        
-    <span style="color: #859900;">lock</span><span style="color: #586e75;">; </span><span style="color: #586e75;">decl (%ecx);</span>
-        # &#33509; count &gt;= 0<span style="color: #757575;">,</span> &#36820;&#22238;         
-    <span style="color: #859900;">jns</span> 1f
-    <span style="color: #859900;">lea</span> <span style="color: #268bd2;">%ecx</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">%eax</span>
-    <span style="color: #859900;">pushl</span> <span style="color: #268bd2;">%edx</span>
-    <span style="color: #859900;">pushl</span> <span style="color: #268bd2;">%ecx</span>
-        # &#36164;&#28304;&#19981;&#21487;&#29992;<span style="color: #757575;">,</span> &#35843;&#29992;  __down &#31561;&#24453;        
-    <span style="color: #859900;">call</span> __down
-    <span style="color: #859900;">popl</span> <span style="color: #268bd2;">%ecx</span>
-    <span style="color: #859900;">popl</span> <span style="color: #268bd2;">%edx</span>
-<span style="color: #268bd2;">1</span>:
+        <span style="font-weight: bold;">lock</span><span style="font-weight: bold; font-style: italic;">; </span><span style="font-weight: bold; font-style: italic;">decl (%ecx);</span>
+        # &#33509; count &gt;= 0, &#36820;&#22238;         
+        <span style="font-weight: bold;">jns</span> 1f
+        <span style="font-weight: bold;">lea</span> <span style="font-weight: bold; font-style: italic;">%ecx</span>, <span style="font-weight: bold; font-style: italic;">%eax</span>
+        <span style="font-weight: bold;">pushl</span> <span style="font-weight: bold; font-style: italic;">%edx</span>
+        <span style="font-weight: bold;">pushl</span> <span style="font-weight: bold; font-style: italic;">%ecx</span>
+        # &#36164;&#28304;&#19981;&#21487;&#29992;, &#35843;&#29992;  __down &#31561;&#24453;        
+        <span style="font-weight: bold;">call</span> __down
+        <span style="font-weight: bold;">popl</span> <span style="font-weight: bold; font-style: italic;">%ecx</span>
+        <span style="font-weight: bold;">popl</span> <span style="font-weight: bold; font-style: italic;">%edx</span>
+<span style="font-weight: bold;">1</span>:
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #268bd2;">__down</span><span style="color: #757575;">(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">semaphore</span> * <span style="color: #268bd2;">sem</span><span style="color: #757575;">)</span>:
-  <span style="color: #859900;">struct</span> task_struct *tsk = current;
-  <span style="color: #268bd2;">DECLARE_WAITQUEUE</span><span style="color: #757575;">(</span><span style="color: #b58900;">wait</span><span style="color: #757575;">,</span> <span style="color: #b58900;">tsk</span><span style="color: #757575;">)</span>;
-  <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">long</span> <span style="color: #268bd2;">flags</span>;
+<pre class="src src-c"><span style="font-weight: bold;">__down</span>(<span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">semaphore</span> * <span style="font-weight: bold; font-style: italic;">sem</span>):
+  <span style="font-weight: bold;">struct</span> task_struct *tsk = current;
+  <span style="font-weight: bold;">DECLARE_WAITQUEUE</span>(wait, tsk);
+  <span style="font-weight: bold; text-decoration: underline;">unsigned</span> <span style="font-weight: bold; text-decoration: underline;">long</span> <span style="font-weight: bold; font-style: italic;">flags</span>;
 
   tsk-&gt;state = TASK_UNINTERRUPTIBLE;
-  add_wait_queue_exclusive_locked<span style="color: #757575;">(</span>&amp;sem-&gt;wait<span style="color: #757575;">,</span> &amp;wait<span style="color: #757575;">)</span>;
+  add_wait_queue_exclusive_locked(&amp;sem-&gt;wait, &amp;wait);
 
   sem-&gt;sleepers++;
-  <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>;;<span style="color: #757575;">)</span>:
-    <span style="color: #b58900;">int</span> sleepers = sem-&gt;sleepers;
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#23454;&#38469;&#19978;&#19979;&#38754;&#30340;&#20195;&#30721;&#31561;&#20215;&#20110;:</span>
-    <span style="color: #586e75;">// </span>
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">tmp = sem-&gt;sleeper + &amp;sem-&gt;count</span>
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">if (tmp &gt;= 0) {</span>
-    <span style="color: #586e75;">//   </span><span style="color: #586e75;">sem-&gt;sleeper --;</span>
-    <span style="color: #586e75;">//   </span><span style="color: #586e75;">break;</span>
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">}</span>
-    <span style="color: #586e75;">// </span>
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20294;&#20026;&#20102;&#21407;&#23376;&#25805;&#20316;, &#20351;&#29992;&#20102; sem-&gt;count &#20195;&#26367;&#19978;&#38754;&#30340; tmp, &#23548;&#33268;&#21518;&#38754;&#22797;&#26434;&#30340;&#36923;</span>
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36753;...    </span>
-    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>atomic_add_negative<span style="color: #757575;">(</span>sleepers - 1<span style="color: #757575;">,</span> &amp;sem-&gt;count<span style="color: #757575;">))</span>:
+  <span style="font-weight: bold;">for</span> (;;):
+    <span style="font-weight: bold; text-decoration: underline;">int</span> sleepers = sem-&gt;sleepers;
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#23454;&#38469;&#19978;&#19979;&#38754;&#30340;&#20195;&#30721;&#31561;&#20215;&#20110;:</span>
+    <span style="font-weight: bold; font-style: italic;">// </span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">tmp = sem-&gt;sleeper + &amp;sem-&gt;count</span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">if (tmp &gt;= 0) {</span>
+    <span style="font-weight: bold; font-style: italic;">//   </span><span style="font-weight: bold; font-style: italic;">sem-&gt;sleeper --;</span>
+    <span style="font-weight: bold; font-style: italic;">//   </span><span style="font-weight: bold; font-style: italic;">break;</span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">}</span>
+    <span style="font-weight: bold; font-style: italic;">// </span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#20294;&#20026;&#20102;&#21407;&#23376;&#25805;&#20316;, &#20351;&#29992;&#20102; sem-&gt;count &#20195;&#26367;&#19978;&#38754;&#30340; tmp, &#23548;&#33268;&#21518;&#38754;&#22797;&#26434;&#30340;&#36923;</span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#36753;...    </span>
+    <span style="font-weight: bold;">if</span> (!atomic_add_negative(sleepers - 1, &amp;sem-&gt;count)):
       sem-&gt;sleepers = 0;
-      <span style="color: #859900;">break</span>;
+      <span style="font-weight: bold;">break</span>;
     sem-&gt;sleepers = 1;
-    <span style="color: #268bd2;">schedule</span><span style="color: #757575;">()</span>;
+    <span style="font-weight: bold;">schedule</span>();
     tsk-&gt;state = TASK_UNINTERRUPTIBLE;
-  remove_wait_queue_locked<span style="color: #757575;">(</span>&amp;sem-&gt;wait<span style="color: #757575;">,</span> &amp;wait<span style="color: #757575;">)</span>;
+  remove_wait_queue_locked(&amp;sem-&gt;wait, &amp;wait);
   tsk-&gt;state = TASK_RUNNING;
 </pre>
 </div>
 </div>
 </div>
 
-<div id="outline-container-org24223dc" class="outline-5">
-<h5 id="org24223dc"><span class="section-number-5">1.5.1.2</span> up</h5>
+<div id="outline-container-org6d69b4c" class="outline-5">
+<h5 id="org6d69b4c"><span class="section-number-5">1.5.1.2</span> up</h5>
 <div class="outline-text-5" id="text-1-5-1-2">
 <div class="org-src-container">
-<pre class="src src-asm">        <span style="color: #859900;">movl</span> $sem-&gt;count<span style="color: #757575;">,</span><span style="color: #268bd2;">%ecx</span>
-        <span style="color: #859900;">lock</span><span style="color: #586e75;">; </span><span style="color: #586e75;">incl (%ecx)</span>
-        <span style="color: #586e75;">// </span><span style="color: #586e75;">count + 1, &#33509; count &#22823;&#20110; 0, &#36820;&#22238;. &#21542;&#21017;&#21796;&#37266;&#20043;&#21069;&#31561;&#24453;&#30340;&#36827;&#31243;        </span>
-        <span style="color: #859900;">jg</span> 1f
-        <span style="color: #859900;">lea</span> <span style="color: #268bd2;">%ecx</span><span style="color: #757575;">,</span><span style="color: #268bd2;">%eax</span>
-        <span style="color: #859900;">pushl</span> <span style="color: #268bd2;">%edx</span>
-        <span style="color: #859900;">pushl</span> <span style="color: #268bd2;">%ecx</span>
-        <span style="color: #859900;">call</span> __up
-        <span style="color: #859900;">popl</span> <span style="color: #268bd2;">%ecx</span>
-        <span style="color: #859900;">popl</span> <span style="color: #268bd2;">%edx</span>
-<span style="color: #268bd2;">1</span>:
+<pre class="src src-asm">        <span style="font-weight: bold;">movl</span> $sem-&gt;count,<span style="font-weight: bold; font-style: italic;">%ecx</span>
+        <span style="font-weight: bold;">lock</span><span style="font-weight: bold; font-style: italic;">; </span><span style="font-weight: bold; font-style: italic;">incl (%ecx)</span>
+        <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">count + 1, &#33509; count &#22823;&#20110; 0, &#36820;&#22238;. &#21542;&#21017;&#21796;&#37266;&#20043;&#21069;&#31561;&#24453;&#30340;&#36827;&#31243;        </span>
+        <span style="font-weight: bold;">jg</span> 1f
+        <span style="font-weight: bold;">lea</span> <span style="font-weight: bold; font-style: italic;">%ecx</span>,<span style="font-weight: bold; font-style: italic;">%eax</span>
+        <span style="font-weight: bold;">pushl</span> <span style="font-weight: bold; font-style: italic;">%edx</span>
+        <span style="font-weight: bold;">pushl</span> <span style="font-weight: bold; font-style: italic;">%ecx</span>
+        <span style="font-weight: bold;">call</span> __up
+        <span style="font-weight: bold;">popl</span> <span style="font-weight: bold; font-style: italic;">%ecx</span>
+        <span style="font-weight: bold;">popl</span> <span style="font-weight: bold; font-style: italic;">%edx</span>
+<span style="font-weight: bold;">1</span>:
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">__up</span>:
-  wake_up<span style="color: #757575;">(</span>&amp;sem-&gt;wait<span style="color: #757575;">)</span>;
+<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">__up</span>:
+  wake_up(&amp;sem-&gt;wait);
 </pre>
 </div>
 </div>
 </div>
 </div>
 
-<div id="outline-container-org63a42d7" class="outline-4">
-<h4 id="org63a42d7"><span class="section-number-4">1.5.2</span> 信号量与自旋锁</h4>
+<div id="outline-container-org80f82fc" class="outline-4">
+<h4 id="org80f82fc"><span class="section-number-4">1.5.2</span> 信号量与自旋锁</h4>
 <div class="outline-text-4" id="text-1-5-2">
 <p>
 spin lock 与 semaphore 都可以在 MP 上保证同步, 它们的区别是:
 </p>
 
 <ol class="org-ol">
-<li>spin lock 是通过 spin 来保证同步的, 不会发生进程切换, 所以在大多数的场景都可以使用, 但一般在不允许进程切换的场景下使用 spin lock</li>
+<li>spin lock 是通过 spin 来保证同步的, 不会发生进程切换, 所以在大多数
+的场景都可以使用, 但一般在不允许进程切换的场景下使用 spin lock</li>
 
-<li>使用 semaphore 时会发生进程切换, 代价比 spin lock 高, 在允许进程切换的场景一般优先使用 semaphore</li>
+<li>使用 semaphore 时会发生进程切换, 代价比 spin lock 高, 在允许进程切
+换的场景一般优先使用 semaphore</li>
 </ol>
 </div>
 </div>
@@ -756,8 +786,8 @@ passeren (通过), V 表示 vrijgeven (释放)
 <div id="postamble" class="status">
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
-Date: 2016-08-25 四 00:00<br />
-Last updated: 2022-01-19 三 13:25</p>
+Date: 2016-08-25 Thu 00:00<br />
+Last updated: 2022-01-19 Wed 13:25</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 

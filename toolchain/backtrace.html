@@ -3,7 +3,7 @@
 "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
-<!-- 2022-01-25 二 15:53 -->
+<!-- 2022-01-25 Tue 16:11 -->
 <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Backtrace</title>
@@ -41,19 +41,19 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#org48ecd03">1. backtrace/libcorkscrew 原理</a>
+<li><a href="#org72cd0f6">1. backtrace/libcorkscrew 原理</a>
 <ul>
-<li><a href="#org7f635ac">1.1. unwind_backtrace</a>
+<li><a href="#org7aa0289">1.1. unwind_backtrace</a>
 <ul>
-<li><a href="#org8dfd660">1.1.1. 基于 frame pointer</a></li>
-<li><a href="#org0fe4db9">1.1.2. 基于 dwarf</a></li>
-<li><a href="#org0fe9136">1.1.3. 基于代码分析</a></li>
+<li><a href="#org34811df">1.1.1. 基于 frame pointer</a></li>
+<li><a href="#orgecd87a0">1.1.2. 基于 dwarf</a></li>
+<li><a href="#org6052892">1.1.3. 基于代码分析</a></li>
 </ul>
 </li>
-<li><a href="#org6a20b58">1.2. find_symbol</a></li>
-<li><a href="#orge87d87b">1.3. misc</a>
+<li><a href="#org40f75de">1.2. find_symbol</a></li>
+<li><a href="#org67567cb">1.3. misc</a>
 <ul>
-<li><a href="#org02fb578">1.3.1. 使用了 omit-frame-pointer 同时又调用了 alloca 的代码如何 unwindle</a></li>
+<li><a href="#orgc56d2c0">1.3.1. 使用了 omit-frame-pointer 同时又调用了 alloca 的代码如何 unwindle</a></li>
 </ul>
 </li>
 </ul>
@@ -62,12 +62,12 @@
 </div>
 </div>
 
-<div id="outline-container-org48ecd03" class="outline-2">
-<h2 id="org48ecd03"><span class="section-number-2">1</span> backtrace/libcorkscrew 原理</h2>
+<div id="outline-container-org72cd0f6" class="outline-2">
+<h2 id="org72cd0f6"><span class="section-number-2">1</span> backtrace/libcorkscrew 原理</h2>
 <div class="outline-text-2" id="text-1">
 </div>
-<div id="outline-container-org7f635ac" class="outline-3">
-<h3 id="org7f635ac"><span class="section-number-3">1.1</span> unwind_backtrace</h3>
+<div id="outline-container-org7aa0289" class="outline-3">
+<h3 id="org7aa0289"><span class="section-number-3">1.1</span> unwind_backtrace</h3>
 <div class="outline-text-3" id="text-1-1">
 <p>
 stack unwindling 的目的是为了得到保存在每个 stack frame 里的 ra (return addr),
@@ -75,19 +75,19 @@ stack unwindling 的目的是为了得到保存在每个 stack frame 里的 ra (
 </p>
 </div>
 
-<div id="outline-container-org8dfd660" class="outline-4">
-<h4 id="org8dfd660"><span class="section-number-4">1.1.1</span> 基于 frame pointer</h4>
+<div id="outline-container-org34811df" class="outline-4">
+<h4 id="org34811df"><span class="section-number-4">1.1.1</span> 基于 frame pointer</h4>
 <div class="outline-text-4" id="text-1-1-1">
 <p>
 当编译器没有使用 omit-frame-pointer 时, 函数调用时大约会这样:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-mips"><span style="color: #859900;">sw</span>      <span style="color: #b58900;">$fp</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">0</span><span style="color: #757575;">(</span><span style="color: #b58900;">$sp</span><span style="color: #757575;">)</span>         <span style="color: #586e75;"># &#20445;&#23384; fp</span>
-<span style="color: #859900;">move</span>    <span style="color: #b58900;">$fp</span><span style="color: #757575;">,</span> <span style="color: #b58900;">$sp</span>            <span style="color: #586e75;"># fp &#25351;&#21521;&#24403;&#21069; stack base</span>
-<span style="color: #859900;">sub</span>     <span style="color: #b58900;">$sp</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">12</span>             <span style="color: #586e75;"># &#20998;&#37197; stack frame</span>
-<span style="color: #859900;">sw</span>      <span style="color: #b58900;">$ra</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">-4</span><span style="color: #757575;">(</span><span style="color: #b58900;">$fp</span><span style="color: #757575;">)</span>        <span style="color: #586e75;"># &#20445;&#23384; ra, &#20063;&#21487;&#20197;&#29992; sw $ra, 4($sp)</span>
-<span style="color: #859900;">sw</span>      <span style="color: #b58900;">$s1</span><span style="color: #757575;">,</span> <span style="color: #268bd2; font-weight: bold;">-8</span><span style="color: #757575;">(</span><span style="color: #b58900;">$fp</span><span style="color: #757575;">)</span>        <span style="color: #586e75;"># &#20445;&#23384; callee saved reg, &#20063;&#21487;&#20197;&#29992; sw $ra, 0($sp)</span>
+<pre class="src src-mips">sw      $fp, 0($sp)         # 保存 fp
+move    $fp, $sp            # fp 指向当前 stack base
+sub     $sp, 12             # 分配 stack frame
+sw      $ra, -4($fp)        # 保存 ra, 也可以用 sw $ra, 4($sp)
+sw      $s1, -8($fp)        # 保存 callee saved reg, 也可以用 sw $ra, 0($sp)
 </pre>
 </div>
 
@@ -104,17 +104,17 @@ stack unwindling 的目的是为了得到保存在每个 stack frame 里的 ra (
 </div>
 
 
-<div id="outline-container-org0fe4db9" class="outline-4">
-<h4 id="org0fe4db9"><span class="section-number-4">1.1.2</span> 基于 dwarf</h4>
+<div id="outline-container-orgecd87a0" class="outline-4">
+<h4 id="orgecd87a0"><span class="section-number-4">1.1.2</span> 基于 dwarf</h4>
 <div class="outline-text-4" id="text-1-1-2">
 <p>
-<a href="linux/dwarf.html#org039b956">debug_frame 与 frame unwinding</a>
+<a href="linux/dwarf.html#org66e0300">debug_frame 与 frame unwinding</a>
 </p>
 </div>
 </div>
 
-<div id="outline-container-org0fe9136" class="outline-4">
-<h4 id="org0fe9136"><span class="section-number-4">1.1.3</span> 基于代码分析</h4>
+<div id="outline-container-org6052892" class="outline-4">
+<h4 id="org6052892"><span class="section-number-4">1.1.3</span> 基于代码分析</h4>
 <div class="outline-text-4" id="text-1-1-3">
 <p>
 当 elf 既没有使用 frame pointer, 又没有提供 eh_debug 时, 如何进行 stack
@@ -141,75 +141,75 @@ ra</li>
 
 
 <div class="org-src-container">
-<pre class="src src-C"><span style="color: #859900;">static</span> <span style="color: #b58900;">ssize_t</span> <span style="color: #268bd2;">unwind_backtrace_common</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">memory_t</span>* <span style="color: #268bd2;">memory</span><span style="color: #757575;">,</span>
-                                       <span style="color: #859900;">const</span> <span style="color: #b58900;">map_info_t</span>* <span style="color: #268bd2;">map_info_list</span><span style="color: #757575;">,</span>
-                                       <span style="color: #b58900;">unwind_state_t</span>* <span style="color: #268bd2;">state</span><span style="color: #757575;">,</span>
-                                       <span style="color: #b58900;">backtrace_frame_t</span>* <span style="color: #268bd2;">backtrace</span><span style="color: #757575;">,</span>
-                                       <span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">ignore_depth</span><span style="color: #757575;">,</span> <span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">max_depth</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
-    <span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">ignored_frames</span> = 0;
-    <span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">returned_frames</span> = 0;
+<pre class="src src-C"><span style="font-weight: bold;">static</span> <span style="font-weight: bold; text-decoration: underline;">ssize_t</span> <span style="font-weight: bold;">unwind_backtrace_common</span>(<span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">memory_t</span>* <span style="font-weight: bold; font-style: italic;">memory</span>,
+                                       <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">map_info_t</span>* <span style="font-weight: bold; font-style: italic;">map_info_list</span>,
+                                       <span style="font-weight: bold; text-decoration: underline;">unwind_state_t</span>* <span style="font-weight: bold; font-style: italic;">state</span>,
+                                       <span style="font-weight: bold; text-decoration: underline;">backtrace_frame_t</span>* <span style="font-weight: bold; font-style: italic;">backtrace</span>,
+                                       <span style="font-weight: bold; text-decoration: underline;">size_t</span> <span style="font-weight: bold; font-style: italic;">ignore_depth</span>, <span style="font-weight: bold; text-decoration: underline;">size_t</span> <span style="font-weight: bold; font-style: italic;">max_depth</span>) {
+    <span style="font-weight: bold; text-decoration: underline;">size_t</span> <span style="font-weight: bold; font-style: italic;">ignored_frames</span> = 0;
+    <span style="font-weight: bold; text-decoration: underline;">size_t</span> <span style="font-weight: bold; font-style: italic;">returned_frames</span> = 0;
 
-    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span><span style="color: #b58900;">size_t</span> <span style="color: #268bd2;">index</span> = 0; returned_frames &lt; max_depth; index++<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
-        <span style="color: #b58900;">uintptr_t</span> <span style="color: #268bd2;">pc</span> = state-&gt;pc;
+    <span style="font-weight: bold;">for</span> (<span style="font-weight: bold; text-decoration: underline;">size_t</span> <span style="font-weight: bold; font-style: italic;">index</span> = 0; returned_frames &lt; max_depth; index++) {
+        <span style="font-weight: bold; text-decoration: underline;">uintptr_t</span> <span style="font-weight: bold; font-style: italic;">pc</span> = state-&gt;pc;
 
-        frame = add_backtrace_entry<span style="color: #757575;">(</span>pc<span style="color: #757575;">,</span> backtrace<span style="color: #757575;">,</span> ignore_depth<span style="color: #757575;">,</span> max_depth<span style="color: #757575;">,</span>
-                                    &amp;ignored_frames<span style="color: #757575;">,</span> &amp;returned_frames<span style="color: #757575;">)</span>;
+        frame = add_backtrace_entry(pc, backtrace, ignore_depth, max_depth,
+                                    &amp;ignored_frames, &amp;returned_frames);
 
-        <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>addr = state-&gt;pc; maxcheck-- &gt; 0 &amp;&amp; <span style="color: #b58900; font-weight: bold;">!</span>found_start; addr -= 4<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
-            <span style="color: #b58900;">uint32_t</span> <span style="color: #268bd2;">op</span>;
-            <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>try_get_word<span style="color: #757575;">(</span>memory<span style="color: #757575;">,</span> addr<span style="color: #757575;">,</span> &amp;op<span style="color: #757575;">))</span> <span style="color: #859900;">break</span>;
+        <span style="font-weight: bold;">for</span> (addr = state-&gt;pc; maxcheck-- &gt; 0 &amp;&amp; !found_start; addr -= 4) {
+            <span style="font-weight: bold; text-decoration: underline;">uint32_t</span> <span style="font-weight: bold; font-style: italic;">op</span>;
+            <span style="font-weight: bold;">if</span> (!try_get_word(memory, addr, &amp;op)) <span style="font-weight: bold;">break</span>;
 
-            <span style="color: #586e75;">/* </span><span style="color: #586e75;">gcc &#32534;&#35793;&#22120;&#20250;&#29983;&#25104;&#19979;&#38754;&#30340;&#20195;&#30721;:</span>
-<span style="color: #586e75;">             * sw ra, imm(sp)</span>
-<span style="color: #586e75;">             * addiu sp, imm</span>
-<span style="color: #586e75;">             * &#21363;&#21453;&#21521;&#26597;&#25214;&#25351;&#20196;&#26102;, &#20250;&#20808;&#25214;&#21040; 0x27bd0000, &#20877;&#25214;&#21040; 0xafbf0000</span>
-<span style="color: #586e75;">             *</span><span style="color: #586e75;"> */</span>
-            <span style="color: #859900;">switch</span> <span style="color: #757575;">(</span>op &amp; 0xffff0000<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
-                <span style="color: #859900;">case</span> 0x27bd0000:  <span style="color: #586e75;">// </span><span style="color: #586e75;">addiu sp, imm</span>
-                <span style="color: #757575;">{</span>
-                    <span style="color: #586e75;">// </span><span style="color: #586e75;">looking for stack being decremented</span>
-                    <span style="color: #b58900;">int32_t</span> <span style="color: #268bd2;">immediate</span> = <span style="color: #757575;">((((</span><span style="color: #b58900;">int</span><span style="color: #757575;">)</span>op<span style="color: #757575;">)</span> &lt;&lt; 16<span style="color: #757575;">)</span> &gt;&gt; 16<span style="color: #757575;">)</span>;
-                    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>immediate &lt; 0<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+            <span style="font-weight: bold; font-style: italic;">/* </span><span style="font-weight: bold; font-style: italic;">gcc &#32534;&#35793;&#22120;&#20250;&#29983;&#25104;&#19979;&#38754;&#30340;&#20195;&#30721;:</span>
+<span style="font-weight: bold; font-style: italic;">             * sw ra, imm(sp)</span>
+<span style="font-weight: bold; font-style: italic;">             * addiu sp, imm</span>
+<span style="font-weight: bold; font-style: italic;">             * &#21363;&#21453;&#21521;&#26597;&#25214;&#25351;&#20196;&#26102;, &#20250;&#20808;&#25214;&#21040; 0x27bd0000, &#20877;&#25214;&#21040; 0xafbf0000</span>
+<span style="font-weight: bold; font-style: italic;">             *</span><span style="font-weight: bold; font-style: italic;"> */</span>
+            <span style="font-weight: bold;">switch</span> (op &amp; 0xffff0000) {
+                <span style="font-weight: bold;">case</span> 0x27bd0000:  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">addiu sp, imm</span>
+                {
+                    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">looking for stack being decremented</span>
+                    <span style="font-weight: bold; text-decoration: underline;">int32_t</span> <span style="font-weight: bold; font-style: italic;">immediate</span> = ((((<span style="font-weight: bold; text-decoration: underline;">int</span>)op) &lt;&lt; 16) &gt;&gt; 16);
+                    <span style="font-weight: bold;">if</span> (immediate &lt; 0) {
                         stack_size = -immediate;
-                        found_start = <span style="color: #268bd2; font-weight: bold;">true</span>;
-                        ALOGV<span style="color: #757575;">(</span><span style="color: #2aa198;">"@0x%08x: found stack adjustment=%d\n"</span><span style="color: #757575;">,</span> addr<span style="color: #757575;">,</span>
-                              stack_size<span style="color: #757575;">)</span>;
-                    <span style="color: #757575;">}</span>
-                <span style="color: #757575;">}</span> <span style="color: #859900;">break</span>;
-                <span style="color: #859900;">case</span> 0xafbf0000:  <span style="color: #586e75;">// </span><span style="color: #586e75;">sw ra, imm(sp)</span>
-                    ra_offset = <span style="color: #757575;">((((</span><span style="color: #b58900;">int</span><span style="color: #757575;">)</span>op<span style="color: #757575;">)</span> &lt;&lt; 16<span style="color: #757575;">)</span> &gt;&gt; 16<span style="color: #757575;">)</span>;
-                    ALOGV<span style="color: #757575;">(</span><span style="color: #2aa198;">"@0x%08x: found ra offset=%d\n"</span><span style="color: #757575;">,</span> addr<span style="color: #757575;">,</span> ra_offset<span style="color: #757575;">)</span>;
-                    <span style="color: #859900;">break</span>;
-                <span style="color: #859900;">default</span>:
-                    <span style="color: #859900;">break</span>;
-            <span style="color: #757575;">}</span>
-        <span style="color: #757575;">}</span>
+                        found_start = <span style="font-weight: bold; text-decoration: underline;">true</span>;
+                        ALOGV(<span style="font-style: italic;">"@0x%08x: found stack adjustment=%d\n"</span>, addr,
+                              stack_size);
+                    }
+                } <span style="font-weight: bold;">break</span>;
+                <span style="font-weight: bold;">case</span> 0xafbf0000:  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">sw ra, imm(sp)</span>
+                    ra_offset = ((((<span style="font-weight: bold; text-decoration: underline;">int</span>)op) &lt;&lt; 16) &gt;&gt; 16);
+                    ALOGV(<span style="font-style: italic;">"@0x%08x: found ra offset=%d\n"</span>, addr, ra_offset);
+                    <span style="font-weight: bold;">break</span>;
+                <span style="font-weight: bold;">default</span>:
+                    <span style="font-weight: bold;">break</span>;
+            }
+        }
 
-        <span style="color: #586e75;">/* </span><span style="color: #7cfc00;">NOTE</span><span style="color: #586e75;">: &#21521;&#21518;&#25195;&#25551;&#25351;&#20196;&#26102;&#20250;&#20462;&#27491; state-&gt;sp, &#28982;&#21518;&#20877;&#35835;&#21462; ra_offset &#22788;&#30340;&#20540;</span><span style="color: #586e75;"> */</span>
-        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>ra_offset<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
-            <span style="color: #b58900;">uint32_t</span> <span style="color: #268bd2;">next_ra</span>;
-            <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>try_get_word<span style="color: #757575;">(</span>memory<span style="color: #757575;">,</span> state-&gt;sp + ra_offset<span style="color: #757575;">,</span> &amp;next_ra<span style="color: #757575;">))</span> <span style="color: #859900;">break</span>;
+        <span style="font-weight: bold; font-style: italic;">/* </span><span style="font-weight: bold; font-style: italic;">NOTE: &#21521;&#21518;&#25195;&#25551;&#25351;&#20196;&#26102;&#20250;&#20462;&#27491; state-&gt;sp, &#28982;&#21518;&#20877;&#35835;&#21462; ra_offset &#22788;&#30340;&#20540;</span><span style="font-weight: bold; font-style: italic;"> */</span>
+        <span style="font-weight: bold;">if</span> (ra_offset) {
+            <span style="font-weight: bold; text-decoration: underline;">uint32_t</span> <span style="font-weight: bold; font-style: italic;">next_ra</span>;
+            <span style="font-weight: bold;">if</span> (!try_get_word(memory, state-&gt;sp + ra_offset, &amp;next_ra)) <span style="font-weight: bold;">break</span>;
             state-&gt;ra = next_ra;
-        <span style="color: #757575;">}</span>
+        }
 
-        <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>stack_size<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
-            <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>frame<span style="color: #757575;">)</span> frame-&gt;stack_size = stack_size;
+        <span style="font-weight: bold;">if</span> (stack_size) {
+            <span style="font-weight: bold;">if</span> (frame) frame-&gt;stack_size = stack_size;
             state-&gt;sp += stack_size;
-        <span style="color: #757575;">}</span>
+        }
 
         state-&gt;pc = state-&gt;ra;
-    <span style="color: #757575;">}</span>
+    }
 
-    <span style="color: #859900;">return</span> returned_frames;
-<span style="color: #757575;">}</span>
+    <span style="font-weight: bold;">return</span> returned_frames;
+}
 </pre>
 </div>
 </div>
 </div>
 </div>
 
-<div id="outline-container-org6a20b58" class="outline-3">
-<h3 id="org6a20b58"><span class="section-number-3">1.2</span> find_symbol</h3>
+<div id="outline-container-org40f75de" class="outline-3">
+<h3 id="org40f75de"><span class="section-number-3">1.2</span> find_symbol</h3>
 <div class="outline-text-3" id="text-1-2">
 <p>
 stack unwindling 确定了每个 frame 对应的 pc, 通过查找 elf 符号表 (symtab,
@@ -224,7 +224,7 @@ dynsym) 来确定每个 frame 对应哪个函数.
 例如:
 </p>
 
-<pre class="example" id="org6b8b023">
+<pre class="example" id="orga3e2ec6">
 62: 0000000000001160    22 FUNC    GLOBAL DEFAULT   16 main
 </pre>
 
@@ -233,13 +233,13 @@ dynsym) 来确定每个 frame 对应哪个函数.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-C"><span style="color: #b58900;">void</span> <span style="color: #268bd2;">find_symbol_ptrace</span><span style="color: #757575;">(</span><span style="color: #859900;">const</span> <span style="color: #b58900;">ptrace_context_t</span>* <span style="color: #268bd2;">context</span><span style="color: #757575;">,</span> <span style="color: #b58900;">uintptr_t</span> <span style="color: #268bd2;">addr</span><span style="color: #757575;">,</span>
-                        <span style="color: #859900;">const</span> <span style="color: #b58900;">map_info_t</span>** <span style="color: #268bd2;">out_map_info</span><span style="color: #757575;">,</span>
-                        <span style="color: #859900;">const</span> <span style="color: #b58900;">symbol_t</span>** <span style="color: #268bd2;">out_symbol</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
-    <span style="color: #859900;">const</span> <span style="color: #b58900;">map_info_t</span>* <span style="color: #268bd2;">mi</span> = find_map_info<span style="color: #757575;">(</span>context-&gt;map_info_list<span style="color: #757575;">,</span> addr<span style="color: #757575;">)</span>;
+<pre class="src src-C"><span style="font-weight: bold; text-decoration: underline;">void</span> <span style="font-weight: bold;">find_symbol_ptrace</span>(<span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">ptrace_context_t</span>* <span style="font-weight: bold; font-style: italic;">context</span>, <span style="font-weight: bold; text-decoration: underline;">uintptr_t</span> <span style="font-weight: bold; font-style: italic;">addr</span>,
+                        <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">map_info_t</span>** <span style="font-weight: bold; font-style: italic;">out_map_info</span>,
+                        <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">symbol_t</span>** <span style="font-weight: bold; font-style: italic;">out_symbol</span>) {
+    <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">map_info_t</span>* <span style="font-weight: bold; font-style: italic;">mi</span> = find_map_info(context-&gt;map_info_list, addr);
 
-    symbol = find_symbol<span style="color: #757575;">(</span>data-&gt;symbol_table<span style="color: #757575;">,</span> addr - mi-&gt;start<span style="color: #757575;">)</span>;
-<span style="color: #757575;">}</span>
+    symbol = find_symbol(data-&gt;symbol_table, addr - mi-&gt;start);
+}
 </pre>
 </div>
 
@@ -253,18 +253,18 @@ dynsym) 来确定每个 frame 对应哪个函数.
 </div>
 
 
-<div id="outline-container-orge87d87b" class="outline-3">
-<h3 id="orge87d87b"><span class="section-number-3">1.3</span> misc</h3>
+<div id="outline-container-org67567cb" class="outline-3">
+<h3 id="org67567cb"><span class="section-number-3">1.3</span> misc</h3>
 <div class="outline-text-3" id="text-1-3">
 </div>
-<div id="outline-container-org02fb578" class="outline-4">
-<h4 id="org02fb578"><span class="section-number-4">1.3.1</span> 使用了 omit-frame-pointer 同时又调用了 alloca 的代码如何 unwindle</h4>
+<div id="outline-container-orgc56d2c0" class="outline-4">
+<h4 id="orgc56d2c0"><span class="section-number-4">1.3.1</span> 使用了 omit-frame-pointer 同时又调用了 alloca 的代码如何 unwindle</h4>
 <div class="outline-text-4" id="text-1-3-1">
 <p>
 使用了 alloca 的代码会忽略 omit-frame-pointer&#x2026;
 </p>
 
-<pre class="example" id="org20e221f">
+<pre class="example" id="orgb983eed">
 $&gt; cat test.c
 void foo() {
   alloca(0xff);
@@ -315,8 +315,8 @@ $&gt; objdump -d test.o
 <div id="postamble" class="status">
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
-Date: 2020-11-26 四 00:00<br />
-Last updated: 2022-01-24 一 19:27</p>
+Date: 2020-11-26 Thu 00:00<br />
+Last updated: 2022-01-24 Mon 19:27</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 

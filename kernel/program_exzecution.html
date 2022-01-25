@@ -3,7 +3,7 @@
 "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
-<!-- 2022-01-25 二 15:54 -->
+<!-- 2022-01-25 Tue 16:12 -->
 <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Linux Kernel: Program Exzecution</title>
@@ -41,102 +41,102 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#orgf6d3871">1. Linux Kernel: Program Exzecution</a>
+<li><a href="#orga5ee897">1. Linux Kernel: Program Exzecution</a>
 <ul>
-<li><a href="#orgc929912">1.1. do_execve</a>
+<li><a href="#orgf12fd5f">1.1. do_execve</a>
 <ul>
-<li><a href="#orgd2a7747">1.1.1. copy_strings</a></li>
-<li><a href="#org879b615">1.1.2. search_binary_handler</a></li>
+<li><a href="#orgb817f28">1.1.1. copy_strings</a></li>
+<li><a href="#org87739da">1.1.2. search_binary_handler</a></li>
 </ul>
 </li>
-<li><a href="#org71ddc81">1.2. ELF 的加载</a>
+<li><a href="#org1a01d53">1.2. ELF 的加载</a>
 <ul>
-<li><a href="#org0d5d4e8">1.2.1. load_elf_binary</a></li>
-<li><a href="#org5eda3b7">1.2.2. setup_arg_pages</a></li>
-<li><a href="#orgc061bb9">1.2.3. create_elf_tables</a></li>
-<li><a href="#orgc32dea3">1.2.4. load_elf_interp</a></li>
-<li><a href="#org3dfcf27">1.2.5. ELF 程序引用 argc, argv</a></li>
+<li><a href="#orgbacc9a6">1.2.1. load_elf_binary</a></li>
+<li><a href="#orgafc80ca">1.2.2. setup_arg_pages</a></li>
+<li><a href="#orgd3e837b">1.2.3. create_elf_tables</a></li>
+<li><a href="#org060c466">1.2.4. load_elf_interp</a></li>
+<li><a href="#org480ada8">1.2.5. ELF 程序引用 argc, argv</a></li>
 </ul>
 </li>
-<li><a href="#org90474d7">1.3. script 的加载</a></li>
-<li><a href="#org84e4342">1.4. 用户自定义加载</a></li>
+<li><a href="#orgeda5a3a">1.3. script 的加载</a></li>
+<li><a href="#orgdc4fc4b">1.4. 用户自定义加载</a></li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
-<div id="outline-container-orgf6d3871" class="outline-2">
-<h2 id="orgf6d3871"><span class="section-number-2">1</span> Linux Kernel: Program Exzecution</h2>
+<div id="outline-container-orga5ee897" class="outline-2">
+<h2 id="orga5ee897"><span class="section-number-2">1</span> Linux Kernel: Program Exzecution</h2>
 <div class="outline-text-2" id="text-1">
 </div>
-<div id="outline-container-orgc929912" class="outline-3">
-<h3 id="orgc929912"><span class="section-number-3">1.1</span> do_execve</h3>
+<div id="outline-container-orgf12fd5f" class="outline-3">
+<h3 id="orgf12fd5f"><span class="section-number-3">1.1</span> do_execve</h3>
 <div class="outline-text-3" id="text-1-1">
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #268bd2;">do_execve</span> <span style="color: #757575;">(</span><span style="color: #b58900;">filename</span><span style="color: #757575;">,</span> <span style="color: #b58900;">argv</span><span style="color: #757575;">,</span> <span style="color: #b58900;">envp</span><span style="color: #757575;">,</span> <span style="color: #b58900;">regs</span><span style="color: #757575;">)</span>:
-  <span style="color: #859900;">struct</span> linux_binprm *bprm = kmalloc<span style="color: #757575;">(</span><span style="color: #859900;">sizeof</span><span style="color: #757575;">(</span>*bprm<span style="color: #757575;">),</span> GFP_KERNEL<span style="color: #757575;">)</span>;
-  <span style="color: #268bd2;">memset</span><span style="color: #757575;">(</span><span style="color: #b58900;">bprm</span><span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> <span style="color: #859900;">sizeof</span><span style="color: #757575;">(</span>*bprm<span style="color: #757575;">))</span>;
-  file = open_exec<span style="color: #757575;">(</span>filename<span style="color: #757575;">)</span>;
-    <span style="color: #268bd2;">path_lookup</span><span style="color: #757575;">(</span><span style="color: #b58900;">name</span><span style="color: #757575;">,</span> LOOKUP_FOLLOW|LOOKUP_OPEN<span style="color: #757575;">,</span> &amp;nd<span style="color: #757575;">)</span>;
-    <span style="color: #268bd2;">permission</span><span style="color: #757575;">(</span><span style="color: #b58900;">inode</span><span style="color: #757575;">,</span> <span style="color: #b58900;">MAY_EXEC</span><span style="color: #757575;">,</span> &amp;nd<span style="color: #757575;">)</span>;
-    <span style="color: #859900;">return</span> dentry_open<span style="color: #757575;">(</span>nd.dentry<span style="color: #757575;">,</span> nd.mnt<span style="color: #757575;">,</span> O_RDONLY<span style="color: #757575;">)</span>;
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">sched_exec &#21644; cpu load balance &#26377;&#20851;, &#20855;&#20307;&#21442;&#32771;</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">[[file:process_scheduling.org::*push%20task][push task]]</span>
-  <span style="color: #268bd2;">sched_exec</span><span style="color: #757575;">()</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">MAX_ARG_PAGES &#40664;&#35748;&#20026; 32, &#34920;&#31034;&#32473; argv &#21644; env &#39044;&#30041;&#26368;&#22810; 32 &#20010; page, &#33509;</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">page &#20026; 4k, &#21017;&#26368;&#32456;&#39044;&#30041; 128K</span>
-  <span style="color: #586e75;">//</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21518;&#32493; argv &#21644; env &#38656;&#35201;&#20174; user &#22797;&#21046;&#21040; bprm-&gt;page &#20013;, &#22797;&#21046;&#26102;&#38656;&#35201;&#26681;&#25454;</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">bprm-&gt;p &#25351;&#31034;&#22797;&#21046;&#21040; page &#30340;&#20160;&#20040;&#20301;&#32622;</span>
-  bprm-&gt;p = PAGE_SIZE*MAX_ARG_PAGES-<span style="color: #859900;">sizeof</span><span style="color: #757575;">(</span><span style="color: #b58900;">void</span> *<span style="color: #757575;">)</span>;
+<pre class="src src-c"><span style="font-weight: bold;">do_execve</span> (filename, argv, envp, regs):
+  <span style="font-weight: bold;">struct</span> linux_binprm *bprm = kmalloc(<span style="font-weight: bold;">sizeof</span>(*bprm), GFP_KERNEL);
+  <span style="font-weight: bold;">memset</span>(bprm, 0, <span style="font-weight: bold;">sizeof</span>(*bprm));
+  file = open_exec(filename);
+    <span style="font-weight: bold;">path_lookup</span>(name, LOOKUP_FOLLOW|LOOKUP_OPEN, &amp;nd);
+    <span style="font-weight: bold;">permission</span>(inode, MAY_EXEC, &amp;nd);
+    <span style="font-weight: bold;">return</span> dentry_open(nd.dentry, nd.mnt, O_RDONLY);
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">sched_exec &#21644; cpu load balance &#26377;&#20851;, &#20855;&#20307;&#21442;&#32771;</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">[[file:process_scheduling.org::*push%20task][push task]]</span>
+  <span style="font-weight: bold;">sched_exec</span>()
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">MAX_ARG_PAGES &#40664;&#35748;&#20026; 32, &#34920;&#31034;&#32473; argv &#21644; env &#39044;&#30041;&#26368;&#22810; 32 &#20010; page, &#33509;</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">page &#20026; 4k, &#21017;&#26368;&#32456;&#39044;&#30041; 128K</span>
+  <span style="font-weight: bold; font-style: italic;">//</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#21518;&#32493; argv &#21644; env &#38656;&#35201;&#20174; user &#22797;&#21046;&#21040; bprm-&gt;page &#20013;, &#22797;&#21046;&#26102;&#38656;&#35201;&#26681;&#25454;</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">bprm-&gt;p &#25351;&#31034;&#22797;&#21046;&#21040; page &#30340;&#20160;&#20040;&#20301;&#32622;</span>
+  bprm-&gt;p = PAGE_SIZE*MAX_ARG_PAGES-<span style="font-weight: bold;">sizeof</span>(<span style="font-weight: bold; text-decoration: underline;">void</span> *);
 
   bprm-&gt;file = file;
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">bprm-&gt;filename &#21644; bprm-&gt;interp &#19968;&#33324;&#26159;&#19968;&#33268;&#30340;, &#20294;&#26377;&#20363;&#22806;:</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20363;&#22914;&#23545;&#20110;&#21160;&#24577;&#38142;&#25509;&#30340; elf &#26469;&#35828;, filename &#20026; elf &#26412;&#36523;, interp &#20026; elf &#25351;</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#31034;&#30340; interp, &#20363;&#22914; /lib/ld-linux.so.2</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">bprm-&gt;filename &#21644; bprm-&gt;interp &#19968;&#33324;&#26159;&#19968;&#33268;&#30340;, &#20294;&#26377;&#20363;&#22806;:</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#20363;&#22914;&#23545;&#20110;&#21160;&#24577;&#38142;&#25509;&#30340; elf &#26469;&#35828;, filename &#20026; elf &#26412;&#36523;, interp &#20026; elf &#25351;</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#31034;&#30340; interp, &#20363;&#22914; /lib/ld-linux.so.2</span>
   bprm-&gt;filename = filename;
   bprm-&gt;interp = filename;
-  bprm-&gt;mm = mm_alloc<span style="color: #757575;">()</span>;
+  bprm-&gt;mm = mm_alloc();
 
-  bprm-&gt;argc = count<span style="color: #757575;">(</span>argv<span style="color: #757575;">)</span>;
-  bprm-&gt;envc = count<span style="color: #757575;">(</span>envp<span style="color: #757575;">)</span>;
+  bprm-&gt;argc = count(argv);
+  bprm-&gt;envc = count(envp);
 
-  <span style="color: #268bd2;">prepare_binprm</span><span style="color: #757575;">(</span><span style="color: #b58900;">bprm</span><span style="color: #757575;">)</span>
+  <span style="font-weight: bold;">prepare_binprm</span>(bprm)
     mode = inode-&gt;i_mode;
     bprm-&gt;e_uid = current-&gt;euid;
     bprm-&gt;e_gid = current-&gt;egid;
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">setuid</span>
-    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>mode &amp; S_ISUID<span style="color: #757575;">)</span>:
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">setuid</span>
+    <span style="font-weight: bold;">if</span> (mode &amp; S_ISUID):
       bprm-&gt;e_uid = inode-&gt;i_uid;
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">setgid</span>
-    <span style="color: #859900;">if</span> <span style="color: #757575;">((</span>mode &amp; <span style="color: #757575;">(</span>S_ISGID | S_IXGRP<span style="color: #757575;">))</span> == <span style="color: #757575;">(</span>S_ISGID | S_IXGRP<span style="color: #757575;">))</span>:
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">setgid</span>
+    <span style="font-weight: bold;">if</span> ((mode &amp; (S_ISGID | S_IXGRP)) == (S_ISGID | S_IXGRP)):
       bprm-&gt;e_gid = inode-&gt;i_gid;
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#23558;&#25991;&#20214;&#24320;&#22836;&#30340; BINPRM_BUF_SIZE (128) &#23383;&#33410;&#30340;&#25968;&#25454;&#35835;&#21040; bprm-&gt;buf &#20013;, &#21518;</span>
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#32493;&#21508;&#20010; linux_binfmt &#20250;&#36890;&#36807; bprm-&gt;buf &#26469;&#30830;&#35748;&#23427;&#26159;&#21542;&#25903;&#25345;&#36825;&#31181;&#21487;&#25191;&#34892;&#25991;&#20214;&#26684;&#24335;</span>
-    <span style="color: #859900;">return</span> kernel_read<span style="color: #757575;">(</span>bprm-&gt;file<span style="color: #757575;">,</span>0<span style="color: #757575;">,</span>bprm-&gt;buf<span style="color: #757575;">,</span>BINPRM_BUF_SIZE<span style="color: #757575;">)</span>;
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#23558;&#25991;&#20214;&#24320;&#22836;&#30340; BINPRM_BUF_SIZE (128) &#23383;&#33410;&#30340;&#25968;&#25454;&#35835;&#21040; bprm-&gt;buf &#20013;, &#21518;</span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#32493;&#21508;&#20010; linux_binfmt &#20250;&#36890;&#36807; bprm-&gt;buf &#26469;&#30830;&#35748;&#23427;&#26159;&#21542;&#25903;&#25345;&#36825;&#31181;&#21487;&#25191;&#34892;&#25991;&#20214;&#26684;&#24335;</span>
+    <span style="font-weight: bold;">return</span> kernel_read(bprm-&gt;file,0,bprm-&gt;buf,BINPRM_BUF_SIZE);
 
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">copy_strings &#23558; argv, envp &#20197;&#21450; filename &#22797;&#21046;&#21040; bprm-&gt;page &#20013;, &#21518;&#32493;</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36825;&#20123;&#20869;&#23481;&#23558;&#36890;&#36807;&#35774;&#32622;&#39029;&#34920;&#30340;&#26041;&#24335;&#20986;&#29616;&#22312;&#36827;&#31243;&#22320;&#22336;&#31354;&#38388;&#20013; stack &#20043;&#19978;&#30340;&#37096;&#20998;</span>
-  <span style="color: #586e75;">//</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36890;&#36807; copy_strings &#30340;&#20195;&#30721;, &#21487;&#20197;&#30475;&#21040;&#26368;&#32456;&#30340;&#29992;&#25143;&#31354;&#38388;&#24067;&#23616;&#19978;&#20174;&#39640;&#21040;&#20302;&#30340;&#39034;&#24207;</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20026;:</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">1. filename</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">2. env</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">3. argv</span>
-  copy_strings_kernel<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> &amp;bprm-&gt;filename<span style="color: #757575;">,</span> bprm<span style="color: #757575;">)</span>;
-  <span style="color: #268bd2;">copy_strings</span><span style="color: #757575;">(</span>bprm-&gt;envc<span style="color: #757575;">,</span> <span style="color: #b58900;">envp</span><span style="color: #757575;">,</span> <span style="color: #b58900;">bprm</span><span style="color: #757575;">)</span>;
-  <span style="color: #268bd2;">copy_strings</span><span style="color: #757575;">(</span>bprm-&gt;argc<span style="color: #757575;">,</span> <span style="color: #b58900;">argv</span><span style="color: #757575;">,</span> <span style="color: #b58900;">bprm</span><span style="color: #757575;">)</span>;
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">copy_strings &#23558; argv, envp &#20197;&#21450; filename &#22797;&#21046;&#21040; bprm-&gt;page &#20013;, &#21518;&#32493;</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#36825;&#20123;&#20869;&#23481;&#23558;&#36890;&#36807;&#35774;&#32622;&#39029;&#34920;&#30340;&#26041;&#24335;&#20986;&#29616;&#22312;&#36827;&#31243;&#22320;&#22336;&#31354;&#38388;&#20013; stack &#20043;&#19978;&#30340;&#37096;&#20998;</span>
+  <span style="font-weight: bold; font-style: italic;">//</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#36890;&#36807; copy_strings &#30340;&#20195;&#30721;, &#21487;&#20197;&#30475;&#21040;&#26368;&#32456;&#30340;&#29992;&#25143;&#31354;&#38388;&#24067;&#23616;&#19978;&#20174;&#39640;&#21040;&#20302;&#30340;&#39034;&#24207;</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#20026;:</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">1. filename</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">2. env</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">3. argv</span>
+  copy_strings_kernel(1, &amp;bprm-&gt;filename, bprm);
+  <span style="font-weight: bold;">copy_strings</span>(bprm-&gt;envc, envp, bprm);
+  <span style="font-weight: bold;">copy_strings</span>(bprm-&gt;argc, argv, bprm);
 
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">execve &#26368;&#20851;&#38190;&#30340;&#37096;&#20998;: &#36941;&#21382;&#25152;&#26377; linux_binfmt, &#26399;&#26395;&#26576;&#19968;&#20010; binfmt &#21487;&#20197;&#25903;</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25345;&#36825;&#20010;&#21487;&#25191;&#34892;&#25991;&#20214;&#24182;&#23436;&#25104;&#21518;&#32493;&#30340;&#36807;&#31243;(&#20363;&#22914;&#25991;&#20214;&#20013;&#21508;&#20010; section &#30340;&#21152;&#36733;,</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#31243;&#24207;&#20837;&#21475;&#30340;&#30830;&#23450;&#31561;)</span>
-  <span style="color: #268bd2;">search_binary_handler</span><span style="color: #757575;">(</span><span style="color: #b58900;">bprm</span><span style="color: #757575;">,</span><span style="color: #b58900;">regs</span><span style="color: #757575;">)</span>;
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">execve &#26368;&#20851;&#38190;&#30340;&#37096;&#20998;: &#36941;&#21382;&#25152;&#26377; linux_binfmt, &#26399;&#26395;&#26576;&#19968;&#20010; binfmt &#21487;&#20197;&#25903;</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#25345;&#36825;&#20010;&#21487;&#25191;&#34892;&#25991;&#20214;&#24182;&#23436;&#25104;&#21518;&#32493;&#30340;&#36807;&#31243;(&#20363;&#22914;&#25991;&#20214;&#20013;&#21508;&#20010; section &#30340;&#21152;&#36733;,</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#31243;&#24207;&#20837;&#21475;&#30340;&#30830;&#23450;&#31561;)</span>
+  <span style="font-weight: bold;">search_binary_handler</span>(bprm,regs);
 </pre>
 </div>
 </div>
 
-<div id="outline-container-orgd2a7747" class="outline-4">
-<h4 id="orgd2a7747"><span class="section-number-4">1.1.1</span> copy_strings</h4>
+<div id="outline-container-orgb817f28" class="outline-4">
+<h4 id="orgb817f28"><span class="section-number-4">1.1.1</span> copy_strings</h4>
 <div class="outline-text-4" id="text-1-1-1">
 <p>
 do_execve 的一个重要的任务是根据 user mode 的 argv, envp 设置好新进程的
@@ -148,63 +148,66 @@ argv 和 envp.
 </p>
 
 
-<div id="orgf440121" class="figure">
+<div id="org6fa7a15" class="figure">
 <p><img src="../extra/kernel_argv_envp.png" alt="kernel_argv_envp.png" />
 </p>
 </div>
 
 <p>
 这个布局并不是一步到位的: 在 do_execve 的早期, 比如 copy_strings 阶段,
-只会将 argv, envp 复制到 bprm-&gt;page 中, 但复制时就会考虑最终的布局, 以便后面可以通过设置页表完成最后的布局
+只会将 argv, envp 复制到 bprm-&gt;page 中, 但复制时就会考虑最终的布局, 以
+便后面可以通过设置页表完成最后的布局
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #268bd2;">copy_strings</span><span style="color: #757575;">(</span><span style="color: #b58900;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">argv</span><span style="color: #757575;">,</span> <span style="color: #b58900;">bprm</span><span style="color: #757575;">)</span>:
-  <span style="color: #859900;">while</span> <span style="color: #757575;">(</span>argc-- &gt; 0<span style="color: #757575;">)</span>:
-    <span style="color: #b58900;">char</span> __user *str;
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">str &#20195;&#34920; argv &#20013;&#30340;&#19968;&#39033;</span>
-    <span style="color: #268bd2;">get_user</span><span style="color: #757575;">(</span><span style="color: #b58900;">str</span><span style="color: #757575;">,</span> argv+argc<span style="color: #757575;">)</span>;
-    len = strnlen_user<span style="color: #757575;">(</span>str<span style="color: #757575;">,</span> bprm-&gt;p<span style="color: #757575;">)</span>
+<pre class="src src-c"><span style="font-weight: bold;">copy_strings</span>(argc, argv, bprm):
+  <span style="font-weight: bold;">while</span> (argc-- &gt; 0):
+    <span style="font-weight: bold; text-decoration: underline;">char</span> __user *str;
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">str &#20195;&#34920; argv &#20013;&#30340;&#19968;&#39033;</span>
+    <span style="font-weight: bold;">get_user</span>(str, argv+argc);
+    len = strnlen_user(str, bprm-&gt;p)
 
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#35843;&#25972; bprm-&gt;p, &#32473; str &#30041;&#20986;&#31354;&#38388;, &#21487;&#20197;&#30475;&#21040;, argv[1] &#23545;&#24212;&#30340; bprm-&gt;p &#27604;</span>
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">argv[0] &#30340;&#26356;&#22823;, &#32780;&#21518;&#38754; copy &#21040; bprm-&gt;page &#26102;&#20351;&#29992; bprm-&gt;p &#20570;&#20026;</span>
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">offset, &#25152;&#20197; argv[0] &#23558;&#20301;&#20110; bprm-&gt;page &#30340;&#39640;&#22320;&#22336;, &#32780;&#26368;&#32456; bprm-&gt;page</span>
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20250;&#34987;&#36890;&#36807;&#26144;&#23556;&#39029;&#34920;&#30340;&#26041;&#24335; "&#24179;&#31227;" &#21040; stack &#39030;&#31471;, &#25152;&#20197; argv[1] &#25351;&#21521;&#30340;&#22320;</span>
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#22336;&#26368;&#32456;&#20250;&#22312; argv[0] &#20043;&#19978;</span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#35843;&#25972; bprm-&gt;p, &#32473; str &#30041;&#20986;&#31354;&#38388;, &#21487;&#20197;&#30475;&#21040;, argv[1] &#23545;&#24212;&#30340; bprm-&gt;p &#27604;</span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">argv[0] &#30340;&#26356;&#22823;, &#32780;&#21518;&#38754; copy &#21040; bprm-&gt;page &#26102;&#20351;&#29992; bprm-&gt;p &#20570;&#20026;</span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">offset, &#25152;&#20197; argv[0] &#23558;&#20301;&#20110; bprm-&gt;page &#30340;&#39640;&#22320;&#22336;, &#32780;&#26368;&#32456; bprm-&gt;page</span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#20250;&#34987;&#36890;&#36807;&#26144;&#23556;&#39029;&#34920;&#30340;&#26041;&#24335; "&#24179;&#31227;" &#21040; stack &#39030;&#31471;, &#25152;&#20197; argv[1] &#25351;&#21521;&#30340;&#22320;</span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#22336;&#26368;&#32456;&#20250;&#22312; argv[0] &#20043;&#19978;</span>
     bprm-&gt;p -= len;
     pos = bprm-&gt;p;
 
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#23558;&#23545;&#24212;&#30340; argv &#22797;&#21046;&#21040;&#21512;&#36866;&#30340; bprm-&gt;page[i] &#30340;&#21512;&#36866;&#30340;&#20301;&#32622; (&#26681;&#25454; bprm-&gt;p)</span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#23558;&#23545;&#24212;&#30340; argv &#22797;&#21046;&#21040;&#21512;&#36866;&#30340; bprm-&gt;page[i] &#30340;&#21512;&#36866;&#30340;&#20301;&#32622; (&#26681;&#25454; bprm-&gt;p)</span>
     offset = pos % PAGE_SIZE;
     i = pos/PAGE_SIZE;
     page = bprm-&gt;page[i];
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25353;&#38656;&#35201;&#20998;&#37197;&#26032;&#30340; page &#24182;&#29992; kmap &#26144;&#23556;, &#20197;&#20415;&#21518;&#38754;&#22797;&#21046;&#21040;&#36825;&#20010; page</span>
-    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>page<span style="color: #757575;">)</span>:
-      page = alloc_page<span style="color: #757575;">(</span>GFP_HIGHUSER<span style="color: #757575;">)</span>;
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#25353;&#38656;&#35201;&#20998;&#37197;&#26032;&#30340; page &#24182;&#29992; kmap &#26144;&#23556;, &#20197;&#20415;&#21518;&#38754;&#22797;&#21046;&#21040;&#36825;&#20010; page</span>
+    <span style="font-weight: bold;">if</span> (!page):
+      page = alloc_page(GFP_HIGHUSER);
       bprm-&gt;page[i] = page;
-    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>page != kmapped_page<span style="color: #757575;">)</span>:
-      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>kmapped_page<span style="color: #757575;">)</span>:
-        kunmap<span style="color: #757575;">(</span>kmapped_page<span style="color: #757575;">)</span>;
+    <span style="font-weight: bold;">if</span> (page != kmapped_page):
+      <span style="font-weight: bold;">if</span> (kmapped_page):
+        kunmap(kmapped_page);
       kmapped_page = page;
-      kaddr = kmap<span style="color: #757575;">(</span>kmapped_page<span style="color: #757575;">)</span>;
-    <span style="color: #268bd2;">copy_from_user</span><span style="color: #757575;">(</span>kaddr+offset<span style="color: #757575;">,</span> <span style="color: #b58900;">str</span><span style="color: #757575;">,</span> <span style="color: #b58900;">bytes_to_copy</span><span style="color: #757575;">)</span>;
+      kaddr = kmap(kmapped_page);
+    <span style="font-weight: bold;">copy_from_user</span>(kaddr+offset, str, bytes_to_copy);
 </pre>
 </div>
 
 <p>
-针对 argv, envp 的 copy_strings 完成后, bprm-&gt;page 中的布局已经与上面图中的 "Environment Strings" 和 "Command-line arguments" 是一致的了,
+针对 argv, envp 的 copy_strings 完成后, bprm-&gt;page 中的布局已经与上面
+图中的 "Environment Strings" 和 "Command-line arguments" 是一致的了,
 后续会把它们 "平移" 到最终的用户空间布局上, 并且需要设置好 envp[],
 argv[] 和 argc
 </p>
 </div>
 </div>
 
-<div id="outline-container-org879b615" class="outline-4">
-<h4 id="org879b615"><span class="section-number-4">1.1.2</span> search_binary_handler</h4>
+<div id="outline-container-org87739da" class="outline-4">
+<h4 id="org87739da"><span class="section-number-4">1.1.2</span> search_binary_handler</h4>
 <div class="outline-text-4" id="text-1-1-2">
 <p>
 search_binary_handler 是 do_execve 最重要的一步, 它所做的并不仅仅是
-"search": 当 search_binary_handler 返回后, 整个用户地址空间都已经设置好了, pt_regs 上 esp, eip 的值已经被设置为正确的值, 当 do_execve
+"search": 当 search_binary_handler 返回后, 整个用户地址空间都已经设置
+好了, pt_regs 上 esp, eip 的值已经被设置为正确的值, 当 do_execve
 syscall 返回后, 进程就会从可执行文件的入口开始执行了
 </p>
 
@@ -228,12 +231,12 @@ kernel 通过 register_binfmt 完成 linux_binfmt 的注册
 </p>
 </div>
 
-<div id="outline-container-orgce2998c" class="outline-5">
-<h5 id="orgce2998c"><span class="section-number-5">1.1.2.1</span> register_binfmt</h5>
+<div id="outline-container-orgd26b810" class="outline-5">
+<h5 id="orgd26b810"><span class="section-number-5">1.1.2.1</span> register_binfmt</h5>
 <div class="outline-text-5" id="text-1-1-2-1">
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #268bd2;">register_binfmt</span><span style="color: #757575;">(</span><span style="color: #b58900;">fmt</span><span style="color: #757575;">)</span>:
-  <span style="color: #859900;">struct</span> linux_binfmt ** tmp = &amp;formats;
+<pre class="src src-c"><span style="font-weight: bold;">register_binfmt</span>(fmt):
+  <span style="font-weight: bold;">struct</span> linux_binfmt ** tmp = &amp;formats;
   fmt-&gt;next = formats;
   formats = fmt;
 </pre>
@@ -246,18 +249,18 @@ formats 链表的末尾
 </div>
 </div>
 
-<div id="outline-container-orgb372495" class="outline-5">
-<h5 id="orgb372495"><span class="section-number-5">1.1.2.2</span> linux_binfmt</h5>
+<div id="outline-container-org4482134" class="outline-5">
+<h5 id="org4482134"><span class="section-number-5">1.1.2.2</span> linux_binfmt</h5>
 <div class="outline-text-5" id="text-1-1-2-2">
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #859900;">struct</span> <span style="color: #b58900;">linux_binfmt</span> <span style="color: #757575;">{</span>
-    <span style="color: #859900;">struct</span> <span style="color: #b58900;">linux_binfmt</span> * <span style="color: #268bd2;">next</span>;
-    <span style="color: #859900;">struct</span> <span style="color: #b58900;">module</span> *<span style="color: #268bd2;">module</span>;
-    <span style="color: #b58900;">int</span> <span style="color: #757575;">(</span>*<span style="color: #268bd2;">load_binary</span><span style="color: #757575;">)(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">linux_binprm</span> *<span style="color: #757575;">,</span> <span style="color: #859900;">struct</span>  <span style="color: #b58900;">pt_regs</span> * <span style="color: #268bd2;">regs</span><span style="color: #757575;">)</span>;
-    <span style="color: #b58900;">int</span> <span style="color: #757575;">(</span>*<span style="color: #268bd2;">load_shlib</span><span style="color: #757575;">)(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">file</span> *<span style="color: #757575;">)</span>;
-    <span style="color: #b58900;">int</span> <span style="color: #757575;">(</span>*<span style="color: #268bd2;">core_dump</span><span style="color: #757575;">)(</span><span style="color: #b58900;">long</span> <span style="color: #268bd2;">signr</span><span style="color: #757575;">,</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">pt_regs</span> * <span style="color: #268bd2;">regs</span><span style="color: #757575;">,</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">file</span> * <span style="color: #268bd2;">file</span><span style="color: #757575;">)</span>;
-    <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">long</span> <span style="color: #268bd2;">min_coredump</span>; <span style="color: #586e75;">/* </span><span style="color: #586e75;">minimal dump size</span><span style="color: #586e75;"> */</span>
-<span style="color: #757575;">}</span>;
+<pre class="src src-c"><span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">linux_binfmt</span> {
+    <span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">linux_binfmt</span> * <span style="font-weight: bold; font-style: italic;">next</span>;
+    <span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">module</span> *<span style="font-weight: bold; font-style: italic;">module</span>;
+    <span style="font-weight: bold; text-decoration: underline;">int</span> (*<span style="font-weight: bold;">load_binary</span>)(<span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">linux_binprm</span> *, <span style="font-weight: bold;">struct</span>  <span style="font-weight: bold; text-decoration: underline;">pt_regs</span> * <span style="font-weight: bold; font-style: italic;">regs</span>);
+    <span style="font-weight: bold; text-decoration: underline;">int</span> (*<span style="font-weight: bold;">load_shlib</span>)(<span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">file</span> *);
+    <span style="font-weight: bold; text-decoration: underline;">int</span> (*<span style="font-weight: bold;">core_dump</span>)(<span style="font-weight: bold; text-decoration: underline;">long</span> <span style="font-weight: bold; font-style: italic;">signr</span>, <span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">pt_regs</span> * <span style="font-weight: bold; font-style: italic;">regs</span>, <span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">file</span> * <span style="font-weight: bold; font-style: italic;">file</span>);
+    <span style="font-weight: bold; text-decoration: underline;">unsigned</span> <span style="font-weight: bold; text-decoration: underline;">long</span> <span style="font-weight: bold; font-style: italic;">min_coredump</span>; <span style="font-weight: bold; font-style: italic;">/* </span><span style="font-weight: bold; font-style: italic;">minimal dump size</span><span style="font-weight: bold; font-style: italic;"> */</span>
+};
 </pre>
 </div>
 
@@ -269,16 +272,16 @@ load_binary 成功为止.
 </div>
 </div>
 
-<div id="outline-container-org9980b6d" class="outline-5">
-<h5 id="org9980b6d"><span class="section-number-5">1.1.2.3</span> search_binary_handler</h5>
+<div id="outline-container-org6a66a21" class="outline-5">
+<h5 id="org6a66a21"><span class="section-number-5">1.1.2.3</span> search_binary_handler</h5>
 <div class="outline-text-5" id="text-1-1-2-3">
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #268bd2;">search_binary_handler</span><span style="color: #757575;">(</span><span style="color: #b58900;">bprm</span><span style="color: #757575;">,</span><span style="color: #b58900;">regs</span><span style="color: #757575;">)</span>:
-  <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>fmt = formats ; fmt ; fmt = fmt-&gt;next<span style="color: #757575;">)</span>:
-    <span style="color: #b58900;">int</span> <span style="color: #757575;">(</span>*fn<span style="color: #757575;">)(</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">linux_binprm</span> *<span style="color: #757575;">,</span> <span style="color: #859900;">struct</span> <span style="color: #b58900;">pt_regs</span> *<span style="color: #757575;">)</span> = fmt-&gt;load_binary;
-    retval = fn<span style="color: #757575;">(</span>bprm<span style="color: #757575;">,</span> regs<span style="color: #757575;">)</span>;
-    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>retval &gt;= 0<span style="color: #757575;">)</span>:
-      <span style="color: #859900;">return</span> retval;
+<pre class="src src-c"><span style="font-weight: bold;">search_binary_handler</span>(bprm,regs):
+  <span style="font-weight: bold;">for</span> (fmt = formats ; fmt ; fmt = fmt-&gt;next):
+    <span style="font-weight: bold; text-decoration: underline;">int</span> (*fn)(<span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">linux_binprm</span> *, <span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">pt_regs</span> *) = fmt-&gt;load_binary;
+    retval = fn(bprm, regs);
+    <span style="font-weight: bold;">if</span> (retval &gt;= 0):
+      <span style="font-weight: bold;">return</span> retval;
 </pre>
 </div>
 
@@ -290,88 +293,88 @@ load_binary 成功为止.
 </div>
 </div>
 
-<div id="outline-container-org71ddc81" class="outline-3">
-<h3 id="org71ddc81"><span class="section-number-3">1.2</span> ELF 的加载</h3>
+<div id="outline-container-org1a01d53" class="outline-3">
+<h3 id="org1a01d53"><span class="section-number-3">1.2</span> ELF 的加载</h3>
 <div class="outline-text-3" id="text-1-2">
 <p>
 load_elf_binary 是 elf_format 对应的 load_binary 实现
 </p>
 </div>
 
-<div id="outline-container-org0d5d4e8" class="outline-4">
-<h4 id="org0d5d4e8"><span class="section-number-4">1.2.1</span> load_elf_binary</h4>
+<div id="outline-container-orgbacc9a6" class="outline-4">
+<h4 id="orgbacc9a6"><span class="section-number-4">1.2.1</span> load_elf_binary</h4>
 <div class="outline-text-4" id="text-1-2-1">
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #268bd2;">load_elf_binary</span><span style="color: #757575;">(</span><span style="color: #b58900;">bprm</span><span style="color: #757575;">,</span> <span style="color: #b58900;">regs</span><span style="color: #757575;">)</span>:
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21160;&#24577;&#38142;&#25509;&#30340; elf &#31243;&#24207;&#20250;&#25351;&#23450; interpreter, &#21017;&#31243;&#24207;&#30340;&#20837;&#21475;&#19981;&#20877;&#26159; elf &#26412;&#36523;&#30340;</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">e_entry, &#32780;&#26159; interpreter &#30340; e_entry</span>
-  loc-&gt;elf_ex = *<span style="color: #757575;">((</span><span style="color: #859900;">struct</span> <span style="color: #b58900;">elfhdr</span> *<span style="color: #757575;">)</span> bprm-&gt;buf<span style="color: #757575;">)</span>;
+<pre class="src src-c"><span style="font-weight: bold;">load_elf_binary</span>(bprm, regs):
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#21160;&#24577;&#38142;&#25509;&#30340; elf &#31243;&#24207;&#20250;&#25351;&#23450; interpreter, &#21017;&#31243;&#24207;&#30340;&#20837;&#21475;&#19981;&#20877;&#26159; elf &#26412;&#36523;&#30340;</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">e_entry, &#32780;&#26159; interpreter &#30340; e_entry</span>
+  loc-&gt;elf_ex = *((<span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">elfhdr</span> *) bprm-&gt;buf);
 
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#30475; elf &#20013;&#26159;&#21542;&#21253;&#21547; PT_INTERP section (.interp)</span>
-  <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>i = 0; i &lt; loc-&gt;elf_ex.e_phnum; i++<span style="color: #757575;">)</span>:
-    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>elf_ppnt-&gt;p_type == PT_INTERP<span style="color: #757575;">)</span>:
-      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#35835;&#21462; interp &#30340;&#21517;&#23383; (&#20363;&#22914; /lib/ld-linux.so.2) &#20445;&#23384;&#22312;</span>
-      <span style="color: #586e75;">// </span><span style="color: #586e75;">elf_interpreter &#20013;</span>
-      elf_interpreter = <span style="color: #757575;">(</span><span style="color: #b58900;">char</span> *<span style="color: #757575;">)</span> <span style="color: #268bd2;">kmalloc</span><span style="color: #757575;">(</span>elf_ppnt-&gt;p_filesz<span style="color: #757575;">,</span> <span style="color: #b58900;">GFP_KERNEL</span><span style="color: #757575;">)</span>;
-      <span style="color: #268bd2;">kernel_read</span><span style="color: #757575;">(</span>bprm-&gt;file<span style="color: #757575;">,</span> elf_ppnt-&gt;p_offset<span style="color: #757575;">,</span><span style="color: #b58900;">elf_interpreter</span><span style="color: #757575;">,</span> elf_ppnt-&gt;p_filesz<span style="color: #757575;">)</span>;
-      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25171;&#24320; interpreter &#25991;&#20214;</span>
-      interpreter = open_exec<span style="color: #757575;">(</span>elf_interpreter<span style="color: #757575;">)</span>;
-      <span style="color: #268bd2;">kernel_read</span><span style="color: #757575;">(</span><span style="color: #b58900;">interpreter</span><span style="color: #757575;">,</span> 0<span style="color: #757575;">,</span> bprm-&gt;buf<span style="color: #757575;">,</span> <span style="color: #b58900;">BINPRM_BUF_SIZE</span><span style="color: #757575;">)</span>;
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#30475; elf &#20013;&#26159;&#21542;&#21253;&#21547; PT_INTERP section (.interp)</span>
+  <span style="font-weight: bold;">for</span> (i = 0; i &lt; loc-&gt;elf_ex.e_phnum; i++):
+    <span style="font-weight: bold;">if</span> (elf_ppnt-&gt;p_type == PT_INTERP):
+      <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#35835;&#21462; interp &#30340;&#21517;&#23383; (&#20363;&#22914; /lib/ld-linux.so.2) &#20445;&#23384;&#22312;</span>
+      <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">elf_interpreter &#20013;</span>
+      elf_interpreter = (<span style="font-weight: bold; text-decoration: underline;">char</span> *) <span style="font-weight: bold;">kmalloc</span>(elf_ppnt-&gt;p_filesz, GFP_KERNEL);
+      <span style="font-weight: bold;">kernel_read</span>(bprm-&gt;file, elf_ppnt-&gt;p_offset,elf_interpreter, elf_ppnt-&gt;p_filesz);
+      <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#25171;&#24320; interpreter &#25991;&#20214;</span>
+      interpreter = open_exec(elf_interpreter);
+      <span style="font-weight: bold;">kernel_read</span>(interpreter, 0, bprm-&gt;buf, BINPRM_BUF_SIZE);
 
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#26432;&#27515;&#20854;&#23427;&#32447;&#31243;, &#25353;&#29031; man 2 execve &#30340;&#35828;&#27861;:</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">All threads other than</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">the calling thread are destroyed during an execve().</span>
-  <span style="color: #268bd2;">flush_old_exec</span><span style="color: #757575;">(</span><span style="color: #b58900;">bprm</span><span style="color: #757575;">)</span>;
-    <span style="color: #268bd2;">de_thread</span><span style="color: #757575;">(</span><span style="color: #b58900;">current</span><span style="color: #757575;">)</span>;
-      <span style="color: #268bd2;">zap_other_threads</span><span style="color: #757575;">(</span><span style="color: #b58900;">current</span><span style="color: #757575;">)</span>;
-        <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>t = next_thread<span style="color: #757575;">(</span>p<span style="color: #757575;">)</span>; t != p; t = next_thread<span style="color: #757575;">(</span>t<span style="color: #757575;">))</span>:
-          sigaddset<span style="color: #757575;">(</span>&amp;t-&gt;pending.signal<span style="color: #757575;">,</span> SIGKILL<span style="color: #757575;">)</span>;
-          <span style="color: #268bd2;">signal_wake_up</span><span style="color: #757575;">(</span><span style="color: #b58900;">t</span><span style="color: #757575;">,</span> 1<span style="color: #757575;">)</span>;
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36873;&#25321; mmap layout, &#21442;&#32771; [[file:memory.org::*get_unmapped_area][get_unmapped_area]]</span>
-  <span style="color: #268bd2;">arch_pick_mmap_layout</span><span style="color: #757575;">(</span>current-&gt;mm<span style="color: #757575;">)</span>;
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#23558;&#20445;&#23384;&#30528; argv &#21644; envp &#30340; bprm-&gt;page "&#24179;&#31227;" &#21040;&#26368;&#32456;&#30340;&#29992;&#25143;&#22320;&#22336;&#31354;&#38388;&#20013;</span>
-  <span style="color: #268bd2;">setup_arg_pages</span><span style="color: #757575;">(</span><span style="color: #b58900;">bprm</span><span style="color: #757575;">,</span> <span style="color: #b58900;">STACK_TOP</span><span style="color: #757575;">,</span> <span style="color: #b58900;">executable_stack</span><span style="color: #757575;">)</span>;
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#26432;&#27515;&#20854;&#23427;&#32447;&#31243;, &#25353;&#29031; man 2 execve &#30340;&#35828;&#27861;:</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">All threads other than</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">the calling thread are destroyed during an execve().</span>
+  <span style="font-weight: bold;">flush_old_exec</span>(bprm);
+    <span style="font-weight: bold;">de_thread</span>(current);
+      <span style="font-weight: bold;">zap_other_threads</span>(current);
+        <span style="font-weight: bold;">for</span> (t = next_thread(p); t != p; t = next_thread(t)):
+          sigaddset(&amp;t-&gt;pending.signal, SIGKILL);
+          <span style="font-weight: bold;">signal_wake_up</span>(t, 1);
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#36873;&#25321; mmap layout, &#21442;&#32771; [[file:memory.org::*get_unmapped_area][get_unmapped_area]]</span>
+  <span style="font-weight: bold;">arch_pick_mmap_layout</span>(current-&gt;mm);
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#23558;&#20445;&#23384;&#30528; argv &#21644; envp &#30340; bprm-&gt;page "&#24179;&#31227;" &#21040;&#26368;&#32456;&#30340;&#29992;&#25143;&#22320;&#22336;&#31354;&#38388;&#20013;</span>
+  <span style="font-weight: bold;">setup_arg_pages</span>(bprm, STACK_TOP, executable_stack);
 
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36825;&#20010;&#20540;&#21518;&#38754;&#20250;&#34987;&#35774;&#32622;&#20026; regs-&gt;esp, &#20174;&#32780;&#25104;&#20026;&#26032;&#36827;&#31243;&#30340;&#26632;&#39030;</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#36825;&#20010;&#20540;&#21518;&#38754;&#20250;&#34987;&#35774;&#32622;&#20026; regs-&gt;esp, &#20174;&#32780;&#25104;&#20026;&#26032;&#36827;&#31243;&#30340;&#26632;&#39030;</span>
   current-&gt;mm-&gt;start_stack = bprm-&gt;p;
 
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25226; elf &#20013;&#25152;&#26377;&#20026; PT_LOAD &#30340; segment &#36890;&#36807; mmap &#26144;&#23556;&#36827;&#26469;, PT_LOAD &#30340;</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">segment &#20027;&#35201;&#21253;&#25324;: text, init, rodata, data, bss &#31561; section</span>
-  <span style="color: #859900;">for</span><span style="color: #757575;">(</span>i = 0<span style="color: #757575;">,</span> elf_ppnt = elf_phdata; i &lt; loc-&gt;elf_ex.e_phnum; i++<span style="color: #757575;">,</span> elf_ppnt++<span style="color: #757575;">)</span>:
-    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>elf_ppnt-&gt;p_type != PT_LOAD<span style="color: #757575;">)</span>: <span style="color: #859900;">continue</span>;
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#35774;&#32622; mmap &#30340; prot &#21644; flags</span>
-    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>elf_ppnt-&gt;p_flags &amp; PF_R<span style="color: #757575;">)</span> elf_prot |= PROT_READ;
-    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>elf_ppnt-&gt;p_flags &amp; PF_W<span style="color: #757575;">)</span> elf_prot |= PROT_WRITE;
-    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>elf_ppnt-&gt;p_flags &amp; PF_X<span style="color: #757575;">)</span> elf_prot |= PROT_EXEC;
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#25226; elf &#20013;&#25152;&#26377;&#20026; PT_LOAD &#30340; segment &#36890;&#36807; mmap &#26144;&#23556;&#36827;&#26469;, PT_LOAD &#30340;</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">segment &#20027;&#35201;&#21253;&#25324;: text, init, rodata, data, bss &#31561; section</span>
+  <span style="font-weight: bold;">for</span>(i = 0, elf_ppnt = elf_phdata; i &lt; loc-&gt;elf_ex.e_phnum; i++, elf_ppnt++):
+    <span style="font-weight: bold;">if</span> (elf_ppnt-&gt;p_type != PT_LOAD): <span style="font-weight: bold;">continue</span>;
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#35774;&#32622; mmap &#30340; prot &#21644; flags</span>
+    <span style="font-weight: bold;">if</span> (elf_ppnt-&gt;p_flags &amp; PF_R) elf_prot |= PROT_READ;
+    <span style="font-weight: bold;">if</span> (elf_ppnt-&gt;p_flags &amp; PF_W) elf_prot |= PROT_WRITE;
+    <span style="font-weight: bold;">if</span> (elf_ppnt-&gt;p_flags &amp; PF_X) elf_prot |= PROT_EXEC;
 
     elf_flags = MAP_PRIVATE|MAP_DENYWRITE|MAP_EXECUTABLE;
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#38656;&#35201; mmap &#21040;&#30340;&#22320;&#22336;, &#32534;&#35793;&#26102;&#30001;&#38142;&#25509;&#22120;&#33050;&#26412; (ld script) &#25351;&#23450;, &#20889;&#20837;&#22312;</span>
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">elf &#25991;&#20214;&#20013;</span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#38656;&#35201; mmap &#21040;&#30340;&#22320;&#22336;, &#32534;&#35793;&#26102;&#30001;&#38142;&#25509;&#22120;&#33050;&#26412; (ld script) &#25351;&#23450;, &#20889;&#20837;&#22312;</span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">elf &#25991;&#20214;&#20013;</span>
     vaddr = elf_ppnt-&gt;p_vaddr;
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">mmap</span>
-    <span style="color: #268bd2;">elf_map</span><span style="color: #757575;">(</span>bprm-&gt;file<span style="color: #757575;">,</span> load_bias + vaddr<span style="color: #757575;">,</span> <span style="color: #b58900;">elf_ppnt</span><span style="color: #757575;">,</span> <span style="color: #b58900;">elf_prot</span><span style="color: #757575;">,</span> <span style="color: #b58900;">elf_flags</span><span style="color: #757575;">)</span>;
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">mmap</span>
+    <span style="font-weight: bold;">elf_map</span>(bprm-&gt;file, load_bias + vaddr, elf_ppnt, elf_prot, elf_flags);
 
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#21160;&#24577;&#32534;&#35793;&#30340; elf &#31243;&#24207;&#25351;&#23450;&#20102; interpreter, &#25152;&#20197;&#20854;&#20837;&#21475;&#19981;&#20877;&#26159; e_entry, &#32780;</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#26159; interpreter &#23545;&#24212;&#30340; e_entry</span>
-  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>elf_interpreter<span style="color: #757575;">)</span>:
-    elf_entry = load_elf_interp<span style="color: #757575;">(</span>&amp;loc-&gt;interp_elf_ex<span style="color: #757575;">,</span>interpreter<span style="color: #757575;">,</span>&amp;interp_load_addr<span style="color: #757575;">)</span>;
-  <span style="color: #859900;">else</span>:
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#38745;&#24577;&#32534;&#35793;&#30340;&#31243;&#24207;, &#30452;&#25509;&#20351;&#29992; e_entry &#20570;&#20026;&#20837;&#21475;, e_entry &#22312; x86_32 &#19979;&#19968;</span>
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#33324;&#22266;&#23450;&#20026; 0x80482c0, &#23545;&#24212;&#20110; crt1.o &#20013;&#30340; __start &#20989;&#25968;, &#30001; ld script</span>
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25351;&#23450;        </span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#21160;&#24577;&#32534;&#35793;&#30340; elf &#31243;&#24207;&#25351;&#23450;&#20102; interpreter, &#25152;&#20197;&#20854;&#20837;&#21475;&#19981;&#20877;&#26159; e_entry, &#32780;</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#26159; interpreter &#23545;&#24212;&#30340; e_entry</span>
+  <span style="font-weight: bold;">if</span> (elf_interpreter):
+    elf_entry = load_elf_interp(&amp;loc-&gt;interp_elf_ex,interpreter,&amp;interp_load_addr);
+  <span style="font-weight: bold;">else</span>:
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#38745;&#24577;&#32534;&#35793;&#30340;&#31243;&#24207;, &#30452;&#25509;&#20351;&#29992; e_entry &#20570;&#20026;&#20837;&#21475;, e_entry &#22312; x86_32 &#19979;&#19968;</span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#33324;&#22266;&#23450;&#20026; 0x80482c0, &#23545;&#24212;&#20110; crt1.o &#20013;&#30340; __start &#20989;&#25968;, &#30001; ld script</span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#25351;&#23450;        </span>
     elf_entry = loc-&gt;elf_ex.e_entry;
 
-  <span style="color: #268bd2;">create_elf_tables</span><span style="color: #757575;">(</span><span style="color: #b58900;">bprm</span><span style="color: #757575;">,</span> &amp;loc-&gt;elf_ex<span style="color: #757575;">,</span>
-                    <span style="color: #757575;">(</span>interpreter_type == INTERPRETER_AOUT<span style="color: #757575;">),</span><span style="color: #b58900;">load_addr</span><span style="color: #757575;">,</span> <span style="color: #b58900;">interp_load_addr</span><span style="color: #757575;">)</span>;
+  <span style="font-weight: bold;">create_elf_tables</span>(bprm, &amp;loc-&gt;elf_ex,
+                    (interpreter_type == INTERPRETER_AOUT),load_addr, interp_load_addr);
   current-&gt;mm-&gt;end_code = end_code;
   current-&gt;mm-&gt;start_code = start_code;
   current-&gt;mm-&gt;start_data = start_data;
   current-&gt;mm-&gt;end_data = end_data;
   current-&gt;mm-&gt;start_stack = bprm-&gt;p;
 
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">do_execve &#36820;&#22238;&#21040; user mode &#30340;&#26368;&#21518;&#19968;&#27493;: &#35774;&#32622; regs-&gt;{eip,esp, ...} &#20197;</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20415;&#20174; syscall &#36820;&#22238;&#21518;&#33021;&#25191;&#34892; elf &#31243;&#24207;</span>
-  <span style="color: #268bd2;">start_thread</span><span style="color: #757575;">(</span><span style="color: #b58900;">regs</span><span style="color: #757575;">,</span> <span style="color: #b58900;">elf_entry</span><span style="color: #757575;">,</span> bprm-&gt;p<span style="color: #757575;">)</span>;
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">do_execve &#36820;&#22238;&#21040; user mode &#30340;&#26368;&#21518;&#19968;&#27493;: &#35774;&#32622; regs-&gt;{eip,esp, ...} &#20197;</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#20415;&#20174; syscall &#36820;&#22238;&#21518;&#33021;&#25191;&#34892; elf &#31243;&#24207;</span>
+  <span style="font-weight: bold;">start_thread</span>(regs, elf_entry, bprm-&gt;p);
     regs-&gt;xds = __USER_DS;
     regs-&gt;xes = __USER_DS;
     regs-&gt;xss = __USER_DS;
@@ -383,48 +386,48 @@ load_elf_binary 是 elf_format 对应的 load_binary 实现
 </div>
 </div>
 
-<div id="outline-container-org5eda3b7" class="outline-4">
-<h4 id="org5eda3b7"><span class="section-number-4">1.2.2</span> setup_arg_pages</h4>
+<div id="outline-container-orgafc80ca" class="outline-4">
+<h4 id="orgafc80ca"><span class="section-number-4">1.2.2</span> setup_arg_pages</h4>
 <div class="outline-text-4" id="text-1-2-2">
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #268bd2;">setup_arg_pages</span><span style="color: #757575;">(</span><span style="color: #b58900;">bprm</span><span style="color: #757575;">,</span><span style="color: #b58900;">stack_top</span><span style="color: #757575;">)</span>:
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">stack_top &#30340;&#20540;&#20026; STACK_TOP &#20026; 3G, &#19979;&#38754;&#20004;&#34892;&#20195;&#30721;&#23558; bprm-&gt;p "&#24179;&#31227;" &#21040;&#20102;</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">3G &#20197;&#19979;&#23545;&#24212;&#30340;&#20301;&#32622;. &#23454;&#38469;&#19978;&#22312;&#26032;&#29256;&#26412;&#30340; kernel &#20013;, &#36825;&#37324;&#30340; stack_top &#20256;&#36827;</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#26469;&#20043;&#21069;&#24050;&#32463;&#38543;&#26426;&#36807;&#20102;, &#23454;&#38469;&#30340;&#20540;&#26159; STACK_TOP - random_offset (&#21442;&#32771;</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">randomize_stack_top)</span>
+<pre class="src src-c"><span style="font-weight: bold;">setup_arg_pages</span>(bprm,stack_top):
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">stack_top &#30340;&#20540;&#20026; STACK_TOP &#20026; 3G, &#19979;&#38754;&#20004;&#34892;&#20195;&#30721;&#23558; bprm-&gt;p "&#24179;&#31227;" &#21040;&#20102;</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">3G &#20197;&#19979;&#23545;&#24212;&#30340;&#20301;&#32622;. &#23454;&#38469;&#19978;&#22312;&#26032;&#29256;&#26412;&#30340; kernel &#20013;, &#36825;&#37324;&#30340; stack_top &#20256;&#36827;</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#26469;&#20043;&#21069;&#24050;&#32463;&#38543;&#26426;&#36807;&#20102;, &#23454;&#38469;&#30340;&#20540;&#26159; STACK_TOP - random_offset (&#21442;&#32771;</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">randomize_stack_top)</span>
   stack_base = stack_top - MAX_ARG_PAGES * PAGE_SIZE;
   bprm-&gt;p += stack_base;
 
   mm-&gt;arg_start = bprm-&gt;p;
-  arg_size = stack_top - <span style="color: #757575;">(</span>PAGE_MASK &amp; <span style="color: #757575;">(</span><span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">long</span><span style="color: #757575;">)</span> mm-&gt;arg_start<span style="color: #757575;">)</span>;
+  arg_size = stack_top - (PAGE_MASK &amp; (<span style="font-weight: bold; text-decoration: underline;">unsigned</span> <span style="font-weight: bold; text-decoration: underline;">long</span>) mm-&gt;arg_start);
 
-  mpnt = kmem_cache_alloc<span style="color: #757575;">(</span>vm_area_cachep<span style="color: #757575;">,</span> SLAB_KERNEL<span style="color: #757575;">)</span>;
+  mpnt = kmem_cache_alloc(vm_area_cachep, SLAB_KERNEL);
   mpnt-&gt;vm_mm = current-&gt;mm;
 
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#36825;&#20010; vma &#23545;&#24212; args+stack, &#20294;&#21021;&#22987;&#22823;&#23567;&#21482;&#21253;&#25324; args &#30340;&#37096;&#20998; (argv, envp),</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20294;&#36825;&#24182;&#27809;&#26377;&#38382;&#39064;, &#22240;&#20026; vma &#30340; VM_GROWSDOWN flag &#20445;&#35777;&#35775;&#38382; stack &#26102;&#24182;&#19981;</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#20250;&#20986;&#38169;</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#36825;&#20010; vma &#23545;&#24212; args+stack, &#20294;&#21021;&#22987;&#22823;&#23567;&#21482;&#21253;&#25324; args &#30340;&#37096;&#20998; (argv, envp),</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#20294;&#36825;&#24182;&#27809;&#26377;&#38382;&#39064;, &#22240;&#20026; vma &#30340; VM_GROWSDOWN flag &#20445;&#35777;&#35775;&#38382; stack &#26102;&#24182;&#19981;</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#20250;&#20986;&#38169;</span>
   mpnt-&gt;vm_end = stack_top;
   mpnt-&gt;vm_start = mpnt-&gt;vm_end - arg_size;
   mpnt-&gt;vm_flags = VM_STACK_FLAGS;
   mpnt-&gt;vm_flags |= mm-&gt;def_flags;
   mpnt-&gt;vm_page_prot = protection_map[mpnt-&gt;vm_flags &amp; 0x7];
-  <span style="color: #268bd2;">insert_vm_struct</span><span style="color: #757575;">(</span><span style="color: #b58900;">mm</span><span style="color: #757575;">,</span> <span style="color: #b58900;">mpnt</span><span style="color: #757575;">)</span>
+  <span style="font-weight: bold;">insert_vm_struct</span>(mm, mpnt)
 
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#23558; bprm-&gt;page &#26144;&#23556;&#21040;&#21069;&#38754;&#30340; vma &#20013;</span>
-  <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>i = 0 ; i &lt; MAX_ARG_PAGES ; i++<span style="color: #757575;">)</span>:
-    <span style="color: #859900;">struct</span> page *page = bprm-&gt;page[i];
-      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>page<span style="color: #757575;">)</span>:
-        bprm-&gt;page[i] = <span style="color: #268bd2; font-weight: bold;">NULL</span>;
-        <span style="color: #268bd2;">install_arg_page</span><span style="color: #757575;">(</span><span style="color: #b58900;">mpnt</span><span style="color: #757575;">,</span> <span style="color: #b58900;">page</span><span style="color: #757575;">,</span> <span style="color: #b58900;">stack_base</span><span style="color: #757575;">)</span>;
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#23558; bprm-&gt;page &#26144;&#23556;&#21040;&#21069;&#38754;&#30340; vma &#20013;</span>
+  <span style="font-weight: bold;">for</span> (i = 0 ; i &lt; MAX_ARG_PAGES ; i++):
+    <span style="font-weight: bold;">struct</span> page *page = bprm-&gt;page[i];
+      <span style="font-weight: bold;">if</span> (page):
+        bprm-&gt;page[i] = <span style="font-weight: bold; text-decoration: underline;">NULL</span>;
+        <span style="font-weight: bold;">install_arg_page</span>(mpnt, page, stack_base);
     stack_base += PAGE_SIZE;
 </pre>
 </div>
 </div>
 </div>
 
-<div id="outline-container-orgc061bb9" class="outline-4">
-<h4 id="orgc061bb9"><span class="section-number-4">1.2.3</span> create_elf_tables</h4>
+<div id="outline-container-orgd3e837b" class="outline-4">
+<h4 id="orgd3e837b"><span class="section-number-4">1.2.3</span> create_elf_tables</h4>
 <div class="outline-text-4" id="text-1-2-3">
 <p>
 create_elf_tables 主要还是和 argv, envp 的处理有关:
@@ -438,7 +441,8 @@ create_elf_tables 主要还是和 argv, envp 的处理有关:
 </ol>
 
 <p>
-但还有一部分没有 ready: 前面两步只是设置好了 argv, envp 指向的数据, 紧接着栈底之上 argc 和 argv, envp 本身呢?
+但还有一部分没有 ready: 前面两步只是设置好了 argv, envp 指向的数据, 紧
+接着栈底之上 argc 和 argv, envp 本身呢?
 </p>
 
 <p>
@@ -446,44 +450,44 @@ create_elf_tables 会 setup 最后这一部分
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #268bd2; font-weight: bold;">create_elf_tables</span>:
-  <span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span> = bprm-&gt;argc;
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">bprm-&gt;p &#26159;&#26632;&#24213;</span>
-  sp = <span style="color: #757575;">(</span>elf_addr_t <span style="color: #b58900;">__user</span> *<span style="color: #757575;">)</span>bprm-&gt;p;
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">argc</span>
-  <span style="color: #268bd2;">__put_user</span><span style="color: #757575;">(</span><span style="color: #b58900;">argc</span><span style="color: #757575;">,</span> sp++<span style="color: #757575;">)</span>
+<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">create_elf_tables</span>:
+  <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">argc</span> = bprm-&gt;argc;
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">bprm-&gt;p &#26159;&#26632;&#24213;</span>
+  sp = (elf_addr_t <span style="font-weight: bold; text-decoration: underline;">__user</span> *)bprm-&gt;p;
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">argc</span>
+  <span style="font-weight: bold;">__put_user</span>(argc, sp++)
 
   argv = sp;
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">+1 &#26159;&#22240;&#20026; argv[] &#26368;&#21518;&#19968;&#20010;&#20803;&#32032;&#26159; NULL</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">+1 &#26159;&#22240;&#20026; argv[] &#26368;&#21518;&#19968;&#20010;&#20803;&#32032;&#26159; NULL</span>
   envp = argv + argc + 1;
 
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#22635;&#20805; argv[]</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#22635;&#20805; argv[]</span>
   p = current-&gt;mm-&gt;arg_start;
-  <span style="color: #859900;">while</span> <span style="color: #757575;">(</span>argc-- &gt; 0<span style="color: #757575;">)</span>:
+  <span style="font-weight: bold;">while</span> (argc-- &gt; 0):
     size_t len;
-    <span style="color: #268bd2;">__put_user</span><span style="color: #757575;">((</span><span style="color: #b58900;">elf_addr_t</span><span style="color: #757575;">)</span>p<span style="color: #757575;">,</span> argv++<span style="color: #757575;">)</span>;
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">strnlen_user &#19982; libc &#20013;&#30340; strnlen &#24182;&#19981;&#19968;&#26679;: strnlen_user &#36820;&#22238;&#30340;&#38271;</span>
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">&#24230;&#26159;&#21253;&#25324;&#32467;&#23614;&#30340; NULL &#30340;</span>
-    len = strnlen_user<span style="color: #757575;">((</span><span style="color: #b58900;">void</span> <span style="color: #268bd2;">__user</span> *<span style="color: #757575;">)</span>p<span style="color: #757575;">)</span>;
+    <span style="font-weight: bold;">__put_user</span>((<span style="font-weight: bold; text-decoration: underline;">elf_addr_t</span>)p, argv++);
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">strnlen_user &#19982; libc &#20013;&#30340; strnlen &#24182;&#19981;&#19968;&#26679;: strnlen_user &#36820;&#22238;&#30340;&#38271;</span>
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#24230;&#26159;&#21253;&#25324;&#32467;&#23614;&#30340; NULL &#30340;</span>
+    len = strnlen_user((<span style="font-weight: bold; text-decoration: underline;">void</span> <span style="font-weight: bold; font-style: italic;">__user</span> *)p);
     p += len;
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">finally, argv</span>
-  __put_user<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> argv<span style="color: #757575;">)</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#22635;&#20805; envp[]</span>
-  <span style="color: #859900;">while</span> <span style="color: #757575;">(</span>envc-- &gt; 0<span style="color: #757575;">)</span>:
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">finally, argv</span>
+  __put_user(0, argv)
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#22635;&#20805; envp[]</span>
+  <span style="font-weight: bold;">while</span> (envc-- &gt; 0):
     size_t len;
-    <span style="color: #268bd2;">__put_user</span><span style="color: #757575;">((</span><span style="color: #b58900;">elf_addr_t</span><span style="color: #757575;">)</span>p<span style="color: #757575;">,</span> envp++<span style="color: #757575;">)</span>;
-    len = strnlen_user<span style="color: #757575;">((</span><span style="color: #b58900;">void</span> <span style="color: #268bd2;">__user</span> *<span style="color: #757575;">)</span>p<span style="color: #757575;">,</span> PAGE_SIZE*MAX_ARG_PAGES<span style="color: #757575;">)</span>;
+    <span style="font-weight: bold;">__put_user</span>((<span style="font-weight: bold; text-decoration: underline;">elf_addr_t</span>)p, envp++);
+    len = strnlen_user((<span style="font-weight: bold; text-decoration: underline;">void</span> <span style="font-weight: bold; font-style: italic;">__user</span> *)p, PAGE_SIZE*MAX_ARG_PAGES);
     p += len;
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">finally, envp</span>
-  __put_user<span style="color: #757575;">(</span>0<span style="color: #757575;">,</span> envp<span style="color: #757575;">)</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">finally, envp</span>
+  __put_user(0, envp)
 </pre>
 </div>
 </div>
 </div>
 
 
-<div id="outline-container-orgc32dea3" class="outline-4">
-<h4 id="orgc32dea3"><span class="section-number-4">1.2.4</span> load_elf_interp</h4>
+<div id="outline-container-org060c466" class="outline-4">
+<h4 id="org060c466"><span class="section-number-4">1.2.4</span> load_elf_interp</h4>
 <div class="outline-text-4" id="text-1-2-4">
 <p>
 当 elf 指定了 .interp 时, 程序的入口不再是 elf 本身的 entry, 而是
@@ -491,62 +495,63 @@ interp 的 entry
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #268bd2;">load_elf_interp</span><span style="color: #757575;">(</span><span style="color: #b58900;">interpreter</span><span style="color: #757575;">)</span>:
-  kernel_read<span style="color: #757575;">(</span>interpreter<span style="color: #757575;">,</span>interp_elf_ex-&gt;e_phoff<span style="color: #757575;">,(</span><span style="color: #b58900;">char</span> *<span style="color: #757575;">)</span>elf_phdata<span style="color: #757575;">,</span>size<span style="color: #757575;">)</span>;
-  <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>i=0; i&lt;interp_elf_ex-&gt;e_phnum; i++<span style="color: #757575;">,</span> eppnt++<span style="color: #757575;">)</span>:
-    <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>eppnt-&gt;p_type == PT_LOAD<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
-      <span style="color: #b58900;">int</span> <span style="color: #268bd2;">elf_type</span> = MAP_PRIVATE | MAP_DENYWRITE;
-      <span style="color: #b58900;">int</span> <span style="color: #268bd2;">elf_prot</span> = 0;
-      <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">long</span> <span style="color: #268bd2;">vaddr</span> = 0;
-      <span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">long</span> <span style="color: #268bd2;">k</span><span style="color: #757575;">,</span> <span style="color: #268bd2;">map_addr</span>;
+<pre class="src src-c"><span style="font-weight: bold;">load_elf_interp</span>(interpreter):
+  kernel_read(interpreter,interp_elf_ex-&gt;e_phoff,(<span style="font-weight: bold; text-decoration: underline;">char</span> *)elf_phdata,size);
+  <span style="font-weight: bold;">for</span> (i=0; i&lt;interp_elf_ex-&gt;e_phnum; i++, eppnt++):
+    <span style="font-weight: bold;">if</span> (eppnt-&gt;p_type == PT_LOAD) {
+      <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">elf_type</span> = MAP_PRIVATE | MAP_DENYWRITE;
+      <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">elf_prot</span> = 0;
+      <span style="font-weight: bold; text-decoration: underline;">unsigned</span> <span style="font-weight: bold; text-decoration: underline;">long</span> <span style="font-weight: bold; font-style: italic;">vaddr</span> = 0;
+      <span style="font-weight: bold; text-decoration: underline;">unsigned</span> <span style="font-weight: bold; text-decoration: underline;">long</span> <span style="font-weight: bold; font-style: italic;">k</span>, <span style="font-weight: bold; font-style: italic;">map_addr</span>;
 
-      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>eppnt-&gt;p_flags &amp; PF_R<span style="color: #757575;">)</span> elf_prot =  PROT_READ;
-      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>eppnt-&gt;p_flags &amp; PF_W<span style="color: #757575;">)</span> elf_prot |= PROT_WRITE;
-      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>eppnt-&gt;p_flags &amp; PF_X<span style="color: #757575;">)</span> elf_prot |= PROT_EXEC;
+      <span style="font-weight: bold;">if</span> (eppnt-&gt;p_flags &amp; PF_R) elf_prot =  PROT_READ;
+      <span style="font-weight: bold;">if</span> (eppnt-&gt;p_flags &amp; PF_W) elf_prot |= PROT_WRITE;
+      <span style="font-weight: bold;">if</span> (eppnt-&gt;p_flags &amp; PF_X) elf_prot |= PROT_EXEC;
       vaddr = eppnt-&gt;p_vaddr;
 
-      map_addr = elf_map<span style="color: #757575;">(</span>interpreter<span style="color: #757575;">,</span> load_addr + vaddr<span style="color: #757575;">,</span> eppnt<span style="color: #757575;">,</span> elf_prot<span style="color: #757575;">,</span> elf_type<span style="color: #757575;">)</span>;
+      map_addr = elf_map(interpreter, load_addr + vaddr, eppnt, elf_prot, elf_type);
 
-      <span style="color: #586e75;">// </span><span style="color: #586e75;">&#31532;&#19968;&#20010;&#34987; mmap &#24517;&#23450;&#26159; .text?</span>
-      <span style="color: #859900;">if</span> <span style="color: #757575;">(</span><span style="color: #b58900; font-weight: bold;">!</span>load_addr_set &amp;&amp; interp_elf_ex-&gt;e_type == ET_DYN<span style="color: #757575;">)</span>:
-          load_addr = map_addr - ELF_PAGESTART<span style="color: #757575;">(</span>vaddr<span style="color: #757575;">)</span>;
+      <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#31532;&#19968;&#20010;&#34987; mmap &#24517;&#23450;&#26159; .text?</span>
+      <span style="font-weight: bold;">if</span> (!load_addr_set &amp;&amp; interp_elf_ex-&gt;e_type == ET_DYN):
+          load_addr = map_addr - ELF_PAGESTART(vaddr);
           load_addr_set = 1;
 
-      load_addr = map_addr - ELF_PAGESTART<span style="color: #757575;">(</span>vaddr<span style="color: #757575;">)</span>;
+      load_addr = map_addr - ELF_PAGESTART(vaddr);
 
-  <span style="color: #859900;">return</span> <span style="color: #757575;">((</span><span style="color: #b58900;">unsigned</span> <span style="color: #b58900;">long</span><span style="color: #757575;">)</span> interp_elf_ex-&gt;e_entry<span style="color: #757575;">)</span> + load_addr;
+  <span style="font-weight: bold;">return</span> ((<span style="font-weight: bold; text-decoration: underline;">unsigned</span> <span style="font-weight: bold; text-decoration: underline;">long</span>) interp_elf_ex-&gt;e_entry) + load_addr;
 </pre>
 </div>
 </div>
 </div>
 
-<div id="outline-container-org3dfcf27" class="outline-4">
-<h4 id="org3dfcf27"><span class="section-number-4">1.2.5</span> ELF 程序引用 argc, argv</h4>
+<div id="outline-container-org480ada8" class="outline-4">
+<h4 id="org480ada8"><span class="section-number-4">1.2.5</span> ELF 程序引用 argc, argv</h4>
 <div class="outline-text-4" id="text-1-2-5">
 <p>
 argc 和 argv 已经放在栈上了, 那么应用程序如何引用到它们?
 </p>
 </div>
 
-<div id="outline-container-orgc23468d" class="outline-5">
-<h5 id="orgc23468d"><span class="section-number-5">1.2.5.1</span> 示例程序</h5>
+<div id="outline-container-orgfd061a4" class="outline-5">
+<h5 id="orgfd061a4"><span class="section-number-5">1.2.5.1</span> 示例程序</h5>
 <div class="outline-text-5" id="text-1-2-5-1">
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #b58900;">void</span> <span style="color: #268bd2;">hello</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">a</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
-    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%d\n"</span><span style="color: #757575;">,</span> a<span style="color: #757575;">)</span>;
-<span style="color: #757575;">}</span>
+<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">void</span> <span style="font-weight: bold;">hello</span>(<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">a</span>) {
+    printf(<span style="font-style: italic;">"%d\n"</span>, a);
+}
 
-<span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
-    <span style="color: #859900;">return</span> 0;
-<span style="color: #757575;">}</span>
+<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold;">main</span>(<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">argc</span>, <span style="font-weight: bold; text-decoration: underline;">char</span> *<span style="font-weight: bold; font-style: italic;">argv</span>[]) {
+    <span style="font-weight: bold;">return</span> 0;
+}
 </pre>
 </div>
 
 <p>
-通过如下的命令编译. 为了避免 libc 自动加入的入口 (_start) 的影响, 编译时直接指定了 entry 为 hello.
+通过如下的命令编译. 为了避免 libc 自动加入的入口 (_start) 的影响, 编译
+时直接指定了 entry 为 hello.
 </p>
 
-<pre class="example" id="org6655ae8">
+<pre class="example" id="org9d4d9f5">
 gcc -g test.c -m32  -Wl,-ehello -O0
 </pre>
 
@@ -559,10 +564,10 @@ nostdlib 后又无法使用 libc 中提供的函数例如 printf&#x2026;为了�
 </div>
 </div>
 
-<div id="outline-container-orgb658ff3" class="outline-5">
-<h5 id="orgb658ff3"><span class="section-number-5">1.2.5.2</span> 使用 gdb 分析</h5>
+<div id="outline-container-org52b5909" class="outline-5">
+<h5 id="org52b5909"><span class="section-number-5">1.2.5.2</span> 使用 gdb 分析</h5>
 <div class="outline-text-5" id="text-1-2-5-2">
-<pre class="example" id="orga8cc432">
+<pre class="example" id="orgccdffeb">
 #&gt; gdb ./a.out
 (gdb) set args "hello"
 (gdb) b hello
@@ -655,28 +660,28 @@ $4 = 0xffffc62b "XDG_VTNR=1"
 </div>
 </div>
 
-<div id="outline-container-orgaf33329" class="outline-5">
-<h5 id="orgaf33329"><span class="section-number-5">1.2.5.3</span> 实现一个简单的 entry</h5>
+<div id="outline-container-orgce53471" class="outline-5">
+<h5 id="orgce53471"><span class="section-number-5">1.2.5.3</span> 实现一个简单的 entry</h5>
 <div class="outline-text-5" id="text-1-2-5-3">
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #b58900;">void</span> <span style="color: #268bd2;">entry</span> <span style="color: #757575;">()</span> <span style="color: #757575;">{</span>
-    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">ebp</span> = 0;
-    <span style="color: #859900;">__asm__</span><span style="color: #757575;">(</span><span style="color: #2aa198;">"movl %%ebp,%0"</span>:<span style="color: #2aa198;">"=r"</span> <span style="color: #757575;">(</span>ebp<span style="color: #757575;">))</span>;
-    exit<span style="color: #757575;">(</span>hello<span style="color: #757575;">(</span>*<span style="color: #757575;">((</span><span style="color: #b58900;">int</span> *<span style="color: #757575;">)(</span>ebp + 4<span style="color: #757575;">)),</span> <span style="color: #757575;">(</span><span style="color: #b58900;">char</span> **<span style="color: #757575;">)(</span>ebp+8<span style="color: #757575;">)))</span>;
-<span style="color: #757575;">}</span>
+<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">void</span> <span style="font-weight: bold;">entry</span> () {
+    <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">ebp</span> = 0;
+    <span style="font-weight: bold;">__asm__</span>(<span style="font-style: italic;">"movl %%ebp,%0"</span>:<span style="font-style: italic;">"=r"</span> (ebp));
+    exit(hello(*((<span style="font-weight: bold; text-decoration: underline;">int</span> *)(ebp + 4)), (<span style="font-weight: bold; text-decoration: underline;">char</span> **)(ebp+8)));
+}
 
-<span style="color: #b58900;">int</span> <span style="color: #268bd2;">hello</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> ** <span style="color: #268bd2;">argv</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
-    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%d\n"</span><span style="color: #757575;">,</span> argc<span style="color: #757575;">)</span>;
-    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">i</span> = 0;
-    <span style="color: #859900;">for</span> <span style="color: #757575;">(</span>i = 0; i &lt; argc; i++<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
-        printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%s\n"</span><span style="color: #757575;">,</span> argv[i]<span style="color: #757575;">)</span>;
-    <span style="color: #757575;">}</span>
-    <span style="color: #859900;">return</span> 0;
-<span style="color: #757575;">}</span>
+<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold;">hello</span>(<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">argc</span>, <span style="font-weight: bold; text-decoration: underline;">char</span> ** <span style="font-weight: bold; font-style: italic;">argv</span>) {
+    printf(<span style="font-style: italic;">"%d\n"</span>, argc);
+    <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">i</span> = 0;
+    <span style="font-weight: bold;">for</span> (i = 0; i &lt; argc; i++) {
+        printf(<span style="font-style: italic;">"%s\n"</span>, argv[i]);
+    }
+    <span style="font-weight: bold;">return</span> 0;
+}
 
-<span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
-    <span style="color: #859900;">return</span> 0;
-<span style="color: #757575;">}</span>
+<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold;">main</span>(<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">argc</span>, <span style="font-weight: bold; text-decoration: underline;">char</span> *<span style="font-weight: bold; font-style: italic;">argv</span>[]) {
+    <span style="font-weight: bold;">return</span> 0;
+}
 </pre>
 </div>
 
@@ -684,7 +689,7 @@ $4 = 0xffffc62b "XDG_VTNR=1"
 测试:
 </p>
 
-<pre class="example" id="org0e770e2">
+<pre class="example" id="org929ab86">
 $&gt; gcc -g test.c -m32 -Wl,-eentry -O0
 
 $&gt; ./a.out
@@ -706,61 +711,64 @@ hello
 </div>
 </div>
 
-<div id="outline-container-org90474d7" class="outline-3">
-<h3 id="org90474d7"><span class="section-number-3">1.3</span> script 的加载</h3>
+<div id="outline-container-orgeda5a3a" class="outline-3">
+<h3 id="orgeda5a3a"><span class="section-number-3">1.3</span> script 的加载</h3>
 <div class="outline-text-3" id="text-1-3">
 <p>
 load_script 负责 script (bash, perl, python &#x2026;) 的加载
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="color: #268bd2;">load_script</span><span style="color: #757575;">(</span><span style="color: #b58900;">bprm</span><span style="color: #757575;">,</span> <span style="color: #b58900;">regs</span><span style="color: #757575;">)</span>:
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">script &#37117;&#26159;&#20197; #! &#24320;&#22836;</span>
-  <span style="color: #859900;">if</span> <span style="color: #757575;">((</span>bprm-&gt;buf[0] != <span style="color: #2aa198;">'#'</span><span style="color: #757575;">)</span> || <span style="color: #757575;">(</span>bprm-&gt;buf[1] != <span style="color: #2aa198;">'!'</span><span style="color: #757575;">)</span> || <span style="color: #757575;">(</span>bprm-&gt;sh_bang<span style="color: #757575;">))</span>:
-    <span style="color: #859900;">return</span> -ENOEXEC;
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#35299;&#26512; #! &#21518;&#30340; interpreter &#21517;&#23383;&#21644;&#21442;&#25968;, &#20445;&#23384;&#22312; interp &#21644; i_arg &#20013;</span>
-  <span style="color: #268bd2;">strcpy</span> <span style="color: #757575;">(</span><span style="color: #b58900;">interp</span><span style="color: #757575;">,</span> <span style="color: #b58900;">i_name</span><span style="color: #757575;">)</span>;
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#23558; bprm-&gt;interp &#22797;&#21046;&#21040; bprm-&gt;page &#20013;, &#36825;&#26102; page &#30340;&#24067;&#23616;&#20026; (&#30001;&#20302;&#21040;&#39640;):</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">bprm-&gt;interp | argv |  envp |  bprm-&gt;filename</span>
-  copy_strings_kernel<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> &amp;bprm-&gt;interp<span style="color: #757575;">,</span> bprm<span style="color: #757575;">)</span>;
+<pre class="src src-c"><span style="font-weight: bold;">load_script</span>(bprm, regs):
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">script &#37117;&#26159;&#20197; #! &#24320;&#22836;</span>
+  <span style="font-weight: bold;">if</span> ((bprm-&gt;buf[0] != <span style="font-style: italic;">'#'</span>) || (bprm-&gt;buf[1] != <span style="font-style: italic;">'!'</span>) || (bprm-&gt;sh_bang)):
+    <span style="font-weight: bold;">return</span> -ENOEXEC;
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#35299;&#26512; #! &#21518;&#30340; interpreter &#21517;&#23383;&#21644;&#21442;&#25968;, &#20445;&#23384;&#22312; interp &#21644; i_arg &#20013;</span>
+  <span style="font-weight: bold;">strcpy</span> (interp, i_name);
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#23558; bprm-&gt;interp &#22797;&#21046;&#21040; bprm-&gt;page &#20013;, &#36825;&#26102; page &#30340;&#24067;&#23616;&#20026; (&#30001;&#20302;&#21040;&#39640;):</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">bprm-&gt;interp | argv |  envp |  bprm-&gt;filename</span>
+  copy_strings_kernel(1, &amp;bprm-&gt;interp, bprm);
   bprm-&gt;argc++;
-  <span style="color: #859900;">if</span> <span style="color: #757575;">(</span>i_arg<span style="color: #757575;">)</span>:
-    <span style="color: #586e75;">// </span><span style="color: #586e75;">sh_bang &#20013;&#33050;&#26412;&#35299;&#37322;&#22120;&#30340;&#21442;&#25968;&#20063;&#34987;&#36861;&#21152;&#21040; bprm-&gt;page &#20013;</span>
-    copy_strings_kernel<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> &amp;i_arg<span style="color: #757575;">,</span> bprm<span style="color: #757575;">)</span>;
+  <span style="font-weight: bold;">if</span> (i_arg):
+    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">sh_bang &#20013;&#33050;&#26412;&#35299;&#37322;&#22120;&#30340;&#21442;&#25968;&#20063;&#34987;&#36861;&#21152;&#21040; bprm-&gt;page &#20013;</span>
+    copy_strings_kernel(1, &amp;i_arg, bprm);
     bprm-&gt;argc++;
-  copy_strings_kernel<span style="color: #757575;">(</span>1<span style="color: #757575;">,</span> &amp;i_name<span style="color: #757575;">,</span> bprm<span style="color: #757575;">)</span>;
+  copy_strings_kernel(1, &amp;i_name, bprm);
   bprm-&gt;argc++;
   bprm-&gt;interp = interp;
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#29616;&#22312; bprm-&gt;page &#30340;&#24067;&#23616;, &#20197; she-bang &#20026; '#!/bin/bash -i' &#30340; 'test.sh</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">hello' &#20026;&#20363;:</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">/bin/bash | -i | test.sh | hello | envp | test.sh</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#25152;&#20197;&#24403; bash &#21551;&#21160;&#26102;, argv &#20250;&#26159; {/bin/bash, -i, test.sh, hello}    </span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#29616;&#22312; bprm-&gt;page &#30340;&#24067;&#23616;, &#20197; she-bang &#20026; '#!/bin/bash -i' &#30340; 'test.sh</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">hello' &#20026;&#20363;:</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">/bin/bash | -i | test.sh | hello | envp | test.sh</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#25152;&#20197;&#24403; bash &#21551;&#21160;&#26102;, argv &#20250;&#26159; {/bin/bash, -i, test.sh, hello}    </span>
 
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#29616;&#22312; bprm-&gt;interp &#21644; bprm-&gt;file &#24050;&#32463;&#34987;&#26367;&#25442;&#20026; /bin/bash, &#28982;&#21518;&#36882;&#24402;&#30340;&#35843;</span>
-  <span style="color: #586e75;">// </span><span style="color: #586e75;">&#29992; search_binary_handler, &#30475;&#30475;&#22914;&#20309;&#25191;&#34892; /bin/bash</span>
-  bprm-&gt;file = open_exec<span style="color: #757575;">(</span>interp<span style="color: #757575;">)</span>;
-  <span style="color: #268bd2;">search_binary_handler</span><span style="color: #757575;">(</span><span style="color: #b58900;">bprm</span><span style="color: #757575;">,</span><span style="color: #b58900;">regs</span><span style="color: #757575;">)</span>;
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#29616;&#22312; bprm-&gt;interp &#21644; bprm-&gt;file &#24050;&#32463;&#34987;&#26367;&#25442;&#20026; /bin/bash, &#28982;&#21518;&#36882;&#24402;&#30340;&#35843;</span>
+  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#29992; search_binary_handler, &#30475;&#30475;&#22914;&#20309;&#25191;&#34892; /bin/bash</span>
+  bprm-&gt;file = open_exec(interp);
+  <span style="font-weight: bold;">search_binary_handler</span>(bprm,regs);
 </pre>
 </div>
 
 <p>
 可见 load_script 的方式允许嵌套的指定, 例如 script 指定 #!/bin/interp1,
-而 interp1 也是一个 script, 指定 #!/bin/inter2 &#x2026; 这种嵌套的处理过程并不复杂: kernel 只需要相应的调整 argv 就可以.
+而 interp1 也是一个 script, 指定 #!/bin/inter2 &#x2026; 这种嵌套的处理过程
+并不复杂: kernel 只需要相应的调整 argv 就可以.
 </p>
 
 <p>
 但需要注意的是最内部的一层嵌套必然是一个 "非 script" 类型的可执行程序,
-例如 ELF, 后者会通过 setup_arg_pages 和 create_elf_tables 完成 argv 最终的布局
+例如 ELF, 后者会通过 setup_arg_pages 和 create_elf_tables 完成 argv 最
+终的布局
 </p>
 </div>
 </div>
 
-<div id="outline-container-org84e4342" class="outline-3">
-<h3 id="org84e4342"><span class="section-number-3">1.4</span> 用户自定义加载</h3>
+<div id="outline-container-orgdc4fc4b" class="outline-3">
+<h3 id="orgdc4fc4b"><span class="section-number-3">1.4</span> 用户自定义加载</h3>
 <div class="outline-text-3" id="text-1-4">
 <p>
 load_misc_binary 实现用户自定义的加载, 它的过程和 load_script 非常类似,
-只不过寻找下一级 interp 的过程不是通过读取 script 的 she-bang, 而是通过用户写到的 '/proc/sys/fs/binfmt_misc/register' 的设定决定的.
+只不过寻找下一级 interp 的过程不是通过读取 script 的 she-bang, 而是通
+过用户写到的 '/proc/sys/fs/binfmt_misc/register' 的设定决定的.
 </p>
 </div>
 </div>
@@ -769,8 +777,8 @@ load_misc_binary 实现用户自定义的加载, 它的过程和 load_script 非
 <div id="postamble" class="status">
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
-Date: 2016-08-02 二 00:00<br />
-Last updated: 2022-01-19 三 13:25</p>
+Date: 2016-08-02 Tue 00:00<br />
+Last updated: 2022-01-19 Wed 13:25</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
