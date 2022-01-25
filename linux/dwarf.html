@@ -3,7 +3,7 @@
 "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
-<!-- 2022-01-25 Tue 15:41 -->
+<!-- 2022-01-25 二 15:53 -->
 <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>DWARF</title>
@@ -41,39 +41,39 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#orge7e53ca">1. DWARF</a>
+<li><a href="#orge8380d2">1. DWARF</a>
 <ul>
-<li><a href="#org16b97c8">1.1. Overview</a></li>
-<li><a href="#orgaee2b03">1.2. debug_frame 与 frame unwinding</a>
+<li><a href="#org50e31ae">1.1. Overview</a></li>
+<li><a href="#org039b956">1.2. debug_frame 与 frame unwinding</a>
 <ul>
-<li><a href="#org75001f1">1.2.1. 测试代码</a></li>
-<li><a href="#orgc56b617">1.2.2. CIE 和 FDE</a></li>
-<li><a href="#orgb300f8e">1.2.3. 使用 CFI 进行 stack unwinding</a></li>
-<li><a href="#orgdac3385">1.2.4. gcc omit-frame-pointer</a></li>
-<li><a href="#org6df0ed1">1.2.5. gdb info reg</a></li>
-<li><a href="#org70a5de9">1.2.6. example</a></li>
+<li><a href="#orgb69f615">1.2.1. 测试代码</a></li>
+<li><a href="#orgf66add5">1.2.2. CIE 和 FDE</a></li>
+<li><a href="#org8b4e971">1.2.3. 使用 CFI 进行 stack unwinding</a></li>
+<li><a href="#org6613312">1.2.4. gcc omit-frame-pointer</a></li>
+<li><a href="#orgc7a2a88">1.2.5. gdb info reg</a></li>
+<li><a href="#orgcd0b7bc">1.2.6. example</a></li>
 </ul>
 </li>
-<li><a href="#orgaf99b69">1.3. debug_info 与源码级别调试</a>
+<li><a href="#org10df5b6">1.3. debug_info 与源码级别调试</a>
 <ul>
-<li><a href="#org197e91f">1.3.1. 测试代码</a></li>
-<li><a href="#org9469901">1.3.2. DIE</a></li>
+<li><a href="#org4345207">1.3.1. 测试代码</a></li>
+<li><a href="#org18a2502">1.3.2. DIE</a></li>
 </ul>
 </li>
-<li><a href="#orgd26f329">1.4. DWARF 表达式</a></li>
-<li><a href="#org32da60c">1.5. WAIT STAB</a></li>
+<li><a href="#org7fcf8f1">1.4. DWARF 表达式</a></li>
+<li><a href="#org7386b50">1.5. STAB</a></li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-orge7e53ca" class="outline-2">
-<h2 id="orge7e53ca"><span class="section-number-2">1</span> DWARF</h2>
+<div id="outline-container-orge8380d2" class="outline-2">
+<h2 id="orge8380d2"><span class="section-number-2">1</span> DWARF</h2>
 <div class="outline-text-2" id="text-1">
 </div>
-<div id="outline-container-org16b97c8" class="outline-3">
-<h3 id="org16b97c8"><span class="section-number-3">1.1</span> Overview</h3>
+<div id="outline-container-org50e31ae" class="outline-3">
+<h3 id="org50e31ae"><span class="section-number-3">1.1</span> Overview</h3>
 <div class="outline-text-3" id="text-1-1">
 <p>
 Dwarf 用来在 ELF 中附加调试信息, 与 STAB 功能类似
@@ -89,8 +89,7 @@ Dwarf 在 ELF 中主要包含两部分:
 </p>
 
 <p>
-.debug_info 中包含许多 DIE 项, 针对的是源码级别的调试信息, 例如
-变量的类型, 所在的文件和行号, 保存在栈上的位置或在哪个寄存器中
+.debug_info 中包含许多 DIE 项, 针对的是源码级别的调试信息, 例如变量的类型, 所在的文件和行号, 保存在栈上的位置或在哪个寄存器中
 </p></li>
 
 <li><p>
@@ -105,36 +104,36 @@ frame 各个寄存器的值是多少, 如何找到上一个 frame
 </div>
 </div>
 
-<div id="outline-container-orgaee2b03" class="outline-3">
-<h3 id="orgaee2b03"><span class="section-number-3">1.2</span> debug_frame 与 frame unwinding</h3>
+<div id="outline-container-org039b956" class="outline-3">
+<h3 id="org039b956"><span class="section-number-3">1.2</span> debug_frame 与 frame unwinding</h3>
 <div class="outline-text-3" id="text-1-2">
 </div>
-<div id="outline-container-org75001f1" class="outline-4">
-<h4 id="org75001f1"><span class="section-number-4">1.2.1</span> 测试代码</h4>
+<div id="outline-container-orgb69f615" class="outline-4">
+<h4 id="orgb69f615"><span class="section-number-4">1.2.1</span> 测试代码</h4>
 <div class="outline-text-4" id="text-1-2-1">
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">2018-12-18 09:13</span>
+<pre class="src src-c"><span style="color: #586e75;">// </span><span style="color: #586e75;">2018-12-18 09:13</span>
 
-<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold;">__attribute__</span>((noinline))<span style="font-weight: bold;">bar</span>(<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">xxx</span>) {
-    abort();
-    <span style="font-weight: bold;">return</span> xxx + 1;
-}
-<span style="font-weight: bold; text-decoration: underline;">void</span> <span style="font-weight: bold;">__attribute__</span>((noinline)) <span style="font-weight: bold;">foo</span> (<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">xxx</span>) {
-    <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">yyy</span> = 0x1234;
+<span style="color: #b58900;">int</span> <span style="color: #859900;">__attribute__</span><span style="color: #757575;">((</span><span style="color: #b58900;">noinline</span><span style="color: #757575;">))</span><span style="color: #268bd2;">bar</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">xxx</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    abort<span style="color: #757575;">()</span>;
+    <span style="color: #859900;">return</span> xxx + 1;
+<span style="color: #757575;">}</span>
+<span style="color: #b58900;">void</span> <span style="color: #859900;">__attribute__</span><span style="color: #757575;">((</span><span style="color: #b58900;">noinline</span><span style="color: #757575;">))</span> <span style="color: #268bd2;">foo</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">xxx</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">yyy</span> = 0x1234;
     xxx += 1;
-    printf(<span style="font-style: italic;">"%d\n"</span>, bar(xxx));
-}
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%d\n"</span><span style="color: #757575;">,</span> bar<span style="color: #757575;">(</span>xxx<span style="color: #757575;">))</span>;
+<span style="color: #757575;">}</span>
 
-<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold;">main</span>(<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">argc</span>, <span style="font-weight: bold; text-decoration: underline;">char</span> *<span style="font-weight: bold; font-style: italic;">argv</span>[]) {
-    <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">x</span> = 0;
-    scanf(<span style="font-style: italic;">"%d"</span>, &amp;x);
-    <span style="font-weight: bold; font-style: italic;">/* </span><span style="font-weight: bold; font-style: italic;">&#36825;&#37324; x &#20174; scanf &#20013;&#24471;&#21040;, &#26159;&#20026;&#20102;&#38450;&#27490; x &#34987;&#20248;&#21270;&#20026;&#24120;&#37327;</span><span style="font-weight: bold; font-style: italic;"> */</span>
-    foo(x);
-}
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">x</span> = 0;
+    scanf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%d"</span><span style="color: #757575;">,</span> &amp;x<span style="color: #757575;">)</span>;
+    <span style="color: #586e75;">/* </span><span style="color: #586e75;">&#36825;&#37324; x &#20174; scanf &#20013;&#24471;&#21040;, &#26159;&#20026;&#20102;&#38450;&#27490; x &#34987;&#20248;&#21270;&#20026;&#24120;&#37327;</span><span style="color: #586e75;"> */</span>
+    foo<span style="color: #757575;">(</span>x<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
 </pre>
 </div>
 
-<pre class="example" id="org285ac57">
+<pre class="example" id="orgff392f9">
 $&gt; aarch64-linux-gnu-gcc test.c -O2 -g3 -static
 $&gt; qemu-aarch64-static ./a.out
 $&gt; aarch64-linux-gnu-objdum -W ./a.out &gt; dwarf_dump
@@ -142,8 +141,8 @@ $&gt; aarch64-linux-gnu-objdum -W ./a.out &gt; dwarf_dump
 </div>
 </div>
 
-<div id="outline-container-orgc56b617" class="outline-4">
-<h4 id="orgc56b617"><span class="section-number-4">1.2.2</span> CIE 和 FDE</h4>
+<div id="outline-container-orgf66add5" class="outline-4">
+<h4 id="orgf66add5"><span class="section-number-4">1.2.2</span> CIE 和 FDE</h4>
 <div class="outline-text-4" id="text-1-2-2">
 <ul class="org-ul">
 <li><p>
@@ -155,7 +154,7 @@ CIE 为 Common Info Entry, 可以认为是把多个 FDE 中相同的部分提取
 Dwarf 在解析 FDE 时, 会先解析它对应的 CIE, 例如:
 </p>
 
-<pre class="example" id="orga65822b">
+<pre class="example" id="org0248d74">
 00000a38 000000000000000c ffffffff CIE
 Version:               1
 Augmentation:          ""
@@ -186,7 +185,7 @@ CFA 即 Canonical Frame Address, 表示当前 frame 的基址, 它是 dwarf 虚�
 FDE
 </p>
 
-<pre class="example" id="org9722cb9">
+<pre class="example" id="org8f652fa">
 00000a48 000000000000002c 00000a38 FDE cie=00000a38 pc=00000000004057b8..0000000000405ac0
   DW_CFA_advance_loc: 4 to 00000000004057bc
   DW_CFA_def_cfa_offset: 336
@@ -211,7 +210,7 @@ FDE
 FDE 可以抽象的表示为:
 </p>
 
-<pre class="example" id="org0bc111a">
+<pre class="example" id="org50f1f8c">
 LOC CFA R0 R1 ... RN
 L0
 L1
@@ -220,20 +219,16 @@ LN
 </pre>
 
 <p>
-因为代码执行到不同的 pc 值可能对应不同的寄存器值. 例如, x20 初始并没有保存在
-栈上, 当 pc 执行到 0x00000000004057c4 时才将 x20 保存在栈上. 或者在整个函
-数执行过程中, 有可能 x20 会被多次保存在栈上不同的位置. 所以需要多行对应
-不同的 LOC
+因为代码执行到不同的 pc 值可能对应不同的寄存器值. 例如, x20 初始并没有保存在栈上, 当 pc 执行到 0x00000000004057c4 时才将 x20 保存在栈上. 或者在整个函数执行过程中, 有可能 x20 会被多次保存在栈上不同的位置. 所以需要多行对应不同的 LOC
 </p></li>
 
 <li>cie=00000a38, 表示它的 CIE 的 id 为 a38</li>
 
 <li><p>
-pc=00000000004057b8..0000000000405ac0 表示这个 frame 对应的代码, 实际上它对
-应 abort 函数
+pc=00000000004057b8..0000000000405ac0 表示这个 frame 对应的代码, 实际上它对应 abort 函数
 </p>
 
-<pre class="example" id="org996665d">
+<pre class="example" id="orgfa3334b">
 Dump of assembler code for function abort:
    0x00000000004057b8 &lt;+0&gt;:     stp     x29, x30, [sp, #-336]!
    0x00000000004057bc &lt;+4&gt;:     mov     x29, sp
@@ -245,11 +240,9 @@ Dump of assembler code for function abort:
    ...
 </pre></li>
 
-<li>DW_CFA_advance_loc: 4 to 00000000004057bc, 表示针对 0x00000000004057bc 地址插
-入新的一行</li>
+<li>DW_CFA_advance_loc: 4 to 00000000004057bc, 表示针对 0x00000000004057bc 地址插入新的一行</li>
 
-<li>DW_CFA_def_cfa_offset: 336, 设置 CFA 的值为 CFA+336, 由于之前 CFA 为 SP, 所
-以 CFA 会指向 frame 的栈基址</li>
+<li>DW_CFA_def_cfa_offset: 336, 设置 CFA 的值为 CFA+336, 由于之前 CFA 为 SP, 所以 CFA 会指向 frame 的栈基址</li>
 
 <li>DW_CFA_def_cfa_register: r29 (x29), 设置 CFA 为 x29 的值</li>
 
@@ -259,8 +252,8 @@ Dump of assembler code for function abort:
 </div>
 </div>
 
-<div id="outline-container-orgb300f8e" class="outline-4">
-<h4 id="orgb300f8e"><span class="section-number-4">1.2.3</span> 使用 CFI 进行 stack unwinding</h4>
+<div id="outline-container-org8b4e971" class="outline-4">
+<h4 id="org8b4e971"><span class="section-number-4">1.2.3</span> 使用 CFI 进行 stack unwinding</h4>
 <div class="outline-text-4" id="text-1-2-3">
 <ol class="org-ol">
 <li>根据当前 pc 找到对应的 FDE</li>
@@ -270,40 +263,37 @@ Dump of assembler code for function abort:
 
 <li>若当前不是栈顶, 则 CFA 使用上一次计算的结果即可</li>
 
-<li>解析 FDE, 计算当前 frame 的 CFA, 根据 CFA 计算上一个 frame 的信息: 保存的寄
-存器, Return PC</li>
+<li>解析 FDE, 计算当前 frame 的 CFA, 根据 CFA 计算上一个 frame 的信息: 保存的寄存器, Return PC</li>
 
 <li>根据 Return PC 重复步骤 1</li>
 </ol>
 </div>
 </div>
 
-<div id="outline-container-orgdac3385" class="outline-4">
-<h4 id="orgdac3385"><span class="section-number-4">1.2.4</span> gcc omit-frame-pointer</h4>
+<div id="outline-container-org6613312" class="outline-4">
+<h4 id="org6613312"><span class="section-number-4">1.2.4</span> gcc omit-frame-pointer</h4>
 <div class="outline-text-4" id="text-1-2-4">
 <p>
-有了 CFI, Dwarf 不需要 frame pointer 就可以进行 stack unwinding, 以上面的 FDE 为
-例, 关键在于 `DW_CFA_def_cfa_offset: 336`, 其中的 336 表示栈基址在当前栈顶 + 336
+有了 CFI, Dwarf 不需要 frame pointer 就可以进行 stack unwinding, 以上面的 FDE 为例, 关键在于 `DW_CFA_def_cfa_offset: 336`, 其中的 336 表示栈基址在当前栈顶 + 336
 处, 336 是编译时就确定的 frame 大小, 因此 frame pointer 不是必需的. 
 </p>
 </div>
 </div>
 
-<div id="outline-container-org6df0ed1" class="outline-4">
-<h4 id="org6df0ed1"><span class="section-number-4">1.2.5</span> gdb info reg</h4>
+<div id="outline-container-orgc7a2a88" class="outline-4">
+<h4 id="orgc7a2a88"><span class="section-number-4">1.2.5</span> gdb info reg</h4>
 <div class="outline-text-4" id="text-1-2-5">
 <p>
-gdb info reg 可以显示每个 frame 的寄存器, 但从前面的 FDE 能看到, 许多寄存器并没
-有保存, 因此 info reg 并不能确定某个 frame 里 `每一个` 寄存器的值. 通过 FDE 中
+gdb info reg 可以显示每个 frame 的寄存器, 但从前面的 FDE 能看到, 许多寄存器并没有保存, 因此 info reg 并不能确定某个 frame 里 `每一个` 寄存器的值. 通过 FDE 中
 DW_CFA_offset 及 gdb info frame 可以确定哪些寄存器被保存了
 </p>
 </div>
 </div>
 
-<div id="outline-container-org70a5de9" class="outline-4">
-<h4 id="org70a5de9"><span class="section-number-4">1.2.6</span> example</h4>
+<div id="outline-container-orgcd0b7bc" class="outline-4">
+<h4 id="orgcd0b7bc"><span class="section-number-4">1.2.6</span> example</h4>
 <div class="outline-text-4" id="text-1-2-6">
-<pre class="example" id="org72a992a">
+<pre class="example" id="org0f4176a">
 $&gt;gdb ./a.out
 (gdb) core qemu_a.out.core
 (gdb) bt
@@ -350,47 +340,47 @@ $19 = 0x401138
 </div>
 </div>
 
-<div id="outline-container-orgaf99b69" class="outline-3">
-<h3 id="orgaf99b69"><span class="section-number-3">1.3</span> debug_info 与源码级别调试</h3>
+<div id="outline-container-org10df5b6" class="outline-3">
+<h3 id="org10df5b6"><span class="section-number-3">1.3</span> debug_info 与源码级别调试</h3>
 <div class="outline-text-3" id="text-1-3">
 </div>
-<div id="outline-container-org197e91f" class="outline-4">
-<h4 id="org197e91f"><span class="section-number-4">1.3.1</span> 测试代码</h4>
+<div id="outline-container-org4345207" class="outline-4">
+<h4 id="org4345207"><span class="section-number-4">1.3.1</span> 测试代码</h4>
 <div class="outline-text-4" id="text-1-3-1">
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">2018-12-18 09:13</span>
+<pre class="src src-c"><span style="color: #586e75;">// </span><span style="color: #586e75;">2018-12-18 09:13</span>
 
-<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold;">__attribute__</span>((noinline)) <span style="font-weight: bold;">bar</span>(<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">xxx</span>) {
-    abort();
-    <span style="font-weight: bold;">return</span> xxx + 1;
-}
-<span style="font-weight: bold; text-decoration: underline;">void</span> <span style="font-weight: bold;">__attribute__</span>((noinline)) <span style="font-weight: bold;">foo</span> (<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">xxx</span>) {
-    <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">yyy</span> = 0x1234;
+<span style="color: #b58900;">int</span> <span style="color: #859900;">__attribute__</span><span style="color: #757575;">((</span><span style="color: #b58900;">noinline</span><span style="color: #757575;">))</span> <span style="color: #268bd2;">bar</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">xxx</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    abort<span style="color: #757575;">()</span>;
+    <span style="color: #859900;">return</span> xxx + 1;
+<span style="color: #757575;">}</span>
+<span style="color: #b58900;">void</span> <span style="color: #859900;">__attribute__</span><span style="color: #757575;">((</span><span style="color: #b58900;">noinline</span><span style="color: #757575;">))</span> <span style="color: #268bd2;">foo</span> <span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">xxx</span><span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    <span style="color: #b58900;">int</span> <span style="color: #268bd2;">yyy</span> = 0x1234;
     xxx += 1;
-    printf(<span style="font-style: italic;">"%d\n"</span>, bar(xxx));
-}
+    printf<span style="color: #757575;">(</span><span style="color: #2aa198;">"%d\n"</span><span style="color: #757575;">,</span> bar<span style="color: #757575;">(</span>xxx<span style="color: #757575;">))</span>;
+<span style="color: #757575;">}</span>
 
-<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold;">main</span>(<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">argc</span>, <span style="font-weight: bold; text-decoration: underline;">char</span> *<span style="font-weight: bold; font-style: italic;">argv</span>[]) {
-    foo(127);
-}
+<span style="color: #b58900;">int</span> <span style="color: #268bd2;">main</span><span style="color: #757575;">(</span><span style="color: #b58900;">int</span> <span style="color: #268bd2;">argc</span><span style="color: #757575;">,</span> <span style="color: #b58900;">char</span> *<span style="color: #268bd2;">argv</span>[]<span style="color: #757575;">)</span> <span style="color: #757575;">{</span>
+    foo<span style="color: #757575;">(</span>127<span style="color: #757575;">)</span>;
+<span style="color: #757575;">}</span>
 
 </pre>
 </div>
 
-<pre class="example" id="org7449b00">
+<pre class="example" id="org7da813a">
 $&gt; aarch64-linux-gnu-gcc test.c -O0 -g3
 </pre>
 </div>
 </div>
 
-<div id="outline-container-org9469901" class="outline-4">
-<h4 id="org9469901"><span class="section-number-4">1.3.2</span> DIE</h4>
+<div id="outline-container-org18a2502" class="outline-4">
+<h4 id="org18a2502"><span class="section-number-4">1.3.2</span> DIE</h4>
 <div class="outline-text-4" id="text-1-3-2">
 <p>
 DIE 即 Debugging Info Entry, 以上面的 foo 函数为例, 其 DIE 为:
 </p>
 
-<pre class="example" id="org6434779">
+<pre class="example" id="org20253da">
 &lt; 1&gt;&lt;0x000000bb&gt;    DW_TAG_subprogram
                       DW_AT_external              yes(1)
                       DW_AT_name                  foo
@@ -417,20 +407,18 @@ DIE 即 Debugging Info Entry, 以上面的 foo 函数为例, 其 DIE 为:
 </pre>
 
 <ul class="org-ul">
-<li>DW_TAG_subprogram 表示函数, 包含名字, 所在文件, 行号, PC 范围, 以及参数, 变量
-等</li>
+<li>DW_TAG_subprogram 表示函数, 包含名字, 所在文件, 行号, PC 范围, 以及参数, 变量等</li>
 
 <li>DW_TAG_formal_parameter 表示参数, 其中 DW_AT_location 表示参数保存在哪里,
 DW_OP_fbreg -20 表示 CFA - 20 这个地址保存着参数. 除了 DW_OP_fbreg, 常用的还有
 DW_OP_breg, DW_OP_reg, 以及更复杂的 dwarf expression</li>
 
-<li>DW_AT_location 是 DW_OP_reg 时表示变量保存在寄存器中, 而不是通过寄存器指示的内
-存地址</li>
+<li>DW_AT_location 是 DW_OP_reg 时表示变量保存在寄存器中, 而不是通过寄存器指示的内存地址</li>
 
 <li>DW_AT_location 可能不存在, 例如变量被优化编译器优化掉</li>
 </ul>
 
-<pre class="example" id="orgf23ed3a">
+<pre class="example" id="orgd648d80">
 $&gt; aarch64-linux-gnu-gcc test.c -O2 -g3
 $&gt; dwarfdump a.out
 &lt; 2&gt;&lt;0x000002ef&gt;      DW_TAG_formal_parameter
@@ -454,8 +442,7 @@ $&gt; dwarfdump a.out
 
 <p>
 使用 O2 编译后, xxx 初始通过 DW_OP_reg0 被保存在 reg0 中, 然后在下一个 LOC 为
-DW_OP_breg0+1 DW_OP_stack_value, 对应源码中的 `xxx+=1`, 该 Dwarf expression 的意
-义为:
+DW_OP_breg0+1 DW_OP_stack_value, 对应源码中的 `xxx+=1`, 该 Dwarf expression 的意义为:
 </p>
 
 <ol class="org-ol">
@@ -465,7 +452,7 @@ DW_OP_breg0+1 DW_OP_stack_value, 对应源码中的 `xxx+=1`, 该 Dwarf expressi
 通过 DW_OP_stack_value 从 dwarf 表达式栈上取值, 并作为变量的`值`而不是`变量保存的地址`
 </p>
 
-<pre class="example" id="org61ab3ab">
+<pre class="example" id="orge61d199">
 DW_OP_stack_value
 
 The DW_OP_stack_value operation specifies that the object does not exist in memory but its
@@ -476,34 +463,31 @@ than its location. The DW_OP_stack_value operation terminates the expression.
 </ol>
 
 <p>
-需要注意的是, 当优化编译器把变量放在寄存器上时, 虽然 DIE 有足够的信息, 但可能后
-面 FDE 并无法恢复相应的寄存器的值, 导致调试时还是无法得到相应的变量的值 (gdb 显
-示为 &lt;optimized out&gt;)
+需要注意的是, 当优化编译器把变量放在寄存器上时, 虽然 DIE 有足够的信息, 但可能后面 FDE 并无法恢复相应的寄存器的值, 导致调试时还是无法得到相应的变量的值 (gdb 显示为 &lt;optimized out&gt;)
 </p>
 </div>
 </div>
 </div>
 
-<div id="outline-container-orgd26f329" class="outline-3">
-<h3 id="orgd26f329"><span class="section-number-3">1.4</span> DWARF 表达式</h3>
+<div id="outline-container-org7fcf8f1" class="outline-3">
+<h3 id="org7fcf8f1"><span class="section-number-3">1.4</span> DWARF 表达式</h3>
 <div class="outline-text-3" id="text-1-4">
 <p>
-dwarf 表达式的思想与 BPF 及 seccomp 类似: 通过一个小型的解释器, 达到比普通配置更
-大的灵活性.
+dwarf 表达式的思想与 BPF 及 seccomp 类似: 通过一个小型的解释器, 达到比普通配置更大的灵活性.
 </p>
 </div>
 </div>
 
-<div id="outline-container-org32da60c" class="outline-3">
-<h3 id="org32da60c"><span class="section-number-3">1.5</span> WAIT STAB</h3>
+<div id="outline-container-org7386b50" class="outline-3">
+<h3 id="org7386b50"><span class="section-number-3">1.5</span> STAB</h3>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
-Date: 2018-12-20 Thu 00:00<br />
-Last updated: 2021-09-16 Thu 11:06</p>
+Date: 2018-12-20 四 00:00<br />
+Last updated: 2021-09-16 四 11:06</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
