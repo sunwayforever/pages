@@ -3,13 +3,14 @@
 "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
-<!-- 2022-01-14 五 19:44 -->
+<!-- 2022-01-25 Tue 15:42 -->
 <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Gemmlowp Quantization</title>
 <meta name="generator" content="Org mode" />
 <meta name="author" content="Wei Sun (孙伟)" />
-<link rel="stylesheet" type="text/css" href="../stylesheets/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
 <script type="text/javascript">
 // @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
 <!--/*--><![CDATA[/*><!--*/
@@ -40,25 +41,25 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#org6fb5ca6">1. Gemmlowp Quantization</a>
+<li><a href="#orgf93f2da">1. Gemmlowp Quantization</a>
 <ul>
-<li><a href="#org3f52e77">1.1. Overview</a></li>
-<li><a href="#org4e115dd">1.2. Quantization as an affine map.</a></li>
-<li><a href="#orgbc5b6ab">1.3. Domain-specific constraint: the real value 0 must be exactly representable.</a></li>
-<li><a href="#orga4ad4f3">1.4. The final form of the quantization equation</a></li>
-<li><a href="#orga439407">1.5. Quantizing a matrix multiplication</a></li>
-<li><a href="#orgd23488f">1.6. Implementation of quantized matrix multiplication</a></li>
-<li><a href="#org60977b2">1.7. How this is implemented in gemmlowp</a></li>
-<li><a href="#orgab45329">1.8. How this differs from the older legacy gemmlowp quantization paradigm</a></li>
-<li><a href="#orgaba5a51">1.9. Example code illustrating the new quantization paradigm</a></li>
+<li><a href="#orgee3d876">1.1. Overview</a></li>
+<li><a href="#orgdc96d76">1.2. Quantization as an affine map.</a></li>
+<li><a href="#orgd6caa83">1.3. Domain-specific constraint: the real value 0 must be exactly representable.</a></li>
+<li><a href="#org8f49821">1.4. The final form of the quantization equation</a></li>
+<li><a href="#org95e6978">1.5. Quantizing a matrix multiplication</a></li>
+<li><a href="#org3232d0c">1.6. Implementation of quantized matrix multiplication</a></li>
+<li><a href="#org58f29d3">1.7. How this is implemented in gemmlowp</a></li>
+<li><a href="#org7021f63">1.8. How this differs from the older legacy gemmlowp quantization paradigm</a></li>
+<li><a href="#org7f86b2a">1.9. Example code illustrating the new quantization paradigm</a></li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-org6fb5ca6" class="outline-2">
-<h2 id="org6fb5ca6"><span class="section-number-2">1</span> Gemmlowp Quantization</h2>
+<div id="outline-container-orgf93f2da" class="outline-2">
+<h2 id="orgf93f2da"><span class="section-number-2">1</span> Gemmlowp Quantization</h2>
 <div class="outline-text-2" id="text-1">
 <p>
 gemmlowp 是 tflite 底层 optimized kernel 使用的 gemm 库 (General Matrix
@@ -67,7 +68,7 @@ Multiply), 它支持对量化过的矩阵的运算, 但需要调用者 (tflite) 
 </p>
 
 <p>
-<a href="file:///home/sunway/source/tensorflow/tensorflow/lite/micro/tools/make/downloads/gemmlowp/eight_bit_int_gemm/eight_bit_int_gemm.cc#org1040192">file:///home/sunway/source/tensorflow/tensorflow/lite/micro/tools/make/downloads/gemmlowp/eight_bit_int_gemm/eight_bit_int_gemm.cc#org1040192</a>
+<a href="file:///home/sunway/source/tensorflow/tensorflow/lite/micro/tools/make/downloads/gemmlowp/eight_bit_int_gemm/eight_bit_int_gemm.cc#org0dc575f">file:///home/sunway/source/tensorflow/tensorflow/lite/micro/tools/make/downloads/gemmlowp/eight_bit_int_gemm/eight_bit_int_gemm.cc#org0dc575f</a>
 </p>
 
 <p>
@@ -80,8 +81,8 @@ Multiply), 它支持对量化过的矩阵的运算, 但需要调用者 (tflite) 
 </p>
 </div>
 
-<div id="outline-container-org3f52e77" class="outline-3">
-<h3 id="org3f52e77"><span class="section-number-3">1.1</span> Overview</h3>
+<div id="outline-container-orgee3d876" class="outline-3">
+<h3 id="orgee3d876"><span class="section-number-3">1.1</span> Overview</h3>
 <div class="outline-text-3" id="text-1-1">
 <p>
 gemmlowp allows to perform calculations on matrices on uint8 values, but
@@ -121,8 +122,8 @@ as far as some applications of gemmlowp were concerned.
 </div>
 </div>
 
-<div id="outline-container-org4e115dd" class="outline-3">
-<h3 id="org4e115dd"><span class="section-number-3">1.2</span> Quantization as an affine map.</h3>
+<div id="outline-container-orgdc96d76" class="outline-3">
+<h3 id="orgdc96d76"><span class="section-number-3">1.2</span> Quantization as an affine map.</h3>
 <div class="outline-text-3" id="text-1-2">
 <p>
 In order for arithmetic on real values to map directly to arithmetic on
@@ -130,7 +131,7 @@ quantized uint8 values, the mapping between real and quantized uint8
 values must be affine, which means it must be of the form
 </p>
 
-<pre class="example" id="orgedddeb5">
+<pre class="example" id="org18ffb60">
 real_value = A * quantized_value + B             (1)
 </pre>
 
@@ -138,7 +139,7 @@ real_value = A * quantized_value + B             (1)
 for some constants A, B, or equivalently, of the form
 </p>
 
-<pre class="example" id="org6c189b1">
+<pre class="example" id="orgdbaa6e3">
 real_value = C * (quantized_value + D)           (2)
 </pre>
 
@@ -151,8 +152,8 @@ calculation.
 </div>
 </div>
 
-<div id="outline-container-orgbc5b6ab" class="outline-3">
-<h3 id="orgbc5b6ab"><span class="section-number-3">1.3</span> Domain-specific constraint: the real value 0 must be exactly representable.</h3>
+<div id="outline-container-orgd6caa83" class="outline-3">
+<h3 id="orgd6caa83"><span class="section-number-3">1.3</span> Domain-specific constraint: the real value 0 must be exactly representable.</h3>
 <div class="outline-text-3" id="text-1-3">
 <p>
 Here a domain-specific constrain from neural networks appears: for some
@@ -184,8 +185,8 @@ would introduce <i>bias</i> in the result.
 </div>
 </div>
 
-<div id="outline-container-orga4ad4f3" class="outline-3">
-<h3 id="orga4ad4f3"><span class="section-number-3">1.4</span> The final form of the quantization equation</h3>
+<div id="outline-container-org8f49821" class="outline-3">
+<h3 id="org8f49821"><span class="section-number-3">1.4</span> The final form of the quantization equation</h3>
 <div class="outline-text-3" id="text-1-4">
 <p>
 Now let us phrase what this constraint &#x2014; that the real value 0 be
@@ -198,7 +199,7 @@ In equation (1), plugging <code>real_value = 0</code> and
 <code>quantized_value = zero_point</code>, we get:
 </p>
 
-<pre class="example" id="org45c98a7">
+<pre class="example" id="org9d1f2f9">
 0 = A * zero_point + B
 </pre>
 
@@ -206,7 +207,7 @@ In equation (1), plugging <code>real_value = 0</code> and
 equivalently:
 </p>
 
-<pre class="example" id="orgcdc8ffe">
+<pre class="example" id="orgc105248">
 zero_point = -B / A
 </pre>
 
@@ -222,7 +223,7 @@ Now let us look at equation (2). Plugging <code>real_value = 0</code> and
 <code>quantized_value = zero_point</code>, we get:
 </p>
 
-<pre class="example" id="orgd299e75">
+<pre class="example" id="org8f913ab">
 0 = C * (zero_point + D)
 </pre>
 
@@ -231,7 +232,7 @@ Conveniently, the constant <code>C</code> plays no role anymore, so this equatio
 simplifies to:
 </p>
 
-<pre class="example" id="orga0439ce">
+<pre class="example" id="orgfcac72e">
 0 = zero_point + D
 </pre>
 
@@ -241,7 +242,7 @@ quantization equation (2) into the following form (3), which will be the
 final form that we will consistently use:
 </p>
 
-<pre class="example" id="org140d631">
+<pre class="example" id="org3a05987">
 real_value = scale * (quantized_value - zero_point)        (3)
 </pre>
 
@@ -272,8 +273,8 @@ will come below.</li>
 </div>
 </div>
 
-<div id="outline-container-orga439407" class="outline-3">
-<h3 id="orga439407"><span class="section-number-3">1.5</span> Quantizing a matrix multiplication</h3>
+<div id="outline-container-org95e6978" class="outline-3">
+<h3 id="org95e6978"><span class="section-number-3">1.5</span> Quantizing a matrix multiplication</h3>
 <div class="outline-text-3" id="text-1-5">
 <p>
 Now that we know &#x2014; equation (3) &#x2014; how real numbers are to correspond
@@ -296,7 +297,7 @@ parameters <code>lhs_scale</code>, <code>rhs_scale</code>, <code>lhs_zero_point<
 so that their matrix entries are quantized as
 </p>
 
-<pre class="example" id="org798580d">
+<pre class="example" id="orgefb7df6">
 lhs_real_value[i] = lhs_scale * (lhs_quantized_value[i] - lhs_zero_point)
 rhs_real_value[i] = rhs_scale * (rhs_quantized_value[i] - rhs_zero_point)
 </pre>
@@ -305,7 +306,7 @@ rhs_real_value[i] = rhs_scale * (rhs_quantized_value[i] - rhs_zero_point)
 We then rewrite the matrix product accumulator accordingly:
 </p>
 
-<pre class="example" id="org2d4de03">
+<pre class="example" id="orga662eb7">
 result_real_value
   = Sum_over_i(lhs_real_value[i] * rhs_real_value[i])
   = Sum_over_i(
@@ -324,7 +325,7 @@ i.e. still according to equation (3), for some pre-established
 quantization parameters <code>result_scale</code> and <code>result_zero_point</code>, as
 </p>
 
-<pre class="example" id="org36ae82b">
+<pre class="example" id="org471510c">
 result_real_value = result_scale *
     (result_quantized_value - result_zero_point)
 </pre>
@@ -335,7 +336,7 @@ quantized matrix multiplication should do, i.e. how to compute
 <code>result_quantized_value</code>. The last equation above is equivalent to
 </p>
 
-<pre class="example" id="org72b286f">
+<pre class="example" id="org3633f2b">
 result_quantized_value = result_zero_point +
     result_real_value / result_scale
 </pre>
@@ -345,7 +346,7 @@ Now we can use equation (4) above to plug into this the expression of
 result_real_value in terms of the quantized operands, and we obtain:
 </p>
 
-<pre class="example" id="org7491542">
+<pre class="example" id="org8248c17">
 result_quantized_value = result_zero_point +
     (lhs_scale * rhs_scale / result_scale) *
         Sum_over_i(
@@ -362,8 +363,8 @@ in order to be able to replace real matrix multiplications.
 </div>
 </div>
 
-<div id="outline-container-orgd23488f" class="outline-3">
-<h3 id="orgd23488f"><span class="section-number-3">1.6</span> Implementation of quantized matrix multiplication</h3>
+<div id="outline-container-org3232d0c" class="outline-3">
+<h3 id="org3232d0c"><span class="section-number-3">1.6</span> Implementation of quantized matrix multiplication</h3>
 <div class="outline-text-3" id="text-1-6">
 <p>
 Having obtained the mathematical form (5) of quantized matrix
@@ -374,7 +375,7 @@ multiplication, we now turn to its actual implementation.
 The inner-most part of (5),
 </p>
 
-<pre class="example" id="org0a110e7">
+<pre class="example" id="orgfbe5c37">
 int32_accumulator =
     Sum_over_i(
         (lhs_quantized_value[i] - lhs_zero_point) *
@@ -401,7 +402,7 @@ allows us to take the handling of these <code>zero_point</code> constants out of
 this accumulation loop, so that it simplifies to
 </p>
 
-<pre class="example" id="orgc0b1065">
+<pre class="example" id="orgcace5ea">
 int32_accumulator =
     Sum_over_i(
       lhs_quantized_value[i] *
@@ -414,7 +415,7 @@ Anyway, the result is a <code>int32_accumulator</code> that we now plug back int
 the rest of (5):
 </p>
 
-<pre class="example" id="org0719dd5">
+<pre class="example" id="orgf64fef1">
 result_quantized_value = result_zero_point +
     (lhs_scale * rhs_scale / result_scale) * int32_accumulator       (7)
 </pre>
@@ -448,7 +449,7 @@ and right-shifting the result to achieve the correct multiplier.
 At this point we have obtained the int32 value of the product
 </p>
 
-<pre class="example" id="org4464b58">
+<pre class="example" id="orga91c196">
 (lhs_scale * rhs_scale / result_scale) * int32_accumulator
 </pre>
 
@@ -459,8 +460,8 @@ Looking at (7), it only remains to add to it the integral value
 </div>
 </div>
 
-<div id="outline-container-org60977b2" class="outline-3">
-<h3 id="org60977b2"><span class="section-number-3">1.7</span> How this is implemented in gemmlowp</h3>
+<div id="outline-container-org58f29d3" class="outline-3">
+<h3 id="org58f29d3"><span class="section-number-3">1.7</span> How this is implemented in gemmlowp</h3>
 <div class="outline-text-3" id="text-1-7">
 <p>
 The different parts of gemmlowp implementing aspects of the above
@@ -506,8 +507,8 @@ Please refer to the comment explaining it in
 </div>
 </div>
 
-<div id="outline-container-orgab45329" class="outline-3">
-<h3 id="orgab45329"><span class="section-number-3">1.8</span> How this differs from the older legacy gemmlowp quantization paradigm</h3>
+<div id="outline-container-org7021f63" class="outline-3">
+<h3 id="org7021f63"><span class="section-number-3">1.8</span> How this differs from the older legacy gemmlowp quantization paradigm</h3>
 <div class="outline-text-3" id="text-1-8">
 <p>
 The difference between the older legacy quantization paradigm described
@@ -554,8 +555,8 @@ network applications.</li>
 </div>
 </div>
 
-<div id="outline-container-orgaba5a51" class="outline-3">
-<h3 id="orgaba5a51"><span class="section-number-3">1.9</span> Example code illustrating the new quantization paradigm</h3>
+<div id="outline-container-org7f86b2a" class="outline-3">
+<h3 id="org7f86b2a"><span class="section-number-3">1.9</span> Example code illustrating the new quantization paradigm</h3>
 <div class="outline-text-3" id="text-1-9">
 <p>
 Example code showing how to perfom a quantized matrix multiplication in
@@ -569,21 +570,21 @@ the quantization paradigm discussed here is in
 <div id="postamble" class="status">
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
-Date: 2021-07-20 二 00:00<br />
-Last updated: 2021-10-26 二 19:45</p>
+Date: 2021-07-20 Tue 00:00<br />
+Last updated: 2021-10-26 Tue 19:45</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
-           <div id="disqus_thread"></div>
-           <script>
+<div id="disqus_thread"></div>
+<script>
 
-           (function() { // DON'T EDIT BELOW THIS LINE
-                    var d = document, s = d.createElement('script');
-                    s.src = '//sunwayforever-github-io.disqus.com/embed.js';
-                    s.setAttribute('data-timestamp', +new Date());
-                    (d.head || d.body).appendChild(s);
-                    })();
-           </script>
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
 </div>
 </body>
 </html>
