@@ -117,10 +117,10 @@ quantize 分为三步：
 </ol>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold; font-style: italic;">calibrate_pass</span> = tvm.transform.module_pass(
-    calibrate(dataset), opt_level=1, name=<span style="font-style: italic;">"QuantizeCalibrate"</span>
+<pre class="src src-python"><span class="org-variable-name">calibrate_pass</span> = tvm.transform.module_pass(
+    calibrate(dataset), opt_level=1, name=<span class="org-string">"QuantizeCalibrate"</span>
 )
-<span style="font-weight: bold; font-style: italic;">quant_passes</span> = [
+<span class="org-variable-name">quant_passes</span> = [
     partition(),
     annotate(),
     calibrate_pass,
@@ -128,13 +128,13 @@ quantize 分为三步：
     realize(),
 ]
 
-<span style="font-weight: bold; font-style: italic;">quantize_seq</span> = tvm.transform.Sequential(quant_passes)
-<span style="font-weight: bold;">with</span> tvm.transform.PassContext(
+<span class="org-variable-name">quantize_seq</span> = tvm.transform.Sequential(quant_passes)
+<span class="org-keyword">with</span> tvm.transform.PassContext(
     opt_level=3,
-    required_pass=[<span style="font-style: italic;">"QuantizeAnnotate"</span>, <span style="font-style: italic;">"QuantizeCalibrate"</span>, <span style="font-style: italic;">"QuantizeRealize"</span>],
+    required_pass=[<span class="org-string">"QuantizeAnnotate"</span>, <span class="org-string">"QuantizeCalibrate"</span>, <span class="org-string">"QuantizeRealize"</span>],
 ):
-    <span style="font-weight: bold;">with</span> quantize_context():
-        <span style="font-weight: bold; font-style: italic;">mod</span> = quantize_seq(mod)
+    <span class="org-keyword">with</span> quantize_context():
+        <span class="org-variable-name">mod</span> = quantize_seq(mod)
 </pre>
 </div>
 </div>
@@ -143,46 +143,46 @@ quantize 分为三步：
 <h5 id="org000000a"><span class="section-number-5">1.1.0.1</span> calibrate</h5>
 <div class="outline-text-5" id="text-1-1-0-1">
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold;">def</span> <span style="font-weight: bold;">calibrate</span>(dataset=<span style="font-weight: bold; text-decoration: underline;">None</span>):
-    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">wrapped_func</span>(mod, _):
-        <span style="font-weight: bold; font-style: italic;">cfg</span> = quantize.current_qconfig()
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">calibrate</span>(dataset=<span class="org-constant">None</span>):
+    <span class="org-keyword">def</span> <span class="org-function-name">wrapped_func</span>(mod, _):
+        <span class="org-variable-name">cfg</span> = quantize.current_qconfig()
 
-        <span style="font-weight: bold;">if</span> cfg.calibrate_mode == <span style="font-style: italic;">"kl_divergence"</span>:
-            <span style="font-weight: bold; font-style: italic;">input_scale_func</span> = _kl_scale(mod, dataset)
-        <span style="font-weight: bold;">elif</span> cfg.calibrate_mode == <span style="font-style: italic;">"global_scale"</span>:
-            <span style="font-weight: bold; font-style: italic;">input_scale_func</span> = _global_scale
-        <span style="font-weight: bold;">elif</span> cfg.calibrate_mode == <span style="font-style: italic;">"percentile"</span>:
-            <span style="font-weight: bold; font-style: italic;">input_scale_func</span> = _percentile_scale(mod, dataset)
+        <span class="org-keyword">if</span> cfg.calibrate_mode == <span class="org-string">"kl_divergence"</span>:
+            <span class="org-variable-name">input_scale_func</span> = _kl_scale(mod, dataset)
+        <span class="org-keyword">elif</span> cfg.calibrate_mode == <span class="org-string">"global_scale"</span>:
+            <span class="org-variable-name">input_scale_func</span> = _global_scale
+        <span class="org-keyword">elif</span> cfg.calibrate_mode == <span class="org-string">"percentile"</span>:
+            <span class="org-variable-name">input_scale_func</span> = _percentile_scale(mod, dataset)
 
-        <span style="font-weight: bold;">if</span> cfg.weight_scale == <span style="font-style: italic;">"max"</span>:
-            <span style="font-weight: bold; font-style: italic;">weight_scale_func</span> = _max_scale
-        <span style="font-weight: bold;">elif</span> cfg.weight_scale == <span style="font-style: italic;">"power2"</span>:
-            <span style="font-weight: bold; font-style: italic;">weight_scale_func</span> = _power2_scale
+        <span class="org-keyword">if</span> cfg.weight_scale == <span class="org-string">"max"</span>:
+            <span class="org-variable-name">weight_scale_func</span> = _max_scale
+        <span class="org-keyword">elif</span> cfg.weight_scale == <span class="org-string">"power2"</span>:
+            <span class="org-variable-name">weight_scale_func</span> = _power2_scale
 
-        <span style="font-weight: bold;">return</span> _set_params(mod, input_scale_func, weight_scale_func)
+        <span class="org-keyword">return</span> _set_params(mod, input_scale_func, weight_scale_func)
 
-    <span style="font-weight: bold;">return</span> wrapped_func
+    <span class="org-keyword">return</span> wrapped_func
 
 
 _set_params:
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">nbit &#40664;&#35748;&#30340;&#23450;&#20041;&#22312; ~/source/tvm/python/tvm/relay/quantize/quantize.py, &#20363;&#22914;</span>
-    <span style="font-weight: bold; font-style: italic;">#      </span><span style="font-weight: bold; font-style: italic;">"nbit_input": 8,</span>
-    <span style="font-weight: bold; font-style: italic;">#      </span><span style="font-weight: bold; font-style: italic;">"nbit_weight": 8,</span>
-    <span style="font-weight: bold; font-style: italic;">#      </span><span style="font-weight: bold; font-style: italic;">"nbit_activation": 32,</span>
-    <span style="font-weight: bold; font-style: italic;">nbit</span> = cfg.get_nbit_by_kind(kind)
-    <span style="font-weight: bold; font-style: italic;">valid_bit</span> = nbit - attrs.sign
-    <span style="font-weight: bold;">if</span> kind == quantize.QAnnotateKind.WEIGHT:
-        <span style="font-weight: bold; font-style: italic;">scale</span> = weight_scale_func(expr)
-    <span style="font-weight: bold;">else</span>:
-        <span style="font-weight: bold; font-style: italic;">scale</span> = input_scale_func(expr)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">nbit &#40664;&#35748;&#30340;&#23450;&#20041;&#22312; ~/source/tvm/python/tvm/relay/quantize/quantize.py, &#20363;&#22914;</span>
+    <span class="org-comment-delimiter">#      </span><span class="org-comment">"nbit_input": 8,</span>
+    <span class="org-comment-delimiter">#      </span><span class="org-comment">"nbit_weight": 8,</span>
+    <span class="org-comment-delimiter">#      </span><span class="org-comment">"nbit_activation": 32,</span>
+    <span class="org-variable-name">nbit</span> = cfg.get_nbit_by_kind(kind)
+    <span class="org-variable-name">valid_bit</span> = nbit - attrs.sign
+    <span class="org-keyword">if</span> kind == quantize.QAnnotateKind.WEIGHT:
+        <span class="org-variable-name">scale</span> = weight_scale_func(expr)
+    <span class="org-keyword">else</span>:
+        <span class="org-variable-name">scale</span> = input_scale_func(expr)
 
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#36825;&#37324;&#26174;&#31034; tvm &#30340;&#37327;&#21270;&#26159;&#23545;&#31216;&#37327;&#21270;, &#19978;&#38754;&#35745;&#31639;&#30340; scale &#22312;&#21407;&#29702;&#19978;&#24212;&#35813;&#31561;&#20110;</span>
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">np.max(np.abs(orig_data))</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">&#36825;&#37324;&#26174;&#31034; tvm &#30340;&#37327;&#21270;&#26159;&#23545;&#31216;&#37327;&#21270;, &#19978;&#38754;&#35745;&#31639;&#30340; scale &#22312;&#21407;&#29702;&#19978;&#24212;&#35813;&#31561;&#20110;</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">np.max(np.abs(orig_data))</span>
 
-    <span style="font-weight: bold; font-style: italic;">valid_range</span> = 2 ** valid_bit
-    <span style="font-weight: bold; font-style: italic;">const_params</span>[ndom_scale] = _make_const(scale / valid_range)
-    <span style="font-weight: bold; font-style: italic;">const_params</span>[nclip_min] = _make_const(-(valid_range - 1))
-    <span style="font-weight: bold; font-style: italic;">const_params</span>[nclip_max] = _make_const((valid_range - 1))
+    <span class="org-variable-name">valid_range</span> = 2 ** valid_bit
+    <span class="org-variable-name">const_params</span>[ndom_scale] = _make_const(scale / valid_range)
+    <span class="org-variable-name">const_params</span>[nclip_min] = _make_const(-(valid_range - 1))
+    <span class="org-variable-name">const_params</span>[nclip_max] = _make_const((valid_range - 1))
 </pre>
 </div>
 </div>
@@ -191,50 +191,50 @@ _set_params:
 <h6 id="org0000000"><span class="section-number-6">1.1.0.1.1</span> percentile</h6>
 <div class="outline-text-6" id="text-1-1-0-1-1">
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold;">def</span> <span style="font-weight: bold;">_percentile_scale</span>(mod, dataset):
-    <span style="font-weight: bold; font-style: italic;">cfg</span> = quantize.current_qconfig()
-    <span style="font-weight: bold; font-style: italic;">chunk_by</span> = cfg.calibrate_chunk_by
-    <span style="font-weight: bold; font-style: italic;">scales</span> = []
-    <span style="font-weight: bold;">for</span> samples <span style="font-weight: bold;">in</span> collect_stats(mod, dataset, chunk_by):
-        logging.info(<span style="font-style: italic;">"finding threshold with percentile for calibration..."</span>)
-        <span style="font-weight: bold;">with</span> mp.Pool() <span style="font-weight: bold;">as</span> pool:
-            <span style="font-weight: bold; font-style: italic;">scales</span> += <span style="font-weight: bold;">list</span>(pool.<span style="font-weight: bold;">map</span>(_find_scale_by_percentile, samples))
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">_percentile_scale</span>(mod, dataset):
+    <span class="org-variable-name">cfg</span> = quantize.current_qconfig()
+    <span class="org-variable-name">chunk_by</span> = cfg.calibrate_chunk_by
+    <span class="org-variable-name">scales</span> = []
+    <span class="org-keyword">for</span> samples <span class="org-keyword">in</span> collect_stats(mod, dataset, chunk_by):
+        logging.info(<span class="org-string">"finding threshold with percentile for calibration..."</span>)
+        <span class="org-keyword">with</span> mp.Pool() <span class="org-keyword">as</span> pool:
+            <span class="org-variable-name">scales</span> += <span class="org-builtin">list</span>(pool.<span class="org-builtin">map</span>(_find_scale_by_percentile, samples))
 
-    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">func</span>(_):
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">func &#36820;&#22238;&#27599;&#19968;&#23618;&#30340; scale (&#23454;&#38469;&#19978;&#30456;&#24403;&#20110;&#27599;&#23618;&#30340;`&#26368;&#22823;&#20540;`, &#21518;&#32493;&#20250;&#36890;&#36807;</span>
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">scale/valid_range &#33719;&#24471;&#26368;&#32456;&#30340; scale)</span>
-        <span style="font-weight: bold; font-style: italic;">scale</span> = scales[func.scale_idx]
-        <span style="font-weight: bold; font-style: italic;">func.scale_idx</span> += 1
-        <span style="font-weight: bold;">return</span> scale
+    <span class="org-keyword">def</span> <span class="org-function-name">func</span>(_):
+        <span class="org-comment-delimiter"># </span><span class="org-comment">func &#36820;&#22238;&#27599;&#19968;&#23618;&#30340; scale (&#23454;&#38469;&#19978;&#30456;&#24403;&#20110;&#27599;&#23618;&#30340;`&#26368;&#22823;&#20540;`, &#21518;&#32493;&#20250;&#36890;&#36807;</span>
+        <span class="org-comment-delimiter"># </span><span class="org-comment">scale/valid_range &#33719;&#24471;&#26368;&#32456;&#30340; scale)</span>
+        <span class="org-variable-name">scale</span> = scales[func.scale_idx]
+        <span class="org-variable-name">func.scale_idx</span> += 1
+        <span class="org-keyword">return</span> scale
 
-    <span style="font-weight: bold; font-style: italic;">func.scale_idx</span> = 0
+    <span class="org-variable-name">func.scale_idx</span> = 0
 
-    <span style="font-weight: bold;">return</span> func
+    <span class="org-keyword">return</span> func
 
 
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#20351;&#29992; calibrate_dataset &#33719;&#24471;&#27599;&#19968;&#23618;&#30340;&#36755;&#20986;</span>
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">collect_stats</span>(mod, dataset, chunk_by=-1):
-    <span style="font-weight: bold; font-style: italic;">runtime</span> = _get_profile_runtime(mod)
-    <span style="font-weight: bold; font-style: italic;">num_outputs</span> = runtime.get_num_outputs()
+<span class="org-comment-delimiter"># </span><span class="org-comment">&#20351;&#29992; calibrate_dataset &#33719;&#24471;&#27599;&#19968;&#23618;&#30340;&#36755;&#20986;</span>
+<span class="org-keyword">def</span> <span class="org-function-name">collect_stats</span>(mod, dataset, chunk_by=-1):
+    <span class="org-variable-name">runtime</span> = _get_profile_runtime(mod)
+    <span class="org-variable-name">num_outputs</span> = runtime.get_num_outputs()
 
-    <span style="font-weight: bold;">for</span> i <span style="font-weight: bold;">in</span> <span style="font-weight: bold;">range</span>(0, num_outputs, chunk_by):
-        <span style="font-weight: bold; font-style: italic;">outputs</span> = [[] <span style="font-weight: bold;">for</span> i <span style="font-weight: bold;">in</span> <span style="font-weight: bold;">range</span>(<span style="font-weight: bold;">min</span>(chunk_by, num_outputs - i))]
-        <span style="font-weight: bold;">for</span> batch <span style="font-weight: bold;">in</span> dataset:
+    <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(0, num_outputs, chunk_by):
+        <span class="org-variable-name">outputs</span> = [[] <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(<span class="org-builtin">min</span>(chunk_by, num_outputs - i))]
+        <span class="org-keyword">for</span> batch <span class="org-keyword">in</span> dataset:
             runtime.set_input(**batch)
             runtime.run()
-            <span style="font-weight: bold;">for</span> j <span style="font-weight: bold;">in</span> <span style="font-weight: bold;">range</span>(i, <span style="font-weight: bold;">min</span>(i + chunk_by, num_outputs)):
+            <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(i, <span class="org-builtin">min</span>(i + chunk_by, num_outputs)):
                 outputs[j - i].append(runtime.get_output(j).numpy())
-        <span style="font-weight: bold;">yield</span> [np.concatenate(output).reshape(-1) <span style="font-weight: bold;">for</span> output <span style="font-weight: bold;">in</span> outputs]
+        <span class="org-keyword">yield</span> [np.concatenate(output).reshape(-1) <span class="org-keyword">for</span> output <span class="org-keyword">in</span> outputs]
 
 
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#36825;&#20010;&#20989;&#25968;&#30456;&#24403;&#20110;&#19968;&#20010; get_k_largest &#20989;&#25968;, &#20854;&#20013; k=percentile*(arr.size), &#29992;&#26469;&#36991;&#20813;</span>
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#20010;&#21035;&#26497;&#22823;&#30340;&#20540;&#36896;&#25104;&#37327;&#21270;&#35823;&#24046;</span>
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">file:~/Gitbox/code/leetcode/go/src/kth_largest_element_in_an_array/kth_largest_element_in_an_array.go</span>
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">_find_scale_by_percentile</span>(arr, percentile=0.99999):
-    <span style="font-weight: bold;">assert</span> <span style="font-weight: bold;">isinstance</span>(arr, np.ndarray)
-    <span style="font-weight: bold; font-style: italic;">x</span> = np.<span style="font-weight: bold;">abs</span>(arr)
-    <span style="font-weight: bold; font-style: italic;">max_k</span> = <span style="font-weight: bold;">int</span>(x.size * percentile)
-    <span style="font-weight: bold;">return</span> np.partition(x, max_k)[max_k]
+<span class="org-comment-delimiter"># </span><span class="org-comment">&#36825;&#20010;&#20989;&#25968;&#30456;&#24403;&#20110;&#19968;&#20010; get_k_largest &#20989;&#25968;, &#20854;&#20013; k=percentile*(arr.size), &#29992;&#26469;&#36991;&#20813;</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">&#20010;&#21035;&#26497;&#22823;&#30340;&#20540;&#36896;&#25104;&#37327;&#21270;&#35823;&#24046;</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">file:~/Gitbox/code/leetcode/go/src/kth_largest_element_in_an_array/kth_largest_element_in_an_array.go</span>
+<span class="org-keyword">def</span> <span class="org-function-name">_find_scale_by_percentile</span>(arr, percentile=0.99999):
+    <span class="org-keyword">assert</span> <span class="org-builtin">isinstance</span>(arr, np.ndarray)
+    <span class="org-variable-name">x</span> = np.<span class="org-builtin">abs</span>(arr)
+    <span class="org-variable-name">max_k</span> = <span class="org-builtin">int</span>(x.size * percentile)
+    <span class="org-keyword">return</span> np.partition(x, max_k)[max_k]
 </pre>
 </div>
 </div>
@@ -272,27 +272,27 @@ for i in range( 128 , 2048 ):
 </pre>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold; font-style: italic;">#</span><span style="font-weight: bold; font-style: italic;">!/usr/bin/env python3</span>
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">-*- coding: utf-8 -*-</span>
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">2021-08-23 22:25</span>
-<span style="font-weight: bold;">import</span> numpy <span style="font-weight: bold;">as</span> np
+<pre class="src src-python"><span class="org-comment-delimiter">#</span><span class="org-comment">!/usr/bin/env python3</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">-*- coding: utf-8 -*-</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">2021-08-23 22:25</span>
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">kl_divergence</span>(p, q):
-    <span style="font-weight: bold;">return</span> np.<span style="font-weight: bold;">sum</span>(p * np.log(p / q))
+<span class="org-keyword">def</span> <span class="org-function-name">kl_divergence</span>(p, q):
+    <span class="org-keyword">return</span> np.<span class="org-builtin">sum</span>(p * np.log(p / q))
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">check</span>(P, target_bins):
-    <span style="font-weight: bold; font-style: italic;">Q</span> = np.array([np.average(x) <span style="font-weight: bold;">for</span> x <span style="font-weight: bold;">in</span> np.split(P, target_bins)])
-    <span style="font-weight: bold; font-style: italic;">Q</span> = np.repeat(Q, <span style="font-weight: bold;">len</span>(P) // target_bins)
+<span class="org-keyword">def</span> <span class="org-function-name">check</span>(P, target_bins):
+    <span class="org-variable-name">Q</span> = np.array([np.average(x) <span class="org-keyword">for</span> x <span class="org-keyword">in</span> np.split(P, target_bins)])
+    <span class="org-variable-name">Q</span> = np.repeat(Q, <span class="org-builtin">len</span>(P) // target_bins)
 
-    <span style="font-weight: bold;">return</span> kl_divergence(P / np.<span style="font-weight: bold;">sum</span>(P), Q / np.<span style="font-weight: bold;">sum</span>(Q))
+    <span class="org-keyword">return</span> kl_divergence(P / np.<span class="org-builtin">sum</span>(P), Q / np.<span class="org-builtin">sum</span>(Q))
 
 
-<span style="font-weight: bold;">if</span> <span style="font-weight: bold;">__name__</span> == <span style="font-style: italic;">"__main__"</span>:
-    <span style="font-weight: bold;">print</span>(check(np.array([1, 2, 3, 4, 5, 6, 7, 8]), 2))
-    <span style="font-weight: bold;">print</span>(check(np.array([1, 3, 5, 7, 2, 4, 6, 8]), 2))
-    <span style="font-weight: bold;">print</span>(check(np.array([2, 2, 2, 2, 6, 6, 6, 6]), 2))
+<span class="org-keyword">if</span> <span class="org-builtin">__name__</span> == <span class="org-string">"__main__"</span>:
+    <span class="org-keyword">print</span>(check(np.array([1, 2, 3, 4, 5, 6, 7, 8]), 2))
+    <span class="org-keyword">print</span>(check(np.array([1, 3, 5, 7, 2, 4, 6, 8]), 2))
+    <span class="org-keyword">print</span>(check(np.array([2, 2, 2, 2, 6, 6, 6, 6]), 2))
 </pre>
 </div>
 
@@ -313,9 +313,9 @@ calibrate_dataset
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold;">def</span> <span style="font-weight: bold;">_global_scale</span>(sq_call):
-    <span style="font-weight: bold; font-style: italic;">cfg</span> = quantize.current_qconfig()
-    <span style="font-weight: bold;">return</span> cfg.global_scale
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">_global_scale</span>(sq_call):
+    <span class="org-variable-name">cfg</span> = quantize.current_qconfig()
+    <span class="org-keyword">return</span> cfg.global_scale
 </pre>
 </div>
 </div>
@@ -362,73 +362,73 @@ relay::qnn::transform::Legalize 被执行的
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold; font-style: italic;">#</span><span style="font-weight: bold; font-style: italic;">!/usr/bin/env python3</span>
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">-*- coding: utf-8 -*-</span>
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">2021-09-22 16:20</span>
+<pre class="src src-python"><span class="org-comment-delimiter">#</span><span class="org-comment">!/usr/bin/env python3</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">-*- coding: utf-8 -*-</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">2021-09-22 16:20</span>
 
-<span style="font-weight: bold;">import</span> tvm
-<span style="font-weight: bold;">from</span> tvm <span style="font-weight: bold;">import</span> te
-<span style="font-weight: bold;">import</span> numpy <span style="font-weight: bold;">as</span> np
-<span style="font-weight: bold;">from</span> tvm <span style="font-weight: bold;">import</span> relay
+<span class="org-keyword">import</span> tvm
+<span class="org-keyword">from</span> tvm <span class="org-keyword">import</span> te
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">from</span> tvm <span class="org-keyword">import</span> relay
 
-<span style="font-weight: bold; font-style: italic;">x_data</span> = np.array((1, 153, 2, 178)).reshape((1, 4))
-<span style="font-weight: bold; font-style: italic;">y_data</span> = np.array((204, 178, 1, 8)).reshape((1, 4))
+<span class="org-variable-name">x_data</span> = np.array((1, 153, 2, 178)).reshape((1, 4))
+<span class="org-variable-name">y_data</span> = np.array((204, 178, 1, 8)).reshape((1, 4))
 
-<span style="font-weight: bold; font-style: italic;">x_scale</span> = <span style="font-weight: bold; font-style: italic;">y_scale</span> = <span style="font-weight: bold; font-style: italic;">z_scale</span> = 0.00784314
-<span style="font-weight: bold; font-style: italic;">x_zero_point</span> = <span style="font-weight: bold; font-style: italic;">y_zero_point</span> = <span style="font-weight: bold; font-style: italic;">z_zero_point</span> = 127
-
-
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">dequant</span>(data, scale, zp):
-    <span style="font-weight: bold;">return</span> scale * (np.asarray(data) - zp)
+<span class="org-variable-name">x_scale</span> = <span class="org-variable-name">y_scale</span> = <span class="org-variable-name">z_scale</span> = 0.00784314
+<span class="org-variable-name">x_zero_point</span> = <span class="org-variable-name">y_zero_point</span> = <span class="org-variable-name">z_zero_point</span> = 127
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">quant</span>(data, scale, zp):
-    <span style="font-weight: bold; font-style: italic;">z</span> = np.around(data / scale + zp)
-    <span style="font-weight: bold; font-style: italic;">q_min</span> = np.iinfo(np.uint8).<span style="font-weight: bold;">min</span>
-    <span style="font-weight: bold; font-style: italic;">q_max</span> = np.iinfo(np.uint8).<span style="font-weight: bold;">max</span>
-    <span style="font-weight: bold;">return</span> np.clip(z, q_min, q_max)
+<span class="org-keyword">def</span> <span class="org-function-name">dequant</span>(data, scale, zp):
+    <span class="org-keyword">return</span> scale * (np.asarray(data) - zp)
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">mul_manually</span>():
-    <span style="font-weight: bold;">return</span> quant(
+<span class="org-keyword">def</span> <span class="org-function-name">quant</span>(data, scale, zp):
+    <span class="org-variable-name">z</span> = np.around(data / scale + zp)
+    <span class="org-variable-name">q_min</span> = np.iinfo(np.uint8).<span class="org-builtin">min</span>
+    <span class="org-variable-name">q_max</span> = np.iinfo(np.uint8).<span class="org-builtin">max</span>
+    <span class="org-keyword">return</span> np.clip(z, q_min, q_max)
+
+
+<span class="org-keyword">def</span> <span class="org-function-name">mul_manually</span>():
+    <span class="org-keyword">return</span> quant(
         dequant(x_data, x_scale, x_zero_point) * dequant(y_data, y_scale, y_zero_point),
         z_scale,
         z_zero_point,
     )
 
 
-<span style="font-weight: bold;">if</span> <span style="font-weight: bold;">__name__</span> == <span style="font-style: italic;">"__main__"</span>:
-    <span style="font-weight: bold; font-style: italic;">x</span> = relay.var(<span style="font-style: italic;">"x"</span>, shape=(1, 4), dtype=<span style="font-style: italic;">"uint8"</span>)
-    <span style="font-weight: bold; font-style: italic;">y</span> = relay.var(<span style="font-style: italic;">"y"</span>, shape=(1, 4), dtype=<span style="font-style: italic;">"uint8"</span>)
-    <span style="font-weight: bold; font-style: italic;">z</span> = relay.qnn.op.mul(
+<span class="org-keyword">if</span> <span class="org-builtin">__name__</span> == <span class="org-string">"__main__"</span>:
+    <span class="org-variable-name">x</span> = relay.var(<span class="org-string">"x"</span>, shape=(1, 4), dtype=<span class="org-string">"uint8"</span>)
+    <span class="org-variable-name">y</span> = relay.var(<span class="org-string">"y"</span>, shape=(1, 4), dtype=<span class="org-string">"uint8"</span>)
+    <span class="org-variable-name">z</span> = relay.qnn.op.mul(
         lhs=x,
         rhs=y,
-        lhs_scale=relay.const(x_scale, <span style="font-style: italic;">"float32"</span>),
-        lhs_zero_point=relay.const(x_zero_point, <span style="font-style: italic;">"int32"</span>),
-        rhs_scale=relay.const(y_scale, <span style="font-style: italic;">"float32"</span>),
-        rhs_zero_point=relay.const(y_zero_point, <span style="font-style: italic;">"int32"</span>),
-        output_scale=relay.const(z_scale, <span style="font-style: italic;">"float32"</span>),
-        output_zero_point=relay.const(z_zero_point, <span style="font-style: italic;">"int32"</span>),
+        lhs_scale=relay.const(x_scale, <span class="org-string">"float32"</span>),
+        lhs_zero_point=relay.const(x_zero_point, <span class="org-string">"int32"</span>),
+        rhs_scale=relay.const(y_scale, <span class="org-string">"float32"</span>),
+        rhs_zero_point=relay.const(y_zero_point, <span class="org-string">"int32"</span>),
+        output_scale=relay.const(z_scale, <span class="org-string">"float32"</span>),
+        output_zero_point=relay.const(z_zero_point, <span class="org-string">"int32"</span>),
     )
 
-    <span style="font-weight: bold; font-style: italic;">func</span> = relay.Function([x, y], z)
-    <span style="font-weight: bold; font-style: italic;">mod</span> = tvm.IRModule.from_expr(func)
-    <span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"----------before qnn transform----------"</span>)
-    <span style="font-weight: bold;">print</span>(mod)
-    <span style="font-weight: bold; font-style: italic;">mod</span> = relay.transform.InferType()(mod)
-    <span style="font-weight: bold; font-style: italic;">mod</span> = relay.qnn.transform.CanonicalizeOps()(mod)
-    <span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"----------after qnn transform----------"</span>)
-    <span style="font-weight: bold;">print</span>(mod)
-    <span style="font-weight: bold; font-style: italic;">func</span> = mod[<span style="font-style: italic;">"main"</span>]
+    <span class="org-variable-name">func</span> = relay.Function([x, y], z)
+    <span class="org-variable-name">mod</span> = tvm.IRModule.from_expr(func)
+    <span class="org-keyword">print</span>(<span class="org-string">"----------before qnn transform----------"</span>)
+    <span class="org-keyword">print</span>(mod)
+    <span class="org-variable-name">mod</span> = relay.transform.InferType()(mod)
+    <span class="org-variable-name">mod</span> = relay.qnn.transform.CanonicalizeOps()(mod)
+    <span class="org-keyword">print</span>(<span class="org-string">"----------after qnn transform----------"</span>)
+    <span class="org-keyword">print</span>(mod)
+    <span class="org-variable-name">func</span> = mod[<span class="org-string">"main"</span>]
 
-    <span style="font-weight: bold; font-style: italic;">intrp</span> = relay.create_executor(<span style="font-style: italic;">"graph"</span>, device=tvm.cpu(0), target=<span style="font-style: italic;">"llvm"</span>)
-    <span style="font-weight: bold; font-style: italic;">op_res</span> = intrp.evaluate(func)(x_data, y_data)
+    <span class="org-variable-name">intrp</span> = relay.create_executor(<span class="org-string">"graph"</span>, device=tvm.cpu(0), target=<span class="org-string">"llvm"</span>)
+    <span class="org-variable-name">op_res</span> = intrp.evaluate(func)(x_data, y_data)
 
-    <span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"----------"</span>)
-    <span style="font-weight: bold;">print</span>(op_res.numpy())
-    <span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"----------"</span>)
-    <span style="font-weight: bold; font-style: italic;">golden</span> = mul_manually()
-    <span style="font-weight: bold;">print</span>(golden.astype(<span style="font-style: italic;">"uint8"</span>))
+    <span class="org-keyword">print</span>(<span class="org-string">"----------"</span>)
+    <span class="org-keyword">print</span>(op_res.numpy())
+    <span class="org-keyword">print</span>(<span class="org-string">"----------"</span>)
+    <span class="org-variable-name">golden</span> = mul_manually()
+    <span class="org-keyword">print</span>(golden.astype(<span class="org-string">"uint8"</span>))
 </pre>
 </div>
 
@@ -471,26 +471,26 @@ def @main(%x: Tensor[(1, 4), uint8], %y: Tensor[(1, 4), uint8]) -&gt; Tensor[(1,
 <h5 id="org0000019"><span class="section-number-5">1.2.1.2</span> How is `QnnMulCanonicalize` invoked</h5>
 <div class="outline-text-5" id="text-1-2-1-2">
 <div class="org-src-container">
-<pre class="src src-C++">QNN_REGISTER_BINARY_OP(<span style="font-style: italic;">"mul"</span>)
-    .describe(<span style="font-style: italic;">"Elementwise mul with with broadcasting for quantized tensors."</span>)
+<pre class="src src-C++">QNN_REGISTER_BINARY_OP(<span class="org-string">"mul"</span>)
+    .describe(<span class="org-string">"Elementwise mul with with broadcasting for quantized tensors."</span>)
     .set_support_level(11)
-    .set_attr&lt;FTVMLegalize&gt;(<span style="font-style: italic;">"FTVMQnnCanonicalize"</span>, QnnMulCanonicalize);
+    .set_attr&lt;FTVMLegalize&gt;(<span class="org-string">"FTVMQnnCanonicalize"</span>, QnnMulCanonicalize);
 
-<span style="font-weight: bold; text-decoration: underline;">Pass</span> <span style="font-weight: bold;">Legalize</span>() {
-  <span style="font-weight: bold; text-decoration: underline;">Array</span>&lt;<span style="font-weight: bold; text-decoration: underline;">Pass</span>&gt; <span style="font-weight: bold; font-style: italic;">pass_seqs</span>;
-  pass_seqs.push_back(<span style="font-weight: bold; text-decoration: underline;">relay</span>::<span style="font-weight: bold; text-decoration: underline;">transform</span>::Legalize(<span style="font-style: italic;">"FTVMQnnLegalize"</span>));
-  pass_seqs.push_back(<span style="font-weight: bold; text-decoration: underline;">relay</span>::<span style="font-weight: bold; text-decoration: underline;">transform</span>::Legalize(<span style="font-style: italic;">"FTVMQnnCanonicalize"</span>));
-  <span style="font-weight: bold; text-decoration: underline;">relay</span>::<span style="font-weight: bold; text-decoration: underline;">transform</span>::<span style="font-weight: bold; text-decoration: underline;">Pass</span> <span style="font-weight: bold; font-style: italic;">seq</span> = <span style="font-weight: bold; text-decoration: underline;">relay</span>::<span style="font-weight: bold; text-decoration: underline;">transform</span>::Sequential(pass_seqs);
-  <span style="font-weight: bold;">return</span> seq;
+<span class="org-type">Pass</span> <span class="org-function-name">Legalize</span>() {
+  <span class="org-type">Array</span>&lt;<span class="org-type">Pass</span>&gt; <span class="org-variable-name">pass_seqs</span>;
+  pass_seqs.push_back(<span class="org-constant">relay</span>::<span class="org-constant">transform</span>::Legalize(<span class="org-string">"FTVMQnnLegalize"</span>));
+  pass_seqs.push_back(<span class="org-constant">relay</span>::<span class="org-constant">transform</span>::Legalize(<span class="org-string">"FTVMQnnCanonicalize"</span>));
+  <span class="org-constant">relay</span>::<span class="org-constant">transform</span>::<span class="org-type">Pass</span> <span class="org-variable-name">seq</span> = <span class="org-constant">relay</span>::<span class="org-constant">transform</span>::Sequential(pass_seqs);
+  <span class="org-keyword">return</span> seq;
 }
 
-<span style="font-weight: bold; text-decoration: underline;">Array</span>&lt;<span style="font-weight: bold; text-decoration: underline;">Pass</span>&gt; <span style="font-weight: bold;">GetPassPrefix</span>(<span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">Map</span>&lt;<span style="font-weight: bold; text-decoration: underline;">tvm</span>::Integer, <span style="font-weight: bold; text-decoration: underline;">tvm</span>::Target&gt;&amp; <span style="font-weight: bold; font-style: italic;">targets</span>, <span style="font-weight: bold; text-decoration: underline;">bool</span> <span style="font-weight: bold; font-style: italic;">is_vm</span>) {
-  <span style="font-weight: bold; text-decoration: underline;">Array</span>&lt;<span style="font-weight: bold; text-decoration: underline;">Pass</span>&gt; <span style="font-weight: bold; font-style: italic;">pass_seqs</span>;
-  <span style="font-weight: bold; text-decoration: underline;">Array</span>&lt;<span style="font-weight: bold; text-decoration: underline;">runtime</span>::String&gt; <span style="font-weight: bold; font-style: italic;">entry_functions</span>{<span style="font-style: italic;">"main"</span>};
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">..</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">Run all dialect legalization passes.</span>
-  pass_seqs.push_back(<span style="font-weight: bold; text-decoration: underline;">relay</span>::<span style="font-weight: bold; text-decoration: underline;">qnn</span>::<span style="font-weight: bold; text-decoration: underline;">transform</span>::Legalize());
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">...</span>
+<span class="org-type">Array</span>&lt;<span class="org-type">Pass</span>&gt; <span class="org-function-name">GetPassPrefix</span>(<span class="org-keyword">const</span> <span class="org-type">Map</span>&lt;<span class="org-constant">tvm</span>::Integer, <span class="org-constant">tvm</span>::Target&gt;&amp; <span class="org-variable-name">targets</span>, <span class="org-type">bool</span> <span class="org-variable-name">is_vm</span>) {
+  <span class="org-type">Array</span>&lt;<span class="org-type">Pass</span>&gt; <span class="org-variable-name">pass_seqs</span>;
+  <span class="org-type">Array</span>&lt;<span class="org-constant">runtime</span>::String&gt; <span class="org-variable-name">entry_functions</span>{<span class="org-string">"main"</span>};
+  <span class="org-comment-delimiter">// </span><span class="org-comment">..</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">Run all dialect legalization passes.</span>
+  pass_seqs.push_back(<span class="org-constant">relay</span>::<span class="org-constant">qnn</span>::<span class="org-constant">transform</span>::Legalize());
+  <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
 }
 
 </pre>

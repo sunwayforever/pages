@@ -395,13 +395,13 @@ Trap gate 与 interrupt gate 基本相同, 但硬件不会主动关中断
 <h5 id="org0000015"><span class="section-number-5">1.3.2.1</span> idtr 的初始化</h5>
 <div class="outline-text-5" id="text-1-3-2-1">
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">cpu_init</span>:
-  <span style="font-weight: bold;">__asm__</span> __volatile__(<span style="font-style: italic;">"lidt %0"</span> : : <span style="font-style: italic;">"m"</span> (idt_descr));
+<pre class="src src-c"><span class="org-constant">cpu_init</span>:
+  <span class="org-keyword">__asm__</span> __volatile__(<span class="org-string">"lidt %0"</span> : : <span class="org-string">"m"</span> (idt_descr));
 
-<span style="font-weight: bold; text-decoration: underline;">idt_descr</span>:
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">IDT_ENTRIES &#20026; 256</span>
+<span class="org-constant">idt_descr</span>:
+  <span class="org-comment-delimiter">// </span><span class="org-comment">IDT_ENTRIES &#20026; 256</span>
   .word IDT_ENTRIES*8-1
-  .<span style="font-weight: bold; text-decoration: underline;">long</span> idt_table
+  .<span class="org-type">long</span> idt_table
 </pre>
 </div>
 </div>
@@ -433,16 +433,16 @@ descriptor:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">setup_idt</span>:
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">interrupt handler &#20026; ignore_int</span>
-  <span style="font-weight: bold; text-decoration: underline;">lea</span> <span style="font-weight: bold; font-style: italic;">ignore_int</span>,%edx
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">selector = 0x0010 = cs</span>
+<pre class="src src-c"><span class="org-constant">setup_idt</span>:
+  <span class="org-comment-delimiter">// </span><span class="org-comment">interrupt handler &#20026; ignore_int</span>
+  <span class="org-type">lea</span> <span class="org-variable-name">ignore_int</span>,%edx
+  <span class="org-comment-delimiter">// </span><span class="org-comment">selector = 0x0010 = cs</span>
   movl $(__KERNEL_CS &lt;&lt; 16),%eax
   movw %dx,%ax
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">interrupt gate: dpl=0, present</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">interrupt gate: dpl=0, present</span>
   movw $0x8E00,%dx
 
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#23558; idt_table &#30340;&#27599;&#19968;&#39033; (&#20849; 256 &#39033;) &#37117;&#35774;&#32622;&#20026;&#21069;&#38754;&#26500;&#36896;&#30340; descriptor</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#23558; idt_table &#30340;&#27599;&#19968;&#39033; (&#20849; 256 &#39033;) &#37117;&#35774;&#32622;&#20026;&#21069;&#38754;&#26500;&#36896;&#30340; descriptor</span>
   lea idt_table,%edi
   mov $256,%ecx
   rp_sidt:
@@ -466,8 +466,8 @@ trap_init 是 idt_table 初始化的第二个阶段, exception 对应的 descrip
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">start_kernel</span>:
-  <span style="font-weight: bold;">trap_init</span>()
+<pre class="src src-c"><span class="org-constant">start_kernel</span>:
+  <span class="org-function-name">trap_init</span>()
     set_trap_gate(0,&amp;divide_error);
     set_intr_gate(1,&amp;debug);
     set_intr_gate(2,&amp;nmi);
@@ -488,7 +488,7 @@ trap_init 是 idt_table 初始化的第二个阶段, exception 对应的 descrip
     set_trap_gate(17,&amp;alignment_check);
     set_trap_gate(19,&amp;simd_coprocessor_error);
 
-    <span style="font-weight: bold;">set_system_gate</span>(SYSCALL_VECTOR,&amp;system_call);
+    <span class="org-function-name">set_system_gate</span>(SYSCALL_VECTOR,&amp;system_call);
 
 </pre>
 </div>
@@ -508,12 +508,12 @@ trap_init 是 idt_table 初始化的第二个阶段, exception 对应的 descrip
 <li><a id="org000001b"></a>set_intr_gate<br />
 <div class="outline-text-7" id="text-1-3-2-2-2-1">
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">set_intr_gate</span>:
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">1. 14 &#34920;&#31034; type, &#23545;&#24212; gate descriptor &#30340; 43~40 bit, &#20998;&#21035;&#20026; 1110, &#34920;</span>
-  <span style="font-weight: bold; font-style: italic;">//    </span><span style="font-weight: bold; font-style: italic;">&#31034; clear IF</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">2. 0 &#34920;&#31034; DPL &#20026; 0</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">3. __KERNEL_CS &#34920;&#31034; SEGMENT SELECTOR &#20026; __KERNEL_CS</span>
-  <span style="font-weight: bold;">_set_gate</span>(idt_table+n,14,0,addr,__KERNEL_CS);
+<pre class="src src-c"><span class="org-constant">set_intr_gate</span>:
+  <span class="org-comment-delimiter">// </span><span class="org-comment">1. 14 &#34920;&#31034; type, &#23545;&#24212; gate descriptor &#30340; 43~40 bit, &#20998;&#21035;&#20026; 1110, &#34920;</span>
+  <span class="org-comment-delimiter">//    </span><span class="org-comment">&#31034; clear IF</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">2. 0 &#34920;&#31034; DPL &#20026; 0</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">3. __KERNEL_CS &#34920;&#31034; SEGMENT SELECTOR &#20026; __KERNEL_CS</span>
+  <span class="org-function-name">_set_gate</span>(idt_table+n,14,0,addr,__KERNEL_CS);
 </pre>
 </div>
 </div>
@@ -522,10 +522,10 @@ trap_init 是 idt_table 初始化的第二个阶段, exception 对应的 descrip
 <li><a id="org000001e"></a>set_trap_gate<br />
 <div class="outline-text-7" id="text-1-3-2-2-2-2">
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">set_trap_gate</span>:
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#19982; set_intr_gate &#22522;&#26412;&#30456;&#21516;, &#38500;&#20102;&#36825;&#37324;&#30340; flag &#20026; 15 (1111), &#34920;&#31034;&#19981;</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">clear IF</span>
-  <span style="font-weight: bold;">_set_gate</span>(idt_table+n,15,0,addr,__KERNEL_CS);
+<pre class="src src-c"><span class="org-constant">set_trap_gate</span>:
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#19982; set_intr_gate &#22522;&#26412;&#30456;&#21516;, &#38500;&#20102;&#36825;&#37324;&#30340; flag &#20026; 15 (1111), &#34920;&#31034;&#19981;</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">clear IF</span>
+  <span class="org-function-name">_set_gate</span>(idt_table+n,15,0,addr,__KERNEL_CS);
 
 </pre>
 </div>
@@ -535,10 +535,10 @@ trap_init 是 idt_table 初始化的第二个阶段, exception 对应的 descrip
 <li><a id="org0000021"></a>set_system_gate<br />
 <div class="outline-text-7" id="text-1-3-2-2-2-3">
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">set_system_gate</span>:
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#19982; set_trap_gate &#19981;&#21516;&#30340;&#19968;&#28857;&#26159;&#20854; DPL &#20026; 3, &#34920;&#31034; user mode &#20063;&#21487;&#20197;&#21457;&#36215;</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#36825;&#20010; interrupt: &#23454;&#38469;&#19978; syscall &#23601;&#26159;&#36890;&#36807; set_system_gate &#35774;&#32622;&#30340;</span>
-  <span style="font-weight: bold;">_set_gate</span>(idt_table+n,15,3,addr,__KERNEL_CS);
+<pre class="src src-c"><span class="org-constant">set_system_gate</span>:
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#19982; set_trap_gate &#19981;&#21516;&#30340;&#19968;&#28857;&#26159;&#20854; DPL &#20026; 3, &#34920;&#31034; user mode &#20063;&#21487;&#20197;&#21457;&#36215;</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#36825;&#20010; interrupt: &#23454;&#38469;&#19978; syscall &#23601;&#26159;&#36890;&#36807; set_system_gate &#35774;&#32622;&#30340;</span>
+  <span class="org-function-name">_set_gate</span>(idt_table+n,15,3,addr,__KERNEL_CS);
 </pre>
 </div>
 </div>
@@ -555,37 +555,37 @@ interrupt 的统一的 interrupt handler
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">start_kernel</span>:
-  <span style="font-weight: bold;">init_IRQ</span>()
-    <span style="font-weight: bold;">for</span> (i = 0; i &lt; (NR_VECTORS - FIRST_EXTERNAL_VECTOR); i++):
-      <span style="font-weight: bold; text-decoration: underline;">int</span> vector = FIRST_EXTERNAL_VECTOR + i;
-      <span style="font-weight: bold;">if</span> (i &gt;= NR_IRQS):
-        <span style="font-weight: bold;">break</span>;
-      <span style="font-weight: bold;">if</span> (vector != SYSCALL_VECTOR):
-        <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">IO interrupt &#30340; gate descriptor &#20026; interrupt[i]</span>
+<pre class="src src-c"><span class="org-constant">start_kernel</span>:
+  <span class="org-function-name">init_IRQ</span>()
+    <span class="org-keyword">for</span> (i = 0; i &lt; (NR_VECTORS - FIRST_EXTERNAL_VECTOR); i++):
+      <span class="org-type">int</span> vector = FIRST_EXTERNAL_VECTOR + i;
+      <span class="org-keyword">if</span> (i &gt;= NR_IRQS):
+        <span class="org-keyword">break</span>;
+      <span class="org-keyword">if</span> (vector != SYSCALL_VECTOR):
+        <span class="org-comment-delimiter">// </span><span class="org-comment">IO interrupt &#30340; gate descriptor &#20026; interrupt[i]</span>
         set_intr_gate(vector, interrupt[i]);
 
-<span style="font-weight: bold;">ENTRY</span>(interrupt):
+<span class="org-function-name">ENTRY</span>(interrupt):
   vector=0
   ENTRY(irq_entries_start)
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#36825;&#37324;&#30340; .rept &#21644;&#21518;&#38754;&#30340; .endr &#20197;&#21450; vector=vector+1 &#19977;&#26465;&#20266;&#25351;&#20196;&#23548;&#33268;</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">interrupt &#25968;&#32452;&#20013;&#34987;&#22635;&#20805;&#20102; NR_IRQS &#39033;</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#36825;&#37324;&#30340; .rept &#21644;&#21518;&#38754;&#30340; .endr &#20197;&#21450; vector=vector+1 &#19977;&#26465;&#20266;&#25351;&#20196;&#23548;&#33268;</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">interrupt &#25968;&#32452;&#20013;&#34987;&#22635;&#20805;&#20102; NR_IRQS &#39033;</span>
   .rept NR_IRQS
   ALIGN
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#22240;&#20026; irq &#19968;&#20849; 256 &#20010; ([0..255]), &#25152;&#20197;&#36825;&#37324; $vector-256 &#23548;&#33268; push &#21040;</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#26632;&#19978;&#30340;&#20540;&#20026;[-256 .. -1], &#36825;&#20540;&#23454;&#38469;&#19978;&#23545;&#24212;&#20110; pt_regs-&gt;orig_eax. &#22312;</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">do_IRQ &#26102;&#36890;&#36807; pt_regs-&gt;orig_eax &amp; 0xff &#21462;&#24471;&#20102; irq &#21495;, &#30001;&#20110;&#36127;&#25968;&#26159;&#36890;</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#36807;&#34917;&#30721;&#34920;&#31034;&#30340;,&#36825;&#20010; &amp; &#25805;&#20316;&#19982;&#26368;&#21407;&#22987;&#30340; $vector &#21018;&#22909;&#26159;&#19968;&#26679;&#30340;.</span>
-  <span style="font-weight: bold; font-style: italic;">// </span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#20197; $vector &#20026; 0 &#20026;&#20363;, orig_eax &#20026; -256, &#20854;&#34917;&#30721;&#20026; 10000 0000, &#19982;</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">0xff &#19982;&#23436;&#36824;&#26159; 0</span>
-  <span style="font-weight: bold; font-style: italic;">// </span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#23545; irq &#26469;&#35828; pt_regs-&gt;orig_eax &#26159;&#19968;&#20010;&#36127;&#25968;, &#21487;&#20197;&#24456;&#22909;&#30340;&#19982; syscall &#30340;</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">pt_regs-&gt;orig_eax &#21306;&#20998;...</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#22240;&#20026; irq &#19968;&#20849; 256 &#20010; ([0..255]), &#25152;&#20197;&#36825;&#37324; $vector-256 &#23548;&#33268; push &#21040;</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#26632;&#19978;&#30340;&#20540;&#20026;[-256 .. -1], &#36825;&#20540;&#23454;&#38469;&#19978;&#23545;&#24212;&#20110; pt_regs-&gt;orig_eax. &#22312;</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">do_IRQ &#26102;&#36890;&#36807; pt_regs-&gt;orig_eax &amp; 0xff &#21462;&#24471;&#20102; irq &#21495;, &#30001;&#20110;&#36127;&#25968;&#26159;&#36890;</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#36807;&#34917;&#30721;&#34920;&#31034;&#30340;,&#36825;&#20010; &amp; &#25805;&#20316;&#19982;&#26368;&#21407;&#22987;&#30340; $vector &#21018;&#22909;&#26159;&#19968;&#26679;&#30340;.</span>
+  <span class="org-comment-delimiter">// </span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#20197; $vector &#20026; 0 &#20026;&#20363;, orig_eax &#20026; -256, &#20854;&#34917;&#30721;&#20026; 10000 0000, &#19982;</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">0xff &#19982;&#23436;&#36824;&#26159; 0</span>
+  <span class="org-comment-delimiter">// </span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#23545; irq &#26469;&#35828; pt_regs-&gt;orig_eax &#26159;&#19968;&#20010;&#36127;&#25968;, &#21487;&#20197;&#24456;&#22909;&#30340;&#19982; syscall &#30340;</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">pt_regs-&gt;orig_eax &#21306;&#20998;...</span>
   1:    pushl $vector-256
   jmp common_interrupt
   .data
-  .<span style="font-weight: bold; text-decoration: underline;">long</span> 1b
+  .<span class="org-type">long</span> 1b
   .text
   vector=vector+1
   .endr
@@ -613,40 +613,40 @@ interrupt 的统一的 interrupt handler
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">ret_from_intr</span>:
+<pre class="src src-c"><span class="org-constant">ret_from_intr</span>:
   GET_THREAD_INFO(%ebp)
-  <span style="font-weight: bold; text-decoration: underline;">movl</span> <span style="font-weight: bold;">EFLAGS</span>(%esp), %eax
+  <span class="org-type">movl</span> <span class="org-function-name">EFLAGS</span>(%esp), %eax
   movb CS(%esp), %al
   testl $(VM_MASK | 3), %eax
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#26681;&#25454; regs-&gt;ecs &#30340;&#20540;&#21487;&#20197;&#30830;&#23450;&#36827;&#20837;&#20013;&#26029;&#26102;&#26159;&#21542;&#26159;&#22312; kernel mode, &#22914;&#26524;&#26159;,</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#21017;&#36890;&#36807; resume_kernel &#36820;&#22238;&#21040; kernel space, &#21542;&#21017;&#36890;&#36807; resume_userspace</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#36820;&#22238;&#21040; user space        </span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#26681;&#25454; regs-&gt;ecs &#30340;&#20540;&#21487;&#20197;&#30830;&#23450;&#36827;&#20837;&#20013;&#26029;&#26102;&#26159;&#21542;&#26159;&#22312; kernel mode, &#22914;&#26524;&#26159;,</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#21017;&#36890;&#36807; resume_kernel &#36820;&#22238;&#21040; kernel space, &#21542;&#21017;&#36890;&#36807; resume_userspace</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#36820;&#22238;&#21040; user space        </span>
   jz resume_kernel
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">fall through</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">fall through</span>
 
 resume_userspace:
   cli
   movl TI_flags(%ebp), %ecx
   andl $_TIF_WORK_MASK, %ecx
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#26159;&#21542;&#26377; pending work? &#20363;&#22914; NEED_RESCHED, pending signal.</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">work_pending &#21442;&#32771; creating processes &#20013;&#30340;&#25551;&#36848;        </span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#26159;&#21542;&#26377; pending work? &#20363;&#22914; NEED_RESCHED, pending signal.</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">work_pending &#21442;&#32771; creating processes &#20013;&#30340;&#25551;&#36848;        </span>
   jne work_pending
   jmp restore_all
 
-<span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#33509; kernel &#25171;&#24320;&#20102;&#20869;&#26680;&#25250;&#21344; (kernel preemption), &#21017; resume_kernel &#26102;,</span>
-<span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#33509; preempt_count &#20026;&#38646; (&#24403;&#21069;&#19981;&#26159;&#22312;&#25191;&#34892; softirq &#25110; hardirq &#19988; preempt</span>
-<span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#27809;&#26377; disable), &#21017;&#20250;&#23581;&#35797; reschedule. &#33509; preempt_count &#19981;&#20026;&#38646;, &#21017;&#19981;&#20250;</span>
-<span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#32771;&#34385; reschedule, &#22240;&#20026;&#36825;&#20250;&#23548;&#33268;&#34987;&#24403;&#21069; interrupt &#25171;&#26029;&#30340; kernel path &#20063;</span>
-<span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#34987;&#30561;&#30496;,&#36825;&#24182;&#19981;&#21512;&#29702;...</span>
-<span style="font-weight: bold; font-style: italic;">// </span>
-<span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#33509; kernel &#27809;&#26377;&#25171;&#24320; kernel preemption, &#21017; resume_kernel &#30452;&#25509;&#23601;&#26159;&#19968;&#20010;&#31616;</span>
-<span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#21333;&#30340; restore_all</span>
-<span style="font-weight: bold; font-style: italic;">// </span>
-<span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">resume_kernel &#19982; resume_userspace &#30340;&#21306;&#21035;&#26159;:</span>
-<span style="font-weight: bold; font-style: italic;">// </span>
-<span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">1. &#21069;&#32773;&#24182;&#19981;&#20250;&#22788;&#29702; pending signal</span>
-<span style="font-weight: bold; font-style: italic;">// </span>
-<span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">2. &#33509;&#27809;&#26377;&#37197;&#32622; kernel preemption, &#21017;&#21069;&#32773;&#20063;&#19981;&#20250;&#22788;&#29702; pending schedule  </span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">&#33509; kernel &#25171;&#24320;&#20102;&#20869;&#26680;&#25250;&#21344; (kernel preemption), &#21017; resume_kernel &#26102;,</span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">&#33509; preempt_count &#20026;&#38646; (&#24403;&#21069;&#19981;&#26159;&#22312;&#25191;&#34892; softirq &#25110; hardirq &#19988; preempt</span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">&#27809;&#26377; disable), &#21017;&#20250;&#23581;&#35797; reschedule. &#33509; preempt_count &#19981;&#20026;&#38646;, &#21017;&#19981;&#20250;</span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">&#32771;&#34385; reschedule, &#22240;&#20026;&#36825;&#20250;&#23548;&#33268;&#34987;&#24403;&#21069; interrupt &#25171;&#26029;&#30340; kernel path &#20063;</span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">&#34987;&#30561;&#30496;,&#36825;&#24182;&#19981;&#21512;&#29702;...</span>
+<span class="org-comment-delimiter">// </span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">&#33509; kernel &#27809;&#26377;&#25171;&#24320; kernel preemption, &#21017; resume_kernel &#30452;&#25509;&#23601;&#26159;&#19968;&#20010;&#31616;</span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">&#21333;&#30340; restore_all</span>
+<span class="org-comment-delimiter">// </span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">resume_kernel &#19982; resume_userspace &#30340;&#21306;&#21035;&#26159;:</span>
+<span class="org-comment-delimiter">// </span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">1. &#21069;&#32773;&#24182;&#19981;&#20250;&#22788;&#29702; pending signal</span>
+<span class="org-comment-delimiter">// </span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">2. &#33509;&#27809;&#26377;&#37197;&#32622; kernel preemption, &#21017;&#21069;&#32773;&#20063;&#19981;&#20250;&#22788;&#29702; pending schedule  </span>
 resume_kernel:
   cli
   cmpl $0,TI_preempt_count(%ebp)        # non-zero preempt_count ?
@@ -658,7 +658,7 @@ need_resched:
   testl $IF_MASK,EFLAGS(%esp)
   jz restore_all
   call preempt_schedule_irq
-  <span style="font-weight: bold; text-decoration: underline;">jmp</span> <span style="font-weight: bold; font-style: italic;">need_resched</span>    
+  <span class="org-type">jmp</span> <span class="org-variable-name">need_resched</span>    
 </pre>
 </div>
 
@@ -704,48 +704,48 @@ do_IRQ 需要能处理这种 IRQ 共享的情况</li>
 <h4 id="org000003c"><span class="section-number-4">1.5.1</span> do_IRQ</h4>
 <div class="outline-text-4" id="text-1-5-1">
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">do_IRQ</span>:
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">regs-&gt;orig_eax &#20445;&#23384;&#30528; irq - 256</span>
-  <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">irq</span> = regs-&gt;orig_eax &amp; 0xff;
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#20462;&#25913; thread_info-&gt;preempt_count, &#21518;&#32493;&#36890;&#36807; in_interrupt &#21487;&#20197;&#21028;&#26029;&#20986;&#24403;</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#21069;&#26159;&#21542;&#27491;&#22312; interrupt &#19978;&#19979;&#25991;&#20013;</span>
-  <span style="font-weight: bold;">irq_enter</span>();
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#20551;&#35774;&#24403;&#21069;&#26159; 8K &#30340; kernel stack, &#21017; ISR &#20250;&#20511;&#29992;&#36827;&#31243;&#30340;&#19978;&#19979;&#25991;. &#33509; kernel</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">stack &#20026; 4K, &#21017;&#36825;&#37324;&#20250;&#29983;&#25104; ISR &#33258;&#24049;&#30340;&#20013;&#26029;&#19978;&#19979;&#25991;</span>
-  <span style="font-weight: bold;">__do_IRQ</span>(irq, regs);
-  <span style="font-weight: bold;">irq_exit</span>();
-    <span style="font-weight: bold;">sub_preempt_count</span>(IRQ_EXIT_OFFSET);
-    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#35302;&#21457; softirq</span>
-    <span style="font-weight: bold;">if</span> (!in_interrupt() &amp;&amp; local_softirq_pending()):
+<pre class="src src-c"><span class="org-constant">do_IRQ</span>:
+  <span class="org-comment-delimiter">// </span><span class="org-comment">regs-&gt;orig_eax &#20445;&#23384;&#30528; irq - 256</span>
+  <span class="org-type">int</span> <span class="org-variable-name">irq</span> = regs-&gt;orig_eax &amp; 0xff;
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#20462;&#25913; thread_info-&gt;preempt_count, &#21518;&#32493;&#36890;&#36807; in_interrupt &#21487;&#20197;&#21028;&#26029;&#20986;&#24403;</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#21069;&#26159;&#21542;&#27491;&#22312; interrupt &#19978;&#19979;&#25991;&#20013;</span>
+  <span class="org-function-name">irq_enter</span>();
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#20551;&#35774;&#24403;&#21069;&#26159; 8K &#30340; kernel stack, &#21017; ISR &#20250;&#20511;&#29992;&#36827;&#31243;&#30340;&#19978;&#19979;&#25991;. &#33509; kernel</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">stack &#20026; 4K, &#21017;&#36825;&#37324;&#20250;&#29983;&#25104; ISR &#33258;&#24049;&#30340;&#20013;&#26029;&#19978;&#19979;&#25991;</span>
+  <span class="org-function-name">__do_IRQ</span>(irq, regs);
+  <span class="org-function-name">irq_exit</span>();
+    <span class="org-function-name">sub_preempt_count</span>(IRQ_EXIT_OFFSET);
+    <span class="org-comment-delimiter">// </span><span class="org-comment">&#35302;&#21457; softirq</span>
+    <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>in_interrupt() &amp;&amp; local_softirq_pending()):
       invoke_softirq();
 
-<span style="font-weight: bold; text-decoration: underline;">__do_IRQ</span>:
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">irq_desc &#26159;&#19968;&#20010;&#25968;&#32452;: irq_desc_t[NR_IRQS], irq_desc_t &#20013;&#20027;&#35201;&#30340;&#25104;&#21592;&#26159;</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#19968;&#20010; irqaction &#38142;&#34920;, &#36890;&#36807;&#36825;&#20010;&#38142;&#34920;&#21487;&#20197;&#25214;&#21040;&#36825;&#20010; IRQ &#23545;&#24212;&#30340;&#25152;&#26377; ISR</span>
-  <span style="font-weight: bold; text-decoration: underline;">irq_desc_t</span> *<span style="font-weight: bold; font-style: italic;">desc</span> = irq_desc + irq;
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#35843;&#29992; PIC &#30340; ack, &#20363;&#22914; mask_and_ack_8259A, &#36825;&#20010;&#20989;&#25968;&#20250;&#36890; INTA &#32473; PIC &#21457;</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">ack, &#21516;&#26102;&#22312; PIC &#19978;&#23631;&#34109;&#23545;&#24212;&#30340; IRQ. &#25152;&#20197; ISR &#25191;&#34892;&#26102;&#21487;&#20197;&#20445;&#35777;&#23545;&#24212;&#30340; IRQ</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#26159;&#23631;&#34109;&#30340;, ISR &#19981;&#38656;&#35201;&#32771;&#34385;&#37325;&#20837;&#30340;&#38382;&#39064;</span>
+<span class="org-constant">__do_IRQ</span>:
+  <span class="org-comment-delimiter">// </span><span class="org-comment">irq_desc &#26159;&#19968;&#20010;&#25968;&#32452;: irq_desc_t[NR_IRQS], irq_desc_t &#20013;&#20027;&#35201;&#30340;&#25104;&#21592;&#26159;</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#19968;&#20010; irqaction &#38142;&#34920;, &#36890;&#36807;&#36825;&#20010;&#38142;&#34920;&#21487;&#20197;&#25214;&#21040;&#36825;&#20010; IRQ &#23545;&#24212;&#30340;&#25152;&#26377; ISR</span>
+  <span class="org-type">irq_desc_t</span> *<span class="org-variable-name">desc</span> = irq_desc + irq;
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#35843;&#29992; PIC &#30340; ack, &#20363;&#22914; mask_and_ack_8259A, &#36825;&#20010;&#20989;&#25968;&#20250;&#36890; INTA &#32473; PIC &#21457;</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">ack, &#21516;&#26102;&#22312; PIC &#19978;&#23631;&#34109;&#23545;&#24212;&#30340; IRQ. &#25152;&#20197; ISR &#25191;&#34892;&#26102;&#21487;&#20197;&#20445;&#35777;&#23545;&#24212;&#30340; IRQ</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#26159;&#23631;&#34109;&#30340;, ISR &#19981;&#38656;&#35201;&#32771;&#34385;&#37325;&#20837;&#30340;&#38382;&#39064;</span>
   desc-&gt;handler-&gt;ack(irq);
   action_ret = handle_IRQ_event(irq, regs, desc-&gt;action);
-    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">SA_INTERRUPT &#26631;&#35760;&#34920;&#31034; ISR &#20250;&#24456;&#24555;&#23436;&#25104;, &#25152;&#20197;&#19981;&#38656;&#35201;&#24320;&#20013;&#26029;.</span>
-    <span style="font-weight: bold; font-style: italic;">//</span>
-    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#19968;&#33324;&#24773;&#20917;&#19979;&#36825;&#20010; flag &#27809;&#26377;&#32622;&#20301;, &#25152;&#20197; do_IRQ &#20250;&#36890;&#36807; local_irq_enable &#35843;</span>
-    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#29992; sti &#24320;&#20013;&#26029; (&#20043;&#21069;&#30340; set_intr_gate &#23548;&#33268;&#27492;&#26102;&#20013;&#26029;&#26159;&#20851;&#30340;)</span>
-    <span style="font-weight: bold; font-style: italic;">//</span>
-    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#25152;&#20197;&#36890;&#24120;&#24773;&#20917;&#19979; ISR &#25191;&#34892;&#26102;&#20013;&#26029;&#26159;&#24320;&#30340;, &#20294;&#24403;&#21069;&#30340; IRQ &#26159;&#34987;&#23631;&#34109;&#30340;</span>
-    <span style="font-weight: bold;">if</span> (!(action-&gt;flags &amp; SA_INTERRUPT)):
+    <span class="org-comment-delimiter">// </span><span class="org-comment">SA_INTERRUPT &#26631;&#35760;&#34920;&#31034; ISR &#20250;&#24456;&#24555;&#23436;&#25104;, &#25152;&#20197;&#19981;&#38656;&#35201;&#24320;&#20013;&#26029;.</span>
+    <span class="org-comment-delimiter">//</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">&#19968;&#33324;&#24773;&#20917;&#19979;&#36825;&#20010; flag &#27809;&#26377;&#32622;&#20301;, &#25152;&#20197; do_IRQ &#20250;&#36890;&#36807; local_irq_enable &#35843;</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">&#29992; sti &#24320;&#20013;&#26029; (&#20043;&#21069;&#30340; set_intr_gate &#23548;&#33268;&#27492;&#26102;&#20013;&#26029;&#26159;&#20851;&#30340;)</span>
+    <span class="org-comment-delimiter">//</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">&#25152;&#20197;&#36890;&#24120;&#24773;&#20917;&#19979; ISR &#25191;&#34892;&#26102;&#20013;&#26029;&#26159;&#24320;&#30340;, &#20294;&#24403;&#21069;&#30340; IRQ &#26159;&#34987;&#23631;&#34109;&#30340;</span>
+    <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>(action-&gt;flags &amp; SA_INTERRUPT)):
       local_irq_enable();
 
-    <span style="font-weight: bold;">do</span>:
-      <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#38024;&#23545;&#20013;&#26029;&#20849;&#20139;&#30340;&#24773;&#20917;, &#20381;&#27425;&#35843;&#29992;&#27599;&#20010; ISR, &#30452;&#21040;&#26576;&#20010; ISR &#36820;&#22238; IRQ_HANDLED</span>
+    <span class="org-keyword">do</span>:
+      <span class="org-comment-delimiter">// </span><span class="org-comment">&#38024;&#23545;&#20013;&#26029;&#20849;&#20139;&#30340;&#24773;&#20917;, &#20381;&#27425;&#35843;&#29992;&#27599;&#20010; ISR, &#30452;&#21040;&#26576;&#20010; ISR &#36820;&#22238; IRQ_HANDLED</span>
       ret = action-&gt;handler(irq, action-&gt;dev_id, regs);
-      <span style="font-weight: bold;">if</span> (ret == IRQ_HANDLED)
+      <span class="org-keyword">if</span> (ret == IRQ_HANDLED)
         status |= action-&gt;flags;
       retval |= ret;
       action = action-&gt;next;
-    <span style="font-weight: bold;">while</span> (action);
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#35843;&#29992; PIC &#30340; end, &#20363;&#22914; end_8259A_irq, &#21518;&#32773;&#20250;&#21435;&#25481; IRQ &#30340;&#23631;&#34109;</span>
+    <span class="org-keyword">while</span> (action);
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#35843;&#29992; PIC &#30340; end, &#20363;&#22914; end_8259A_irq, &#21518;&#32773;&#20250;&#21435;&#25481; IRQ &#30340;&#23631;&#34109;</span>
   desc-&gt;handler-&gt;end(irq);
 </pre>
 </div>
@@ -755,15 +755,15 @@ do_IRQ 需要能处理这种 IRQ 共享的情况</li>
 <h5 id="org0000036"><span class="section-number-5">1.5.1.1</span> irq_desc</h5>
 <div class="outline-text-5" id="text-1-5-1-1">
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">irq_desc</span> {
-    <span style="font-weight: bold; text-decoration: underline;">hw_irq_controller</span> *<span style="font-weight: bold; font-style: italic;">handler</span>;
-    <span style="font-weight: bold; text-decoration: underline;">void</span> *<span style="font-weight: bold; font-style: italic;">handler_data</span>;
-    <span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">irqaction</span> *<span style="font-weight: bold; font-style: italic;">action</span>;
-    <span style="font-weight: bold; text-decoration: underline;">unsigned</span> <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">status</span>;
-    <span style="font-weight: bold; text-decoration: underline;">unsigned</span> <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">depth</span>;
-    <span style="font-weight: bold; text-decoration: underline;">unsigned</span> <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">irq_count</span>;
-    <span style="font-weight: bold; text-decoration: underline;">unsigned</span> <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">irqs_unhandled</span>;
-    <span style="font-weight: bold; text-decoration: underline;">spinlock_t</span> <span style="font-weight: bold; font-style: italic;">lock</span>;
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-type">irq_desc</span> {
+    <span class="org-type">hw_irq_controller</span> *<span class="org-variable-name">handler</span>;
+    <span class="org-type">void</span> *<span class="org-variable-name">handler_data</span>;
+    <span class="org-keyword">struct</span> <span class="org-type">irqaction</span> *<span class="org-variable-name">action</span>;
+    <span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">status</span>;
+    <span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">depth</span>;
+    <span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">irq_count</span>;
+    <span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">irqs_unhandled</span>;
+    <span class="org-type">spinlock_t</span> <span class="org-variable-name">lock</span>;
 };
 </pre>
 </div>
@@ -774,14 +774,14 @@ do_IRQ 需要能处理这种 IRQ 共享的情况</li>
 <h5 id="org0000039"><span class="section-number-5">1.5.1.2</span> irqaction</h5>
 <div class="outline-text-5" id="text-1-5-1-2">
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">irqaction</span> {
-    <span style="font-weight: bold; text-decoration: underline;">irqreturn_t</span> (*<span style="font-weight: bold;">handler</span>)(<span style="font-weight: bold; text-decoration: underline;">int</span>, <span style="font-weight: bold; text-decoration: underline;">void</span> *, <span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">pt_regs</span> *);
-    <span style="font-weight: bold; text-decoration: underline;">unsigned</span> <span style="font-weight: bold; text-decoration: underline;">long</span> <span style="font-weight: bold; font-style: italic;">flags</span>;
-    <span style="font-weight: bold; text-decoration: underline;">cpumask_t</span> <span style="font-weight: bold; font-style: italic;">mask</span>;
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">char</span> *<span style="font-weight: bold; font-style: italic;">name</span>;
-    <span style="font-weight: bold; text-decoration: underline;">void</span> *<span style="font-weight: bold; font-style: italic;">dev_id</span>;
-    <span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">irqaction</span> *<span style="font-weight: bold; font-style: italic;">next</span>;
-    <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">irq</span>;
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-type">irqaction</span> {
+    <span class="org-type">irqreturn_t</span> (*<span class="org-function-name">handler</span>)(<span class="org-type">int</span>, <span class="org-type">void</span> *, <span class="org-keyword">struct</span> <span class="org-type">pt_regs</span> *);
+    <span class="org-type">unsigned</span> <span class="org-type">long</span> <span class="org-variable-name">flags</span>;
+    <span class="org-type">cpumask_t</span> <span class="org-variable-name">mask</span>;
+    <span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">name</span>;
+    <span class="org-type">void</span> *<span class="org-variable-name">dev_id</span>;
+    <span class="org-keyword">struct</span> <span class="org-type">irqaction</span> *<span class="org-variable-name">next</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">irq</span>;
 };
 </pre>
 </div>
@@ -811,27 +811,27 @@ irq_desc[IRQ]-&gt;action 链表中, 和 "request" 关系并不大.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold;">request_irq</span>(<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">irq</span>, handler, irqflags):
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#29983;&#25104; irqaction</span>
-  <span style="font-weight: bold;">struct</span> irqaction * action;
-  action = kmalloc(<span style="font-weight: bold;">sizeof</span>(<span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">irqaction</span>), GFP_ATOMIC);
+<pre class="src src-c"><span class="org-type">int</span> <span class="org-function-name">request_irq</span>(<span class="org-type">int</span> <span class="org-variable-name">irq</span>, handler, irqflags):
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#29983;&#25104; irqaction</span>
+  <span class="org-keyword">struct</span> irqaction * action;
+  action = kmalloc(<span class="org-keyword">sizeof</span>(<span class="org-keyword">struct</span> <span class="org-type">irqaction</span>), GFP_ATOMIC);
   action-&gt;handler = handler;
   action-&gt;flags = irqflags;
   action-&gt;name = devname;
-  action-&gt;next = <span style="font-weight: bold; text-decoration: underline;">NULL</span>;
+  action-&gt;next = <span class="org-constant">NULL</span>;
   action-&gt;dev_id = dev_id;
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#20570;&#19968;&#20123;&#26816;&#26597;, &#26368;&#21518;&#25554;&#20837; irq_desc[irq]-&gt;action &#38142;&#34920;&#20013;</span>
-  <span style="font-weight: bold;">setup_irq</span>(irq, action);
-    <span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">irq_desc</span> *<span style="font-weight: bold; font-style: italic;">desc</span> = irq_desc + irq;
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#20570;&#19968;&#20123;&#26816;&#26597;, &#26368;&#21518;&#25554;&#20837; irq_desc[irq]-&gt;action &#38142;&#34920;&#20013;</span>
+  <span class="org-function-name">setup_irq</span>(irq, action);
+    <span class="org-keyword">struct</span> <span class="org-type">irq_desc</span> *<span class="org-variable-name">desc</span> = irq_desc + irq;
     p = &amp;desc-&gt;action;
-    <span style="font-weight: bold;">if</span> (!(old-&gt;flags &amp; new-&gt;flags &amp; SA_SHIRQ)):
-      <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#26377;&#20123; action &#25903;&#25345; SA_SHIRQ (IRQ sharing) &#20294;&#26377;&#20123;&#19981;&#25903;&#25345;, &#21017;&#25253;&#38169;</span>
-      <span style="font-weight: bold;">return</span> -EBUSY;
-    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#23558;&#26032;&#30340; action &#28155;&#21152;&#21040;&#38142;&#34920;&#26411;&#23614;</span>
-    <span style="font-weight: bold;">do</span>:
+    <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>(old-&gt;flags &amp; new-&gt;flags &amp; SA_SHIRQ)):
+      <span class="org-comment-delimiter">// </span><span class="org-comment">&#26377;&#20123; action &#25903;&#25345; SA_SHIRQ (IRQ sharing) &#20294;&#26377;&#20123;&#19981;&#25903;&#25345;, &#21017;&#25253;&#38169;</span>
+      <span class="org-keyword">return</span> -EBUSY;
+    <span class="org-comment-delimiter">// </span><span class="org-comment">&#23558;&#26032;&#30340; action &#28155;&#21152;&#21040;&#38142;&#34920;&#26411;&#23614;</span>
+    <span class="org-keyword">do</span>:
       p = &amp;old-&gt;next;
       old = *p;
-    <span style="font-weight: bold;">while</span> (old);
+    <span class="org-keyword">while</span> (old);
 
     *p-&gt;irq = irq;
 </pre>
@@ -867,9 +867,9 @@ action 是 handler, data 是参数
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold;">open_softirq</span>(<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">nr</span>, actions, data):
+<pre class="src src-c"><span class="org-function-name">open_softirq</span>(<span class="org-type">int</span> <span class="org-variable-name">nr</span>, actions, data):
   softirq_vec[nr].data = data;
-  <span style="font-weight: bold; text-decoration: underline;">softirq_vec</span>[nr].action = action;
+  <span class="org-type">softirq_vec</span>[nr].action = action;
 </pre>
 </div>
 
@@ -890,10 +890,10 @@ bit n 表示 softirq_vec[n] 是否需要被执行
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold;">raise_softirq</span>(nr):
+<pre class="src src-c"><span class="org-function-name">raise_softirq</span>(nr):
   local_softirq_pending() |= 1UL &lt;&lt; (nr)
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#33509;&#24403;&#21069;&#19981;&#22312;&#20013;&#26029;&#19978;&#19979;&#25991;, &#21017;&#21796;&#37266; ksoftirqd, &#21542;&#21017;, &#31561;&#24453; irq_exit &#26102;&#22788;&#29702;      </span>
-  <span style="font-weight: bold;">if</span> (!in_interrupt()):
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#33509;&#24403;&#21069;&#19981;&#22312;&#20013;&#26029;&#19978;&#19979;&#25991;, &#21017;&#21796;&#37266; ksoftirqd, &#21542;&#21017;, &#31561;&#24453; irq_exit &#26102;&#22788;&#29702;      </span>
+  <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>in_interrupt()):
     wakeup_softirqd();
 </pre>
 </div>
@@ -910,29 +910,29 @@ bit n 表示 softirq_vec[n] 是否需要被执行
 
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">do_softirq</span>:
-  <span style="font-weight: bold;">if</span> (in_interrupt())
-    <span style="font-weight: bold;">return</span>;
+<pre class="src src-c"><span class="org-constant">do_softirq</span>:
+  <span class="org-keyword">if</span> (in_interrupt())
+    <span class="org-keyword">return</span>;
 
-  <span style="font-weight: bold;">local_irq_save</span>(flags);
+  <span class="org-function-name">local_irq_save</span>(flags);
   pending = local_softirq_pending();
-  <span style="font-weight: bold;">if</span> (pending)
-    <span style="font-weight: bold;">__do_softirq</span>();
+  <span class="org-keyword">if</span> (pending)
+    <span class="org-function-name">__do_softirq</span>();
       pending = local_softirq_pending();
       h = softirq_vec;
-      <span style="font-weight: bold;">do</span>:
-        <span style="font-weight: bold;">if</span> (pending &amp; 1):
+      <span class="org-keyword">do</span>:
+        <span class="org-keyword">if</span> (pending &amp; 1):
           h-&gt;action(h);
         h++;
         pending &gt;&gt;= 1;
-      <span style="font-weight: bold;">while</span> (pending);
-      <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#22312; softirq_action &#25191;&#34892;&#36807;&#31243;&#20013;, &#26377;&#21487;&#33021;&#26576;&#20123; action &#26412;&#36523;&#20250;&#20877;&#27425; raise</span>
-      <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#33258;&#24049;&#36896;&#25104;&#20877;&#27425; pending, &#20026;&#20102;&#36991;&#20813;&#19981;&#20572;&#30340;&#25191;&#34892;&#36825;&#20123; action, &#36825;&#37324;&#20027;&#21160;&#32467;</span>
-      <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#26463;, &#24182; wakeup_softirqd &#35753; ksoftirqd &#26469;&#22788;&#29702;&#36825;&#20123; pending</span>
-      <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">softirq_action, &#27605;&#31455; do_softirq &#26377;&#21487;&#33021;&#26159;&#36890;&#36807; irq_exit &#34987;&#35843;&#29992;&#30340;      </span>
-      <span style="font-weight: bold;">if</span> (pending):
+      <span class="org-keyword">while</span> (pending);
+      <span class="org-comment-delimiter">// </span><span class="org-comment">&#22312; softirq_action &#25191;&#34892;&#36807;&#31243;&#20013;, &#26377;&#21487;&#33021;&#26576;&#20123; action &#26412;&#36523;&#20250;&#20877;&#27425; raise</span>
+      <span class="org-comment-delimiter">// </span><span class="org-comment">&#33258;&#24049;&#36896;&#25104;&#20877;&#27425; pending, &#20026;&#20102;&#36991;&#20813;&#19981;&#20572;&#30340;&#25191;&#34892;&#36825;&#20123; action, &#36825;&#37324;&#20027;&#21160;&#32467;</span>
+      <span class="org-comment-delimiter">// </span><span class="org-comment">&#26463;, &#24182; wakeup_softirqd &#35753; ksoftirqd &#26469;&#22788;&#29702;&#36825;&#20123; pending</span>
+      <span class="org-comment-delimiter">// </span><span class="org-comment">softirq_action, &#27605;&#31455; do_softirq &#26377;&#21487;&#33021;&#26159;&#36890;&#36807; irq_exit &#34987;&#35843;&#29992;&#30340;      </span>
+      <span class="org-keyword">if</span> (pending):
         wakeup_softirqd();
-  <span style="font-weight: bold;">local_irq_restore</span>(flags);
+  <span class="org-function-name">local_irq_restore</span>(flags);
 </pre>
 </div>
 
@@ -946,8 +946,8 @@ irq_exit
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">irq_exit</span>:
-  <span style="font-weight: bold;">if</span> (!in_interrupt() &amp;&amp; local_softirq_pending()):
+<pre class="src src-c"><span class="org-constant">irq_exit</span>:
+  <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>in_interrupt() &amp;&amp; local_softirq_pending()):
     invoke_softirq();
       do_softirq
 </pre>
@@ -958,19 +958,19 @@ ksoftirqd
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">ksoftirqd</span>:
-  <span style="font-weight: bold;">set_user_nice</span>(current, 19);
+<pre class="src src-c"><span class="org-constant">ksoftirqd</span>:
+  <span class="org-function-name">set_user_nice</span>(current, 19);
 
-  <span style="font-weight: bold;">while</span> (!kthread_should_stop()):
-    <span style="font-weight: bold;">if</span> (!local_softirq_pending()):
+  <span class="org-keyword">while</span> (<span class="org-negation-char">!</span>kthread_should_stop()):
+    <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>local_softirq_pending()):
       schedule();
-    <span style="font-weight: bold;">__set_current_state</span>(TASK_RUNNING);
+    <span class="org-function-name">__set_current_state</span>(TASK_RUNNING);
 
-    <span style="font-weight: bold;">while</span> (local_softirq_pending()):
+    <span class="org-keyword">while</span> (local_softirq_pending()):
       do_softirq();
-      <span style="font-weight: bold;">cond_resched</span>();
+      <span class="org-function-name">cond_resched</span>();
 
-    <span style="font-weight: bold;">set_current_state</span>(TASK_INTERRUPTIBLE);
+    <span class="org-function-name">set_current_state</span>(TASK_INTERRUPTIBLE);
 </pre>
 </div></li>
 </ol>
@@ -990,8 +990,8 @@ ksoftirqd
 <h4 id="org0000054"><span class="section-number-4">1.7.2</span> tasklet_init</h4>
 <div class="outline-text-4" id="text-1-7-2">
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold;">asklet_init</span>(t,func,data):
-  t-&gt;next = <span style="font-weight: bold; text-decoration: underline;">NULL</span>;
+<pre class="src src-c"><span class="org-function-name">asklet_init</span>(t,func,data):
+  t-&gt;next = <span class="org-constant">NULL</span>;
   t-&gt;state = 0;
   atomic_set(&amp;t-&gt;count, 0);
   t-&gt;func = func;
@@ -1005,15 +1005,15 @@ ksoftirqd
 <h4 id="org0000057"><span class="section-number-4">1.7.3</span> tasklet_schedule</h4>
 <div class="outline-text-4" id="text-1-7-3">
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold;">__tasklet_schedule</span>(<span style="font-weight: bold;">struct</span> <span style="font-weight: bold; text-decoration: underline;">tasklet_struct</span> *<span style="font-weight: bold; font-style: italic;">t</span>):
+<pre class="src src-c"><span class="org-function-name">__tasklet_schedule</span>(<span class="org-keyword">struct</span> <span class="org-type">tasklet_struct</span> *<span class="org-variable-name">t</span>):
   local_irq_save(flags);
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#23558; tasklet_struct &#28155;&#21152;&#20110; tasklet_vec.list &#38142;&#34920;&#22836;, &#28982;&#21518;</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">raise_softirq(TASKLET_SOFTIRQ), TASKLET_SOFTIRQ &#23545;&#24212;&#30340;</span>
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">softirq_action (tasklet_action) &#20250;&#22788;&#29702;&#36825;&#20123; tasklet    </span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#23558; tasklet_struct &#28155;&#21152;&#20110; tasklet_vec.list &#38142;&#34920;&#22836;, &#28982;&#21518;</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">raise_softirq(TASKLET_SOFTIRQ), TASKLET_SOFTIRQ &#23545;&#24212;&#30340;</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">softirq_action (tasklet_action) &#20250;&#22788;&#29702;&#36825;&#20123; tasklet    </span>
   t-&gt;next = __get_cpu_var(tasklet_vec).list;
-  <span style="font-weight: bold;">__get_cpu_var</span>(tasklet_vec).list = t;
-  <span style="font-weight: bold;">raise_softirq_irqoff</span>(TASKLET_SOFTIRQ);
-  <span style="font-weight: bold;">local_irq_restore</span>(flags);
+  <span class="org-function-name">__get_cpu_var</span>(tasklet_vec).list = t;
+  <span class="org-function-name">raise_softirq_irqoff</span>(TASKLET_SOFTIRQ);
+  <span class="org-function-name">local_irq_restore</span>(flags);
 </pre>
 </div>
 </div>
@@ -1084,27 +1084,27 @@ interrupt, 结果 handler 2 嵌套执行时睡眠了, 那 handler 1 也相当于
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">void</span> <span style="font-weight: bold;">foo</span>(<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">signo</span>) {
-    printf(<span style="font-style: italic;">"foo\n"</span>);
+<pre class="src src-c"><span class="org-type">void</span> <span class="org-function-name">foo</span>(<span class="org-type">int</span> <span class="org-variable-name">signo</span>) {
+    printf(<span class="org-string">"foo\n"</span>);
 }
 
-<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold;">main</span>(<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">argc</span>, <span style="font-weight: bold; text-decoration: underline;">char</span> *<span style="font-weight: bold; font-style: italic;">argv</span>[]) {
+<span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]) {
     signal(11, foo);
-    *(<span style="font-weight: bold; text-decoration: underline;">int</span>*)0 = 1;
-    <span style="font-weight: bold;">return</span> 0;
+    *(<span class="org-type">int</span>*)0 = 1;
+    <span class="org-keyword">return</span> 0;
 }
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-c"><span style="font-weight: bold; text-decoration: underline;">void</span> <span style="font-weight: bold;">foo</span>(<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">signo</span>) {
-    printf(<span style="font-style: italic;">"foo\n"</span>);
+<pre class="src src-c"><span class="org-type">void</span> <span class="org-function-name">foo</span>(<span class="org-type">int</span> <span class="org-variable-name">signo</span>) {
+    printf(<span class="org-string">"foo\n"</span>);
 }
 
-<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold;">main</span>(<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">argc</span>, <span style="font-weight: bold; text-decoration: underline;">char</span> *<span style="font-weight: bold; font-style: italic;">argv</span>[]) {
+<span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]) {
     signal(11, foo);
     kill(getpid(), 11);
-    <span style="font-weight: bold;">return</span> 0;
+    <span class="org-keyword">return</span> 0;
 }
 </pre>
 </div>

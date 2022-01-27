@@ -104,153 +104,153 @@ TensorRT 的 pytorch_quantization 是一个实现 fake quantization 的 pytorch 
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold; font-style: italic;">#</span><span style="font-weight: bold; font-style: italic;">!/usr/bin/env python3</span>
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">-*- coding: utf-8 -*-</span>
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">2021-10-29 14:24</span>
-<span style="font-weight: bold;">import</span> os
-<span style="font-weight: bold;">import</span> torch
-<span style="font-weight: bold;">from</span> torch <span style="font-weight: bold;">import</span> nn
-<span style="font-weight: bold;">from</span> torch <span style="font-weight: bold;">import</span> optim
-<span style="font-weight: bold;">from</span> torch.utils.data <span style="font-weight: bold;">import</span> DataLoader, Dataset
-<span style="font-weight: bold;">import</span> torch.nn.functional <span style="font-weight: bold;">as</span> F
-<span style="font-weight: bold;">import</span> numpy <span style="font-weight: bold;">as</span> np
+<pre class="src src-python"><span class="org-comment-delimiter">#</span><span class="org-comment">!/usr/bin/env python3</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">-*- coding: utf-8 -*-</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">2021-10-29 14:24</span>
+<span class="org-keyword">import</span> os
+<span class="org-keyword">import</span> torch
+<span class="org-keyword">from</span> torch <span class="org-keyword">import</span> nn
+<span class="org-keyword">from</span> torch <span class="org-keyword">import</span> optim
+<span class="org-keyword">from</span> torch.utils.data <span class="org-keyword">import</span> DataLoader, Dataset
+<span class="org-keyword">import</span> torch.nn.functional <span class="org-keyword">as</span> F
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 
-<span style="font-weight: bold;">import</span> torch.onnx
+<span class="org-keyword">import</span> torch.onnx
 
-<span style="font-weight: bold;">from</span> pytorch_quantization <span style="font-weight: bold;">import</span> nn <span style="font-weight: bold;">as</span> quant_nn
-<span style="font-weight: bold;">from</span> pytorch_quantization <span style="font-weight: bold;">import</span> calib
-<span style="font-weight: bold;">from</span> pytorch_quantization.tensor_quant <span style="font-weight: bold;">import</span> QuantDescriptor
-<span style="font-weight: bold;">from</span> pytorch_quantization <span style="font-weight: bold;">import</span> quant_modules
-<span style="font-weight: bold;">from</span> absl <span style="font-weight: bold;">import</span> logging
+<span class="org-keyword">from</span> pytorch_quantization <span class="org-keyword">import</span> nn <span class="org-keyword">as</span> quant_nn
+<span class="org-keyword">from</span> pytorch_quantization <span class="org-keyword">import</span> calib
+<span class="org-keyword">from</span> pytorch_quantization.tensor_quant <span class="org-keyword">import</span> QuantDescriptor
+<span class="org-keyword">from</span> pytorch_quantization <span class="org-keyword">import</span> quant_modules
+<span class="org-keyword">from</span> absl <span class="org-keyword">import</span> logging
 
 logging.set_verbosity(logging.FATAL)
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">export_to_onnx</span>(model):
-    model.<span style="font-weight: bold;">eval</span>()
-    <span style="font-weight: bold; font-style: italic;">dummy_input</span> = torch.randn(1, 5)
+<span class="org-keyword">def</span> <span class="org-function-name">export_to_onnx</span>(model):
+    model.<span class="org-builtin">eval</span>()
+    <span class="org-variable-name">dummy_input</span> = torch.randn(1, 5)
 
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">use_fb_fake_quant &#26159; tensorrt &#30340;&#19968;&#20010; hack: &#24403;&#38656;&#35201;&#23548;&#20986;&#20026; onnx &#26102;&#35774;&#20026; true,</span>
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">forward &#26102; fake_tensor_quant &#20250;&#34987;&#26367;&#25442;&#20026; _fb_fake_quant, &#21518;&#32773;&#20250;&#35843;&#29992;torch &#33258;</span>
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#24049;&#30340; fake_quantize_per_channel_affine &#20197;&#20415;&#23548;&#20986;&#20026; onnx &#30340;</span>
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">QuantizeLinear/DequantizeLinear</span>
-    <span style="font-weight: bold; font-style: italic;">quant_nn.TensorQuantizer.use_fb_fake_quant</span> = <span style="font-weight: bold; text-decoration: underline;">True</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">use_fb_fake_quant &#26159; tensorrt &#30340;&#19968;&#20010; hack: &#24403;&#38656;&#35201;&#23548;&#20986;&#20026; onnx &#26102;&#35774;&#20026; true,</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">forward &#26102; fake_tensor_quant &#20250;&#34987;&#26367;&#25442;&#20026; _fb_fake_quant, &#21518;&#32773;&#20250;&#35843;&#29992;torch &#33258;</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">&#24049;&#30340; fake_quantize_per_channel_affine &#20197;&#20415;&#23548;&#20986;&#20026; onnx &#30340;</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">QuantizeLinear/DequantizeLinear</span>
+    <span class="org-variable-name">quant_nn.TensorQuantizer.use_fb_fake_quant</span> = <span class="org-constant">True</span>
 
     torch.onnx.export(
         model,
         dummy_input,
-        <span style="font-style: italic;">"fake.onnx"</span>,
+        <span class="org-string">"fake.onnx"</span>,
         opset_version=13,
     )
-    <span style="font-weight: bold; font-style: italic;">quant_nn.TensorQuantizer.use_fb_fake_quant</span> = <span style="font-weight: bold; text-decoration: underline;">False</span>
+    <span class="org-variable-name">quant_nn.TensorQuantizer.use_fb_fake_quant</span> = <span class="org-constant">False</span>
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">get_data</span>():
-    <span style="font-weight: bold;">class</span> <span style="font-weight: bold; text-decoration: underline;">PlainDataset</span>(Dataset):
-        <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">__init__</span>(<span style="font-weight: bold;">self</span>):
-            <span style="font-weight: bold; font-style: italic;">x</span> = torch.<span style="font-weight: bold;">round</span>(torch.rand(10000) * 200)
-            <span style="font-weight: bold; font-style: italic;">x</span> = x.unsqueeze(1)
-            <span style="font-weight: bold; font-style: italic;">x</span> = torch.cat((x, x * 2, x * 3, x * 4, x * 5), 1)
-            <span style="font-weight: bold;">self</span>.X = x
+<span class="org-keyword">def</span> <span class="org-function-name">get_data</span>():
+    <span class="org-keyword">class</span> <span class="org-type">PlainDataset</span>(Dataset):
+        <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>):
+            <span class="org-variable-name">x</span> = torch.<span class="org-builtin">round</span>(torch.rand(10000) * 200)
+            <span class="org-variable-name">x</span> = x.unsqueeze(1)
+            <span class="org-variable-name">x</span> = torch.cat((x, x * 2, x * 3, x * 4, x * 5), 1)
+            <span class="org-keyword">self</span>.X = x
 
-        <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">__getitem__</span>(<span style="font-weight: bold;">self</span>, index):
-            <span style="font-weight: bold;">return</span> <span style="font-weight: bold;">self</span>.X[index]
+        <span class="org-keyword">def</span> <span class="org-function-name">__getitem__</span>(<span class="org-keyword">self</span>, index):
+            <span class="org-keyword">return</span> <span class="org-keyword">self</span>.X[index]
 
-        <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">__len__</span>(<span style="font-weight: bold;">self</span>):
-            <span style="font-weight: bold;">return</span> <span style="font-weight: bold;">len</span>(<span style="font-weight: bold;">self</span>.X)
+        <span class="org-keyword">def</span> <span class="org-function-name">__len__</span>(<span class="org-keyword">self</span>):
+            <span class="org-keyword">return</span> <span class="org-builtin">len</span>(<span class="org-keyword">self</span>.X)
 
-    <span style="font-weight: bold; font-style: italic;">training_set</span> = PlainDataset()
-    <span style="font-weight: bold;">return</span> DataLoader(training_set, batch_size=100, shuffle=<span style="font-weight: bold; text-decoration: underline;">True</span>)
+    <span class="org-variable-name">training_set</span> = PlainDataset()
+    <span class="org-keyword">return</span> DataLoader(training_set, batch_size=100, shuffle=<span class="org-constant">True</span>)
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">pretrain_model</span>():
-    <span style="font-weight: bold; font-style: italic;">model</span> = nn.Sequential(
+<span class="org-keyword">def</span> <span class="org-function-name">pretrain_model</span>():
+    <span class="org-variable-name">model</span> = nn.Sequential(
         nn.Linear(5, 1),
         nn.Linear(1, 5),
     )
 
-    <span style="font-weight: bold;">if</span> os.path.exists(<span style="font-style: italic;">"model.pt"</span>):
-        <span style="font-weight: bold;">return</span>
+    <span class="org-keyword">if</span> os.path.exists(<span class="org-string">"model.pt"</span>):
+        <span class="org-keyword">return</span>
 
     train_model(model)
-    torch.save(model.state_dict(), <span style="font-style: italic;">"model.pt"</span>)
+    torch.save(model.state_dict(), <span class="org-string">"model.pt"</span>)
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">train_model</span>(model, epoch=500):
-    <span style="font-weight: bold; font-style: italic;">criterion</span> = nn.MSELoss()
-    <span style="font-weight: bold; font-style: italic;">optimizer</span> = optim.Adam(model.parameters())
+<span class="org-keyword">def</span> <span class="org-function-name">train_model</span>(model, epoch=500):
+    <span class="org-variable-name">criterion</span> = nn.MSELoss()
+    <span class="org-variable-name">optimizer</span> = optim.Adam(model.parameters())
 
-    <span style="font-weight: bold;">for</span> i <span style="font-weight: bold;">in</span> <span style="font-weight: bold;">range</span>(epoch):
-        <span style="font-weight: bold;">for</span> x <span style="font-weight: bold;">in</span> get_data():
-            <span style="font-weight: bold; font-style: italic;">loss</span> = criterion(model(x), x)
+    <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(epoch):
+        <span class="org-keyword">for</span> x <span class="org-keyword">in</span> get_data():
+            <span class="org-variable-name">loss</span> = criterion(model(x), x)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">if i % 10 == 0:</span>
-        <span style="font-weight: bold; font-style: italic;">#     </span><span style="font-weight: bold; font-style: italic;">print("epoch #%d: loss: %f" % (i, loss.detach().item()))</span>
+        <span class="org-comment-delimiter"># </span><span class="org-comment">if i % 10 == 0:</span>
+        <span class="org-comment-delimiter">#     </span><span class="org-comment">print("epoch #%d: loss: %f" % (i, loss.detach().item()))</span>
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">load_model</span>():
-    <span style="font-weight: bold; font-style: italic;">quant_desc_input</span> = QuantDescriptor(calib_method=<span style="font-style: italic;">"histogram"</span>)
+<span class="org-keyword">def</span> <span class="org-function-name">load_model</span>():
+    <span class="org-variable-name">quant_desc_input</span> = QuantDescriptor(calib_method=<span class="org-string">"histogram"</span>)
     quant_nn.QuantConv2d.set_default_quant_desc_input(quant_desc_input)
     quant_nn.QuantLinear.set_default_quant_desc_input(quant_desc_input)
 
     quant_modules.initialize()
 
-    <span style="font-weight: bold; font-style: italic;">model</span> = nn.Sequential(
+    <span class="org-variable-name">model</span> = nn.Sequential(
         nn.Linear(5, 1),
         nn.Linear(1, 5),
     )
-    model.load_state_dict(torch.load(<span style="font-style: italic;">"model.pt"</span>))
-    <span style="font-weight: bold;">return</span> model
+    model.load_state_dict(torch.load(<span class="org-string">"model.pt"</span>))
+    <span class="org-keyword">return</span> model
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">fake_quantize</span>(model):
-    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">collect_stats</span>(model, data, num_batches):
-        <span style="font-weight: bold;">for</span> name, module <span style="font-weight: bold;">in</span> model.named_modules():
-            <span style="font-weight: bold;">if</span> <span style="font-weight: bold;">isinstance</span>(module, quant_nn.TensorQuantizer):
+<span class="org-keyword">def</span> <span class="org-function-name">fake_quantize</span>(model):
+    <span class="org-keyword">def</span> <span class="org-function-name">collect_stats</span>(model, data, num_batches):
+        <span class="org-keyword">for</span> name, module <span class="org-keyword">in</span> model.named_modules():
+            <span class="org-keyword">if</span> <span class="org-builtin">isinstance</span>(module, quant_nn.TensorQuantizer):
                 module.disable_quant()
                 module.enable_calib()
 
-        <span style="font-weight: bold;">for</span> i, data <span style="font-weight: bold;">in</span> <span style="font-weight: bold;">enumerate</span>(data):
+        <span class="org-keyword">for</span> i, data <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(data):
             model(data)
-            <span style="font-weight: bold;">if</span> i &gt;= num_batches:
-                <span style="font-weight: bold;">break</span>
-        <span style="font-weight: bold;">for</span> name, module <span style="font-weight: bold;">in</span> model.named_modules():
-            <span style="font-weight: bold;">if</span> <span style="font-weight: bold;">isinstance</span>(module, quant_nn.TensorQuantizer):
+            <span class="org-keyword">if</span> i &gt;= num_batches:
+                <span class="org-keyword">break</span>
+        <span class="org-keyword">for</span> name, module <span class="org-keyword">in</span> model.named_modules():
+            <span class="org-keyword">if</span> <span class="org-builtin">isinstance</span>(module, quant_nn.TensorQuantizer):
                 module.enable_quant()
                 module.disable_calib()
 
-    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">compute_amax</span>(model, **kwargs):
-        <span style="font-weight: bold;">for</span> name, module <span style="font-weight: bold;">in</span> model.named_modules():
-            <span style="font-weight: bold;">if</span> <span style="font-weight: bold;">isinstance</span>(module, quant_nn.TensorQuantizer):
-                <span style="font-weight: bold;">if</span> <span style="font-weight: bold;">isinstance</span>(module._calibrator, calib.MaxCalibrator):
+    <span class="org-keyword">def</span> <span class="org-function-name">compute_amax</span>(model, **kwargs):
+        <span class="org-keyword">for</span> name, module <span class="org-keyword">in</span> model.named_modules():
+            <span class="org-keyword">if</span> <span class="org-builtin">isinstance</span>(module, quant_nn.TensorQuantizer):
+                <span class="org-keyword">if</span> <span class="org-builtin">isinstance</span>(module._calibrator, calib.MaxCalibrator):
                     module.load_calib_amax()
-                <span style="font-weight: bold;">else</span>:
-                    module.load_calib_amax(method=<span style="font-style: italic;">"percentile"</span>)
+                <span class="org-keyword">else</span>:
+                    module.load_calib_amax(method=<span class="org-string">"percentile"</span>)
 
-    <span style="font-weight: bold;">with</span> torch.no_grad():
+    <span class="org-keyword">with</span> torch.no_grad():
         collect_stats(model, get_data(), num_batches=1000)
         compute_amax(model)
 
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">for name, module in model.named_modules():</span>
-    <span style="font-weight: bold; font-style: italic;">#     </span><span style="font-weight: bold; font-style: italic;">if isinstance(module, quant_nn.TensorQuantizer):</span>
-    <span style="font-weight: bold; font-style: italic;">#         </span><span style="font-weight: bold; font-style: italic;">print("------")</span>
-    <span style="font-weight: bold; font-style: italic;">#         </span><span style="font-weight: bold; font-style: italic;">print(name, module)</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">for name, module in model.named_modules():</span>
+    <span class="org-comment-delimiter">#     </span><span class="org-comment">if isinstance(module, quant_nn.TensorQuantizer):</span>
+    <span class="org-comment-delimiter">#         </span><span class="org-comment">print("------")</span>
+    <span class="org-comment-delimiter">#         </span><span class="org-comment">print(name, module)</span>
 
-    <span style="font-weight: bold;">return</span> model
-
-
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">test</span>(model):
-    <span style="font-weight: bold; font-style: italic;">x</span> = torch.tensor([[10, 20, 30, 40, 50]]).<span style="font-weight: bold;">float</span>()
-    <span style="font-weight: bold; font-style: italic;">y_hat</span> = model(x)
-    <span style="font-weight: bold;">print</span>(y_hat)
+    <span class="org-keyword">return</span> model
 
 
-<span style="font-weight: bold;">if</span> <span style="font-weight: bold;">__name__</span> == <span style="font-style: italic;">"__main__"</span>:
+<span class="org-keyword">def</span> <span class="org-function-name">test</span>(model):
+    <span class="org-variable-name">x</span> = torch.tensor([[10, 20, 30, 40, 50]]).<span class="org-builtin">float</span>()
+    <span class="org-variable-name">y_hat</span> = model(x)
+    <span class="org-keyword">print</span>(y_hat)
+
+
+<span class="org-keyword">if</span> <span class="org-builtin">__name__</span> == <span class="org-string">"__main__"</span>:
     pretrain_model()
 
-    <span style="font-weight: bold; font-style: italic;">model</span> = load_model()
+    <span class="org-variable-name">model</span> = load_model()
     test(model)
 
     fake_quantize(model)
@@ -290,11 +290,11 @@ forward 会被 propagate 给 input_quantizer 和 weight_quantizer
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold;">def</span> <span style="font-weight: bold;">forward</span>(<span style="font-weight: bold;">self</span>, <span style="font-weight: bold;">input</span>):
-    <span style="font-weight: bold; font-style: italic;">quant_input</span> = <span style="font-weight: bold;">self</span>._input_quantizer(<span style="font-weight: bold;">input</span>)
-    <span style="font-weight: bold; font-style: italic;">quant_weight</span> = <span style="font-weight: bold;">self</span>._weight_quantizer(<span style="font-weight: bold;">self</span>.weight)
-    <span style="font-weight: bold; font-style: italic;">output</span> = F.linear(quant_input, quant_weight, bias=<span style="font-weight: bold;">self</span>.bias)
-    <span style="font-weight: bold;">return</span> output
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, <span class="org-builtin">input</span>):
+    <span class="org-variable-name">quant_input</span> = <span class="org-keyword">self</span>._input_quantizer(<span class="org-builtin">input</span>)
+    <span class="org-variable-name">quant_weight</span> = <span class="org-keyword">self</span>._weight_quantizer(<span class="org-keyword">self</span>.weight)
+    <span class="org-variable-name">output</span> = F.linear(quant_input, quant_weight, bias=<span class="org-keyword">self</span>.bias)
+    <span class="org-keyword">return</span> output
 </pre>
 </div>
 </div>
@@ -304,37 +304,37 @@ forward 会被 propagate 给 input_quantizer 和 weight_quantizer
 <h6 id="org0000009"><span class="section-number-6">1.1.2.2.2</span> TensorQuantizer</h6>
 <div class="outline-text-6" id="text-1-1-2-2-2">
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold;">def</span> <span style="font-weight: bold;">forward</span>(<span style="font-weight: bold;">self</span>, inputs):
-    <span style="font-weight: bold;">if</span> <span style="font-weight: bold;">self</span>._disabled:
-        <span style="font-weight: bold;">return</span> inputs
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, inputs):
+    <span class="org-keyword">if</span> <span class="org-keyword">self</span>._disabled:
+        <span class="org-keyword">return</span> inputs
 
-    <span style="font-weight: bold; font-style: italic;">outputs</span> = inputs
+    <span class="org-variable-name">outputs</span> = inputs
 
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#35843;&#29992; TensorQuantizer.enable_calib() &#20250;&#35774;&#32622; _if_calib, &#34920;&#31034; calibrator &#38656;&#35201;</span>
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#35760;&#24405;&#20197;&#33719;&#24471;&#26368;&#22823;&#20540; amax (abs max)</span>
-    <span style="font-weight: bold;">if</span> <span style="font-weight: bold;">self</span>._if_calib:
-        <span style="font-weight: bold;">self</span>._calibrator.collect(inputs)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">&#35843;&#29992; TensorQuantizer.enable_calib() &#20250;&#35774;&#32622; _if_calib, &#34920;&#31034; calibrator &#38656;&#35201;</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">&#35760;&#24405;&#20197;&#33719;&#24471;&#26368;&#22823;&#20540; amax (abs max)</span>
+    <span class="org-keyword">if</span> <span class="org-keyword">self</span>._if_calib:
+        <span class="org-keyword">self</span>._calibrator.collect(inputs)
 
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#35843;&#29992; enable_quant() &#20250;&#35774;&#32622; _if_quant, &#34920;&#31034;&#38656;&#35201;&#20351;&#29992; amax &#36827;&#34892; fake quant&#20351;</span>
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#29992;&#26102;&#38656;&#35201;&#20808; enable calib, disable quant, calib &#23436;&#25104;&#21518;&#35745;&#31639; amax, &#28982;&#21518;&#20877;</span>
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">enable quant, disable calib &#36827;&#34892;&#24102; fake quant &#30340; evaluation</span>
-    <span style="font-weight: bold;">if</span> <span style="font-weight: bold;">self</span>._if_quant:
-        <span style="font-weight: bold; font-style: italic;">outputs</span> = <span style="font-weight: bold;">self</span>._quant_forward(inputs)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">&#35843;&#29992; enable_quant() &#20250;&#35774;&#32622; _if_quant, &#34920;&#31034;&#38656;&#35201;&#20351;&#29992; amax &#36827;&#34892; fake quant&#20351;</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">&#29992;&#26102;&#38656;&#35201;&#20808; enable calib, disable quant, calib &#23436;&#25104;&#21518;&#35745;&#31639; amax, &#28982;&#21518;&#20877;</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">enable quant, disable calib &#36827;&#34892;&#24102; fake quant &#30340; evaluation</span>
+    <span class="org-keyword">if</span> <span class="org-keyword">self</span>._if_quant:
+        <span class="org-variable-name">outputs</span> = <span class="org-keyword">self</span>._quant_forward(inputs)
 
-    <span style="font-weight: bold;">return</span> outputs
+    <span class="org-keyword">return</span> outputs
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">_quant_forward</span>(<span style="font-weight: bold;">self</span>, inputs):
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">amax &#26102;&#36890;&#36807; load_calib_amax &#35745;&#31639;&#30340; amax</span>
-    <span style="font-weight: bold; font-style: italic;">amax</span> = <span style="font-weight: bold;">self</span>._get_amax(inputs)
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">fake_tensor_quant &#26159;&#27880;&#20876;&#30340; autograd function</span>
-    <span style="font-weight: bold;">if</span> <span style="font-weight: bold;">not</span> TensorQuantizer.use_fb_fake_quant:
-        <span style="font-weight: bold; font-style: italic;">outputs</span> = fake_tensor_quant(
-            inputs, amax, <span style="font-weight: bold;">self</span>._num_bits, <span style="font-weight: bold;">self</span>._unsigned, <span style="font-weight: bold;">self</span>._narrow_range
+<span class="org-keyword">def</span> <span class="org-function-name">_quant_forward</span>(<span class="org-keyword">self</span>, inputs):
+    <span class="org-comment-delimiter"># </span><span class="org-comment">amax &#26102;&#36890;&#36807; load_calib_amax &#35745;&#31639;&#30340; amax</span>
+    <span class="org-variable-name">amax</span> = <span class="org-keyword">self</span>._get_amax(inputs)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">fake_tensor_quant &#26159;&#27880;&#20876;&#30340; autograd function</span>
+    <span class="org-keyword">if</span> <span class="org-keyword">not</span> TensorQuantizer.use_fb_fake_quant:
+        <span class="org-variable-name">outputs</span> = fake_tensor_quant(
+            inputs, amax, <span class="org-keyword">self</span>._num_bits, <span class="org-keyword">self</span>._unsigned, <span class="org-keyword">self</span>._narrow_range
         )
-    <span style="font-weight: bold;">else</span>:
-        <span style="font-weight: bold; font-style: italic;">outputs</span> = <span style="font-weight: bold;">self</span>._fb_fake_quant(inputs, amax)
-    <span style="font-weight: bold;">return</span> outputs
+    <span class="org-keyword">else</span>:
+        <span class="org-variable-name">outputs</span> = <span class="org-keyword">self</span>._fb_fake_quant(inputs, amax)
+    <span class="org-keyword">return</span> outputs
 </pre>
 </div>
 </div>
@@ -348,21 +348,21 @@ forward 会被 propagate 给 input_quantizer 和 weight_quantizer
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold;">class</span> <span style="font-weight: bold; text-decoration: underline;">FakeTensorQuantFunction</span>(Function):
-    @<span style="font-weight: bold;">staticmethod</span>
-    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">forward</span>(ctx, inputs, amax, num_bits=8, unsigned=<span style="font-weight: bold; text-decoration: underline;">False</span>, narrow_range=<span style="font-weight: bold; text-decoration: underline;">True</span>):
+<pre class="src src-python"><span class="org-keyword">class</span> <span class="org-type">FakeTensorQuantFunction</span>(Function):
+    @<span class="org-builtin">staticmethod</span>
+    <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(ctx, inputs, amax, num_bits=8, unsigned=<span class="org-constant">False</span>, narrow_range=<span class="org-constant">True</span>):
         ctx.save_for_backward(inputs, amax)
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">fake quant &#21363; outputs=dequant(quant(inputs))</span>
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">1. quant, &#35745;&#31639; scale &#24182;&#35745;&#31639; outputs=inputs*scale</span>
-        <span style="font-weight: bold; font-style: italic;">outputs</span>, <span style="font-weight: bold; font-style: italic;">scale</span> = _tensor_quant(inputs, amax, num_bits, unsigned, narrow_range)
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">2. dequant, outputs=outputs/scale</span>
-        <span style="font-weight: bold;">return</span> outputs / scale.to(inputs.dtype)
+        <span class="org-comment-delimiter"># </span><span class="org-comment">fake quant &#21363; outputs=dequant(quant(inputs))</span>
+        <span class="org-comment-delimiter"># </span><span class="org-comment">1. quant, &#35745;&#31639; scale &#24182;&#35745;&#31639; outputs=inputs*scale</span>
+        <span class="org-variable-name">outputs</span>, <span class="org-variable-name">scale</span> = _tensor_quant(inputs, amax, num_bits, unsigned, narrow_range)
+        <span class="org-comment-delimiter"># </span><span class="org-comment">2. dequant, outputs=outputs/scale</span>
+        <span class="org-keyword">return</span> outputs / scale.to(inputs.dtype)
 
-    @<span style="font-weight: bold;">staticmethod</span>
-    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">backward</span>(ctx, grad_outputs):
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">...</span>
+    @<span class="org-builtin">staticmethod</span>
+    <span class="org-keyword">def</span> <span class="org-function-name">backward</span>(ctx, grad_outputs):
+        <span class="org-comment-delimiter"># </span><span class="org-comment">...</span>
 
-<span style="font-weight: bold; font-style: italic;">fake_tensor_quant</span> = FakeTensorQuantFunction.<span style="font-weight: bold;">apply</span>
+<span class="org-variable-name">fake_tensor_quant</span> = FakeTensorQuantFunction.<span class="org-builtin">apply</span>
 </pre>
 </div>
 </div>
@@ -378,16 +378,16 @@ QuantizeLinear / DequantizeLinear
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold;">def</span> <span style="font-weight: bold;">_fb_fake_quant</span>(<span style="font-weight: bold;">self</span>, inputs, amax):
-    <span style="font-weight: bold; font-style: italic;">bound</span> = (1 &lt;&lt; (<span style="font-weight: bold;">self</span>._num_bits - 1 + <span style="font-weight: bold;">int</span>(<span style="font-weight: bold;">self</span>._unsigned))) - 1
-    <span style="font-weight: bold; font-style: italic;">outputs</span> = torch.fake_quantize_per_tensor_affine(
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">_fb_fake_quant</span>(<span class="org-keyword">self</span>, inputs, amax):
+    <span class="org-variable-name">bound</span> = (1 &lt;&lt; (<span class="org-keyword">self</span>._num_bits - 1 + <span class="org-builtin">int</span>(<span class="org-keyword">self</span>._unsigned))) - 1
+    <span class="org-variable-name">outputs</span> = torch.fake_quantize_per_tensor_affine(
         inputs,
         amax.item() / bound,
         0,
-        -bound - 1 <span style="font-weight: bold;">if</span> <span style="font-weight: bold;">not</span> <span style="font-weight: bold;">self</span>._unsigned <span style="font-weight: bold;">else</span> 0,
+        -bound - 1 <span class="org-keyword">if</span> <span class="org-keyword">not</span> <span class="org-keyword">self</span>._unsigned <span class="org-keyword">else</span> 0,
         bound,
     )
-    <span style="font-weight: bold;">return</span> outputs
+    <span class="org-keyword">return</span> outputs
 </pre>
 </div>
 
@@ -417,11 +417,11 @@ Straight Through Estimation (STE) with clipping
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold;">def</span> <span style="font-weight: bold;">backward</span>(ctx, grad_outputs):
-    <span style="font-weight: bold; font-style: italic;">inputs</span>, <span style="font-weight: bold; font-style: italic;">amax</span> = ctx.saved_tensors
-    <span style="font-weight: bold; font-style: italic;">zero</span> = grad_outputs.new_zeros(1)
-    <span style="font-weight: bold; font-style: italic;">grad_inputs</span> = torch.where(inputs.<span style="font-weight: bold;">abs</span>() &lt;= amax, grad_outputs, zero)
-    <span style="font-weight: bold;">return</span> grad_inputs, <span style="font-weight: bold; text-decoration: underline;">None</span>, <span style="font-weight: bold; text-decoration: underline;">None</span>, <span style="font-weight: bold; text-decoration: underline;">None</span>, <span style="font-weight: bold; text-decoration: underline;">None</span>
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">backward</span>(ctx, grad_outputs):
+    <span class="org-variable-name">inputs</span>, <span class="org-variable-name">amax</span> = ctx.saved_tensors
+    <span class="org-variable-name">zero</span> = grad_outputs.new_zeros(1)
+    <span class="org-variable-name">grad_inputs</span> = torch.where(inputs.<span class="org-builtin">abs</span>() &lt;= amax, grad_outputs, zero)
+    <span class="org-keyword">return</span> grad_inputs, <span class="org-constant">None</span>, <span class="org-constant">None</span>, <span class="org-constant">None</span>, <span class="org-constant">None</span>
 </pre>
 </div>
 </div>
@@ -494,419 +494,419 @@ y%16==0</li>
 </ol>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold; font-style: italic;">#</span><span style="font-weight: bold; font-style: italic;">!/usr/bin/env python3</span>
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">-*- coding: utf-8 -*-</span>
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">2021-11-09 13:38</span>
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">-------------------- sparse_masklib.py --------------------</span>
-<span style="font-weight: bold;">import</span> sys
-<span style="font-weight: bold;">import</span> torch
-<span style="font-weight: bold;">import</span> numpy <span style="font-weight: bold;">as</span> np
-<span style="font-weight: bold;">import</span> collections
-<span style="font-weight: bold;">from</span> itertools <span style="font-weight: bold;">import</span> permutations
+<pre class="src src-python"><span class="org-comment-delimiter">#</span><span class="org-comment">!/usr/bin/env python3</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">-*- coding: utf-8 -*-</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">2021-11-09 13:38</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">-------------------- sparse_masklib.py --------------------</span>
+<span class="org-keyword">import</span> sys
+<span class="org-keyword">import</span> torch
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> collections
+<span class="org-keyword">from</span> itertools <span class="org-keyword">import</span> permutations
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">fill</span>(x):
-    <span style="font-weight: bold;">return</span> <span style="font-weight: bold;">float</span>(x.nonzero().size(0)) / torch.numel(x)
+<span class="org-keyword">def</span> <span class="org-function-name">fill</span>(x):
+    <span class="org-keyword">return</span> <span class="org-builtin">float</span>(x.nonzero().size(0)) / torch.numel(x)
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">reshape_1d</span>(matrix, m):
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">If not a nice multiple of m, fill with zeroes.</span>
-    <span style="font-weight: bold;">if</span> matrix.shape[1] % m &gt; 0:
-        <span style="font-weight: bold; font-style: italic;">mat</span> = torch.cuda.FloatTensor(
+<span class="org-keyword">def</span> <span class="org-function-name">reshape_1d</span>(matrix, m):
+    <span class="org-comment-delimiter"># </span><span class="org-comment">If not a nice multiple of m, fill with zeroes.</span>
+    <span class="org-keyword">if</span> matrix.shape[1] % m &gt; 0:
+        <span class="org-variable-name">mat</span> = torch.cuda.FloatTensor(
             matrix.shape[0], matrix.shape[1] + (m - matrix.shape[1] % m)
         ).fill_(0)
         mat[:, : matrix.shape[1]] = matrix
-        <span style="font-weight: bold; font-style: italic;">shape</span> = mat.shape
-        <span style="font-weight: bold;">return</span> mat.view(-1, m), shape
-    <span style="font-weight: bold;">else</span>:
-        <span style="font-weight: bold;">return</span> matrix.view(-1, m), matrix.shape
+        <span class="org-variable-name">shape</span> = mat.shape
+        <span class="org-keyword">return</span> mat.view(-1, m), shape
+    <span class="org-keyword">else</span>:
+        <span class="org-keyword">return</span> matrix.view(-1, m), matrix.shape
 
 
-<span style="font-weight: bold; font-style: italic;">valid_m4n2_1d_patterns</span> = <span style="font-weight: bold; text-decoration: underline;">None</span>
+<span class="org-variable-name">valid_m4n2_1d_patterns</span> = <span class="org-constant">None</span>
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">compute_valid_1d_patterns</span>(m, n):
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">Early exit if patterns was already created.</span>
-    <span style="font-weight: bold;">global</span> valid_m4n2_1d_patterns
+<span class="org-keyword">def</span> <span class="org-function-name">compute_valid_1d_patterns</span>(m, n):
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Early exit if patterns was already created.</span>
+    <span class="org-keyword">global</span> valid_m4n2_1d_patterns
 
-    <span style="font-weight: bold;">if</span> m == 4 <span style="font-weight: bold;">and</span> n == 2 <span style="font-weight: bold;">and</span> valid_m4n2_1d_patterns <span style="font-weight: bold;">is</span> <span style="font-weight: bold;">not</span> <span style="font-weight: bold; text-decoration: underline;">None</span>:
-        <span style="font-weight: bold;">return</span> valid_m4n2_1d_patterns
-    <span style="font-weight: bold; font-style: italic;">patterns</span> = torch.zeros(m)
-    <span style="font-weight: bold; font-style: italic;">patterns</span>[:n] = 1
-    <span style="font-weight: bold; font-style: italic;">valid_patterns</span> = torch.Tensor(<span style="font-weight: bold;">list</span>(<span style="font-weight: bold;">set</span>(permutations(patterns.tolist()))))
-    <span style="font-weight: bold;">if</span> m == 4 <span style="font-weight: bold;">and</span> n == 2:
-        <span style="font-weight: bold; font-style: italic;">valid_m4n2_1d_patterns</span> = valid_patterns
-    <span style="font-weight: bold;">return</span> valid_patterns
-
-
-<span style="font-style: italic;">""" m:n 1d structured best """</span>
+    <span class="org-keyword">if</span> m == 4 <span class="org-keyword">and</span> n == 2 <span class="org-keyword">and</span> valid_m4n2_1d_patterns <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+        <span class="org-keyword">return</span> valid_m4n2_1d_patterns
+    <span class="org-variable-name">patterns</span> = torch.zeros(m)
+    <span class="org-variable-name">patterns</span>[:n] = 1
+    <span class="org-variable-name">valid_patterns</span> = torch.Tensor(<span class="org-builtin">list</span>(<span class="org-builtin">set</span>(permutations(patterns.tolist()))))
+    <span class="org-keyword">if</span> m == 4 <span class="org-keyword">and</span> n == 2:
+        <span class="org-variable-name">valid_m4n2_1d_patterns</span> = valid_patterns
+    <span class="org-keyword">return</span> valid_patterns
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">mn_1d_best</span>(matrix, m, n):
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">Find all possible patterns.</span>
-    <span style="font-weight: bold; font-style: italic;">patterns</span> = compute_valid_1d_patterns(m, n).cuda()
-
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">Find the best m:n pattern (sum of non-masked weights).</span>
-    <span style="font-weight: bold; font-style: italic;">mask</span> = torch.cuda.IntTensor(matrix.shape).fill_(1).view(-1, m)
-    <span style="font-weight: bold; font-style: italic;">mat</span>, <span style="font-weight: bold; font-style: italic;">shape</span> = reshape_1d(matrix, m)
-    <span style="font-weight: bold; font-style: italic;">pmax</span> = torch.argmax(torch.matmul(mat.<span style="font-weight: bold;">abs</span>(), patterns.t()), dim=1)
-    <span style="font-weight: bold; font-style: italic;">mask</span>[:] = patterns[pmax[:]]
-    <span style="font-weight: bold; font-style: italic;">mask</span> = mask.view(matrix.shape)
-    <span style="font-weight: bold;">return</span> mask
+<span class="org-string">""" m:n 1d structured best """</span>
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">m4n2_1d</span>(mat, density):
-    <span style="font-weight: bold;">return</span> mn_1d_best(mat, 4, 2)
+<span class="org-keyword">def</span> <span class="org-function-name">mn_1d_best</span>(matrix, m, n):
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Find all possible patterns.</span>
+    <span class="org-variable-name">patterns</span> = compute_valid_1d_patterns(m, n).cuda()
+
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Find the best m:n pattern (sum of non-masked weights).</span>
+    <span class="org-variable-name">mask</span> = torch.cuda.IntTensor(matrix.shape).fill_(1).view(-1, m)
+    <span class="org-variable-name">mat</span>, <span class="org-variable-name">shape</span> = reshape_1d(matrix, m)
+    <span class="org-variable-name">pmax</span> = torch.argmax(torch.matmul(mat.<span class="org-builtin">abs</span>(), patterns.t()), dim=1)
+    <span class="org-variable-name">mask</span>[:] = patterns[pmax[:]]
+    <span class="org-variable-name">mask</span> = mask.view(matrix.shape)
+    <span class="org-keyword">return</span> mask
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">create_mask</span>(tensor, pattern=<span style="font-style: italic;">"m4n2_1d"</span>, density=0.5):
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">Reshape tensor and mask.</span>
-    <span style="font-weight: bold; font-style: italic;">shape</span> = tensor.shape
-    <span style="font-weight: bold; font-style: italic;">ttype</span> = tensor.<span style="font-weight: bold;">type</span>()
-    <span style="font-weight: bold; font-style: italic;">t</span> = tensor.<span style="font-weight: bold;">float</span>().contiguous()
+<span class="org-keyword">def</span> <span class="org-function-name">m4n2_1d</span>(mat, density):
+    <span class="org-keyword">return</span> mn_1d_best(mat, 4, 2)
 
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">1d-tensor</span>
-    <span style="font-weight: bold;">if</span> <span style="font-weight: bold;">len</span>(shape) == 1:
-        <span style="font-weight: bold; font-style: italic;">t</span> = t.view(1, shape[0])
-        <span style="font-weight: bold; font-style: italic;">func</span> = <span style="font-weight: bold;">getattr</span>(sys.modules[<span style="font-weight: bold;">__name__</span>], pattern, <span style="font-weight: bold; text-decoration: underline;">None</span>)
-        <span style="font-weight: bold; font-style: italic;">mask</span> = func(t, density)
-        <span style="font-weight: bold;">return</span> mask.view(shape).<span style="font-weight: bold;">type</span>(ttype)
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">2d-tensor (in, out)</span>
-    <span style="font-weight: bold;">elif</span> <span style="font-weight: bold;">len</span>(shape) == 2:
-        <span style="font-weight: bold; font-style: italic;">t</span> = t.view(shape[0], shape[1])
-        <span style="font-weight: bold; font-style: italic;">func</span> = <span style="font-weight: bold;">getattr</span>(sys.modules[<span style="font-weight: bold;">__name__</span>], pattern, <span style="font-weight: bold; text-decoration: underline;">None</span>)
-        <span style="font-weight: bold; font-style: italic;">mask</span> = func(t, density)
-        <span style="font-weight: bold;">return</span> mask.view(shape).<span style="font-weight: bold;">type</span>(ttype)
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">3d-tensor (batch, in, out)</span>
-    <span style="font-weight: bold;">elif</span> <span style="font-weight: bold;">len</span>(shape) == 3:
-        <span style="font-weight: bold; font-style: italic;">t</span> = t.view(shape[0] * shape[1], shape[2])
-        <span style="font-weight: bold; font-style: italic;">func</span> = <span style="font-weight: bold;">getattr</span>(sys.modules[<span style="font-weight: bold;">__name__</span>], pattern, <span style="font-weight: bold; text-decoration: underline;">None</span>)
-        <span style="font-weight: bold; font-style: italic;">mask</span> = func(t, density)
-        <span style="font-weight: bold;">return</span> mask.view(shape).<span style="font-weight: bold;">type</span>(ttype)
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">4d-tensor (in, out, h, w)</span>
-    <span style="font-weight: bold;">elif</span> <span style="font-weight: bold;">len</span>(shape) == 4:
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">convs</span>
-        <span style="font-weight: bold; font-style: italic;">t</span> = (
+
+<span class="org-keyword">def</span> <span class="org-function-name">create_mask</span>(tensor, pattern=<span class="org-string">"m4n2_1d"</span>, density=0.5):
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Reshape tensor and mask.</span>
+    <span class="org-variable-name">shape</span> = tensor.shape
+    <span class="org-variable-name">ttype</span> = tensor.<span class="org-builtin">type</span>()
+    <span class="org-variable-name">t</span> = tensor.<span class="org-builtin">float</span>().contiguous()
+
+    <span class="org-comment-delimiter"># </span><span class="org-comment">1d-tensor</span>
+    <span class="org-keyword">if</span> <span class="org-builtin">len</span>(shape) == 1:
+        <span class="org-variable-name">t</span> = t.view(1, shape[0])
+        <span class="org-variable-name">func</span> = <span class="org-builtin">getattr</span>(sys.modules[<span class="org-builtin">__name__</span>], pattern, <span class="org-constant">None</span>)
+        <span class="org-variable-name">mask</span> = func(t, density)
+        <span class="org-keyword">return</span> mask.view(shape).<span class="org-builtin">type</span>(ttype)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">2d-tensor (in, out)</span>
+    <span class="org-keyword">elif</span> <span class="org-builtin">len</span>(shape) == 2:
+        <span class="org-variable-name">t</span> = t.view(shape[0], shape[1])
+        <span class="org-variable-name">func</span> = <span class="org-builtin">getattr</span>(sys.modules[<span class="org-builtin">__name__</span>], pattern, <span class="org-constant">None</span>)
+        <span class="org-variable-name">mask</span> = func(t, density)
+        <span class="org-keyword">return</span> mask.view(shape).<span class="org-builtin">type</span>(ttype)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">3d-tensor (batch, in, out)</span>
+    <span class="org-keyword">elif</span> <span class="org-builtin">len</span>(shape) == 3:
+        <span class="org-variable-name">t</span> = t.view(shape[0] * shape[1], shape[2])
+        <span class="org-variable-name">func</span> = <span class="org-builtin">getattr</span>(sys.modules[<span class="org-builtin">__name__</span>], pattern, <span class="org-constant">None</span>)
+        <span class="org-variable-name">mask</span> = func(t, density)
+        <span class="org-keyword">return</span> mask.view(shape).<span class="org-builtin">type</span>(ttype)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">4d-tensor (in, out, h, w)</span>
+    <span class="org-keyword">elif</span> <span class="org-builtin">len</span>(shape) == 4:
+        <span class="org-comment-delimiter"># </span><span class="org-comment">convs</span>
+        <span class="org-variable-name">t</span> = (
             t.permute(2, 3, 0, 1)
             .contiguous()
             .view(shape[2] * shape[3] * shape[0], shape[1])
         )
-        <span style="font-weight: bold; font-style: italic;">func</span> = <span style="font-weight: bold;">getattr</span>(sys.modules[<span style="font-weight: bold;">__name__</span>], pattern, <span style="font-weight: bold; text-decoration: underline;">None</span>)
-        <span style="font-weight: bold; font-style: italic;">mask</span> = func(t, density)
-        <span style="font-weight: bold; font-style: italic;">mask</span> = (
+        <span class="org-variable-name">func</span> = <span class="org-builtin">getattr</span>(sys.modules[<span class="org-builtin">__name__</span>], pattern, <span class="org-constant">None</span>)
+        <span class="org-variable-name">mask</span> = func(t, density)
+        <span class="org-variable-name">mask</span> = (
             mask.view(shape[2], shape[3], shape[0], shape[1])
             .permute(2, 3, 0, 1)
             .contiguous()
         )
-        <span style="font-weight: bold;">return</span> mask.view(shape).<span style="font-weight: bold;">type</span>(ttype)
+        <span class="org-keyword">return</span> mask.view(shape).<span class="org-builtin">type</span>(ttype)
 
 
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">-------------------- asp.py --------------------</span>
-<span style="font-weight: bold;">import</span> types
-<span style="font-weight: bold;">import</span> torch
+<span class="org-comment-delimiter"># </span><span class="org-comment">-------------------- asp.py --------------------</span>
+<span class="org-keyword">import</span> types
+<span class="org-keyword">import</span> torch
 
-<span style="font-weight: bold; font-style: italic;">torchvision_imported</span> = <span style="font-weight: bold; text-decoration: underline;">True</span>
-<span style="font-weight: bold;">try</span>:
-    <span style="font-weight: bold;">import</span> torchvision
-<span style="font-weight: bold;">except</span> <span style="font-weight: bold; text-decoration: underline;">ImportError</span>:
-    <span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"[ASP][Warning] torchvision cannot be imported."</span>)
-    <span style="font-weight: bold; font-style: italic;">torchvision_imported</span> = <span style="font-weight: bold; text-decoration: underline;">False</span>
+<span class="org-variable-name">torchvision_imported</span> = <span class="org-constant">True</span>
+<span class="org-keyword">try</span>:
+    <span class="org-keyword">import</span> torchvision
+<span class="org-keyword">except</span> <span class="org-type">ImportError</span>:
+    <span class="org-keyword">print</span>(<span class="org-string">"[ASP][Warning] torchvision cannot be imported."</span>)
+    <span class="org-variable-name">torchvision_imported</span> = <span class="org-constant">False</span>
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">eligible_modules</span>(
+<span class="org-keyword">def</span> <span class="org-function-name">eligible_modules</span>(
     model, whitelist_layer_types, allowed_layer_names, disallowed_layer_names
 ):
-    <span style="font-weight: bold; font-style: italic;">eligible_modules_list</span> = []
-    <span style="font-weight: bold;">for</span> name, mod <span style="font-weight: bold;">in</span> model.named_modules():
-        <span style="font-weight: bold;">if</span> (
-            <span style="font-weight: bold;">isinstance</span>(mod, whitelist_layer_types)
-            <span style="font-weight: bold;">and</span> name <span style="font-weight: bold;">not</span> <span style="font-weight: bold;">in</span> disallowed_layer_names
+    <span class="org-variable-name">eligible_modules_list</span> = []
+    <span class="org-keyword">for</span> name, mod <span class="org-keyword">in</span> model.named_modules():
+        <span class="org-keyword">if</span> (
+            <span class="org-builtin">isinstance</span>(mod, whitelist_layer_types)
+            <span class="org-keyword">and</span> name <span class="org-keyword">not</span> <span class="org-keyword">in</span> disallowed_layer_names
         ):
-            <span style="font-weight: bold;">if</span> allowed_layer_names <span style="font-weight: bold;">is</span> <span style="font-weight: bold;">not</span> <span style="font-weight: bold; text-decoration: underline;">None</span> <span style="font-weight: bold;">and</span> name <span style="font-weight: bold;">not</span> <span style="font-weight: bold;">in</span> allowed_layer_names:
-                <span style="font-weight: bold;">continue</span>
+            <span class="org-keyword">if</span> allowed_layer_names <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span> <span class="org-keyword">and</span> name <span class="org-keyword">not</span> <span class="org-keyword">in</span> allowed_layer_names:
+                <span class="org-keyword">continue</span>
             eligible_modules_list.append((name, mod))
-    <span style="font-weight: bold;">return</span> eligible_modules_list
+    <span class="org-keyword">return</span> eligible_modules_list
 
 
-<span style="font-weight: bold;">class</span> <span style="font-weight: bold; text-decoration: underline;">ASP</span>:
-    <span style="font-weight: bold; font-style: italic;">__model</span> = <span style="font-weight: bold; text-decoration: underline;">None</span>
-    <span style="font-weight: bold; font-style: italic;">__verbosity</span> = 0
-    <span style="font-weight: bold; font-style: italic;">__optimizer</span> = <span style="font-weight: bold; text-decoration: underline;">None</span>
-    <span style="font-weight: bold; font-style: italic;">__sparse_parameters</span> = []
-    <span style="font-weight: bold; font-style: italic;">__calculate_mask</span> = <span style="font-weight: bold; text-decoration: underline;">None</span>
+<span class="org-keyword">class</span> <span class="org-type">ASP</span>:
+    <span class="org-variable-name">__model</span> = <span class="org-constant">None</span>
+    <span class="org-variable-name">__verbosity</span> = 0
+    <span class="org-variable-name">__optimizer</span> = <span class="org-constant">None</span>
+    <span class="org-variable-name">__sparse_parameters</span> = []
+    <span class="org-variable-name">__calculate_mask</span> = <span class="org-constant">None</span>
 
-    @<span style="font-weight: bold;">classmethod</span>
-    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">init_model_for_pruning</span>(
+    @<span class="org-builtin">classmethod</span>
+    <span class="org-keyword">def</span> <span class="org-function-name">init_model_for_pruning</span>(
         cls,
         model,
-        mask_calculator=<span style="font-style: italic;">"m4n2_1d"</span>,
+        mask_calculator=<span class="org-string">"m4n2_1d"</span>,
         verbosity=3,
         whitelist=[torch.nn.Linear, torch.nn.Conv1d, torch.nn.Conv2d, torch.nn.Conv3d],
-        allowed_layer_names=<span style="font-weight: bold; text-decoration: underline;">None</span>,
+        allowed_layer_names=<span class="org-constant">None</span>,
         disallowed_layer_names=[],
-        allow_recompute_mask=<span style="font-weight: bold; text-decoration: underline;">False</span>,
+        allow_recompute_mask=<span class="org-constant">False</span>,
         custom_layer_dict={},
     ):
-        <span style="font-weight: bold;">assert</span> cls.__model <span style="font-weight: bold;">is</span> <span style="font-weight: bold; text-decoration: underline;">None</span>, <span style="font-style: italic;">"ASP has been initialized already."</span>
-        <span style="font-weight: bold; font-style: italic;">cls.__model</span> = model
-        <span style="font-weight: bold; font-style: italic;">cls.__verbosity</span> = verbosity
+        <span class="org-keyword">assert</span> cls.__model <span class="org-keyword">is</span> <span class="org-constant">None</span>, <span class="org-string">"ASP has been initialized already."</span>
+        <span class="org-variable-name">cls.__model</span> = model
+        <span class="org-variable-name">cls.__verbosity</span> = verbosity
 
-        <span style="font-weight: bold;">if</span> <span style="font-weight: bold;">isinstance</span>(mask_calculator, <span style="font-weight: bold;">str</span>):
+        <span class="org-keyword">if</span> <span class="org-builtin">isinstance</span>(mask_calculator, <span class="org-builtin">str</span>):
 
-            <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">create_mask_from_pattern</span>(param):
-                <span style="font-weight: bold;">return</span> create_mask(param, mask_calculator).<span style="font-weight: bold;">bool</span>()
+            <span class="org-keyword">def</span> <span class="org-function-name">create_mask_from_pattern</span>(param):
+                <span class="org-keyword">return</span> create_mask(param, mask_calculator).<span class="org-builtin">bool</span>()
 
-            <span style="font-weight: bold; font-style: italic;">cls.__calculate_mask</span> = create_mask_from_pattern
-        <span style="font-weight: bold;">else</span>:
-            <span style="font-weight: bold; font-style: italic;">cls.__calculate_mask</span> = mask_calculator  <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">user defined function</span>
+            <span class="org-variable-name">cls.__calculate_mask</span> = create_mask_from_pattern
+        <span class="org-keyword">else</span>:
+            <span class="org-variable-name">cls.__calculate_mask</span> = mask_calculator  <span class="org-comment-delimiter"># </span><span class="org-comment">user defined function</span>
 
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">function to extract variables that will be sparsified.</span>
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">idea is that you will add one of these functions for each module type that can be sparsified.</span>
-        <span style="font-weight: bold;">if</span> torchvision_imported:
-            <span style="font-weight: bold;">print</span>(
-                <span style="font-style: italic;">"[ASP] torchvision is imported, can work with the MaskRCNN/KeypointRCNN from torchvision."</span>
+        <span class="org-comment-delimiter"># </span><span class="org-comment">function to extract variables that will be sparsified.</span>
+        <span class="org-comment-delimiter"># </span><span class="org-comment">idea is that you will add one of these functions for each module type that can be sparsified.</span>
+        <span class="org-keyword">if</span> torchvision_imported:
+            <span class="org-keyword">print</span>(
+                <span class="org-string">"[ASP] torchvision is imported, can work with the MaskRCNN/KeypointRCNN from torchvision."</span>
             )
-            <span style="font-weight: bold; font-style: italic;">sparse_parameter_list</span> = {
-                torch.nn.Linear: [<span style="font-style: italic;">"weight"</span>],
-                torch.nn.Conv1d: [<span style="font-style: italic;">"weight"</span>],
-                torch.nn.Conv2d: [<span style="font-style: italic;">"weight"</span>],
-                torch.nn.Conv3d: [<span style="font-style: italic;">"weight"</span>],
-                torchvision.ops.misc.Conv2d: [<span style="font-style: italic;">"weight"</span>],
+            <span class="org-variable-name">sparse_parameter_list</span> = {
+                torch.nn.Linear: [<span class="org-string">"weight"</span>],
+                torch.nn.Conv1d: [<span class="org-string">"weight"</span>],
+                torch.nn.Conv2d: [<span class="org-string">"weight"</span>],
+                torch.nn.Conv3d: [<span class="org-string">"weight"</span>],
+                torchvision.ops.misc.Conv2d: [<span class="org-string">"weight"</span>],
             }
-        <span style="font-weight: bold;">else</span>:
-            <span style="font-weight: bold; font-style: italic;">sparse_parameter_list</span> = {
-                torch.nn.Linear: [<span style="font-style: italic;">"weight"</span>],
-                torch.nn.Conv1d: [<span style="font-style: italic;">"weight"</span>],
-                torch.nn.Conv2d: [<span style="font-style: italic;">"weight"</span>],
-                torch.nn.Conv3d: [<span style="font-style: italic;">"weight"</span>],
+        <span class="org-keyword">else</span>:
+            <span class="org-variable-name">sparse_parameter_list</span> = {
+                torch.nn.Linear: [<span class="org-string">"weight"</span>],
+                torch.nn.Conv1d: [<span class="org-string">"weight"</span>],
+                torch.nn.Conv2d: [<span class="org-string">"weight"</span>],
+                torch.nn.Conv3d: [<span class="org-string">"weight"</span>],
             }
-        <span style="font-weight: bold;">if</span> (
+        <span class="org-keyword">if</span> (
             custom_layer_dict
-        ):  <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">Update default list to include user supplied custom (layer type : parameter tensor), make sure this tensor type is something ASP knows how to prune</span>
+        ):  <span class="org-comment-delimiter"># </span><span class="org-comment">Update default list to include user supplied custom (layer type : parameter tensor), make sure this tensor type is something ASP knows how to prune</span>
             sparse_parameter_list.update(custom_layer_dict)
-            <span style="font-weight: bold; font-style: italic;">whitelist</span> += <span style="font-weight: bold;">list</span>(custom_layer_dict.keys())
+            <span class="org-variable-name">whitelist</span> += <span class="org-builtin">list</span>(custom_layer_dict.keys())
 
-        <span style="font-weight: bold;">for</span> module_type <span style="font-weight: bold;">in</span> whitelist:
-            <span style="font-weight: bold;">assert</span> module_type <span style="font-weight: bold;">in</span> sparse_parameter_list, (
-                <span style="font-style: italic;">"Module %s :: Don't know how to sparsify module."</span> % module.dtype()
+        <span class="org-keyword">for</span> module_type <span class="org-keyword">in</span> whitelist:
+            <span class="org-keyword">assert</span> module_type <span class="org-keyword">in</span> sparse_parameter_list, (
+                <span class="org-string">"Module %s :: Don't know how to sparsify module."</span> % module.dtype()
             )
 
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">find all sparse modules, extract sparse parameters and decorate</span>
-        <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">add_sparse_attributes</span>(module_name, module):
-            <span style="font-weight: bold; font-style: italic;">sparse_parameters</span> = sparse_parameter_list[<span style="font-weight: bold;">type</span>(module)]
-            <span style="font-weight: bold;">for</span> p_name, p <span style="font-weight: bold;">in</span> module.named_parameters():
-                <span style="font-weight: bold;">if</span> p_name <span style="font-weight: bold;">in</span> sparse_parameters <span style="font-weight: bold;">and</span> p.requires_grad:
-                    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">check for NVIDIA's TC compatibility: we check along the horizontal direction</span>
-                    <span style="font-weight: bold;">if</span> p.dtype == torch.float32 <span style="font-weight: bold;">and</span> (
-                        (p.size()[0] % 8) != 0 <span style="font-weight: bold;">or</span> (p.size()[1] % 16) != 0
-                    ):  <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">User defines FP32 and APEX internally uses FP16 math</span>
-                        <span style="font-weight: bold;">print</span>(
-                            <span style="font-style: italic;">"[ASP] Auto skipping pruning %s::%s of size=%s and type=%s for sparsity"</span>
-                            % (module_name, p_name, <span style="font-weight: bold;">str</span>(p.size()), <span style="font-weight: bold;">str</span>(p.dtype))
+        <span class="org-comment-delimiter"># </span><span class="org-comment">find all sparse modules, extract sparse parameters and decorate</span>
+        <span class="org-keyword">def</span> <span class="org-function-name">add_sparse_attributes</span>(module_name, module):
+            <span class="org-variable-name">sparse_parameters</span> = sparse_parameter_list[<span class="org-builtin">type</span>(module)]
+            <span class="org-keyword">for</span> p_name, p <span class="org-keyword">in</span> module.named_parameters():
+                <span class="org-keyword">if</span> p_name <span class="org-keyword">in</span> sparse_parameters <span class="org-keyword">and</span> p.requires_grad:
+                    <span class="org-comment-delimiter"># </span><span class="org-comment">check for NVIDIA's TC compatibility: we check along the horizontal direction</span>
+                    <span class="org-keyword">if</span> p.dtype == torch.float32 <span class="org-keyword">and</span> (
+                        (p.size()[0] % 8) != 0 <span class="org-keyword">or</span> (p.size()[1] % 16) != 0
+                    ):  <span class="org-comment-delimiter"># </span><span class="org-comment">User defines FP32 and APEX internally uses FP16 math</span>
+                        <span class="org-keyword">print</span>(
+                            <span class="org-string">"[ASP] Auto skipping pruning %s::%s of size=%s and type=%s for sparsity"</span>
+                            % (module_name, p_name, <span class="org-builtin">str</span>(p.size()), <span class="org-builtin">str</span>(p.dtype))
                         )
-                        <span style="font-weight: bold;">continue</span>
-                    <span style="font-weight: bold;">if</span> p.dtype == torch.float16 <span style="font-weight: bold;">and</span> (
-                        (p.size()[0] % 8) != 0 <span style="font-weight: bold;">or</span> (p.size()[1] % 16) != 0
-                    ):  <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">For Conv2d dim= K x CRS; we prune along C</span>
-                        <span style="font-weight: bold;">print</span>(
-                            <span style="font-style: italic;">"[ASP] Auto skipping pruning %s::%s of size=%s and type=%s for sparsity"</span>
-                            % (module_name, p_name, <span style="font-weight: bold;">str</span>(p.size()), <span style="font-weight: bold;">str</span>(p.dtype))
+                        <span class="org-keyword">continue</span>
+                    <span class="org-keyword">if</span> p.dtype == torch.float16 <span class="org-keyword">and</span> (
+                        (p.size()[0] % 8) != 0 <span class="org-keyword">or</span> (p.size()[1] % 16) != 0
+                    ):  <span class="org-comment-delimiter"># </span><span class="org-comment">For Conv2d dim= K x CRS; we prune along C</span>
+                        <span class="org-keyword">print</span>(
+                            <span class="org-string">"[ASP] Auto skipping pruning %s::%s of size=%s and type=%s for sparsity"</span>
+                            % (module_name, p_name, <span class="org-builtin">str</span>(p.size()), <span class="org-builtin">str</span>(p.dtype))
                         )
-                        <span style="font-weight: bold;">continue</span>
+                        <span class="org-keyword">continue</span>
 
-                    <span style="font-weight: bold;">if</span> cls.__verbosity &gt;= 3:
-                        <span style="font-weight: bold;">print</span>(
-                            <span style="font-style: italic;">"[ASP] Sparsifying %s::%s of size=%s and type=%s for sparsity"</span>
-                            % (module_name, p_name, <span style="font-weight: bold;">str</span>(p.size()), <span style="font-weight: bold;">str</span>(p.dtype))
+                    <span class="org-keyword">if</span> cls.__verbosity &gt;= 3:
+                        <span class="org-keyword">print</span>(
+                            <span class="org-string">"[ASP] Sparsifying %s::%s of size=%s and type=%s for sparsity"</span>
+                            % (module_name, p_name, <span class="org-builtin">str</span>(p.size()), <span class="org-builtin">str</span>(p.dtype))
                         )
 
-                    <span style="font-weight: bold; font-style: italic;">mask</span> = torch.ones_like(p).<span style="font-weight: bold;">bool</span>()
-                    <span style="font-weight: bold; font-style: italic;">buffname</span> = p_name.split(<span style="font-style: italic;">"."</span>)[-1]  <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">buffer names cannot contain "."</span>
-                    module.register_buffer(<span style="font-style: italic;">"__%s_mma_mask"</span> % buffname, mask)
-                    <span style="font-weight: bold;">if</span> allow_recompute_mask:
-                        <span style="font-weight: bold; font-style: italic;">pruned</span> = torch.zeros_like(p).cpu()
-                        module.register_buffer(<span style="font-style: italic;">"__%s_mma_pruned_p"</span> % buffname, pruned)
-                    <span style="font-weight: bold;">else</span>:
-                        <span style="font-weight: bold; font-style: italic;">pruned</span> = <span style="font-weight: bold; text-decoration: underline;">None</span>
+                    <span class="org-variable-name">mask</span> = torch.ones_like(p).<span class="org-builtin">bool</span>()
+                    <span class="org-variable-name">buffname</span> = p_name.split(<span class="org-string">"."</span>)[-1]  <span class="org-comment-delimiter"># </span><span class="org-comment">buffer names cannot contain "."</span>
+                    module.register_buffer(<span class="org-string">"__%s_mma_mask"</span> % buffname, mask)
+                    <span class="org-keyword">if</span> allow_recompute_mask:
+                        <span class="org-variable-name">pruned</span> = torch.zeros_like(p).cpu()
+                        module.register_buffer(<span class="org-string">"__%s_mma_pruned_p"</span> % buffname, pruned)
+                    <span class="org-keyword">else</span>:
+                        <span class="org-variable-name">pruned</span> = <span class="org-constant">None</span>
                     cls.__sparse_parameters.append(
                         (module_name, module, p_name, p, mask, pruned)
                     )
-                <span style="font-weight: bold;">else</span>:
-                    <span style="font-weight: bold;">if</span> cls.__verbosity &gt;= 3:
-                        <span style="font-weight: bold;">print</span>(
-                            <span style="font-style: italic;">"[ASP] Not sparsifying %s::%s of size=%s and type=%s"</span>
-                            % (module_name, p_name, <span style="font-weight: bold;">str</span>(p.size()), <span style="font-weight: bold;">str</span>(p.dtype))
+                <span class="org-keyword">else</span>:
+                    <span class="org-keyword">if</span> cls.__verbosity &gt;= 3:
+                        <span class="org-keyword">print</span>(
+                            <span class="org-string">"[ASP] Not sparsifying %s::%s of size=%s and type=%s"</span>
+                            % (module_name, p_name, <span class="org-builtin">str</span>(p.size()), <span class="org-builtin">str</span>(p.dtype))
                         )
 
-        <span style="font-weight: bold;">for</span> name, sparse_module <span style="font-weight: bold;">in</span> eligible_modules(
-            model, <span style="font-weight: bold;">tuple</span>(whitelist), allowed_layer_names, disallowed_layer_names
+        <span class="org-keyword">for</span> name, sparse_module <span class="org-keyword">in</span> eligible_modules(
+            model, <span class="org-builtin">tuple</span>(whitelist), allowed_layer_names, disallowed_layer_names
         ):
             add_sparse_attributes(name, sparse_module)
 
-    @<span style="font-weight: bold;">classmethod</span>
-    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">init_optimizer_for_pruning</span>(cls, optimizer):
-        <span style="font-weight: bold;">assert</span> cls.__optimizer <span style="font-weight: bold;">is</span> <span style="font-weight: bold; text-decoration: underline;">None</span>, <span style="font-style: italic;">"ASP has initialized optimizer already."</span>
-        <span style="font-weight: bold;">assert</span> (
-            cls.__calculate_mask <span style="font-weight: bold;">is</span> <span style="font-weight: bold;">not</span> <span style="font-weight: bold; text-decoration: underline;">None</span>
-        ), <span style="font-style: italic;">"Called ASP.init_optimizer_for_pruning before ASP.init_model_for_pruning."</span>
+    @<span class="org-builtin">classmethod</span>
+    <span class="org-keyword">def</span> <span class="org-function-name">init_optimizer_for_pruning</span>(cls, optimizer):
+        <span class="org-keyword">assert</span> cls.__optimizer <span class="org-keyword">is</span> <span class="org-constant">None</span>, <span class="org-string">"ASP has initialized optimizer already."</span>
+        <span class="org-keyword">assert</span> (
+            cls.__calculate_mask <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>
+        ), <span class="org-string">"Called ASP.init_optimizer_for_pruning before ASP.init_model_for_pruning."</span>
 
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">store pointer to original optimizer step method</span>
-        <span style="font-weight: bold; font-style: italic;">cls.__optimizer</span> = optimizer
-        <span style="font-weight: bold; font-style: italic;">cls.__optimizer.__step</span> = optimizer.step
+        <span class="org-comment-delimiter"># </span><span class="org-comment">store pointer to original optimizer step method</span>
+        <span class="org-variable-name">cls.__optimizer</span> = optimizer
+        <span class="org-variable-name">cls.__optimizer.__step</span> = optimizer.step
 
-        <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">__step</span>(opt_self, *args, **kwargs):
-            <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">prune gradients before step method</span>
-            <span style="font-weight: bold;">with</span> torch.no_grad():
-                <span style="font-weight: bold;">for</span> (
+        <span class="org-keyword">def</span> <span class="org-function-name">__step</span>(opt_self, *args, **kwargs):
+            <span class="org-comment-delimiter"># </span><span class="org-comment">prune gradients before step method</span>
+            <span class="org-keyword">with</span> torch.no_grad():
+                <span class="org-keyword">for</span> (
                     module_name,
                     module,
                     p_name,
                     p,
                     mask,
                     pruned,
-                ) <span style="font-weight: bold;">in</span> cls.__sparse_parameters:
-                    <span style="font-weight: bold;">if</span> p.grad <span style="font-weight: bold;">is</span> <span style="font-weight: bold;">not</span> <span style="font-weight: bold; text-decoration: underline;">None</span>:  <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">thx pjudd</span>
+                ) <span class="org-keyword">in</span> cls.__sparse_parameters:
+                    <span class="org-keyword">if</span> p.grad <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:  <span class="org-comment-delimiter"># </span><span class="org-comment">thx pjudd</span>
                         p.grad.mul_(mask)
-            <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">call original optimizer step method</span>
-            <span style="font-weight: bold; font-style: italic;">rval</span> = opt_self.__step(*args, **kwargs)
-            <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">prune parameters after step method</span>
-            <span style="font-weight: bold;">with</span> torch.no_grad():
-                <span style="font-weight: bold;">for</span> (
+            <span class="org-comment-delimiter"># </span><span class="org-comment">call original optimizer step method</span>
+            <span class="org-variable-name">rval</span> = opt_self.__step(*args, **kwargs)
+            <span class="org-comment-delimiter"># </span><span class="org-comment">prune parameters after step method</span>
+            <span class="org-keyword">with</span> torch.no_grad():
+                <span class="org-keyword">for</span> (
                     module_name,
                     module,
                     p_name,
                     p,
                     mask,
                     pruned,
-                ) <span style="font-weight: bold;">in</span> cls.__sparse_parameters:
+                ) <span class="org-keyword">in</span> cls.__sparse_parameters:
                     p.mul_(mask)
-            <span style="font-weight: bold;">return</span> rval
+            <span class="org-keyword">return</span> rval
 
-        <span style="font-weight: bold; font-style: italic;">cls.__optimizer.step</span> = types.MethodType(__step, cls.__optimizer)
+        <span class="org-variable-name">cls.__optimizer.step</span> = types.MethodType(__step, cls.__optimizer)
 
-    @<span style="font-weight: bold;">classmethod</span>
-    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">compute_sparse_masks</span>(cls):
-        <span style="font-weight: bold;">with</span> torch.no_grad():
-            <span style="font-weight: bold;">for</span> module_name, module, p_name, p, mask, pruned <span style="font-weight: bold;">in</span> cls.__sparse_parameters:
-                <span style="font-weight: bold;">if</span> mask.<span style="font-weight: bold;">sum</span>() &lt; mask.numel():  <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">when recalculating masks</span>
-                    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">restore dense parameter if allow_recompute_mask is enabled</span>
-                    <span style="font-weight: bold;">assert</span> (
-                        pruned <span style="font-weight: bold;">is</span> <span style="font-weight: bold;">not</span> <span style="font-weight: bold; text-decoration: underline;">None</span>
-                    ), <span style="font-style: italic;">"Unable to restore dense parameter because allow_recompute_mask == False"</span>
+    @<span class="org-builtin">classmethod</span>
+    <span class="org-keyword">def</span> <span class="org-function-name">compute_sparse_masks</span>(cls):
+        <span class="org-keyword">with</span> torch.no_grad():
+            <span class="org-keyword">for</span> module_name, module, p_name, p, mask, pruned <span class="org-keyword">in</span> cls.__sparse_parameters:
+                <span class="org-keyword">if</span> mask.<span class="org-builtin">sum</span>() &lt; mask.numel():  <span class="org-comment-delimiter"># </span><span class="org-comment">when recalculating masks</span>
+                    <span class="org-comment-delimiter"># </span><span class="org-comment">restore dense parameter if allow_recompute_mask is enabled</span>
+                    <span class="org-keyword">assert</span> (
+                        pruned <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>
+                    ), <span class="org-string">"Unable to restore dense parameter because allow_recompute_mask == False"</span>
                     p.add_(pruned.cuda())
 
                 mask.set_(cls.__calculate_mask(p))
 
-                <span style="font-weight: bold;">if</span> pruned <span style="font-weight: bold;">is</span> <span style="font-weight: bold;">not</span> <span style="font-weight: bold; text-decoration: underline;">None</span>:  <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">stow away pruned weights to cpu</span>
+                <span class="org-keyword">if</span> pruned <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:  <span class="org-comment-delimiter"># </span><span class="org-comment">stow away pruned weights to cpu</span>
                     pruned.set_((p * (~mask)).cpu())
 
                 p.mul_(
                     mask
-                )  <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">in-place multiplication, so pruned weights are 0-values, hence checkpoint will have 0s for pruned weights</span>
-                <span style="font-weight: bold;">if</span> cls.__verbosity &gt;= 2:
-                    <span style="font-weight: bold;">print</span>(
-                        <span style="font-style: italic;">"[ASP] Enabled %.2f%% sparsity for %s::%s of size=%s and type=%s"</span>
+                )  <span class="org-comment-delimiter"># </span><span class="org-comment">in-place multiplication, so pruned weights are 0-values, hence checkpoint will have 0s for pruned weights</span>
+                <span class="org-keyword">if</span> cls.__verbosity &gt;= 2:
+                    <span class="org-keyword">print</span>(
+                        <span class="org-string">"[ASP] Enabled %.2f%% sparsity for %s::%s of size=%s and type=%s"</span>
                         % (
-                            100.0 * mask.<span style="font-weight: bold;">sum</span>() / mask.numel(),
+                            100.0 * mask.<span class="org-builtin">sum</span>() / mask.numel(),
                             module_name,
                             p_name,
-                            <span style="font-weight: bold;">str</span>(p.size()),
-                            <span style="font-weight: bold;">str</span>(p.dtype),
+                            <span class="org-builtin">str</span>(p.size()),
+                            <span class="org-builtin">str</span>(p.dtype),
                         )
                     )
 
-    @<span style="font-weight: bold;">classmethod</span>
-    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">prune_trained_model</span>(cls, model, optimizer):
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">add mask buffers to model (init_model_for_pruning), augment optimizer (init_optimizer_for_pruning) and compute masks (compute_sparse_masks)</span>
+    @<span class="org-builtin">classmethod</span>
+    <span class="org-keyword">def</span> <span class="org-function-name">prune_trained_model</span>(cls, model, optimizer):
+        <span class="org-comment-delimiter"># </span><span class="org-comment">add mask buffers to model (init_model_for_pruning), augment optimizer (init_optimizer_for_pruning) and compute masks (compute_sparse_masks)</span>
         cls.init_model_for_pruning(
             model,
-            mask_calculator=<span style="font-style: italic;">"m4n2_1d"</span>,
+            mask_calculator=<span class="org-string">"m4n2_1d"</span>,
             verbosity=2,
             whitelist=[torch.nn.Linear, torch.nn.Conv2d],
-            allow_recompute_mask=<span style="font-weight: bold; text-decoration: underline;">False</span>,
+            allow_recompute_mask=<span class="org-constant">False</span>,
         )
         cls.init_optimizer_for_pruning(optimizer)
         cls.compute_sparse_masks()
 
 
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">-------------------- test.py --------------------</span>
-<span style="font-weight: bold;">import</span> os
-<span style="font-weight: bold;">import</span> numpy <span style="font-weight: bold;">as</span> np
-<span style="font-weight: bold;">import</span> torch
-<span style="font-weight: bold;">from</span> torch <span style="font-weight: bold;">import</span> nn
-<span style="font-weight: bold;">from</span> torch <span style="font-weight: bold;">import</span> optim
-<span style="font-weight: bold;">from</span> torch.utils.data <span style="font-weight: bold;">import</span> DataLoader, Dataset
-<span style="font-weight: bold;">import</span> torch.nn.functional <span style="font-weight: bold;">as</span> F
+<span class="org-comment-delimiter"># </span><span class="org-comment">-------------------- test.py --------------------</span>
+<span class="org-keyword">import</span> os
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> torch
+<span class="org-keyword">from</span> torch <span class="org-keyword">import</span> nn
+<span class="org-keyword">from</span> torch <span class="org-keyword">import</span> optim
+<span class="org-keyword">from</span> torch.utils.data <span class="org-keyword">import</span> DataLoader, Dataset
+<span class="org-keyword">import</span> torch.nn.functional <span class="org-keyword">as</span> F
 
-<span style="font-weight: bold; font-style: italic;">model</span> = <span style="font-weight: bold; text-decoration: underline;">None</span>
-<span style="font-weight: bold; font-style: italic;">optimizer</span> = <span style="font-weight: bold; text-decoration: underline;">None</span>
-
-
-<span style="font-weight: bold;">class</span> <span style="font-weight: bold; text-decoration: underline;">ToyDataset</span>(Dataset):
-    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">__init__</span>(<span style="font-weight: bold;">self</span>):
-        <span style="font-weight: bold; font-style: italic;">x</span> = torch.<span style="font-weight: bold;">round</span>(torch.rand(1000) * 200)
-        <span style="font-weight: bold; font-style: italic;">x</span> = x.unsqueeze(1)
-        <span style="font-weight: bold; font-style: italic;">x</span> = torch.cat((x, x * 2, x * 3, x * 4, x * 5, x * 6, x * 7, x * 8), 1)
-        <span style="font-weight: bold;">self</span>.X = x
-        <span style="font-weight: bold;">self</span>.Y = <span style="font-weight: bold;">self</span>.X
-
-    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">__getitem__</span>(<span style="font-weight: bold;">self</span>, index):
-        <span style="font-weight: bold;">return</span> <span style="font-weight: bold;">self</span>.X[index], <span style="font-weight: bold;">self</span>.Y[index]
-
-    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">__len__</span>(<span style="font-weight: bold;">self</span>):
-        <span style="font-weight: bold;">return</span> <span style="font-weight: bold;">len</span>(<span style="font-weight: bold;">self</span>.X)
+<span class="org-variable-name">model</span> = <span class="org-constant">None</span>
+<span class="org-variable-name">optimizer</span> = <span class="org-constant">None</span>
 
 
-<span style="font-weight: bold; font-style: italic;">training_loader</span> = DataLoader(ToyDataset(), batch_size=100, shuffle=<span style="font-weight: bold; text-decoration: underline;">True</span>)
+<span class="org-keyword">class</span> <span class="org-type">ToyDataset</span>(Dataset):
+    <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>):
+        <span class="org-variable-name">x</span> = torch.<span class="org-builtin">round</span>(torch.rand(1000) * 200)
+        <span class="org-variable-name">x</span> = x.unsqueeze(1)
+        <span class="org-variable-name">x</span> = torch.cat((x, x * 2, x * 3, x * 4, x * 5, x * 6, x * 7, x * 8), 1)
+        <span class="org-keyword">self</span>.X = x
+        <span class="org-keyword">self</span>.Y = <span class="org-keyword">self</span>.X
+
+    <span class="org-keyword">def</span> <span class="org-function-name">__getitem__</span>(<span class="org-keyword">self</span>, index):
+        <span class="org-keyword">return</span> <span class="org-keyword">self</span>.X[index], <span class="org-keyword">self</span>.Y[index]
+
+    <span class="org-keyword">def</span> <span class="org-function-name">__len__</span>(<span class="org-keyword">self</span>):
+        <span class="org-keyword">return</span> <span class="org-builtin">len</span>(<span class="org-keyword">self</span>.X)
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">train</span>():
-    <span style="font-weight: bold; font-style: italic;">criterion</span> = nn.MSELoss()
-    <span style="font-weight: bold;">for</span> i <span style="font-weight: bold;">in</span> <span style="font-weight: bold;">range</span>(500):
-        <span style="font-weight: bold;">for</span> x, y <span style="font-weight: bold;">in</span> training_loader:
-            <span style="font-weight: bold; font-style: italic;">loss</span> = criterion(model(x.to(<span style="font-style: italic;">"cuda"</span>)), y.to(<span style="font-style: italic;">"cuda"</span>))
+<span class="org-variable-name">training_loader</span> = DataLoader(ToyDataset(), batch_size=100, shuffle=<span class="org-constant">True</span>)
+
+
+<span class="org-keyword">def</span> <span class="org-function-name">train</span>():
+    <span class="org-variable-name">criterion</span> = nn.MSELoss()
+    <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(500):
+        <span class="org-keyword">for</span> x, y <span class="org-keyword">in</span> training_loader:
+            <span class="org-variable-name">loss</span> = criterion(model(x.to(<span class="org-string">"cuda"</span>)), y.to(<span class="org-string">"cuda"</span>))
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-    <span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"epoch #%d: loss: %f"</span> % (i, loss.item()))
+    <span class="org-keyword">print</span>(<span class="org-string">"epoch #%d: loss: %f"</span> % (i, loss.item()))
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">test</span>():
-    <span style="font-weight: bold; font-style: italic;">x</span> = torch.tensor([[2, 4, 6, 8, 10, 12, 14, 16]]).<span style="font-weight: bold;">float</span>()
-    <span style="font-weight: bold; font-style: italic;">y_hat</span> = model(x.to(<span style="font-style: italic;">"cuda"</span>))
-    <span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"orig: "</span>, x, <span style="font-style: italic;">" new: "</span>, y_hat)
+<span class="org-keyword">def</span> <span class="org-function-name">test</span>():
+    <span class="org-variable-name">x</span> = torch.tensor([[2, 4, 6, 8, 10, 12, 14, 16]]).<span class="org-builtin">float</span>()
+    <span class="org-variable-name">y_hat</span> = model(x.to(<span class="org-string">"cuda"</span>))
+    <span class="org-keyword">print</span>(<span class="org-string">"orig: "</span>, x, <span class="org-string">" new: "</span>, y_hat)
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">get_model</span>(f):
-    <span style="font-weight: bold;">global</span> model, optimizer
-    <span style="font-weight: bold;">if</span> os.path.exists(f):
-        <span style="font-weight: bold; font-style: italic;">model</span> = torch.load(f).cuda()
-        <span style="font-weight: bold; font-style: italic;">optimizer</span> = optim.Adam(model.parameters(), lr=0.01)
-    <span style="font-weight: bold;">else</span>:
-        <span style="font-weight: bold; font-style: italic;">model</span> = nn.Sequential(
+<span class="org-keyword">def</span> <span class="org-function-name">get_model</span>(f):
+    <span class="org-keyword">global</span> model, optimizer
+    <span class="org-keyword">if</span> os.path.exists(f):
+        <span class="org-variable-name">model</span> = torch.load(f).cuda()
+        <span class="org-variable-name">optimizer</span> = optim.Adam(model.parameters(), lr=0.01)
+    <span class="org-keyword">else</span>:
+        <span class="org-variable-name">model</span> = nn.Sequential(
             nn.Linear(8, 16),
             nn.PReLU(),
             nn.Linear(16, 8),
         ).cuda()
-        <span style="font-weight: bold; font-style: italic;">optimizer</span> = optim.Adam(model.parameters(), lr=0.01)
+        <span class="org-variable-name">optimizer</span> = optim.Adam(model.parameters(), lr=0.01)
         train()
         torch.save(model, f)
 
 
-get_model(<span style="font-style: italic;">"/tmp/model.pt"</span>)
-<span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"-------orig---------"</span>)
+get_model(<span class="org-string">"/tmp/model.pt"</span>)
+<span class="org-keyword">print</span>(<span class="org-string">"-------orig---------"</span>)
 test()
 
-<span style="font-weight: bold;">print</span>(model[2].state_dict())
+<span class="org-keyword">print</span>(model[2].state_dict())
 ASP.prune_trained_model(model, optimizer)
-<span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"-------pruned---------"</span>)
+<span class="org-keyword">print</span>(<span class="org-string">"-------pruned---------"</span>)
 test()
-<span style="font-weight: bold;">print</span>(model[2].state_dict())
+<span class="org-keyword">print</span>(model[2].state_dict())
 train()
-<span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"-------retrain---------"</span>)
+<span class="org-keyword">print</span>(<span class="org-string">"-------retrain---------"</span>)
 test()
-<span style="font-weight: bold;">print</span>(model[2].state_dict())
-torch.save(model, <span style="font-style: italic;">"/tmp/model_sparse.pt"</span>)
+<span class="org-keyword">print</span>(model[2].state_dict())
+torch.save(model, <span class="org-string">"/tmp/model_sparse.pt"</span>)
 </pre>
 </div>
 

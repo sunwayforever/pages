@@ -130,39 +130,39 @@ rounding_doubling_high_mul 解决的问题是如何用整数运算来计算 int*
 </p>
 
 <div class="org-src-container">
-<pre class="src src-C++"><span style="font-weight: bold;">#include</span> <span style="font-style: italic;">&lt;cmath&gt;</span>
-<span style="font-weight: bold;">#include</span> <span style="font-style: italic;">&lt;cstdint&gt;</span>
-<span style="font-weight: bold;">#include</span> <span style="font-style: italic;">&lt;cstdio&gt;</span>
-<span style="font-weight: bold;">#include</span> <span style="font-style: italic;">&lt;limits&gt;</span>
+<pre class="src src-C++"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;cmath&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;cstdint&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;cstdio&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;limits&gt;</span>
 
-<span style="font-weight: bold;">inline</span> <span style="font-weight: bold; text-decoration: underline;">int32_t</span> <span style="font-weight: bold;">SaturatingRoundingDoublingHighMul</span>(<span style="font-weight: bold; text-decoration: underline;">int32_t</span> <span style="font-weight: bold; font-style: italic;">a</span>, <span style="font-weight: bold; text-decoration: underline;">int32_t</span> <span style="font-weight: bold; font-style: italic;">b</span>) {
-    <span style="font-weight: bold; text-decoration: underline;">bool</span> <span style="font-weight: bold; font-style: italic;">overflow</span> = a == b &amp;&amp; a == <span style="font-weight: bold; text-decoration: underline;">std</span>::<span style="font-weight: bold; text-decoration: underline;">numeric_limits</span>&lt;<span style="font-weight: bold; text-decoration: underline;">int32_t</span>&gt;::min();
-    <span style="font-weight: bold; text-decoration: underline;">int64_t</span> <span style="font-weight: bold; font-style: italic;">a_64</span>(a);
-    <span style="font-weight: bold; text-decoration: underline;">int64_t</span> <span style="font-weight: bold; font-style: italic;">b_64</span>(b);
-    <span style="font-weight: bold; text-decoration: underline;">int64_t</span> <span style="font-weight: bold; font-style: italic;">ab_64</span> = a_64 * b_64;
-    <span style="font-weight: bold; text-decoration: underline;">int32_t</span> <span style="font-weight: bold; font-style: italic;">nudge</span> = ab_64 &gt;= 0 ? (1 &lt;&lt; 30) : (1 - (1 &lt;&lt; 30));
-    <span style="font-weight: bold; text-decoration: underline;">int32_t</span> <span style="font-weight: bold; font-style: italic;">ab_x2_high32</span> = <span style="font-weight: bold;">static_cast</span>&lt;<span style="font-weight: bold; text-decoration: underline;">int32_t</span>&gt;((ab_64 + nudge) / (1ll &lt;&lt; 31));
-    <span style="font-weight: bold;">return</span> overflow ? <span style="font-weight: bold; text-decoration: underline;">std</span>::<span style="font-weight: bold; text-decoration: underline;">numeric_limits</span>&lt;<span style="font-weight: bold; text-decoration: underline;">int32_t</span>&gt;::max() : ab_x2_high32;
+<span class="org-keyword">inline</span> <span class="org-type">int32_t</span> <span class="org-function-name">SaturatingRoundingDoublingHighMul</span>(<span class="org-type">int32_t</span> <span class="org-variable-name">a</span>, <span class="org-type">int32_t</span> <span class="org-variable-name">b</span>) {
+    <span class="org-type">bool</span> <span class="org-variable-name">overflow</span> = a == b &amp;&amp; a == <span class="org-constant">std</span>::<span class="org-constant">numeric_limits</span>&lt;<span class="org-type">int32_t</span>&gt;::min();
+    <span class="org-type">int64_t</span> <span class="org-variable-name">a_64</span>(a);
+    <span class="org-type">int64_t</span> <span class="org-variable-name">b_64</span>(b);
+    <span class="org-type">int64_t</span> <span class="org-variable-name">ab_64</span> = a_64 * b_64;
+    <span class="org-type">int32_t</span> <span class="org-variable-name">nudge</span> = ab_64 &gt;= 0 ? (1 &lt;&lt; 30) : (1 - (1 &lt;&lt; 30));
+    <span class="org-type">int32_t</span> <span class="org-variable-name">ab_x2_high32</span> = <span class="org-keyword">static_cast</span>&lt;<span class="org-type">int32_t</span>&gt;((ab_64 + nudge) / (1ll &lt;&lt; 31));
+    <span class="org-keyword">return</span> overflow ? <span class="org-constant">std</span>::<span class="org-constant">numeric_limits</span>&lt;<span class="org-type">int32_t</span>&gt;::max() : ab_x2_high32;
 }
 
-<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold;">quantized_mulitply</span>(<span style="font-weight: bold; text-decoration: underline;">int32_t</span> <span style="font-weight: bold; font-style: italic;">a</span>, <span style="font-weight: bold; text-decoration: underline;">float</span> <span style="font-weight: bold; font-style: italic;">b</span>) {
-    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">prepare</span>
-    <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">shift</span> = 0;
-    <span style="font-weight: bold; text-decoration: underline;">double</span> <span style="font-weight: bold; font-style: italic;">q</span> = <span style="font-weight: bold; text-decoration: underline;">std</span>::frexp(b, &amp;shift);
-    printf(<span style="font-style: italic;">"-- %f %d\n"</span>, q, shift);
-    <span style="font-weight: bold;">auto</span> <span style="font-weight: bold; font-style: italic;">q_fixed</span> = <span style="font-weight: bold;">static_cast</span>&lt;<span style="font-weight: bold; text-decoration: underline;">int64_t</span>&gt;(<span style="font-weight: bold; text-decoration: underline;">int</span>(q * (1ll &lt;&lt; 31)));
-    printf(<span style="font-style: italic;">"-- %ld\n"</span>, q_fixed);
-    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">eval</span>
-    <span style="font-weight: bold; text-decoration: underline;">int32_t</span> <span style="font-weight: bold; font-style: italic;">x</span> = SaturatingRoundingDoublingHighMul(100, (<span style="font-weight: bold; text-decoration: underline;">int32_t</span>)q_fixed);
-    printf(<span style="font-style: italic;">"-- %d\n"</span>, x);
-    <span style="font-weight: bold;">return</span> x &gt;&gt; (-shift);
+<span class="org-type">int</span> <span class="org-function-name">quantized_mulitply</span>(<span class="org-type">int32_t</span> <span class="org-variable-name">a</span>, <span class="org-type">float</span> <span class="org-variable-name">b</span>) {
+    <span class="org-comment-delimiter">// </span><span class="org-comment">prepare</span>
+    <span class="org-type">int</span> <span class="org-variable-name">shift</span> = 0;
+    <span class="org-type">double</span> <span class="org-variable-name">q</span> = <span class="org-constant">std</span>::frexp(b, &amp;shift);
+    printf(<span class="org-string">"-- %f %d\n"</span>, q, shift);
+    <span class="org-keyword">auto</span> <span class="org-variable-name">q_fixed</span> = <span class="org-keyword">static_cast</span>&lt;<span class="org-type">int64_t</span>&gt;(<span class="org-type">int</span>(q * (1ll &lt;&lt; 31)));
+    printf(<span class="org-string">"-- %ld\n"</span>, q_fixed);
+    <span class="org-comment-delimiter">// </span><span class="org-comment">eval</span>
+    <span class="org-type">int32_t</span> <span class="org-variable-name">x</span> = SaturatingRoundingDoublingHighMul(100, (<span class="org-type">int32_t</span>)q_fixed);
+    printf(<span class="org-string">"-- %d\n"</span>, x);
+    <span class="org-keyword">return</span> x &gt;&gt; (-shift);
 }
 
-<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold;">main</span>(<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">argc</span>, <span style="font-weight: bold; text-decoration: underline;">char</span> *<span style="font-weight: bold; font-style: italic;">argv</span>[]) {
-    <span style="font-weight: bold; text-decoration: underline;">int32_t</span> <span style="font-weight: bold; font-style: italic;">a</span> = 100;
-    <span style="font-weight: bold; text-decoration: underline;">float</span> <span style="font-weight: bold; font-style: italic;">b</span> = 0.12;
-    printf(<span style="font-style: italic;">"%d * %f = %d\n"</span>, a, b, quantized_mulitply(a, b));
-    <span style="font-weight: bold;">return</span> 0;
+<span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]) {
+    <span class="org-type">int32_t</span> <span class="org-variable-name">a</span> = 100;
+    <span class="org-type">float</span> <span class="org-variable-name">b</span> = 0.12;
+    printf(<span class="org-string">"%d * %f = %d\n"</span>, a, b, quantized_mulitply(a, b));
+    <span class="org-keyword">return</span> 0;
 }
 
 </pre>
@@ -185,13 +185,13 @@ rounding_doubling_high_mul 解决的问题是如何用整数运算来计算 int*
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c++">mul.<span style="font-weight: bold; text-decoration: underline;">cc</span>:<span style="font-weight: bold; text-decoration: underline;">Prepare</span>:
-    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">S_a(Q_a-Z_a)*S_b(Q_b-Z_b)=S_c(Q_c-Z_c)</span>
-    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">real_multiplier &#20026; (S_a*S_b)/(S_c)</span>
-    <span style="font-weight: bold; text-decoration: underline;">double</span> <span style="font-weight: bold; font-style: italic;">real_multiplier</span> =
+<pre class="src src-c++">mul.<span class="org-constant">cc</span>:<span class="org-constant">Prepare</span>:
+    <span class="org-comment-delimiter">// </span><span class="org-comment">S_a(Q_a-Z_a)*S_b(Q_b-Z_b)=S_c(Q_c-Z_c)</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">real_multiplier &#20026; (S_a*S_b)/(S_c)</span>
+    <span class="org-type">double</span> <span class="org-variable-name">real_multiplier</span> =
         input1-&gt;params.scale * input2-&gt;params.scale / output-&gt;params.scale;
 
-    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">QuantizeMultiplier &#20250;&#25226; real_multiplier &#36716;&#25442;&#20026;&#19968;&#20010;&#25972;&#25968;&#21644;&#19968;&#20010; shift &#30340;&#24418;&#24335;</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">QuantizeMultiplier &#20250;&#25226; real_multiplier &#36716;&#25442;&#20026;&#19968;&#20010;&#25972;&#25968;&#21644;&#19968;&#20010; shift &#30340;&#24418;&#24335;</span>
     QuantizeMultiplier(real_multiplier, &amp;data-&gt;output_multiplier,
                        &amp;data-&gt;output_shift);
 </pre>
@@ -208,11 +208,11 @@ QuantizeMultiplier 会把浮点的 real_multiplier (即 scale) 变为 int/shift 
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c++"><span style="font-weight: bold; text-decoration: underline;">void</span> <span style="font-weight: bold;">QuantizeMultiplier</span>(<span style="font-weight: bold; text-decoration: underline;">double</span> <span style="font-weight: bold; font-style: italic;">double_multiplier</span>, <span style="font-weight: bold; text-decoration: underline;">int32_t</span>* <span style="font-weight: bold; font-style: italic;">quantized_multiplier</span>,
-                        <span style="font-weight: bold; text-decoration: underline;">int</span>* <span style="font-weight: bold; font-style: italic;">shift</span>) {
-  <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">double</span> <span style="font-weight: bold; font-style: italic;">q</span> = <span style="font-weight: bold; text-decoration: underline;">std</span>::frexp(double_multiplier, shift);
-  <span style="font-weight: bold;">auto</span> <span style="font-weight: bold; font-style: italic;">q_fixed</span> = <span style="font-weight: bold;">static_cast</span>&lt;<span style="font-weight: bold; text-decoration: underline;">int64_t</span>&gt;(TfLiteRound(q * (1ll &lt;&lt; 31)));
-  *quantized_multiplier = <span style="font-weight: bold;">static_cast</span>&lt;<span style="font-weight: bold; text-decoration: underline;">int32_t</span>&gt;(q_fixed);
+<pre class="src src-c++"><span class="org-type">void</span> <span class="org-function-name">QuantizeMultiplier</span>(<span class="org-type">double</span> <span class="org-variable-name">double_multiplier</span>, <span class="org-type">int32_t</span>* <span class="org-variable-name">quantized_multiplier</span>,
+                        <span class="org-type">int</span>* <span class="org-variable-name">shift</span>) {
+  <span class="org-keyword">const</span> <span class="org-type">double</span> <span class="org-variable-name">q</span> = <span class="org-constant">std</span>::frexp(double_multiplier, shift);
+  <span class="org-keyword">auto</span> <span class="org-variable-name">q_fixed</span> = <span class="org-keyword">static_cast</span>&lt;<span class="org-type">int64_t</span>&gt;(TfLiteRound(q * (1ll &lt;&lt; 31)));
+  *quantized_multiplier = <span class="org-keyword">static_cast</span>&lt;<span class="org-type">int32_t</span>&gt;(q_fixed);
 }
 </pre>
 </div>
@@ -228,26 +228,26 @@ QuantizeMultiplier 会把浮点的 real_multiplier (即 scale) 变为 int/shift 
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c++"><span style="font-weight: bold;">template</span> &lt;<span style="font-weight: bold; text-decoration: underline;">KernelType</span> <span style="font-weight: bold; font-style: italic;">kernel_type</span>&gt;
-<span style="font-weight: bold; text-decoration: underline;">TfLiteStatus</span> <span style="font-weight: bold;">EvalQuantized</span>(
-    <span style="font-weight: bold; text-decoration: underline;">TfLiteContext</span>* <span style="font-weight: bold; font-style: italic;">context</span>, <span style="font-weight: bold; text-decoration: underline;">TfLiteNode</span>* <span style="font-weight: bold; font-style: italic;">node</span>, <span style="font-weight: bold; text-decoration: underline;">TfLiteMulParams</span>* <span style="font-weight: bold; font-style: italic;">params</span>,
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">OpData</span>* <span style="font-weight: bold; font-style: italic;">data</span>, <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">TfLiteTensor</span>* <span style="font-weight: bold; font-style: italic;">input1</span>, <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">TfLiteTensor</span>* <span style="font-weight: bold; font-style: italic;">input2</span>,
-    <span style="font-weight: bold; text-decoration: underline;">TfLiteTensor</span>* <span style="font-weight: bold; font-style: italic;">output</span>) {
+<pre class="src src-c++"><span class="org-keyword">template</span> &lt;<span class="org-type">KernelType</span> <span class="org-variable-name">kernel_type</span>&gt;
+<span class="org-type">TfLiteStatus</span> <span class="org-function-name">EvalQuantized</span>(
+    <span class="org-type">TfLiteContext</span>* <span class="org-variable-name">context</span>, <span class="org-type">TfLiteNode</span>* <span class="org-variable-name">node</span>, <span class="org-type">TfLiteMulParams</span>* <span class="org-variable-name">params</span>,
+    <span class="org-keyword">const</span> <span class="org-type">OpData</span>* <span class="org-variable-name">data</span>, <span class="org-keyword">const</span> <span class="org-type">TfLiteTensor</span>* <span class="org-variable-name">input1</span>, <span class="org-keyword">const</span> <span class="org-type">TfLiteTensor</span>* <span class="org-variable-name">input2</span>,
+    <span class="org-type">TfLiteTensor</span>* <span class="org-variable-name">output</span>) {
 
-    <span style="font-weight: bold; text-decoration: underline;">tflite</span>::<span style="font-weight: bold; text-decoration: underline;">ArithmeticParams</span> <span style="font-weight: bold; font-style: italic;">op_params</span>;
+    <span class="org-constant">tflite</span>::<span class="org-type">ArithmeticParams</span> <span class="org-variable-name">op_params</span>;
     op_params.input1_offset = -input1-&gt;params.zero_point;
     op_params.input2_offset = -input2-&gt;params.zero_point;
     op_params.output_offset = output-&gt;params.zero_point;
     op_params.output_multiplier = data-&gt;output_multiplier;
     op_params.output_shift = data-&gt;output_shift;
 
-<span style="font-weight: bold;">#define</span> <span style="font-weight: bold;">TF_LITE_MUL</span>(<span style="font-weight: bold; font-style: italic;">type</span>, <span style="font-weight: bold; font-style: italic;">opname</span>, <span style="font-weight: bold; font-style: italic;">dtype</span>)                                 \
-    <span style="font-weight: bold; text-decoration: underline;">type</span>::opname(                                                        \
+<span class="org-preprocessor">#define</span> <span class="org-function-name">TF_LITE_MUL</span>(<span class="org-variable-name">type</span>, <span class="org-variable-name">opname</span>, <span class="org-variable-name">dtype</span>)                                 \
+    <span class="org-constant">type</span>::opname(                                                        \
         op_params, GetTensorShape(input1), GetTensorData&lt;dtype&gt;(input1), \
         GetTensorShape(input2), GetTensorData&lt;dtype&gt;(input2),            \
         GetTensorShape(output), GetTensorData&lt;dtype&gt;(output))
 
-    <span style="font-weight: bold;">if</span> (input1-&gt;type == kTfLiteInt8) {
+    <span class="org-keyword">if</span> (input1-&gt;type == kTfLiteInt8) {
         TF_LITE_MUL(reference_integer_ops, Mul, int8_t);
     }
 }
@@ -273,33 +273,33 @@ tflite 的 optimized kernel 只对 fully_connected, conv 等使用 来做 gemm
 <h4 id="org000000f"><span class="section-number-4">1.1.5</span> Reference Kernel</h4>
 <div class="outline-text-4" id="text-1-1-5">
 <div class="org-src-container">
-<pre class="src src-c++"><span style="font-weight: bold;">template</span> &lt;<span style="font-weight: bold;">typename</span> <span style="font-weight: bold; text-decoration: underline;">T</span>&gt;
-<span style="font-weight: bold;">inline</span> <span style="font-weight: bold; text-decoration: underline;">void</span> <span style="font-weight: bold;">MulElementwise</span>(
-    <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">size</span>, <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">ArithmeticParams</span>&amp; <span style="font-weight: bold; font-style: italic;">params</span>, <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">T</span>* <span style="font-weight: bold; font-style: italic;">input1_data</span>,
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">T</span>* <span style="font-weight: bold; font-style: italic;">input2_data</span>, <span style="font-weight: bold; text-decoration: underline;">T</span>* <span style="font-weight: bold; font-style: italic;">output_data</span>) {
-    <span style="font-weight: bold;">for</span> (<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">i</span> = 0; i &lt; size; ++i) {
-        <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">Q_a-Z_a</span>
-        <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">int32</span> <span style="font-weight: bold; font-style: italic;">input1_val</span> = params.input1_offset + input1_data[i];
-        <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">Q_b-Z_b</span>
-        <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">int32</span> <span style="font-weight: bold; font-style: italic;">input2_val</span> = params.input2_offset + input2_data[i];
-        <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">Q_c=Z_c+real_multiplier*((Q_a-Z_a)*(Q_b-Z_b))</span>
-        <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">int32</span> <span style="font-weight: bold; font-style: italic;">output</span> = params.output_offset +
+<pre class="src src-c++"><span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">T</span>&gt;
+<span class="org-keyword">inline</span> <span class="org-type">void</span> <span class="org-function-name">MulElementwise</span>(
+    <span class="org-type">int</span> <span class="org-variable-name">size</span>, <span class="org-keyword">const</span> <span class="org-type">ArithmeticParams</span>&amp; <span class="org-variable-name">params</span>, <span class="org-keyword">const</span> <span class="org-type">T</span>* <span class="org-variable-name">input1_data</span>,
+    <span class="org-keyword">const</span> <span class="org-type">T</span>* <span class="org-variable-name">input2_data</span>, <span class="org-type">T</span>* <span class="org-variable-name">output_data</span>) {
+    <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; size; ++i) {
+        <span class="org-comment-delimiter">// </span><span class="org-comment">Q_a-Z_a</span>
+        <span class="org-keyword">const</span> <span class="org-type">int32</span> <span class="org-variable-name">input1_val</span> = params.input1_offset + input1_data[i];
+        <span class="org-comment-delimiter">// </span><span class="org-comment">Q_b-Z_b</span>
+        <span class="org-keyword">const</span> <span class="org-type">int32</span> <span class="org-variable-name">input2_val</span> = params.input2_offset + input2_data[i];
+        <span class="org-comment-delimiter">// </span><span class="org-comment">Q_c=Z_c+real_multiplier*((Q_a-Z_a)*(Q_b-Z_b))</span>
+        <span class="org-keyword">const</span> <span class="org-type">int32</span> <span class="org-variable-name">output</span> = params.output_offset +
                              MultiplyByQuantizedMultiplier(
                                  input1_val * input2_val,
                                  params.output_multiplier, params.output_shift);
-        output_data[i] = <span style="font-weight: bold;">static_cast</span>&lt;<span style="font-weight: bold; text-decoration: underline;">T</span>&gt;(output);
+        output_data[i] = <span class="org-keyword">static_cast</span>&lt;<span class="org-type">T</span>&gt;(output);
     }
 }
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-c++"><span style="font-weight: bold;">inline</span> <span style="font-weight: bold; text-decoration: underline;">int32</span> <span style="font-weight: bold;">MultiplyByQuantizedMultiplier</span>(
-    <span style="font-weight: bold; text-decoration: underline;">int32</span> <span style="font-weight: bold; font-style: italic;">x</span>, <span style="font-weight: bold; text-decoration: underline;">int32</span> <span style="font-weight: bold; font-style: italic;">quantized_multiplier</span>, <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">shift</span>) {
-    <span style="font-weight: bold;">using</span> <span style="font-weight: bold; text-decoration: underline;">gemmlowp</span>::<span style="font-weight: bold; text-decoration: underline;">RoundingDivideByPOT</span>;
-    <span style="font-weight: bold;">using</span> <span style="font-weight: bold; text-decoration: underline;">gemmlowp</span>::<span style="font-weight: bold; text-decoration: underline;">SaturatingRoundingDoublingHighMul</span>;
-    <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">right_shift</span> = -shift;
-    <span style="font-weight: bold;">return</span> RoundingDivideByPOT(
+<pre class="src src-c++"><span class="org-keyword">inline</span> <span class="org-type">int32</span> <span class="org-function-name">MultiplyByQuantizedMultiplier</span>(
+    <span class="org-type">int32</span> <span class="org-variable-name">x</span>, <span class="org-type">int32</span> <span class="org-variable-name">quantized_multiplier</span>, <span class="org-type">int</span> <span class="org-variable-name">shift</span>) {
+    <span class="org-keyword">using</span> <span class="org-constant">gemmlowp</span>::<span class="org-type">RoundingDivideByPOT</span>;
+    <span class="org-keyword">using</span> <span class="org-constant">gemmlowp</span>::<span class="org-type">SaturatingRoundingDoublingHighMul</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">right_shift</span> = -shift;
+    <span class="org-keyword">return</span> RoundingDivideByPOT(
         SaturatingRoundingDoublingHighMul(x, quantized_multiplier),
         right_shift);
 }
@@ -326,21 +326,21 @@ weight_scale, 以便后面 \(Q_w*Q_x+Q_b\) 可以在相同的 scale 下进行计
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c++"><span style="font-weight: bold;">if</span> (is_bias_vector) {
-    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">Quantization of bias vector.</span>
-    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">We need both of the mandatory inputs (input activations and weights) to</span>
-    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">have been already quantized.</span>
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold;">auto</span>&amp; <span style="font-weight: bold; font-style: italic;">input_activations</span> =
+<pre class="src src-c++"><span class="org-keyword">if</span> (is_bias_vector) {
+    <span class="org-comment-delimiter">// </span><span class="org-comment">Quantization of bias vector.</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">We need both of the mandatory inputs (input activations and weights) to</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">have been already quantized.</span>
+    <span class="org-keyword">const</span> <span class="org-keyword">auto</span>&amp; <span class="org-variable-name">input_activations</span> =
         model-&gt;GetArray(op.inputs[activations_input_index]);
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold;">auto</span>&amp; <span style="font-weight: bold; font-style: italic;">input_weights</span> = model-&gt;GetArray(op.inputs[weights_input_index]);
+    <span class="org-keyword">const</span> <span class="org-keyword">auto</span>&amp; <span class="org-variable-name">input_weights</span> = model-&gt;GetArray(op.inputs[weights_input_index]);
 
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold;">auto</span> <span style="font-weight: bold; font-style: italic;">input_activations_scale</span> =
+    <span class="org-keyword">const</span> <span class="org-keyword">auto</span> <span class="org-variable-name">input_activations_scale</span> =
         input_activations.quantization_params-&gt;scale;
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold;">auto</span> <span style="font-weight: bold; font-style: italic;">input_weights_scale</span> = input_weights.quantization_params-&gt;scale;
+    <span class="org-keyword">const</span> <span class="org-keyword">auto</span> <span class="org-variable-name">input_weights_scale</span> = input_weights.quantization_params-&gt;scale;
     quantization_params-&gt;scale = input_activations_scale * input_weights_scale;
     quantization_params-&gt;zero_point = 0;
-    *quantized_data_type = GetQuantizedDataType(array, <span style="font-weight: bold; text-decoration: underline;">ArrayDataType</span>::kInt32);
-    <span style="font-weight: bold;">return</span> <span style="font-weight: bold; text-decoration: underline;">true</span>;
+    *quantized_data_type = GetQuantizedDataType(array, <span class="org-constant">ArrayDataType</span>::kInt32);
+    <span class="org-keyword">return</span> <span class="org-constant">true</span>;
 }
 </pre>
 </div>
@@ -376,40 +376,40 @@ EvalQuantized 与 Mul 的 EvalQuantized 也是基本相同
 <h4 id="org000001e"><span class="section-number-4">1.2.4</span> Reference Kernel</h4>
 <div class="outline-text-4" id="text-1-2-4">
 <div class="org-src-container">
-<pre class="src src-c++"><span style="font-weight: bold;">inline</span> <span style="font-weight: bold; text-decoration: underline;">void</span> <span style="font-weight: bold;">FullyConnected</span>(
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">FullyConnectedParams</span>&amp; <span style="font-weight: bold; font-style: italic;">params</span>, <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">RuntimeShape</span>&amp; <span style="font-weight: bold; font-style: italic;">input_shape</span>,
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">int8_t</span>* <span style="font-weight: bold; font-style: italic;">input_data</span>, <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">RuntimeShape</span>&amp; <span style="font-weight: bold; font-style: italic;">filter_shape</span>,
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">int8_t</span>* <span style="font-weight: bold; font-style: italic;">filter_data</span>, <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">RuntimeShape</span>&amp; <span style="font-weight: bold; font-style: italic;">bias_shape</span>,
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">int32</span>* <span style="font-weight: bold; font-style: italic;">bias_data</span>, <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">RuntimeShape</span>&amp; <span style="font-weight: bold; font-style: italic;">output_shape</span>,
-    <span style="font-weight: bold; text-decoration: underline;">int8_t</span>* <span style="font-weight: bold; font-style: italic;">output_data</span>) {
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">int32</span> <span style="font-weight: bold; font-style: italic;">input_offset</span> = params.input_offset;
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">int32</span> <span style="font-weight: bold; font-style: italic;">filter_offset</span> = params.weights_offset;
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">int32</span> <span style="font-weight: bold; font-style: italic;">output_offset</span> = params.output_offset;
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">int32</span> <span style="font-weight: bold; font-style: italic;">output_multiplier</span> = params.output_multiplier;
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">output_shift</span> = params.output_shift;
+<pre class="src src-c++"><span class="org-keyword">inline</span> <span class="org-type">void</span> <span class="org-function-name">FullyConnected</span>(
+    <span class="org-keyword">const</span> <span class="org-type">FullyConnectedParams</span>&amp; <span class="org-variable-name">params</span>, <span class="org-keyword">const</span> <span class="org-type">RuntimeShape</span>&amp; <span class="org-variable-name">input_shape</span>,
+    <span class="org-keyword">const</span> <span class="org-type">int8_t</span>* <span class="org-variable-name">input_data</span>, <span class="org-keyword">const</span> <span class="org-type">RuntimeShape</span>&amp; <span class="org-variable-name">filter_shape</span>,
+    <span class="org-keyword">const</span> <span class="org-type">int8_t</span>* <span class="org-variable-name">filter_data</span>, <span class="org-keyword">const</span> <span class="org-type">RuntimeShape</span>&amp; <span class="org-variable-name">bias_shape</span>,
+    <span class="org-keyword">const</span> <span class="org-type">int32</span>* <span class="org-variable-name">bias_data</span>, <span class="org-keyword">const</span> <span class="org-type">RuntimeShape</span>&amp; <span class="org-variable-name">output_shape</span>,
+    <span class="org-type">int8_t</span>* <span class="org-variable-name">output_data</span>) {
+    <span class="org-keyword">const</span> <span class="org-type">int32</span> <span class="org-variable-name">input_offset</span> = params.input_offset;
+    <span class="org-keyword">const</span> <span class="org-type">int32</span> <span class="org-variable-name">filter_offset</span> = params.weights_offset;
+    <span class="org-keyword">const</span> <span class="org-type">int32</span> <span class="org-variable-name">output_offset</span> = params.output_offset;
+    <span class="org-keyword">const</span> <span class="org-type">int32</span> <span class="org-variable-name">output_multiplier</span> = params.output_multiplier;
+    <span class="org-keyword">const</span> <span class="org-type">int</span> <span class="org-variable-name">output_shift</span> = params.output_shift;
 
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">filter_dim_count</span> = filter_shape.DimensionsCount();
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">batches</span> = output_shape.Dims(0);
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">output_depth</span> = output_shape.Dims(1);
+    <span class="org-keyword">const</span> <span class="org-type">int</span> <span class="org-variable-name">filter_dim_count</span> = filter_shape.DimensionsCount();
+    <span class="org-keyword">const</span> <span class="org-type">int</span> <span class="org-variable-name">batches</span> = output_shape.Dims(0);
+    <span class="org-keyword">const</span> <span class="org-type">int</span> <span class="org-variable-name">output_depth</span> = output_shape.Dims(1);
 
-    <span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">accum_depth</span> = filter_shape.Dims(filter_dim_count - 1);
-    <span style="font-weight: bold;">for</span> (<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">b</span> = 0; b &lt; batches; ++b) {
-        <span style="font-weight: bold;">for</span> (<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">out_c</span> = 0; out_c &lt; output_depth; ++out_c) {
-            <span style="font-weight: bold; text-decoration: underline;">int32</span> <span style="font-weight: bold; font-style: italic;">acc</span> = 0;
-            <span style="font-weight: bold;">for</span> (<span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">d</span> = 0; d &lt; accum_depth; ++d) {
-                <span style="font-weight: bold; text-decoration: underline;">int32</span> <span style="font-weight: bold; font-style: italic;">input_val</span> = input_data[b * accum_depth + d];
-                <span style="font-weight: bold; text-decoration: underline;">int32</span> <span style="font-weight: bold; font-style: italic;">filter_val</span> = filter_data[out_c * accum_depth + d];
+    <span class="org-keyword">const</span> <span class="org-type">int</span> <span class="org-variable-name">accum_depth</span> = filter_shape.Dims(filter_dim_count - 1);
+    <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">b</span> = 0; b &lt; batches; ++b) {
+        <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">out_c</span> = 0; out_c &lt; output_depth; ++out_c) {
+            <span class="org-type">int32</span> <span class="org-variable-name">acc</span> = 0;
+            <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">d</span> = 0; d &lt; accum_depth; ++d) {
+                <span class="org-type">int32</span> <span class="org-variable-name">input_val</span> = input_data[b * accum_depth + d];
+                <span class="org-type">int32</span> <span class="org-variable-name">filter_val</span> = filter_data[out_c * accum_depth + d];
                 acc +=
                     (filter_val + filter_offset) * (input_val + input_offset);
             }
-            <span style="font-weight: bold;">if</span> (bias_data) {
-                <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">&#36825;&#37324; bias &#21487;&#20197;&#30452;&#25509;&#30456;&#21152;, &#22240;&#20026; bias &#19982; w*x &#30340; scale &#30456;&#21516;</span>
+            <span class="org-keyword">if</span> (bias_data) {
+                <span class="org-comment-delimiter">// </span><span class="org-comment">&#36825;&#37324; bias &#21487;&#20197;&#30452;&#25509;&#30456;&#21152;, &#22240;&#20026; bias &#19982; w*x &#30340; scale &#30456;&#21516;</span>
                 acc += bias_data[out_c];
             }
             acc = MultiplyByQuantizedMultiplier(
                 acc, output_multiplier, output_shift);
             acc += output_offset;
-            output_data[out_c + output_depth * b] = <span style="font-weight: bold;">static_cast</span>&lt;<span style="font-weight: bold; text-decoration: underline;">int8_t</span>&gt;(acc);
+            output_data[out_c + output_depth * b] = <span class="org-keyword">static_cast</span>&lt;<span class="org-type">int8_t</span>&gt;(acc);
         }
     }
 }
@@ -470,33 +470,33 @@ hidden layer 中对应的权重接近于零
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold; font-style: italic;">#</span><span style="font-weight: bold; font-style: italic;">!/usr/bin/env python3</span>
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">-*- coding: utf-8 -*-</span>
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">2021-08-13 09:58</span>
-<span style="font-weight: bold;">import</span> numpy <span style="font-weight: bold;">as</span> np
+<pre class="src src-python"><span class="org-comment-delimiter">#</span><span class="org-comment">!/usr/bin/env python3</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">-*- coding: utf-8 -*-</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">2021-08-13 09:58</span>
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 
-<span style="font-weight: bold;">from</span> models <span style="font-weight: bold;">import</span> deep_cnn
-<span style="font-weight: bold;">import</span> config
+<span class="org-keyword">from</span> models <span class="org-keyword">import</span> deep_cnn
+<span class="org-keyword">import</span> config
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">check_model</span>(path):
-    <span style="font-weight: bold;">print</span>(f<span style="font-style: italic;">"------{path}------"</span>)
-    <span style="font-weight: bold; font-style: italic;">model</span> = deep_cnn()
+<span class="org-keyword">def</span> <span class="org-function-name">check_model</span>(path):
+    <span class="org-keyword">print</span>(f<span class="org-string">"------{path}------"</span>)
+    <span class="org-variable-name">model</span> = deep_cnn()
     model.load_weights(path)
-    <span style="font-weight: bold; font-style: italic;">bn</span> = [x <span style="font-weight: bold;">for</span> x <span style="font-weight: bold;">in</span> model.layers <span style="font-weight: bold;">if</span> x.name.startswith(<span style="font-style: italic;">"batch"</span>)]
-    <span style="font-weight: bold;">for</span> layer <span style="font-weight: bold;">in</span> bn:
-        <span style="font-weight: bold;">print</span>(layer.name)
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">y=gamma * (x - mean) / sqrt(var+eps) + beta.</span>
-        <span style="font-weight: bold; font-style: italic;">gamma</span>, <span style="font-weight: bold; font-style: italic;">beta</span>, <span style="font-weight: bold; font-style: italic;">mean</span>, <span style="font-weight: bold; font-style: italic;">var</span> = layer.get_weights()
-        <span style="font-weight: bold; font-style: italic;">eps</span> = 0.001
-        <span style="font-weight: bold; font-style: italic;">scale</span> = gamma / (np.sqrt(var + eps))
-        <span style="font-weight: bold; font-style: italic;">bias</span> = beta - gamma * mean
-        <span style="font-weight: bold;">print</span>(f<span style="font-style: italic;">"---{layer.name}---"</span>)
-        <span style="font-weight: bold;">print</span>(np.<span style="font-weight: bold;">min</span>(scale), np.<span style="font-weight: bold;">max</span>(scale))
-        <span style="font-weight: bold;">print</span>(np.<span style="font-weight: bold;">min</span>(bias), np.<span style="font-weight: bold;">max</span>(bias))
+    <span class="org-variable-name">bn</span> = [x <span class="org-keyword">for</span> x <span class="org-keyword">in</span> model.layers <span class="org-keyword">if</span> x.name.startswith(<span class="org-string">"batch"</span>)]
+    <span class="org-keyword">for</span> layer <span class="org-keyword">in</span> bn:
+        <span class="org-keyword">print</span>(layer.name)
+        <span class="org-comment-delimiter"># </span><span class="org-comment">y=gamma * (x - mean) / sqrt(var+eps) + beta.</span>
+        <span class="org-variable-name">gamma</span>, <span class="org-variable-name">beta</span>, <span class="org-variable-name">mean</span>, <span class="org-variable-name">var</span> = layer.get_weights()
+        <span class="org-variable-name">eps</span> = 0.001
+        <span class="org-variable-name">scale</span> = gamma / (np.sqrt(var + eps))
+        <span class="org-variable-name">bias</span> = beta - gamma * mean
+        <span class="org-keyword">print</span>(f<span class="org-string">"---{layer.name}---"</span>)
+        <span class="org-keyword">print</span>(np.<span class="org-builtin">min</span>(scale), np.<span class="org-builtin">max</span>(scale))
+        <span class="org-keyword">print</span>(np.<span class="org-builtin">min</span>(bias), np.<span class="org-builtin">max</span>(bias))
 
-        <span style="font-weight: bold; font-style: italic;">index</span> = np.argmax(scale)
-        <span style="font-weight: bold;">print</span>(index, gamma[index], var[index], mean[index])
+        <span class="org-variable-name">index</span> = np.argmax(scale)
+        <span class="org-keyword">print</span>(index, gamma[index], var[index], mean[index])
 
 
 check_model(config.SAVED_MODEL_PATH)

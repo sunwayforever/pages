@@ -311,88 +311,88 @@ schedule 主要分为以下几类:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold; font-style: italic;">#</span><span style="font-weight: bold; font-style: italic;">!/usr/bin/env python3</span>
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">-*- coding: utf-8 -*-</span>
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">2021-10-22 16:46</span>
-<span style="font-weight: bold;">import</span> tvm
-<span style="font-weight: bold;">from</span> tvm <span style="font-weight: bold;">import</span> te
+<pre class="src src-python"><span class="org-comment-delimiter">#</span><span class="org-comment">!/usr/bin/env python3</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">-*- coding: utf-8 -*-</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">2021-10-22 16:46</span>
+<span class="org-keyword">import</span> tvm
+<span class="org-keyword">from</span> tvm <span class="org-keyword">import</span> te
 
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">a = 1024 x 64</span>
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">b = 512  x 64</span>
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">c = a @ b.T = 1024 x 512</span>
-<span style="font-weight: bold; font-style: italic;">N</span>, <span style="font-weight: bold; font-style: italic;">M</span>, <span style="font-weight: bold; font-style: italic;">L</span> = 1024, 512, 64
-<span style="font-weight: bold; font-style: italic;">A</span> = te.placeholder((N, L), name=<span style="font-style: italic;">"A"</span>)
-<span style="font-weight: bold; font-style: italic;">B</span> = te.placeholder((M, L), name=<span style="font-style: italic;">"B"</span>)
-<span style="font-weight: bold; font-style: italic;">k</span> = te.reduce_axis((0, L), name=<span style="font-style: italic;">"k"</span>)
-<span style="font-weight: bold; font-style: italic;">C</span> = te.compute((N, M), <span style="font-weight: bold;">lambda</span> i, j: te.<span style="font-weight: bold;">sum</span>(A[i, k] * B[j, k], axis=k), name=<span style="font-style: italic;">"C"</span>)
-<span style="font-weight: bold; font-style: italic;">s</span> = te.create_schedule(C.op)
+<span class="org-comment-delimiter"># </span><span class="org-comment">a = 1024 x 64</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">b = 512  x 64</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">c = a @ b.T = 1024 x 512</span>
+<span class="org-variable-name">N</span>, <span class="org-variable-name">M</span>, <span class="org-variable-name">L</span> = 1024, 512, 64
+<span class="org-variable-name">A</span> = te.placeholder((N, L), name=<span class="org-string">"A"</span>)
+<span class="org-variable-name">B</span> = te.placeholder((M, L), name=<span class="org-string">"B"</span>)
+<span class="org-variable-name">k</span> = te.reduce_axis((0, L), name=<span class="org-string">"k"</span>)
+<span class="org-variable-name">C</span> = te.compute((N, M), <span class="org-keyword">lambda</span> i, j: te.<span class="org-builtin">sum</span>(A[i, k] * B[j, k], axis=k), name=<span class="org-string">"C"</span>)
+<span class="org-variable-name">s</span> = te.create_schedule(C.op)
 
-<span style="font-weight: bold; font-style: italic;">factor</span> = 32
-<span style="font-weight: bold; font-style: italic;">x</span>, <span style="font-weight: bold; font-style: italic;">y</span> = C.op.axis
+<span class="org-variable-name">factor</span> = 32
+<span class="org-variable-name">x</span>, <span class="org-variable-name">y</span> = C.op.axis
 (z,) = C.op.reduce_axis
-<span style="font-weight: bold; font-style: italic;">yo</span>, <span style="font-weight: bold; font-style: italic;">yi</span> = s[C].split(y, factor=factor)
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">s[C].reorder(x, yo, yi, z)</span>
-<span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"------ before ------"</span>)
-<span style="font-weight: bold;">print</span>(tvm.lower(s, [A, B, C], simple_mode=<span style="font-weight: bold; text-decoration: underline;">True</span>))
+<span class="org-variable-name">yo</span>, <span class="org-variable-name">yi</span> = s[C].split(y, factor=factor)
+<span class="org-comment-delimiter"># </span><span class="org-comment">s[C].reorder(x, yo, yi, z)</span>
+<span class="org-keyword">print</span>(<span class="org-string">"------ before ------"</span>)
+<span class="org-keyword">print</span>(tvm.lower(s, [A, B, C], simple_mode=<span class="org-constant">True</span>))
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">intrin_gemv</span>(m, l):
-    <span style="font-weight: bold; font-style: italic;">a</span> = te.placeholder((l,), name=<span style="font-style: italic;">"a"</span>)
-    <span style="font-weight: bold; font-style: italic;">b</span> = te.placeholder((m, l), name=<span style="font-style: italic;">"b"</span>)
-    <span style="font-weight: bold; font-style: italic;">k</span> = te.reduce_axis((0, l), name=<span style="font-style: italic;">"k"</span>)
-    <span style="font-weight: bold; font-style: italic;">c</span> = te.compute((m,), <span style="font-weight: bold;">lambda</span> i: te.<span style="font-weight: bold;">sum</span>(a[k] * b[i, k], axis=k), name=<span style="font-style: italic;">"c"</span>)
+<span class="org-keyword">def</span> <span class="org-function-name">intrin_gemv</span>(m, l):
+    <span class="org-variable-name">a</span> = te.placeholder((l,), name=<span class="org-string">"a"</span>)
+    <span class="org-variable-name">b</span> = te.placeholder((m, l), name=<span class="org-string">"b"</span>)
+    <span class="org-variable-name">k</span> = te.reduce_axis((0, l), name=<span class="org-string">"k"</span>)
+    <span class="org-variable-name">c</span> = te.compute((m,), <span class="org-keyword">lambda</span> i: te.<span class="org-builtin">sum</span>(a[k] * b[i, k], axis=k), name=<span class="org-string">"c"</span>)
 
-    <span style="font-weight: bold; font-style: italic;">Abuf</span> = tvm.tir.decl_buffer(a.shape, a.dtype, name=<span style="font-style: italic;">"A"</span>, offset_factor=1, strides=[1])
-    <span style="font-weight: bold; font-style: italic;">Bbuf</span> = tvm.tir.decl_buffer(
-        b.shape, b.dtype, name=<span style="font-style: italic;">"B"</span>, offset_factor=1, strides=[te.var(<span style="font-style: italic;">"s1"</span>), 1]
+    <span class="org-variable-name">Abuf</span> = tvm.tir.decl_buffer(a.shape, a.dtype, name=<span class="org-string">"A"</span>, offset_factor=1, strides=[1])
+    <span class="org-variable-name">Bbuf</span> = tvm.tir.decl_buffer(
+        b.shape, b.dtype, name=<span class="org-string">"B"</span>, offset_factor=1, strides=[te.var(<span class="org-string">"s1"</span>), 1]
     )
-    <span style="font-weight: bold; font-style: italic;">Cbuf</span> = tvm.tir.decl_buffer(c.shape, c.dtype, name=<span style="font-style: italic;">"C"</span>, offset_factor=1, strides=[1])
+    <span class="org-variable-name">Cbuf</span> = tvm.tir.decl_buffer(c.shape, c.dtype, name=<span class="org-string">"C"</span>, offset_factor=1, strides=[1])
 
-    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">intrin_func</span>(ins, outs):
-        <span style="font-weight: bold; font-style: italic;">ib</span> = tvm.tir.ir_builder.create()
-        <span style="font-weight: bold; font-style: italic;">aa</span>, <span style="font-weight: bold; font-style: italic;">bb</span> = ins
-        <span style="font-weight: bold; font-style: italic;">cc</span> = outs[0]
+    <span class="org-keyword">def</span> <span class="org-function-name">intrin_func</span>(ins, outs):
+        <span class="org-variable-name">ib</span> = tvm.tir.ir_builder.create()
+        <span class="org-variable-name">aa</span>, <span class="org-variable-name">bb</span> = ins
+        <span class="org-variable-name">cc</span> = outs[0]
         ib.emit(
             tvm.tir.call_extern(
-                <span style="font-style: italic;">"int32"</span>,
-                <span style="font-style: italic;">"gemv_update"</span>,
-                cc.access_ptr(<span style="font-style: italic;">"w"</span>),
-                aa.access_ptr(<span style="font-style: italic;">"r"</span>),
-                bb.access_ptr(<span style="font-style: italic;">"r"</span>),
+                <span class="org-string">"int32"</span>,
+                <span class="org-string">"gemv_update"</span>,
+                cc.access_ptr(<span class="org-string">"w"</span>),
+                aa.access_ptr(<span class="org-string">"r"</span>),
+                bb.access_ptr(<span class="org-string">"r"</span>),
                 m,
                 l,
                 bb.strides[0],
             )
         )
-        <span style="font-weight: bold;">return</span> ib.get()
+        <span class="org-keyword">return</span> ib.get()
 
-    <span style="font-weight: bold;">return</span> te.decl_tensor_intrin(c.op, intrin_func, binds={a: Abuf, b: Bbuf, c: Cbuf})
+    <span class="org-keyword">return</span> te.decl_tensor_intrin(c.op, intrin_func, binds={a: Abuf, b: Bbuf, c: Cbuf})
 
 
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">def gemv_impl():</span>
-<span style="font-weight: bold; font-style: italic;">#     </span><span style="font-weight: bold; font-style: italic;">cc_code = """</span>
-<span style="font-weight: bold; font-style: italic;">#       </span><span style="font-weight: bold; font-style: italic;">extern "C" int gemv_update(float *cc, float *aa, float *bb, int m, int l, int stride) {</span>
-<span style="font-weight: bold; font-style: italic;">#         </span><span style="font-weight: bold; font-style: italic;">for (int i = 0; i &lt; m; ++i) {</span>
-<span style="font-weight: bold; font-style: italic;">#             </span><span style="font-weight: bold; font-style: italic;">for (int j = 0; j &lt; l; ++j) {</span>
-<span style="font-weight: bold; font-style: italic;">#                 </span><span style="font-weight: bold; font-style: italic;">cc[i] += aa[j] * bb[i * stride + j];</span>
-<span style="font-weight: bold; font-style: italic;">#             </span><span style="font-weight: bold; font-style: italic;">}</span>
-<span style="font-weight: bold; font-style: italic;">#         </span><span style="font-weight: bold; font-style: italic;">}</span>
-<span style="font-weight: bold; font-style: italic;">#         </span><span style="font-weight: bold; font-style: italic;">return 0;</span>
-<span style="font-weight: bold; font-style: italic;">#       </span><span style="font-weight: bold; font-style: italic;">}</span>
-<span style="font-weight: bold; font-style: italic;">#     </span><span style="font-weight: bold; font-style: italic;">"""</span>
-<span style="font-weight: bold; font-style: italic;">#     </span><span style="font-weight: bold; font-style: italic;">from tvm.contrib import utils, clang</span>
-<span style="font-weight: bold; font-style: italic;">#     </span><span style="font-weight: bold; font-style: italic;">temp = utils.tempdir()</span>
-<span style="font-weight: bold; font-style: italic;">#     </span><span style="font-weight: bold; font-style: italic;">ll_path = temp.relpath("temp.ll")</span>
-<span style="font-weight: bold; font-style: italic;">#     </span><span style="font-weight: bold; font-style: italic;"># Create LLVM ir from c source code</span>
-<span style="font-weight: bold; font-style: italic;">#     </span><span style="font-weight: bold; font-style: italic;">ll_code = clang.create_llvm(cc_code, output=ll_path)</span>
-<span style="font-weight: bold; font-style: italic;">#     </span><span style="font-weight: bold; font-style: italic;">return ll_code</span>
-<span style="font-weight: bold; font-style: italic;">#</span>
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">s[C].pragma(x, "import_llvm", gemv_impl())</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">def gemv_impl():</span>
+<span class="org-comment-delimiter">#     </span><span class="org-comment">cc_code = """</span>
+<span class="org-comment-delimiter">#       </span><span class="org-comment">extern "C" int gemv_update(float *cc, float *aa, float *bb, int m, int l, int stride) {</span>
+<span class="org-comment-delimiter">#         </span><span class="org-comment">for (int i = 0; i &lt; m; ++i) {</span>
+<span class="org-comment-delimiter">#             </span><span class="org-comment">for (int j = 0; j &lt; l; ++j) {</span>
+<span class="org-comment-delimiter">#                 </span><span class="org-comment">cc[i] += aa[j] * bb[i * stride + j];</span>
+<span class="org-comment-delimiter">#             </span><span class="org-comment">}</span>
+<span class="org-comment-delimiter">#         </span><span class="org-comment">}</span>
+<span class="org-comment-delimiter">#         </span><span class="org-comment">return 0;</span>
+<span class="org-comment-delimiter">#       </span><span class="org-comment">}</span>
+<span class="org-comment-delimiter">#     </span><span class="org-comment">"""</span>
+<span class="org-comment-delimiter">#     </span><span class="org-comment">from tvm.contrib import utils, clang</span>
+<span class="org-comment-delimiter">#     </span><span class="org-comment">temp = utils.tempdir()</span>
+<span class="org-comment-delimiter">#     </span><span class="org-comment">ll_path = temp.relpath("temp.ll")</span>
+<span class="org-comment-delimiter">#     </span><span class="org-comment"># Create LLVM ir from c source code</span>
+<span class="org-comment-delimiter">#     </span><span class="org-comment">ll_code = clang.create_llvm(cc_code, output=ll_path)</span>
+<span class="org-comment-delimiter">#     </span><span class="org-comment">return ll_code</span>
+<span class="org-comment-delimiter">#</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">s[C].pragma(x, "import_llvm", gemv_impl())</span>
 
-<span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"------ after ------"</span>)
-<span style="font-weight: bold; font-style: italic;">gemv</span> = intrin_gemv(factor, L)
+<span class="org-keyword">print</span>(<span class="org-string">"------ after ------"</span>)
+<span class="org-variable-name">gemv</span> = intrin_gemv(factor, L)
 s[C].tensorize(yi, gemv)
-<span style="font-weight: bold;">print</span>(tvm.lower(s, [A, B, C], simple_mode=<span style="font-weight: bold; text-decoration: underline;">True</span>))
+<span class="org-keyword">print</span>(tvm.lower(s, [A, B, C], simple_mode=<span class="org-constant">True</span>))
 </pre>
 </div>
 
@@ -440,24 +440,24 @@ primfn(A_1: handle, B_1: handle, C_1: handle) -&gt; ()
 <h5 id="org000000c"><span class="section-number-5">1.1.3.3</span> parallel</h5>
 <div class="outline-text-5" id="text-1-1-3-3">
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold;">import</span> tvm
-<span style="font-weight: bold;">from</span> tvm <span style="font-weight: bold;">import</span> te
+<pre class="src src-python"><span class="org-keyword">import</span> tvm
+<span class="org-keyword">from</span> tvm <span class="org-keyword">import</span> te
 
-<span style="font-weight: bold; font-style: italic;">n</span> = 1024
-<span style="font-weight: bold; font-style: italic;">m</span> = 1024
+<span class="org-variable-name">n</span> = 1024
+<span class="org-variable-name">m</span> = 1024
 
-<span style="font-weight: bold; font-style: italic;">A</span> = te.placeholder((n, m), name=<span style="font-style: italic;">"A"</span>)
-<span style="font-weight: bold; font-style: italic;">l</span> = te.reduce_axis((0, m), name=<span style="font-style: italic;">"l"</span>)
+<span class="org-variable-name">A</span> = te.placeholder((n, m), name=<span class="org-string">"A"</span>)
+<span class="org-variable-name">l</span> = te.reduce_axis((0, m), name=<span class="org-string">"l"</span>)
 
-<span style="font-weight: bold; font-style: italic;">B</span> = te.compute((n,), <span style="font-weight: bold;">lambda</span> i: te.<span style="font-weight: bold;">sum</span>(A[i, l], axis=l), name=<span style="font-style: italic;">"B"</span>)
+<span class="org-variable-name">B</span> = te.compute((n,), <span class="org-keyword">lambda</span> i: te.<span class="org-builtin">sum</span>(A[i, l], axis=l), name=<span class="org-string">"B"</span>)
 
-<span style="font-weight: bold; font-style: italic;">s</span> = te.create_schedule(B.op)
+<span class="org-variable-name">s</span> = te.create_schedule(B.op)
 
-<span style="font-weight: bold;">print</span>(tvm.lower(s, [A, B], simple_mode=<span style="font-weight: bold; text-decoration: underline;">True</span>))
-<span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"---------cutting line---------"</span>)
+<span class="org-keyword">print</span>(tvm.lower(s, [A, B], simple_mode=<span class="org-constant">True</span>))
+<span class="org-keyword">print</span>(<span class="org-string">"---------cutting line---------"</span>)
 
 s[B].parallel(B.op.reduce_axis[0])
-<span style="font-weight: bold;">print</span>(tvm.lower(s, [A, B], simple_mode=<span style="font-weight: bold; text-decoration: underline;">True</span>))
+<span class="org-keyword">print</span>(tvm.lower(s, [A, B], simple_mode=<span class="org-constant">True</span>))
 </pre>
 </div>
 
@@ -523,25 +523,25 @@ primfn(A_1: handle, B_1: handle) -&gt; ()
 <h5 id="org0000021"><span class="section-number-5">1.1.3.10</span> fuse</h5>
 <div class="outline-text-5" id="text-1-1-3-10">
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold;">import</span> tvm
-<span style="font-weight: bold;">from</span> tvm <span style="font-weight: bold;">import</span> te
+<pre class="src src-python"><span class="org-keyword">import</span> tvm
+<span class="org-keyword">from</span> tvm <span class="org-keyword">import</span> te
 
-<span style="font-weight: bold; font-style: italic;">n</span> = 1024
-<span style="font-weight: bold; font-style: italic;">A</span> = te.placeholder((n,), name=<span style="font-style: italic;">"A"</span>)
-<span style="font-weight: bold; font-style: italic;">k</span> = te.reduce_axis((0, n), name=<span style="font-style: italic;">"k"</span>)
+<span class="org-variable-name">n</span> = 1024
+<span class="org-variable-name">A</span> = te.placeholder((n,), name=<span class="org-string">"A"</span>)
+<span class="org-variable-name">k</span> = te.reduce_axis((0, n), name=<span class="org-string">"k"</span>)
 
-<span style="font-weight: bold; font-style: italic;">B</span> = te.compute((1,), <span style="font-weight: bold;">lambda</span> i: te.<span style="font-weight: bold;">sum</span>(A[k], axis=k), name=<span style="font-style: italic;">"B"</span>)
+<span class="org-variable-name">B</span> = te.compute((1,), <span class="org-keyword">lambda</span> i: te.<span class="org-builtin">sum</span>(A[k], axis=k), name=<span class="org-string">"B"</span>)
 
-<span style="font-weight: bold; font-style: italic;">s</span> = te.create_schedule(B.op)
+<span class="org-variable-name">s</span> = te.create_schedule(B.op)
 
-<span style="font-weight: bold; font-style: italic;">ko</span>, <span style="font-weight: bold; font-style: italic;">ki</span> = s[B].split(B.op.reduce_axis[0], factor=32)
+<span class="org-variable-name">ko</span>, <span class="org-variable-name">ki</span> = s[B].split(B.op.reduce_axis[0], factor=32)
 
-<span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"------before------"</span>)
-<span style="font-weight: bold;">print</span>(tvm.lower(s, [A, B], simple_mode=<span style="font-weight: bold; text-decoration: underline;">True</span>))
+<span class="org-keyword">print</span>(<span class="org-string">"------before------"</span>)
+<span class="org-keyword">print</span>(tvm.lower(s, [A, B], simple_mode=<span class="org-constant">True</span>))
 
 s[B].fuse(ko, ki)
-<span style="font-weight: bold;">print</span>(<span style="font-style: italic;">"------after------"</span>)
-<span style="font-weight: bold;">print</span>(tvm.lower(s, [A, B], simple_mode=<span style="font-weight: bold; text-decoration: underline;">True</span>))
+<span class="org-keyword">print</span>(<span class="org-string">"------after------"</span>)
+<span class="org-keyword">print</span>(tvm.lower(s, [A, B], simple_mode=<span class="org-constant">True</span>))
 </pre>
 </div>
 
@@ -610,36 +610,36 @@ TVM 提供了几个函数来指定 schedule_injective 做为 schedule:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python">register_broadcast_schedule(<span style="font-style: italic;">"log"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"log2"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"log10"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"tan"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"cos"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"cosh"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"sin"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"sinh"</span>)
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">...</span>
-register_broadcast_schedule(<span style="font-style: italic;">"add"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"subtract"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"multiply"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"divide"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"floor_divide"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"power"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"copy"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"logical_not"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"logical_and"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"logical_or"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"logical_xor"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"bitwise_not"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"bitwise_and"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"bitwise_or"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"bitwise_xor"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"negative"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"mod"</span>)
-register_broadcast_schedule(<span style="font-style: italic;">"floor_mod"</span>)
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">...</span>
-register_injective_schedule(<span style="font-style: italic;">"one_hot"</span>)
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">...</span>
+<pre class="src src-python">register_broadcast_schedule(<span class="org-string">"log"</span>)
+register_broadcast_schedule(<span class="org-string">"log2"</span>)
+register_broadcast_schedule(<span class="org-string">"log10"</span>)
+register_broadcast_schedule(<span class="org-string">"tan"</span>)
+register_broadcast_schedule(<span class="org-string">"cos"</span>)
+register_broadcast_schedule(<span class="org-string">"cosh"</span>)
+register_broadcast_schedule(<span class="org-string">"sin"</span>)
+register_broadcast_schedule(<span class="org-string">"sinh"</span>)
+<span class="org-comment-delimiter"># </span><span class="org-comment">...</span>
+register_broadcast_schedule(<span class="org-string">"add"</span>)
+register_broadcast_schedule(<span class="org-string">"subtract"</span>)
+register_broadcast_schedule(<span class="org-string">"multiply"</span>)
+register_broadcast_schedule(<span class="org-string">"divide"</span>)
+register_broadcast_schedule(<span class="org-string">"floor_divide"</span>)
+register_broadcast_schedule(<span class="org-string">"power"</span>)
+register_broadcast_schedule(<span class="org-string">"copy"</span>)
+register_broadcast_schedule(<span class="org-string">"logical_not"</span>)
+register_broadcast_schedule(<span class="org-string">"logical_and"</span>)
+register_broadcast_schedule(<span class="org-string">"logical_or"</span>)
+register_broadcast_schedule(<span class="org-string">"logical_xor"</span>)
+register_broadcast_schedule(<span class="org-string">"bitwise_not"</span>)
+register_broadcast_schedule(<span class="org-string">"bitwise_and"</span>)
+register_broadcast_schedule(<span class="org-string">"bitwise_or"</span>)
+register_broadcast_schedule(<span class="org-string">"bitwise_xor"</span>)
+register_broadcast_schedule(<span class="org-string">"negative"</span>)
+register_broadcast_schedule(<span class="org-string">"mod"</span>)
+register_broadcast_schedule(<span class="org-string">"floor_mod"</span>)
+<span class="org-comment-delimiter"># </span><span class="org-comment">...</span>
+register_injective_schedule(<span class="org-string">"one_hot"</span>)
+<span class="org-comment-delimiter"># </span><span class="org-comment">...</span>
 </pre>
 </div>
 
@@ -649,18 +649,18 @@ function, 不同的 target 会通过 schedule_injective.register 注册不同的
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold; text-decoration: underline;">@schedule_injective.register</span>(<span style="font-style: italic;">"cpu"</span>)
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">schedule_injective_cpu</span>(attrs, outs, target):
-    <span style="font-style: italic;">"""schedule injective ops for x86"""</span>
-    <span style="font-weight: bold;">with</span> target:
-        <span style="font-weight: bold;">return</span> topi.x86.schedule_injective(outs)
+<pre class="src src-python"><span class="org-type">@schedule_injective.register</span>(<span class="org-string">"cpu"</span>)
+<span class="org-keyword">def</span> <span class="org-function-name">schedule_injective_cpu</span>(attrs, outs, target):
+    <span class="org-doc">"""schedule injective ops for x86"""</span>
+    <span class="org-keyword">with</span> target:
+        <span class="org-keyword">return</span> topi.x86.schedule_injective(outs)
 
 
-<span style="font-weight: bold; text-decoration: underline;">@schedule_injective.register</span>([<span style="font-style: italic;">"arm_cpu"</span>, <span style="font-style: italic;">"micro_dev"</span>])
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">schedule_injective_arm_cpu</span>(_, outs, target):
-    <span style="font-style: italic;">"""schedule injective ops for arm cpu"""</span>
-    <span style="font-weight: bold;">with</span> target:
-        <span style="font-weight: bold;">return</span> topi.arm_cpu.schedule_injective(outs)
+<span class="org-type">@schedule_injective.register</span>([<span class="org-string">"arm_cpu"</span>, <span class="org-string">"micro_dev"</span>])
+<span class="org-keyword">def</span> <span class="org-function-name">schedule_injective_arm_cpu</span>(_, outs, target):
+    <span class="org-doc">"""schedule injective ops for arm cpu"""</span>
+    <span class="org-keyword">with</span> target:
+        <span class="org-keyword">return</span> topi.arm_cpu.schedule_injective(outs)
 </pre>
 </div>
 
@@ -681,30 +681,30 @@ reduction 的操作, reduce schedule 无法使用 vectorize, tvm 的实现主要
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python">register_reduce_schedule(<span style="font-style: italic;">"argmax"</span>)
-register_reduce_schedule(<span style="font-style: italic;">"argmin"</span>)
-register_reduce_schedule(<span style="font-style: italic;">"sum"</span>)
-register_reduce_schedule(<span style="font-style: italic;">"all"</span>)
-register_reduce_schedule(<span style="font-style: italic;">"any"</span>)
-register_reduce_schedule(<span style="font-style: italic;">"max"</span>)
-register_reduce_schedule(<span style="font-style: italic;">"min"</span>)
-register_reduce_schedule(<span style="font-style: italic;">"prod"</span>)
-register_reduce_schedule(<span style="font-style: italic;">"mean"</span>)
-<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">...</span>
+<pre class="src src-python">register_reduce_schedule(<span class="org-string">"argmax"</span>)
+register_reduce_schedule(<span class="org-string">"argmin"</span>)
+register_reduce_schedule(<span class="org-string">"sum"</span>)
+register_reduce_schedule(<span class="org-string">"all"</span>)
+register_reduce_schedule(<span class="org-string">"any"</span>)
+register_reduce_schedule(<span class="org-string">"max"</span>)
+register_reduce_schedule(<span class="org-string">"min"</span>)
+register_reduce_schedule(<span class="org-string">"prod"</span>)
+register_reduce_schedule(<span class="org-string">"mean"</span>)
+<span class="org-comment-delimiter"># </span><span class="org-comment">...</span>
 
 
-<span style="font-weight: bold; text-decoration: underline;">@schedule_reduce.register</span>(<span style="font-style: italic;">"arm_cpu"</span>)
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">schedule_reduce_cpu</span>(attrs, outs, target):
-    <span style="font-style: italic;">"""schedule reduction ops for arm_cpu"""</span>
-    <span style="font-weight: bold;">with</span> target:
-        <span style="font-weight: bold;">return</span> topi.x86.schedule_reduce(outs)
+<span class="org-type">@schedule_reduce.register</span>(<span class="org-string">"arm_cpu"</span>)
+<span class="org-keyword">def</span> <span class="org-function-name">schedule_reduce_cpu</span>(attrs, outs, target):
+    <span class="org-doc">"""schedule reduction ops for arm_cpu"""</span>
+    <span class="org-keyword">with</span> target:
+        <span class="org-keyword">return</span> topi.x86.schedule_reduce(outs)
 
 
-<span style="font-weight: bold; text-decoration: underline;">@schedule_reduce.register</span>(<span style="font-style: italic;">"cpu"</span>)
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">schedule_reduce_cpu</span>(attrs, outs, target):
-    <span style="font-style: italic;">"""schedule reduction ops for x86"""</span>
-    <span style="font-weight: bold;">with</span> target:
-        <span style="font-weight: bold;">return</span> topi.x86.schedule_reduce(outs)
+<span class="org-type">@schedule_reduce.register</span>(<span class="org-string">"cpu"</span>)
+<span class="org-keyword">def</span> <span class="org-function-name">schedule_reduce_cpu</span>(attrs, outs, target):
+    <span class="org-doc">"""schedule reduction ops for x86"""</span>
+    <span class="org-keyword">with</span> target:
+        <span class="org-keyword">return</span> topi.x86.schedule_reduce(outs)
 </pre>
 </div>
 </div>
@@ -888,43 +888,43 @@ auto_scheduler 要解决的问题是:
 <div class="outline-text-5" id="text-1-3-4-1">
 <div class="org-src-container">
 <pre class="src src-python">SearchTask.init:
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">SearchTask &#25509;&#21463;&#19968;&#20010; target &#21442;&#25968;, &#36825;&#20010;&#21442;&#25968;&#21487;&#20197;&#21578;&#35785; builder &#29983;&#25104;&#38024;&#23545;&#21738;&#20010; target &#30340;&#20195;&#30721; </span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">SearchTask &#25509;&#21463;&#19968;&#20010; target &#21442;&#25968;, &#36825;&#20010;&#21442;&#25968;&#21487;&#20197;&#21578;&#35785; builder &#29983;&#25104;&#38024;&#23545;&#21738;&#20010; target &#30340;&#20195;&#30721; </span>
 
 SearchTask.tune: 
-    <span style="font-weight: bold;">if</span> search_policy <span style="font-weight: bold;">is</span> <span style="font-weight: bold; text-decoration: underline;">None</span>:
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#40664;&#35748;&#20351;&#29992; xgboost &#26469;&#39044;&#27979;</span>
-        <span style="font-weight: bold; font-style: italic;">cost_model</span> = XGBModel()
-        <span style="font-weight: bold; font-style: italic;">search_policy</span> = SketchPolicy(<span style="font-weight: bold;">self</span>, cost_model)
+    <span class="org-keyword">if</span> search_policy <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+        <span class="org-comment-delimiter"># </span><span class="org-comment">&#40664;&#35748;&#20351;&#29992; xgboost &#26469;&#39044;&#27979;</span>
+        <span class="org-variable-name">cost_model</span> = XGBModel()
+        <span class="org-variable-name">search_policy</span> = SketchPolicy(<span class="org-keyword">self</span>, cost_model)
 
     _ffi_api.AutoSchedule(search_policy, tuning_options)
 
 AutoSchedule:
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">tuning_options-&gt;builder &#30340;&#40664;&#35748;&#20540;&#26159; LocalBuilder</span>
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">tuning_options-&gt;runner &#30340;&#40664;&#35748;&#20540;&#26159; LocalRunner</span>
-    ProgramMeasurer <span style="font-weight: bold; font-style: italic;">measurer</span> =
+    <span class="org-comment-delimiter"># </span><span class="org-comment">tuning_options-&gt;builder &#30340;&#40664;&#35748;&#20540;&#26159; LocalBuilder</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">tuning_options-&gt;runner &#30340;&#40664;&#35748;&#20540;&#26159; LocalRunner</span>
+    ProgramMeasurer <span class="org-variable-name">measurer</span> =
       ProgramMeasurer(tuning_options-&gt;builder, tuning_options-&gt;runner,
                       tuning_options-&gt;measure_callbacks, tuning_options-&gt;verbose);    
 
-    State <span style="font-weight: bold; font-style: italic;">state</span> =
+    State <span class="org-variable-name">state</span> =
         search_policy-&gt;Search(tuning_options-&gt;num_measure_trials, tuning_options-&gt;early_stopping,
                             tuning_options-&gt;num_measures_per_round, measurer);
-    <span style="font-weight: bold;">return</span> search_policy-&gt;search_task-&gt;compute_dag.ApplySteps(state-&gt;transform_steps);
+    <span class="org-keyword">return</span> search_policy-&gt;search_task-&gt;compute_dag.ApplySteps(state-&gt;transform_steps);
 
 SketchPolicy::Search:
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">MeasureInput &#21253;&#21547;&#20102; schedule &#21442;&#25968;</span>
-    <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">MeasureResult &#21253;&#21547;&#38024;&#23545;&#19968;&#22871;&#21442;&#25968; measure &#21518;&#30340;&#32467;&#26524; (cost, ...)</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">MeasureInput &#21253;&#21547;&#20102; schedule &#21442;&#25968;</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">MeasureResult &#21253;&#21547;&#38024;&#23545;&#19968;&#22871;&#21442;&#25968; measure &#21518;&#30340;&#32467;&#26524; (cost, ...)</span>
     Array&lt;MeasureInput&gt; inputs;
     Array&lt;MeasureResult&gt; results;
-    <span style="font-weight: bold;">while</span> (ct &lt; n_trials):
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">train xgboost, inputs &#30456;&#24403;&#20110; x, results &#30456;&#24403;&#20110; y</span>
+    <span class="org-keyword">while</span> (ct &lt; n_trials):
+        <span class="org-comment-delimiter"># </span><span class="org-comment">train xgboost, inputs &#30456;&#24403;&#20110; x, results &#30456;&#24403;&#20110; y</span>
         program_cost_model-&gt;Update(inputs, results);
 
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">sample &#20986;&#26032;&#30340;&#21442;&#25968;</span>
-        <span style="font-weight: bold; font-style: italic;">inputs</span> = PickStatesWithEpsGreedy(best_states, random_states, n_trials - ct);
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">measure &#36825;&#20123;&#21442;&#25968;</span>
-        <span style="font-weight: bold; font-style: italic;">results</span> = measurer-&gt;Measure(search_task, GetRef&lt;SearchPolicy&gt;(this), inputs);        
+        <span class="org-comment-delimiter"># </span><span class="org-comment">sample &#20986;&#26032;&#30340;&#21442;&#25968;</span>
+        <span class="org-variable-name">inputs</span> = PickStatesWithEpsGreedy(best_states, random_states, n_trials - ct);
+        <span class="org-comment-delimiter"># </span><span class="org-comment">measure &#36825;&#20123;&#21442;&#25968;</span>
+        <span class="org-variable-name">results</span> = measurer-&gt;Measure(search_task, GetRef&lt;SearchPolicy&gt;(this), inputs);        
 
-    <span style="font-weight: bold;">return</span> measurer-&gt;best_state[search_task-&gt;workload_key];        
+    <span class="org-keyword">return</span> measurer-&gt;best_state[search_task-&gt;workload_key];        
 </pre>
 </div>
 </div>
@@ -934,31 +934,31 @@ SketchPolicy::Search:
 <h5 id="org000004b"><span class="section-number-5">1.3.4.2</span> Measure</h5>
 <div class="outline-text-5" id="text-1-3-4-2">
 <div class="org-src-container">
-<pre class="src src-c++"><span style="font-weight: bold; text-decoration: underline;">ProgramMeasurerNode</span>::Measure:
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">tvm &#40664;&#35748;&#20250;&#21516;&#26102; measure &#22810;&#22871;&#21442;&#25968;</span>
-  <span style="font-weight: bold;">if</span> (batch_size == -1) {
-    <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">set default batch size</span>
+<pre class="src src-c++"><span class="org-constant">ProgramMeasurerNode</span>::Measure:
+  <span class="org-comment-delimiter">// </span><span class="org-comment">tvm &#40664;&#35748;&#20250;&#21516;&#26102; measure &#22810;&#22871;&#21442;&#25968;</span>
+  <span class="org-keyword">if</span> (batch_size == -1) {
+    <span class="org-comment-delimiter">// </span><span class="org-comment">set default batch size</span>
     batch_size = builder-&gt;n_parallel * 2;
   }
-  <span style="font-weight: bold;">for</span> (<span style="font-weight: bold; text-decoration: underline;">size_t</span> <span style="font-weight: bold; font-style: italic;">i</span> = 0; i &lt; inputs.size(); i += batch_size):
-    <span style="font-weight: bold; text-decoration: underline;">Array</span>&lt;MeasureInput&gt; <span style="font-weight: bold;">input_batch</span>(inputs.begin() + i,
-                                      inputs.begin() + <span style="font-weight: bold; text-decoration: underline;">std</span>::min(i + batch_size, inputs.size()));
-    <span style="font-weight: bold; text-decoration: underline;">Array</span>&lt;MeasureResult&gt; <span style="font-weight: bold; font-style: italic;">result_batch</span>;
+  <span class="org-keyword">for</span> (<span class="org-type">size_t</span> <span class="org-variable-name">i</span> = 0; i &lt; inputs.size(); i += batch_size):
+    <span class="org-type">Array</span>&lt;MeasureInput&gt; <span class="org-function-name">input_batch</span>(inputs.begin() + i,
+                                      inputs.begin() + <span class="org-constant">std</span>::min(i + batch_size, inputs.size()));
+    <span class="org-type">Array</span>&lt;MeasureResult&gt; <span class="org-variable-name">result_batch</span>;
     SilentMeasure(task, input_batch, &amp;result_batch);
-    <span style="font-weight: bold;">for</span> (<span style="font-weight: bold;">auto</span>&amp; <span style="font-weight: bold; font-style: italic;">res</span> : result_batch) : 
+    <span class="org-keyword">for</span> (<span class="org-keyword">auto</span>&amp; <span class="org-variable-name">res</span> : result_batch) : 
       results.push_back(res);
 
-  <span style="font-weight: bold;">return</span> results;
+  <span class="org-keyword">return</span> results;
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-c++"><span style="font-weight: bold; text-decoration: underline;">SilentMeasure</span>:
-  <span style="font-weight: bold; text-decoration: underline;">Array</span>&lt;BuildResult&gt; <span style="font-weight: bold; font-style: italic;">build_res_batch</span> = builder-&gt;Build(inputs, verbose);
-  <span style="font-weight: bold; text-decoration: underline;">Array</span>&lt;MeasureResult&gt; <span style="font-weight: bold; font-style: italic;">result_batch</span> = runner-&gt;Run(inputs, build_res_batch, verbose);
+<pre class="src src-c++"><span class="org-constant">SilentMeasure</span>:
+  <span class="org-type">Array</span>&lt;BuildResult&gt; <span class="org-variable-name">build_res_batch</span> = builder-&gt;Build(inputs, verbose);
+  <span class="org-type">Array</span>&lt;MeasureResult&gt; <span class="org-variable-name">result_batch</span> = runner-&gt;Run(inputs, build_res_batch, verbose);
 
-  <span style="font-weight: bold; font-style: italic;">// </span><span style="font-weight: bold; font-style: italic;">Store result batch</span>
-  <span style="font-weight: bold;">for</span> (<span style="font-weight: bold;">auto</span>&amp; <span style="font-weight: bold; font-style: italic;">res</span> : result_batch) {
+  <span class="org-comment-delimiter">// </span><span class="org-comment">Store result batch</span>
+  <span class="org-keyword">for</span> (<span class="org-keyword">auto</span>&amp; <span class="org-variable-name">res</span> : result_batch) {
     results-&gt;push_back(res);
   }
 </pre>
@@ -981,21 +981,21 @@ tar.tar 类似的自定义 build_func</li>
 </ol>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold;">class</span> <span style="font-weight: bold; text-decoration: underline;">LocalBuilder</span>(ProgramBuilder):
-    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">__init__</span>(<span style="font-weight: bold;">self</span>, timeout=15, n_parallel=multiprocessing.cpu_count(), build_func=<span style="font-style: italic;">"default"</span>):
-        <span style="font-weight: bold;">if</span> build_func == <span style="font-style: italic;">"default"</span>:
-            <span style="font-weight: bold; font-style: italic;">BuildFunc.name</span> = <span style="font-style: italic;">"default"</span>
-            <span style="font-weight: bold; font-style: italic;">BuildFunc.build_func</span> = tar.tar
-        <span style="font-weight: bold;">elif</span> build_func == <span style="font-style: italic;">"ndk"</span>:
-            <span style="font-weight: bold; font-style: italic;">BuildFunc.name</span> = <span style="font-style: italic;">"ndk"</span>
-            <span style="font-weight: bold; font-style: italic;">BuildFunc.build_func</span> = ndk.create_shared
-        <span style="font-weight: bold;">elif</span> <span style="font-weight: bold;">callable</span>(build_func):
-            <span style="font-weight: bold; font-style: italic;">BuildFunc.name</span> = <span style="font-style: italic;">"custom"</span>
-            <span style="font-weight: bold; font-style: italic;">BuildFunc.build_func</span> = build_func
-        <span style="font-weight: bold;">else</span>:
-            <span style="font-weight: bold;">raise</span> <span style="font-weight: bold; text-decoration: underline;">ValueError</span>(<span style="font-style: italic;">"Invalid build_func"</span> + build_func)
+<pre class="src src-python"><span class="org-keyword">class</span> <span class="org-type">LocalBuilder</span>(ProgramBuilder):
+    <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, timeout=15, n_parallel=multiprocessing.cpu_count(), build_func=<span class="org-string">"default"</span>):
+        <span class="org-keyword">if</span> build_func == <span class="org-string">"default"</span>:
+            <span class="org-variable-name">BuildFunc.name</span> = <span class="org-string">"default"</span>
+            <span class="org-variable-name">BuildFunc.build_func</span> = tar.tar
+        <span class="org-keyword">elif</span> build_func == <span class="org-string">"ndk"</span>:
+            <span class="org-variable-name">BuildFunc.name</span> = <span class="org-string">"ndk"</span>
+            <span class="org-variable-name">BuildFunc.build_func</span> = ndk.create_shared
+        <span class="org-keyword">elif</span> <span class="org-builtin">callable</span>(build_func):
+            <span class="org-variable-name">BuildFunc.name</span> = <span class="org-string">"custom"</span>
+            <span class="org-variable-name">BuildFunc.build_func</span> = build_func
+        <span class="org-keyword">else</span>:
+            <span class="org-keyword">raise</span> <span class="org-type">ValueError</span>(<span class="org-string">"Invalid build_func"</span> + build_func)
 
-        <span style="font-weight: bold;">self</span>.__init_handle_by_constructor__(
+        <span class="org-keyword">self</span>.__init_handle_by_constructor__(
             _ffi_api.LocalBuilder, timeout, n_parallel, BuildFunc.name
         )
 
@@ -1007,19 +1007,19 @@ c++ LocalBuilder 会通过 ffi 调用回 python 的 local_builder_build
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c++"><span style="font-weight: bold; text-decoration: underline;">Array</span>&lt;BuildResult&gt; <span style="font-weight: bold; text-decoration: underline;">LocalBuilderNode</span>::<span style="font-weight: bold;">Build</span>(<span style="font-weight: bold;">const</span> <span style="font-weight: bold; text-decoration: underline;">Array</span>&lt;MeasureInput&gt;&amp; <span style="font-weight: bold; font-style: italic;">inputs</span>, <span style="font-weight: bold; text-decoration: underline;">int</span> <span style="font-weight: bold; font-style: italic;">verbose</span>) {
-  <span style="font-weight: bold;">if</span> (<span style="font-weight: bold;">const</span> <span style="font-weight: bold;">auto</span>* <span style="font-weight: bold; font-style: italic;">f</span> = <span style="font-weight: bold; text-decoration: underline;">runtime</span>::<span style="font-weight: bold; text-decoration: underline;">Registry</span>::Get(<span style="font-style: italic;">"auto_scheduler.local_builder.build"</span>)) {
-    <span style="font-weight: bold; text-decoration: underline;">Array</span>&lt;BuildResult&gt; <span style="font-weight: bold; font-style: italic;">results</span> = (*f)(inputs, timeout, n_parallel, build_func, verbose);
-    <span style="font-weight: bold;">return</span> results;
+<pre class="src src-c++"><span class="org-type">Array</span>&lt;BuildResult&gt; <span class="org-constant">LocalBuilderNode</span>::<span class="org-function-name">Build</span>(<span class="org-keyword">const</span> <span class="org-type">Array</span>&lt;MeasureInput&gt;&amp; <span class="org-variable-name">inputs</span>, <span class="org-type">int</span> <span class="org-variable-name">verbose</span>) {
+  <span class="org-keyword">if</span> (<span class="org-keyword">const</span> <span class="org-keyword">auto</span>* <span class="org-variable-name">f</span> = <span class="org-constant">runtime</span>::<span class="org-constant">Registry</span>::Get(<span class="org-string">"auto_scheduler.local_builder.build"</span>)) {
+    <span class="org-type">Array</span>&lt;BuildResult&gt; <span class="org-variable-name">results</span> = (*f)(inputs, timeout, n_parallel, build_func, verbose);
+    <span class="org-keyword">return</span> results;
   }
 }
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold;">def</span> <span style="font-weight: bold;">local_builder_build</span>(inputs, timeout, n_parallel, build_func=<span style="font-style: italic;">"default"</span>, verbose=1):
-    <span style="font-weight: bold; font-style: italic;">pool</span> = multiprocessing.pool.ThreadPool(n_parallel)
-    <span style="font-weight: bold; font-style: italic;">tuple_res</span> = pool.<span style="font-weight: bold;">map</span>(
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">local_builder_build</span>(inputs, timeout, n_parallel, build_func=<span class="org-string">"default"</span>, verbose=1):
+    <span class="org-variable-name">pool</span> = multiprocessing.pool.ThreadPool(n_parallel)
+    <span class="org-variable-name">tuple_res</span> = pool.<span class="org-builtin">map</span>(
         local_build_worker,
         [
             (
@@ -1028,19 +1028,19 @@ c++ LocalBuilder 会通过 ffi 调用回 python 的 local_builder_build
                 timeout,
                 verbose,
             )
-            <span style="font-weight: bold;">for</span> i <span style="font-weight: bold;">in</span> inputs
+            <span class="org-keyword">for</span> i <span class="org-keyword">in</span> inputs
         ],
     )
 
-    <span style="font-weight: bold; font-style: italic;">results</span> = []
-    <span style="font-weight: bold;">for</span> res <span style="font-weight: bold;">in</span> tuple_res:
+    <span class="org-variable-name">results</span> = []
+    <span class="org-keyword">for</span> res <span class="org-keyword">in</span> tuple_res:
         results.append(BuildResult(*res))
 
-    <span style="font-weight: bold;">return</span> results
+    <span class="org-keyword">return</span> results
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">local_build_worker</span>(args):
-    <span style="font-weight: bold; font-style: italic;">build_func</span> = BuildFunc.build_func
-    <span style="font-weight: bold; font-style: italic;">res</span> = call_func_with_timeout(timeout, _timed_func, args=(inp, build_func, verbose))
+<span class="org-keyword">def</span> <span class="org-function-name">local_build_worker</span>(args):
+    <span class="org-variable-name">build_func</span> = BuildFunc.build_func
+    <span class="org-variable-name">res</span> = call_func_with_timeout(timeout, _timed_func, args=(inp, build_func, verbose))
 
 </pre>
 </div>
@@ -1050,21 +1050,21 @@ c++ LocalBuilder 会通过 ffi 调用回 python 的 local_builder_build
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold;">def</span> <span style="font-weight: bold;">_timed_func</span>(inp_serialized, build_func, verbose):
-    <span style="font-weight: bold; font-style: italic;">inp</span> = MeasureInput.deserialize(inp_serialized)
-    <span style="font-weight: bold; font-style: italic;">task</span> = inp.task
-    <span style="font-weight: bold; font-style: italic;">sch</span>, <span style="font-weight: bold; font-style: italic;">args</span> = task.compute_dag.apply_steps_from_state(
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">_timed_func</span>(inp_serialized, build_func, verbose):
+    <span class="org-variable-name">inp</span> = MeasureInput.deserialize(inp_serialized)
+    <span class="org-variable-name">task</span> = inp.task
+    <span class="org-variable-name">sch</span>, <span class="org-variable-name">args</span> = task.compute_dag.apply_steps_from_state(
         inp.state, layout_rewrite=task.layout_rewrite_option
     )
 
-    <span style="font-weight: bold; font-style: italic;">dirname</span> = tempfile.mkdtemp()
-    <span style="font-weight: bold; font-style: italic;">filename</span> = os.path.join(dirname, <span style="font-style: italic;">"tmp_func."</span> + build_func.output_format)
+    <span class="org-variable-name">dirname</span> = tempfile.mkdtemp()
+    <span class="org-variable-name">filename</span> = os.path.join(dirname, <span class="org-string">"tmp_func."</span> + build_func.output_format)
 
-    <span style="font-weight: bold;">with</span> transform.PassContext():
-        <span style="font-weight: bold; font-style: italic;">func</span> = build_module.build(sch, args, target=task.target)
+    <span class="org-keyword">with</span> transform.PassContext():
+        <span class="org-variable-name">func</span> = build_module.build(sch, args, target=task.target)
     func.export_library(filename, build_func)
 
-    <span style="font-weight: bold;">return</span> filename, args, error_no, error_msg, time.time() - tic
+    <span class="org-keyword">return</span> filename, args, error_no, error_msg, time.time() - tic
 
 </pre>
 </div>
@@ -1081,7 +1081,7 @@ runner 时没有类似于 build_func 的东西, 需要参照 _timed_eval_func �
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold;">def</span> <span style="font-weight: bold;">_timed_eval_func</span>(
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">_timed_eval_func</span>(
     inp_serialized,
     build_res,
     number,
@@ -1091,13 +1091,13 @@ runner 时没有类似于 build_func 的东西, 需要参照 _timed_eval_func �
     enable_cpu_cache_flush,
     verbose,
 ):
-    <span style="font-weight: bold; font-style: italic;">inp</span> = MeasureInput.deserialize(inp_serialized)
-    <span style="font-weight: bold; font-style: italic;">task_input_names</span> = inp.task.task_input_names
+    <span class="org-variable-name">inp</span> = MeasureInput.deserialize(inp_serialized)
+    <span class="org-variable-name">task_input_names</span> = inp.task.task_input_names
 
-    <span style="font-weight: bold; font-style: italic;">func</span> = module.load_module(build_res.filename)
-    <span style="font-weight: bold; font-style: italic;">dev</span> = ndarray.device(<span style="font-weight: bold;">str</span>(inp.task.target), 0)
+    <span class="org-variable-name">func</span> = module.load_module(build_res.filename)
+    <span class="org-variable-name">dev</span> = ndarray.device(<span class="org-builtin">str</span>(inp.task.target), 0)
 
-    <span style="font-weight: bold; font-style: italic;">time_f</span> = func.time_evaluator(
+    <span class="org-variable-name">time_f</span> = func.time_evaluator(
         func.entry_name,
         dev,
         number=number,
@@ -1106,28 +1106,28 @@ runner 时没有类似于 build_func 的东西, 需要参照 _timed_eval_func �
         f_preproc=f_prepare,
     )
 
-    <span style="font-weight: bold; font-style: italic;">random_fill</span> = tvm.get_global_func(<span style="font-style: italic;">"tvm.contrib.random.random_fill"</span>, <span style="font-weight: bold; text-decoration: underline;">True</span>)
+    <span class="org-variable-name">random_fill</span> = tvm.get_global_func(<span class="org-string">"tvm.contrib.random.random_fill"</span>, <span class="org-constant">True</span>)
 
-    <span style="font-weight: bold; font-style: italic;">tensor_input_map</span> = prepare_input_map(build_res.args) <span style="font-weight: bold;">if</span> task_input_names <span style="font-weight: bold;">else</span> {}
-    <span style="font-weight: bold; font-style: italic;">args</span> = []
-    <span style="font-weight: bold; font-style: italic;">task_inputs_count</span> = 0
-    <span style="font-weight: bold;">for</span> arg <span style="font-weight: bold;">in</span> build_res.args:
-        <span style="font-weight: bold;">if</span> arg <span style="font-weight: bold;">in</span> tensor_input_map:
-            <span style="font-weight: bold; font-style: italic;">tensor_name</span> = tensor_input_map[arg]
-            <span style="font-weight: bold;">if</span> tensor_name <span style="font-weight: bold;">in</span> task_input_names:
+    <span class="org-variable-name">tensor_input_map</span> = prepare_input_map(build_res.args) <span class="org-keyword">if</span> task_input_names <span class="org-keyword">else</span> {}
+    <span class="org-variable-name">args</span> = []
+    <span class="org-variable-name">task_inputs_count</span> = 0
+    <span class="org-keyword">for</span> arg <span class="org-keyword">in</span> build_res.args:
+        <span class="org-keyword">if</span> arg <span class="org-keyword">in</span> tensor_input_map:
+            <span class="org-variable-name">tensor_name</span> = tensor_input_map[arg]
+            <span class="org-keyword">if</span> tensor_name <span class="org-keyword">in</span> task_input_names:
                 args.append(
                     ndarray.array(
                         get_task_input_buffer(inp.task.workload_key, tensor_name), dev
                     )
                 )
-                <span style="font-weight: bold; font-style: italic;">task_inputs_count</span> += 1
-        <span style="font-weight: bold;">else</span>:
-            <span style="font-weight: bold; font-style: italic;">empty_array</span> = ndarray.empty(get_const_tuple(arg.shape), arg.dtype, dev)
+                <span class="org-variable-name">task_inputs_count</span> += 1
+        <span class="org-keyword">else</span>:
+            <span class="org-variable-name">empty_array</span> = ndarray.empty(get_const_tuple(arg.shape), arg.dtype, dev)
             random_fill(empty_array)
             args.append(empty_array)
-        <span style="font-weight: bold; font-style: italic;">costs</span> = time_f(*args).results
+        <span class="org-variable-name">costs</span> = time_f(*args).results
 
-    <span style="font-weight: bold;">return</span> costs, error_no, error_msg, toc - tic + build_res.time_cost, toc
+    <span class="org-keyword">return</span> costs, error_no, error_msg, toc - tic + build_res.time_cost, toc
 </pre>
 </div>
 </div>

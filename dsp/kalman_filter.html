@@ -471,73 +471,73 @@ plt.show()
 <h4 id="org000001b"><span class="section-number-4">1.4.2</span> 跟踪鼠标</h4>
 <div class="outline-text-4" id="text-1-4-2">
 <div class="org-src-container">
-<pre class="src src-python"><span style="font-weight: bold; font-style: italic;">#</span><span style="font-weight: bold; font-style: italic;">!/usr/bin/env python3</span>
-<span style="font-weight: bold;">import</span> numpy <span style="font-weight: bold;">as</span> np
-<span style="font-weight: bold;">import</span> cv2
+<pre class="src src-python"><span class="org-comment-delimiter">#</span><span class="org-comment">!/usr/bin/env python3</span>
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> cv2
 
 
-<span style="font-weight: bold;">class</span> <span style="font-weight: bold; text-decoration: underline;">Stabilizer</span>:
-    <span style="font-style: italic;">"""Using Kalman filter as a point stabilizer."""</span>
+<span class="org-keyword">class</span> <span class="org-type">Stabilizer</span>:
+    <span class="org-doc">"""Using Kalman filter as a point stabilizer."""</span>
 
-    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">__init__</span>(<span style="font-weight: bold;">self</span>, state_num=4, measure_num=2, cov_process=0.0001, cov_measure=0.1):
+    <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, state_num=4, measure_num=2, cov_process=0.0001, cov_measure=0.1):
 
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">Store the parameters.</span>
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#38544;&#34255;&#29366;&#24577;</span>
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">X &#20026; [[x],[y],[v_x],[v_y]]</span>
-        <span style="font-weight: bold;">self</span>.state_num = state_num
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#35266;&#27979;&#29366;&#24577;</span>
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">Z &#20026; [[x],[y]]</span>
-        <span style="font-weight: bold;">self</span>.measure_num = measure_num
+        <span class="org-comment-delimiter"># </span><span class="org-comment">Store the parameters.</span>
+        <span class="org-comment-delimiter"># </span><span class="org-comment">&#38544;&#34255;&#29366;&#24577;</span>
+        <span class="org-comment-delimiter"># </span><span class="org-comment">X &#20026; [[x],[y],[v_x],[v_y]]</span>
+        <span class="org-keyword">self</span>.state_num = state_num
+        <span class="org-comment-delimiter"># </span><span class="org-comment">&#35266;&#27979;&#29366;&#24577;</span>
+        <span class="org-comment-delimiter"># </span><span class="org-comment">Z &#20026; [[x],[y]]</span>
+        <span class="org-keyword">self</span>.measure_num = measure_num
 
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">The filter itself.</span>
-        <span style="font-weight: bold;">self</span>.<span style="font-weight: bold;">filter</span> = cv2.KalmanFilter(state_num, measure_num, 0)
+        <span class="org-comment-delimiter"># </span><span class="org-comment">The filter itself.</span>
+        <span class="org-keyword">self</span>.<span class="org-builtin">filter</span> = cv2.KalmanFilter(state_num, measure_num, 0)
 
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#36716;&#31227;&#30697;&#38453;: FX+Q</span>
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">F</span>
-        <span style="font-weight: bold;">self</span>.<span style="font-weight: bold;">filter</span>.transitionMatrix = np.array(
+        <span class="org-comment-delimiter"># </span><span class="org-comment">&#36716;&#31227;&#30697;&#38453;: FX+Q</span>
+        <span class="org-comment-delimiter"># </span><span class="org-comment">F</span>
+        <span class="org-keyword">self</span>.<span class="org-builtin">filter</span>.transitionMatrix = np.array(
             [[1, 0, 1, 0], [0, 1, 0, 1], [0, 0, 1, 0], [0, 0, 0, 1]], np.float32
         )
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">Q</span>
-        <span style="font-weight: bold;">self</span>.<span style="font-weight: bold;">filter</span>.processNoiseCov = np.eye(4, dtype=np.float32) * cov_process
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#35266;&#27979;&#30697;&#38453;: HX+R</span>
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">H, &#30001;&#20110; measure &#20449;&#24687;&#37324;&#21482;&#26377; x,y, &#19981;&#21253;&#25324; v_x, v_y, &#25152;&#20197;&#38656;&#35201;&#29992; H &#25226; x &#20013;</span>
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">&#30340;&#21518;&#20004;&#20010;&#25968;&#25454; mask &#25481;</span>
-        <span style="font-weight: bold;">self</span>.<span style="font-weight: bold;">filter</span>.measurementMatrix = np.eye(2, 4, dtype=np.float32)
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">R</span>
-        <span style="font-weight: bold;">self</span>.<span style="font-weight: bold;">filter</span>.measurementNoiseCov = np.eye(2, dtype=np.float32) * cov_measure
+        <span class="org-comment-delimiter"># </span><span class="org-comment">Q</span>
+        <span class="org-keyword">self</span>.<span class="org-builtin">filter</span>.processNoiseCov = np.eye(4, dtype=np.float32) * cov_process
+        <span class="org-comment-delimiter"># </span><span class="org-comment">&#35266;&#27979;&#30697;&#38453;: HX+R</span>
+        <span class="org-comment-delimiter"># </span><span class="org-comment">H, &#30001;&#20110; measure &#20449;&#24687;&#37324;&#21482;&#26377; x,y, &#19981;&#21253;&#25324; v_x, v_y, &#25152;&#20197;&#38656;&#35201;&#29992; H &#25226; x &#20013;</span>
+        <span class="org-comment-delimiter"># </span><span class="org-comment">&#30340;&#21518;&#20004;&#20010;&#25968;&#25454; mask &#25481;</span>
+        <span class="org-keyword">self</span>.<span class="org-builtin">filter</span>.measurementMatrix = np.eye(2, 4, dtype=np.float32)
+        <span class="org-comment-delimiter"># </span><span class="org-comment">R</span>
+        <span class="org-keyword">self</span>.<span class="org-builtin">filter</span>.measurementNoiseCov = np.eye(2, dtype=np.float32) * cov_measure
 
-    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">update</span>(<span style="font-weight: bold;">self</span>, measurement):
-        <span style="font-weight: bold;">self</span>.<span style="font-weight: bold;">filter</span>.predict()
-        <span style="font-weight: bold;">self</span>.<span style="font-weight: bold;">filter</span>.correct(measurement)
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">statePost &#26159; correct &#20043;&#21518;&#30340; state</span>
-        <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">statePre &#26159; predict &#20043;&#21518;, corrent &#20043;&#21069;&#30340; state</span>
+    <span class="org-keyword">def</span> <span class="org-function-name">update</span>(<span class="org-keyword">self</span>, measurement):
+        <span class="org-keyword">self</span>.<span class="org-builtin">filter</span>.predict()
+        <span class="org-keyword">self</span>.<span class="org-builtin">filter</span>.correct(measurement)
+        <span class="org-comment-delimiter"># </span><span class="org-comment">statePost &#26159; correct &#20043;&#21518;&#30340; state</span>
+        <span class="org-comment-delimiter"># </span><span class="org-comment">statePre &#26159; predict &#20043;&#21518;, corrent &#20043;&#21069;&#30340; state</span>
 
 
-<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">main</span>():
-    <span style="font-weight: bold;">global</span> mp
-    <span style="font-weight: bold; font-style: italic;">mp</span> = np.array((2, 1), np.float32)  <span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">measurement</span>
+<span class="org-keyword">def</span> <span class="org-function-name">main</span>():
+    <span class="org-keyword">global</span> mp
+    <span class="org-variable-name">mp</span> = np.array((2, 1), np.float32)  <span class="org-comment-delimiter"># </span><span class="org-comment">measurement</span>
 
-    <span style="font-weight: bold;">def</span> <span style="font-weight: bold;">onmouse</span>(k, x, y, s, p):
-        <span style="font-weight: bold;">global</span> mp
-        <span style="font-weight: bold; font-style: italic;">mp</span> = np.array([[np.float32(x)], [np.float32(y)]])
+    <span class="org-keyword">def</span> <span class="org-function-name">onmouse</span>(k, x, y, s, p):
+        <span class="org-keyword">global</span> mp
+        <span class="org-variable-name">mp</span> = np.array([[np.float32(x)], [np.float32(y)]])
 
-    cv2.namedWindow(<span style="font-style: italic;">"kalman"</span>)
-    cv2.setMouseCallback(<span style="font-style: italic;">"kalman"</span>, onmouse)
-    <span style="font-weight: bold; font-style: italic;">kalman</span> = Stabilizer(4, 2)
-    <span style="font-weight: bold; font-style: italic;">frame</span> = np.zeros((768, 1024, 3), np.uint8)
+    cv2.namedWindow(<span class="org-string">"kalman"</span>)
+    cv2.setMouseCallback(<span class="org-string">"kalman"</span>, onmouse)
+    <span class="org-variable-name">kalman</span> = Stabilizer(4, 2)
+    <span class="org-variable-name">frame</span> = np.zeros((768, 1024, 3), np.uint8)
 
-    <span style="font-weight: bold;">while</span> <span style="font-weight: bold; text-decoration: underline;">True</span>:
+    <span class="org-keyword">while</span> <span class="org-constant">True</span>:
         kalman.update(mp)
-        <span style="font-weight: bold; font-style: italic;">state</span> = kalman.<span style="font-weight: bold;">filter</span>.statePost
-        cv2.circle(frame, (<span style="font-weight: bold;">int</span>(mp[0]), <span style="font-weight: bold;">int</span>(mp[1])), 2, (255, 0, 0), -1)
-        cv2.circle(frame, (<span style="font-weight: bold;">int</span>(state[0]), <span style="font-weight: bold;">int</span>(state[1])), 2, (0, 0, 255), -1)
-        cv2.imshow(<span style="font-style: italic;">"kalman"</span>, frame)
-        <span style="font-weight: bold; font-style: italic;">k</span> = cv2.waitKey(30) &amp; 0xFF
-        <span style="font-weight: bold;">if</span> k == 27:
-            <span style="font-weight: bold;">break</span>
+        <span class="org-variable-name">state</span> = kalman.<span class="org-builtin">filter</span>.statePost
+        cv2.circle(frame, (<span class="org-builtin">int</span>(mp[0]), <span class="org-builtin">int</span>(mp[1])), 2, (255, 0, 0), -1)
+        cv2.circle(frame, (<span class="org-builtin">int</span>(state[0]), <span class="org-builtin">int</span>(state[1])), 2, (0, 0, 255), -1)
+        cv2.imshow(<span class="org-string">"kalman"</span>, frame)
+        <span class="org-variable-name">k</span> = cv2.waitKey(30) &amp; 0xFF
+        <span class="org-keyword">if</span> k == 27:
+            <span class="org-keyword">break</span>
 
 
-<span style="font-weight: bold;">if</span> <span style="font-weight: bold;">__name__</span> == <span style="font-style: italic;">"__main__"</span>:
+<span class="org-keyword">if</span> <span class="org-builtin">__name__</span> == <span class="org-string">"__main__"</span>:
     main()
 </pre>
 </div>
