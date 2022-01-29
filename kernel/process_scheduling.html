@@ -97,38 +97,27 @@ linux 2.6.11 的进程调度的主要特征:
 
 <ol class="org-ol">
 <li>scheduler 是一个基于 roundrobin 的算法: 每个进程有一个时间片 (slice
-或 quantum), 时间片是每次 roundrobin 时进程可以执行的时间长度, 大小
-一般为几毫秒到几百毫秒.一次 roundrobin 完成后所有进程的时间片得到补
-充进行下一次 roundrobin</li>
+或 quantum), 时间片是每次 roundrobin 时进程可以执行的时间长度, 大小一般为几毫秒到几百毫秒.一次 roundrobin 完成后所有进程的时间片得到补充进行下一次 roundrobin</li>
 
 <li>每个 cpu 的 runqueue 有 active 和 expired 两个数组, 每个数组包含
-140 条链表, 对应 140 个优先级, 所有本次 roundrobin 时间片已经耗尽的
-进程按优先级组织在 expired 数组中,还有时间片的组织在 active 数组中,
+140 条链表, 对应 140 个优先级, 所有本次 roundrobin 时间片已经耗尽的进程按优先级组织在 expired 数组中,还有时间片的组织在 active 数组中,
 scheduler 在 pick next 时在 active 数组中通过一个 bitmap 可以在 O(1)
 内找到最高优先级的一个 task, 所以 2.6.11 的 scheduler 称为 O(1)
-scheduler, 2.6 之前的 scheduler 称为 O(n) scheduler, 因为它只有一条
-链表, 每次 pick next 时需要通过排序找到一个最高优先级的.</li>
+scheduler, 2.6 之前的 scheduler 称为 O(n) scheduler, 因为它只有一条链表, 每次 pick next 时需要通过排序找到一个最高优先级的.</li>
 
-<li>进程有静态优先级 (static priority), scheduler 会根据静态优先级给进
-程分配不同长度的时间片, 静态优先级越高, 时间片越长</li>
+<li>进程有静态优先级 (static priority), scheduler 会根据静态优先级给进程分配不同长度的时间片, 静态优先级越高, 时间片越长</li>
 
-<li>进程有动态优先级 (dynamic priority), 在 roundrobin 时 scheduler 根
-据动态优先级来选择进程执行的顺序</li>
+<li>进程有动态优先级 (dynamic priority), 在 roundrobin 时 scheduler 根据动态优先级来选择进程执行的顺序</li>
 
-<li>动态优先级是在静态优先级基础上使用 "平均睡眠时间" 进行补偿或惩罚而
-来, 简单的说, 平均睡眠时间越长, 对动态优先级的补偿越多</li>
+<li>动态优先级是在静态优先级基础上使用 "平均睡眠时间" 进行补偿或惩罚而来, 简单的说, 平均睡眠时间越长, 对动态优先级的补偿越多</li>
 
-<li>除了一般的基于时间片与动态优先级的调度外, scheduler 还支持实时调度
-来调度实时进程, 但实时进程与普通进程还是要竞争同一个 cpu, linux 的
-实时进程只是有更高的优先级和更多的调度机会, 但它无法保证实时进程能
-在"确定的时间"内完成, 所以它只软实时(soft real time)</li>
+<li>除了一般的基于时间片与动态优先级的调度外, scheduler 还支持实时调度来调度实时进程, 但实时进程与普通进程还是要竞争同一个 cpu, linux 的实时进程只是有更高的优先级和更多的调度机会, 但它无法保证实时进程能在"确定的时间"内完成, 所以它只软实时(soft real time)</li>
 
 <li>通过 "平均睡眠时间", scheduler 可以识别出 "交互式进程" (interactive
 process) 与 "批处理进程" (batch process), scheduler 会通过调整
 roundrobin 分配给 "交互式进程" 更多的执行机会</li>
 
-<li>多 CPU 的负载均衡, 可以将繁忙的 CPU 中的 task pull 到当前 CPU 中, 或
-者将当前 task push 到空闲的 CPU 中</li>
+<li>多 CPU 的负载均衡, 可以将繁忙的 CPU 中的 task pull 到当前 CPU 中, 或者将当前 task push 到空闲的 CPU 中</li>
 </ol>
 </div>
 </div>
@@ -244,8 +233,7 @@ kernel 内部的 dynamic priority 定义有些差别:
 
 <ol class="org-ol">
 <li>kernel 内部定义的范围为 0~139, 其中 0~99 对应 real time priority,
-100~139 对应 conventional priority, 而且 0 是最高优先级, 139 是最低
-优先级</li>
+100~139 对应 conventional priority, 而且 0 是最高优先级, 139 是最低优先级</li>
 
 <li>通过 nice 系统调用可以设置的参数范围为 -20~+19, 它只会影响
 conventional process 的 static priority, 实际上 static_prio = 120 +
@@ -257,9 +245,7 @@ nice 为 0</li>
 <li>bash 中 ps 或 top 看到的值的范围为 39~-100, 与 kernel 的 139~0 对应,
 即 static_prio = ps_prio + 100</li>
 
-<li>real time process 的 rt_priority 通过 sched_setscheduler 来设置, 但
-与 conventional 不同的是, rt_priority 会影响 dynamic priority 而不
-是 static_prio: prio = 99 - rt_priority, 所以, 当 rt_priority 为
+<li>real time process 的 rt_priority 通过 sched_setscheduler 来设置, 但与 conventional 不同的是, rt_priority 会影响 dynamic priority 而不是 static_prio: prio = 99 - rt_priority, 所以, 当 rt_priority 为
 99 时, prio 为 0, 是系统最高的优先级, 当 rt_priority 为 1 时, prio
 为 98, 是 real time 最低优先级, 但仍比 conventional 的最高优先级
 (100) 高</li>
@@ -273,8 +259,7 @@ nice 为 0</li>
 <h3 id="org000002f"><span class="section-number-3">1.3</span> 相关的函数</h3>
 <div class="outline-text-3" id="text-1-3">
 <p>
-进程调度的主要入口是 schedule 函数, 但 schedule 函数工作时要依赖于
-两个数据的维护:
+进程调度的主要入口是 schedule 函数, 但 schedule 函数工作时要依赖于两个数据的维护:
 </p>
 
 <ol class="org-ol">
@@ -293,8 +278,7 @@ task_struct-&gt;prio
 </p>
 
 <p>
-动态优先级, roundrobin 时需要根据 sleep_avg 调整动态优先级以选择进
-程, 由 try_to_wake_up 时的 recalc_task_prio 维护
+动态优先级, roundrobin 时需要根据 sleep_avg 调整动态优先级以选择进程, 由 try_to_wake_up 时的 recalc_task_prio 维护
 </p></li>
 </ol>
 </div>
@@ -388,13 +372,11 @@ task_timeslice 是根据 static_prio 来决定 task 的 time_slice
 </div>
 
 <p>
-根据上面的公式, time_slice 的值的范围为 [800ms &#x2026; 100ms &#x2026; 5ms], 对
-应的 nice 值为 [ -20 &#x2026; 0 &#x2026; 19 ]
+根据上面的公式, time_slice 的值的范围为 [800ms &#x2026; 100ms &#x2026; 5ms], 对应的 nice 值为 [ -20 &#x2026; 0 &#x2026; 19 ]
 </p>
 
 <p>
-另外, 无法是 SCHED_RR 还是 SCHED_NORMAL, 都是通过 task_timeslice 来计
-算 time_slice 的, 所以 static_prio 对 SCHED_RR 也是有意义的.
+另外, 无法是 SCHED_RR 还是 SCHED_NORMAL, 都是通过 task_timeslice 来计算 time_slice 的, 所以 static_prio 对 SCHED_RR 也是有意义的.
 </p>
 </div>
 </div>
@@ -414,8 +396,7 @@ sleep_avg 的计算, 是通过后面的 recalc_task_prio 函数
 <ol class="org-ol">
 <li>只有 SCHED_NORMAL 能通过 effective_prio 来更新 prio</li>
 
-<li>SCHED_RR 和 SCHED_FIFO 的 prio 与 static_prio 和 sleep_avg 无关, 只
-有 rt_priority 有关</li>
+<li>SCHED_RR 和 SCHED_FIFO 的 prio 与 static_prio 和 sleep_avg 无关, 只有 rt_priority 有关</li>
 
 <li>prio 相对于 static_prio 的 bonus 范围是 [-5 &#x2026;. +5]</li>
 </ol>
@@ -472,13 +453,11 @@ sleep_avg 的计算, 是通过后面的 recalc_task_prio 函数
 </div>
 
 <p>
-recalc_task_prio 作用是当 task 从睡眠状态唤醒时 (try_to_wake_up) 时根
-据 p-&gt;timestamp 计算本次睡眠的时间, 以此更新 sleep_avg 和 prio
+recalc_task_prio 作用是当 task 从睡眠状态唤醒时 (try_to_wake_up) 时根据 p-&gt;timestamp 计算本次睡眠的时间, 以此更新 sleep_avg 和 prio
 </p>
 
 <p>
-p-&gt;timestamp 的赋值主要是在 schedule 函数中 (<a href="#org0000023">schedule</a>), 即 schedule 时
-会将 prev-&gt;timestamp 和 next-&gt;timestamp 均设置为 now
+p-&gt;timestamp 的赋值主要是在 schedule 函数中 (<a href="#org0000023">schedule</a>), 即 schedule 时会将 prev-&gt;timestamp 和 next-&gt;timestamp 均设置为 now
 </p>
 
 <p>
@@ -498,14 +477,11 @@ prev-&gt;timestamp 可以得到 prev 本次 sleep 的时间</li>
 
 <li>若 schedule 时 prev 是 running 状态 (TASK_RUNNING), 则显然
 prev-&gt;timestamp 并不能用来计算 sleep 时间, 但没有关系, 因为后面
-prev 并不会被 try_to_wake_up, 因为它还是 TASK_RUNNING, 并没有被放在
-任何 waitqueue 里</li>
+prev 并不会被 try_to_wake_up, 因为它还是 TASK_RUNNING, 并没有被放在任何 waitqueue 里</li>
 </ol>
 
 <p>
-recalc_task_prio 负责 sleep_avg 的增加, 而 schedule 负责 sleep_avg 的
-减小, 最终 sleep_avg 是 sleeping 与 running 时间的差, 近似于 1s 内的平均
-睡眠时间 (证明?)
+recalc_task_prio 负责 sleep_avg 的增加, 而 schedule 负责 sleep_avg 的减小, 最终 sleep_avg 是 sleeping 与 running 时间的差, 近似于 1s 内的平均睡眠时间 (证明?)
 </p>
 </div>
 </div>
@@ -551,15 +527,13 @@ recalc_task_prio 负责 sleep_avg 的增加, 而 schedule 负责 sleep_avg 的
 </div>
 
 <p>
-可见, schedule 函数本身与 scheduler 关系不大, 它只是固定的从 active 中
-取一个优先级最高的进程来调度, 所以若当前存在 real time process, 由于
+可见, schedule 函数本身与 scheduler 关系不大, 它只是固定的从 active 中取一个优先级最高的进程来调度, 所以若当前存在 real time process, 由于
 real time process 的优先级必然比 conventional process 高, 极有可能导致
 conventional process 的 starvation.
 </p>
 
 <p>
-不同 scheduler 会以不同的方式影响进程在 active 和 expired 中的位置, 从
-而影响 schedule, 具体参考 <a href="#org0000029">各种 scheduler</a>
+不同 scheduler 会以不同的方式影响进程在 active 和 expired 中的位置, 从而影响 schedule, 具体参考 <a href="#org0000029">各种 scheduler</a>
 </p>
 </div>
 </div>
@@ -584,8 +558,7 @@ preemption, 具体参考 interrupt).
 
 <li>try_to_wake_up 时被唤醒的 task 的优先级比当前 rq-&gt;curr 更高</li>
 
-<li>通过 nice 或 sched_setscheduler 调整降低了当前 task 优先级或提高了
-另一个 task 的优先级</li>
+<li>通过 nice 或 sched_setscheduler 调整降低了当前 task 优先级或提高了另一个 task 的优先级</li>
 
 <li>load_balance 时 busiest CPU 的某个更高优先级的 task 被迁移到当前 CPU</li>
 </ol>
@@ -597,8 +570,7 @@ preemption, 具体参考 interrupt).
 <h3 id="org0000029"><span class="section-number-3">1.4</span> 各种 scheduler</h3>
 <div class="outline-text-3" id="text-1-4">
 <p>
-各种 scheduler 并没有抽象成单独的实体, 所有 scheduler 的逻辑都散布在相
-应的函数中, 例如 scheduler_tick, recalc_task_prio, schedule,
+各种 scheduler 并没有抽象成单独的实体, 所有 scheduler 的逻辑都散布在相应的函数中, 例如 scheduler_tick, recalc_task_prio, schedule,
 effective_prio, task_timeslice, set_user_nice, sys_sched_yield 等
 </p>
 </div>
@@ -627,8 +599,7 @@ SCHED_FIFO 是 real time scheduler, 它的主要特征有:
 
 <li>当它被高优先级进程抢占后, 仍然会位于链表的队头</li>
 
-<li>它的 prio (动态优先级) 是固定的, 与 static_prio 和 sleep_avg 并没有
-关系</li>
+<li>它的 prio (动态优先级) 是固定的, 与 static_prio 和 sleep_avg 并没有关系</li>
 </ol>
 </div>
 </div>
@@ -638,14 +609,12 @@ SCHED_FIFO 是 real time scheduler, 它的主要特征有:
 <div class="outline-text-4" id="text-1-4-2">
 <p>
 SCHED_RR 也是一种 real time scheduler, 在 SCHED_FIFO 上加入了
-roundrobin, 避免一个进程长时间占用 CPU 导致同优先级的其它进程无法被调
-度. 当它运行时间超过 time_slice 时, 会被调度出去并移动到链表的队尾.
+roundrobin, 避免一个进程长时间占用 CPU 导致同优先级的其它进程无法被调度. 当它运行时间超过 time_slice 时, 会被调度出去并移动到链表的队尾.
 </p>
 
 <p>
 SCHED_RR 时间片长度与普通进程一样, 都是基于 static_prio
-(task_timeslice 函数), 所以对于 SCHED_RR 来说, 通过 nice 虽然不能调整
-它的 prio, 却可以通过调整它的 static_prio 来调整 time_slice 的大小
+(task_timeslice 函数), 所以对于 SCHED_RR 来说, 通过 nice 虽然不能调整它的 prio, 却可以通过调整它的 static_prio 来调整 time_slice 的大小
 </p>
 </div>
 </div>
@@ -654,24 +623,20 @@ SCHED_RR 时间片长度与普通进程一样, 都是基于 static_prio
 <h4 id="org0000038"><span class="section-number-4">1.4.3</span> SCHED_NORMAL</h4>
 <div class="outline-text-4" id="text-1-4-3">
 <p>
-SCHED_NORMAL 是 conventional (非 real time) 进程使用的 scheduler, 它的
-主要特征:
+SCHED_NORMAL 是 conventional (非 real time) 进程使用的 scheduler, 它的主要特征:
 </p>
 
 <ol class="org-ol">
-<li>它的动态优先级低于 real time process, 所以它有可能因为 real time 进
-程而 startving</li>
+<li>它的动态优先级低于 real time process, 所以它有可能因为 real time 进程而 startving</li>
 
-<li>与 SCHED_RR 一样, 它是基于 roundrobin 的, 而且 time_slice 长度也是
-由 static_prio 决定的</li>
+<li>与 SCHED_RR 一样, 它是基于 roundrobin 的, 而且 time_slice 长度也是由 static_prio 决定的</li>
 
 <li>它通过 sleep_avg 和 static_prio 来调整 prio, sleep_avg 越大, prio
 越高</li>
 
 <li>通过 sleep_avg 检测进程是否是 interactive, 对于 interactive 进程,
 当它 time_slice 耗尽时, 会被再次放到 active 相应链表的队尾, 而对于
-batch 进程, 会被放到 expired 中, 通过这种方式使 interactive 进程更
-多的执行, 但为了防止 expired 中的进程发生 starvation, interactive
+batch 进程, 会被放到 expired 中, 通过这种方式使 interactive 进程更多的执行, 但为了防止 expired 中的进程发生 starvation, interactive
 进程有时也会被直接放在 expired 中 (参考 scheduler_tick)</li>
 </ol>
 </div>
@@ -708,8 +673,7 @@ batch 进程, 会被放到 expired 中, 通过这种方式使 interactive 进程
 
 <p>
 因此 O(1) 针对每个 CPU 都有一个 runqueue, CPU 只会从它自己的 runqueue
-中取 task 执行, 虽然克服了前面的缺点, 但前面的优点也成为它的缺点: 有可
-能某个 CPU 的 task 很多, 而有些 CPU 很空闲, 导致 CPU 吞吐率下降, 而且
+中取 task 执行, 虽然克服了前面的缺点, 但前面的优点也成为它的缺点: 有可能某个 CPU 的 task 很多, 而有些 CPU 很空闲, 导致 CPU 吞吐率下降, 而且
 task 无法公平的调度. 所以 O(1) scheduler 加入了 CPU 负载均衡 (load
 balance): 将多核的负载平衡一下, 避免有些 CPU 过忙或过闲.
 </p>
@@ -808,8 +772,7 @@ scheduler_tick 时会通过 load_balance 实现 pull task
 <h4 id="org0000047"><span class="section-number-4">1.5.2</span> push task</h4>
 <div class="outline-text-4" id="text-1-5-2">
 <p>
-push task 即 "将 task push 到空闲的 cpu 去执行", 一个例子就是 do_execve 时
-的 sched_exec
+push task 即 "将 task push 到空闲的 cpu 去执行", 一个例子就是 do_execve 时的 sched_exec
 </p>
 </div>
 
