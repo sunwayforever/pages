@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>Secure DNS</title>
+
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Secure DNS</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org0000010">1. Secure DNS</a>
+<ul>
+<li><a href="#org0000003">1.1. 禁止 dns 自动修改</a></li>
+<li><a href="#org0000007">1.2. dnsmasq</a></li>
+<li><a href="#org000000a">1.3. secure dns</a></li>
+<li><a href="#org000000d">1.4. v2ray dns</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000010" class="outline-2">
+<h2 id="org0000010"><span class="section-number-2">1</span> Secure DNS</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org0000003" class="outline-3">
+<h3 id="org0000003"><span class="section-number-3">1.1</span> 禁止 dns 自动修改</h3>
+<div class="outline-text-3" id="text-1-1">
+<ol class="org-ol">
+<li><p>
+禁止 systemd 修改 /etc/resolv.conf
+</p>
+
+<p>
+systemctl disable systemd-resolved
+</p></li>
+
+<li>不要安装 resolvconf</li>
+
+<li><p>
+禁止 networkmanager 修改 /etc/resolv.conf
+</p>
+
+<pre class="example" id="org0000000">
+$&gt; cat /etc/NetworkManager/NetworkManager.conf
+
+[main]
+plugins=ifupdown,keyfile
+dns=none
+
+[ifupdown]
+managed=false
+
+[device]
+wifi.scan-rand-mac-address=no
+</pre></li>
+
+<li><p>
+修改 /etc/resolv.conf 并只读
+</p>
+
+<pre class="example" id="org0000001">
+$&gt; cat /etc/resolv.conf
+nameserver 127.0.0.1
+
+</pre>
+
+<p>
+保险起见, 配置 resolv.conf 为只读, 防止有其它程序修改它
+</p>
+
+<pre class="example" id="org0000002">
+sudo chattr -i /etc/resolv.conf
+</pre></li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-org0000007" class="outline-3">
+<h3 id="org0000007"><span class="section-number-3">1.2</span> dnsmasq</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+配置 dnsmasq 在 127.0.0.1#53 上做为本地 dns resolver, 并配置 upstream dns
+</p>
+
+<pre class="example" id="org0000006">
+server=8.8.4.4
+# 针对特殊域名的配置, 例如 local.com 使用 114
+server=/local.com/114.114.114.114
+</pre>
+
+<p>
+使用 dnsmasq 主要是利用它的 cache 功能
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000000a" class="outline-3">
+<h3 id="org000000a"><span class="section-number-3">1.3</span> secure dns</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+dnsmasq 使用 8.8.4.4 有两个问题:
+</p>
+
+<ol class="org-ol">
+<li>有 dns 污染, dig google.com @8.8.4.4 会返回错误的地址</li>
+
+<li>dns query 是未加密的, 任何人都可以看到主机发出的 dns query</li>
+</ol>
+
+<p>
+解决的方法有:
+</p>
+
+<ol class="org-ol">
+<li><p>
+dns over https (DoH)
+</p>
+
+<p>
+DoH 服务器例如 1.1.1.1 经常会不稳定
+</p></li>
+
+<li><p>
+tunnel
+</p>
+
+<p>
+在 vps 上自建 tunnel 例如 stunnel 只支持 tcp, 但 dnsmasq 似乎不支持 dns
+over tcp.
+</p>
+
+<p>
+使用 ss-tunnel 支持 udp 但 ss 经常会被 block
+</p></li>
+
+<li>vpn
+
+<ol class="org-ol">
+<li>在 vps 上配置 dns server</li>
+
+<li>本地和 vps 使用 zerotier 等 vpn 连接</li>
+
+<li>本地 dnsmasq 配置 vps 做为 upstream</li>
+</ol></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org000000d" class="outline-3">
+<h3 id="org000000d"><span class="section-number-3">1.4</span> v2ray dns</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+v2ray 自带的 dns 可以减轻 dns 污染, 但并不能加密 dns. 首先, v2ray 的 dns 功能是为了和透明代理一起工作的. 因为透明代理有一个问题是它转发的是 ip 包, 没有域名信息,
+无法针对域名规则进行分流. 由于 dns 污染, 通过 ip 来分流也是不准确的. 它工作的原理是:
+</p>
+
+<ol class="org-ol">
+<li>把本地 v2ray client 配置为 dns resolver</li>
+
+<li>v2ray 进行正常的 dns query (不通过 vmess), 所以它不是加密的, 且可能会收到被污染的地址, 但与普通 dns 不同的是, 它会记录下 ip 地址与域名的对应关系</li>
+
+<li>当 v2ray 做为透明代理的 target 收到 ip 包时, 它会通过之前记录的对应关系查到域名, 然后针对域名进行分流</li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway (sunwayforever@gmail.com)<br />
+Date: 2022-02-05 Sat 11:57<br />
+Last updated: 2022-02-05 Sat 20:36</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
+<br />
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>
