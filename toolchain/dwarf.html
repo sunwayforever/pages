@@ -1,0 +1,503 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>DWARF</title>
+
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">DWARF</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org0000031">1. DWARF</a>
+<ul>
+<li><a href="#org0000000">1.1. Overview</a></li>
+<li><a href="#org000001b">1.2. debug_frame 与 frame unwinding</a>
+<ul>
+<li><a href="#org0000004">1.2.1. 测试代码</a></li>
+<li><a href="#org000000b">1.2.2. CIE 和 FDE</a></li>
+<li><a href="#org000000e">1.2.3. 使用 CFI 进行 stack unwinding</a></li>
+<li><a href="#org0000011">1.2.4. gcc omit-frame-pointer</a></li>
+<li><a href="#org0000014">1.2.5. gdb info reg</a></li>
+<li><a href="#org0000018">1.2.6. example</a></li>
+</ul>
+</li>
+<li><a href="#org0000028">1.3. debug_info 与源码级别调试</a>
+<ul>
+<li><a href="#org000001f">1.3.1. 测试代码</a></li>
+<li><a href="#org0000025">1.3.2. DIE</a></li>
+</ul>
+</li>
+<li><a href="#org000002b">1.4. DWARF 表达式</a></li>
+<li><a href="#org000002e">1.5. WAIT STAB</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000031" class="outline-2">
+<h2 id="org0000031"><span class="section-number-2">1</span> DWARF</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org0000000" class="outline-3">
+<h3 id="org0000000"><span class="section-number-3">1.1</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+Dwarf 用来在 ELF 中附加调试信息, 与 STAB 功能类似
+</p>
+
+<p>
+Dwarf 在 ELF 中主要包含两部分:
+</p>
+
+<ol class="org-ol">
+<li><p>
+.debug_info section
+</p>
+
+<p>
+.debug_info 中包含许多 DIE 项, 针对的是源码级别的调试信息, 例如变量的类型, 所在的文件和行号, 保存在栈上的位置或在哪个寄存器中
+</p></li>
+
+<li><p>
+.debug_frame section
+</p>
+
+<p>
+.debug_frame 包含的是 CIE 和 FDE 项, 和 frame unwinding 有关, 例如: 当前
+frame 各个寄存器的值是多少, 如何找到上一个 frame
+</p></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org000001b" class="outline-3">
+<h3 id="org000001b"><span class="section-number-3">1.2</span> debug_frame 与 frame unwinding</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-org0000004" class="outline-4">
+<h4 id="org0000004"><span class="section-number-4">1.2.1</span> 测试代码</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-comment-delimiter">// </span><span class="org-comment">2018-12-18 09:13</span>
+
+<span class="org-type">int</span> <span class="org-keyword">__attribute__</span>((noinline))<span class="org-function-name">bar</span>(<span class="org-type">int</span> <span class="org-variable-name">xxx</span>) {
+    abort();
+    <span class="org-keyword">return</span> xxx + 1;
+}
+<span class="org-type">void</span> <span class="org-keyword">__attribute__</span>((noinline)) <span class="org-function-name">foo</span> (<span class="org-type">int</span> <span class="org-variable-name">xxx</span>) {
+    <span class="org-type">int</span> <span class="org-variable-name">yyy</span> = 0x1234;
+    xxx += 1;
+    printf(<span class="org-string">"%d\n"</span>, bar(xxx));
+}
+
+<span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]) {
+    <span class="org-type">int</span> <span class="org-variable-name">x</span> = 0;
+    scanf(<span class="org-string">"%d"</span>, &amp;x);
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#36825;&#37324; x &#20174; scanf &#20013;&#24471;&#21040;, &#26159;&#20026;&#20102;&#38450;&#27490; x &#34987;&#20248;&#21270;&#20026;&#24120;&#37327;</span><span class="org-comment-delimiter"> */</span>
+    foo(x);
+}
+</pre>
+</div>
+
+<pre class="example" id="org0000003">
+$&gt; aarch64-linux-gnu-gcc test.c -O2 -g3 -static
+$&gt; qemu-aarch64-static ./a.out
+$&gt; aarch64-linux-gnu-objdum -W ./a.out &gt; dwarf_dump
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org000000b" class="outline-4">
+<h4 id="org000000b"><span class="section-number-4">1.2.2</span> CIE 和 FDE</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<ul class="org-ul">
+<li><p>
+CIE
+</p>
+
+<p>
+CIE 为 Common Info Entry, 可以认为是把多个 FDE 中相同的部分提取出来得到的,
+Dwarf 在解析 FDE 时, 会先解析它对应的 CIE, 例如:
+</p>
+
+<pre class="example" id="org0000007">
+00000a38 000000000000000c ffffffff CIE
+Version:               1
+Augmentation:          ""
+Code alignment factor: 4
+Data alignment factor: -8
+Return address column: 30
+
+DW_CFA_def_cfa: r31 (sp) ofs 0
+</pre>
+
+<ul class="org-ul">
+<li>Return address column: 30 表示 frame 上保存的返回地址在 30 号 dwarf 寄存器上
+(aarch64 即 x30)</li>
+
+<li>DW_CFA_def_cfa: r31 (sp) ofs 0 表示 CFA 初始设为 sp+0.</li>
+</ul></li>
+
+<li><p>
+CFA
+</p>
+
+<p>
+CFA 即 Canonical Frame Address, 表示当前 frame 的基址, 它是 dwarf 虚拟的寄存器,
+作用和 frame register 类似 (ebp, x29 等)
+</p></li>
+
+<li><p>
+FDE
+</p>
+
+<pre class="example" id="org0000008">
+00000a48 000000000000002c 00000a38 FDE cie=00000a38 pc=00000000004057b8..0000000000405ac0
+  DW_CFA_advance_loc: 4 to 00000000004057bc
+  DW_CFA_def_cfa_offset: 336
+  DW_CFA_offset: r29 (x29) at cfa-336
+  DW_CFA_offset: r30 (x30) at cfa-328
+  DW_CFA_advance_loc: 4 to 00000000004057c0
+  DW_CFA_def_cfa_register: r29 (x29)
+  DW_CFA_advance_loc: 4 to 00000000004057c4
+  DW_CFA_offset: r19 (x19) at cfa-320
+  DW_CFA_offset: r20 (x20) at cfa-312
+  DW_CFA_advance_loc: 24 to 00000000004057dc
+  DW_CFA_offset: r21 (x21) at cfa-304
+  DW_CFA_nop
+  DW_CFA_nop
+  DW_CFA_nop
+  DW_CFA_nop
+  DW_CFA_nop
+</pre>
+
+<ul class="org-ul">
+<li><p>
+FDE 可以抽象的表示为:
+</p>
+
+<pre class="example" id="org0000009">
+LOC CFA R0 R1 ... RN
+L0
+L1
+...
+LN
+</pre>
+
+<p>
+因为代码执行到不同的 pc 值可能对应不同的寄存器值. 例如, x20 初始并没有保存在栈上, 当 pc 执行到 0x00000000004057c4 时才将 x20 保存在栈上. 或者在整个函数执行过程中, 有可能 x20 会被多次保存在栈上不同的位置. 所以需要多行对应不同的 LOC
+</p></li>
+
+<li>cie=00000a38, 表示它的 CIE 的 id 为 a38</li>
+
+<li><p>
+pc=00000000004057b8..0000000000405ac0 表示这个 frame 对应的代码, 实际上它对应 abort 函数
+</p>
+
+<pre class="example" id="org000000a">
+Dump of assembler code for function abort:
+   0x00000000004057b8 &lt;+0&gt;:     stp     x29, x30, [sp, #-336]!
+   0x00000000004057bc &lt;+4&gt;:     mov     x29, sp
+   0x00000000004057c0 &lt;+8&gt;:     stp     x19, x20, [sp, #16]
+   0x00000000004057c4 &lt;+12&gt;:    adrp    x19, 0x492000 &lt;_dl_main_map+712&gt;
+   0x00000000004057c8 &lt;+16&gt;:    add     x0, x19, #0xcc0
+   0x00000000004057cc &lt;+20&gt;:    mrs     x20, tpidr_el0
+   0x00000000004057d0 &lt;+24&gt;:    sub     x20, x20, #0x6f0
+   ...
+</pre></li>
+
+<li>DW_CFA_advance_loc: 4 to 00000000004057bc, 表示针对 0x00000000004057bc 地址插入新的一行</li>
+
+<li>DW_CFA_def_cfa_offset: 336, 设置 CFA 的值为 CFA+336, 由于之前 CFA 为 SP, 所以 CFA 会指向 frame 的栈基址</li>
+
+<li>DW_CFA_def_cfa_register: r29 (x29), 设置 CFA 为 x29 的值</li>
+
+<li>DW_CFA_offset: r20 (x20) at cfa-312, 表示 x20 保存在 CFA-312 位置</li>
+</ul></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000000e" class="outline-4">
+<h4 id="org000000e"><span class="section-number-4">1.2.3</span> 使用 CFI 进行 stack unwinding</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<ol class="org-ol">
+<li>根据当前 pc 找到对应的 FDE</li>
+
+<li>若当前为栈顶, 则解析 FDE 对应的 CIE, 例如把 CFA 设置为 sp, 找到 Return PC 保存在哪个寄存器,
+例如 x30</li>
+
+<li>若当前不是栈顶, 则 CFA 使用上一次计算的结果即可</li>
+
+<li>解析 FDE, 计算当前 frame 的 CFA, 根据 CFA 计算上一个 frame 的信息: 保存的寄存器, Return PC</li>
+
+<li>根据 Return PC 重复步骤 1</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000011" class="outline-4">
+<h4 id="org0000011"><span class="section-number-4">1.2.4</span> gcc omit-frame-pointer</h4>
+<div class="outline-text-4" id="text-1-2-4">
+<p>
+有了 CFI, Dwarf 不需要 frame pointer 就可以进行 stack unwinding, 以上面的 FDE 为例, 关键在于 `DW_CFA_def_cfa_offset: 336`, 其中的 336 表示栈基址在当前栈顶 + 336
+处, 336 是编译时就确定的 frame 大小, 因此 frame pointer 不是必需的. 
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000014" class="outline-4">
+<h4 id="org0000014"><span class="section-number-4">1.2.5</span> gdb info reg</h4>
+<div class="outline-text-4" id="text-1-2-5">
+<p>
+gdb info reg 可以显示每个 frame 的寄存器, 但从前面的 FDE 能看到, 许多寄存器并没有保存, 因此 info reg 并不能确定某个 frame 里 `每一个` 寄存器的值. 通过 FDE 中
+DW_CFA_offset 及 gdb info frame 可以确定哪些寄存器被保存了
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000018" class="outline-4">
+<h4 id="org0000018"><span class="section-number-4">1.2.6</span> example</h4>
+<div class="outline-text-4" id="text-1-2-6">
+<pre class="example" id="org0000017">
+$&gt;gdb ./a.out
+(gdb) core qemu_a.out.core
+(gdb) bt
+#0  0x00000000004056b8 in raise (sig=sig@entry=6) at ../sysdeps/unix/sysv/linux/raise.c:55
+#1  0x0000000000405968 in abort () at abort.c:89
+#2  0x0000000000400b0c in bar (xxx=&lt;optimized out&gt;) at test.c:9
+#3  0x0000000000400b20 in foo (xxx=&lt;optimized out&gt;) at test.c:15
+#4  0x000000000040096c in main (argc=&lt;optimized out&gt;, argv=&lt;optimized out&gt;) at test.c:21
+(gdb) i f 1
+Stack frame at 0x40007ff950:
+ pc = 0x405968 in abort (abort.c:89); saved pc = 0x400b0c
+ called by frame at 0x40007ff960, caller of frame at 0x40007ff800
+ source language c.
+ Arglist at 0x40007ff800, args: 
+ Locals at 0x40007ff800, Previous frame's sp is 0x40007ff950
+ Saved registers:
+  x19 at 0x40007ff810, x20 at 0x40007ff818, x21 at 0x40007ff820, x29 at 0x40007ff800, x30 at 0x40007ff808
+(gdb) p $sp
+$14 = (void *) 0x40007ff800
+
+;; DW_CFA_def_cfa_offset: 336
+(gdb) p /x $sp+336
+$15 = 0x40007ff950
+;; 0x40007ff950 是当前 frame 的栈基址
+
+;; DW_CFA_offset: r20 (x20) at cfa-312
+(gdb) p /x $sp+336-312
+$16 = 0x40007ff818
+;; x20 保存在 0x40007ff818
+(gdb) x /x 0x40007ff818
+0x40007ff818:   0x00401138
+
+;; up 到上一个 frame 时能得到正确的 x20, 因为它被保存在栈上了
+(gdb) p /x $x20
+$18 = 0x494000
+(gdb) up
+#2  0x0000000000400b0c in bar (xxx=&lt;optimized out&gt;) at test.c:9
+9           abort();
+(gdb) p /x $x20
+$19 = 0x401138
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000028" class="outline-3">
+<h3 id="org0000028"><span class="section-number-3">1.3</span> debug_info 与源码级别调试</h3>
+<div class="outline-text-3" id="text-1-3">
+</div>
+<div id="outline-container-org000001f" class="outline-4">
+<h4 id="org000001f"><span class="section-number-4">1.3.1</span> 测试代码</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-comment-delimiter">// </span><span class="org-comment">2018-12-18 09:13</span>
+
+<span class="org-type">int</span> <span class="org-keyword">__attribute__</span>((noinline)) <span class="org-function-name">bar</span>(<span class="org-type">int</span> <span class="org-variable-name">xxx</span>) {
+    abort();
+    <span class="org-keyword">return</span> xxx + 1;
+}
+<span class="org-type">void</span> <span class="org-keyword">__attribute__</span>((noinline)) <span class="org-function-name">foo</span> (<span class="org-type">int</span> <span class="org-variable-name">xxx</span>) {
+    <span class="org-type">int</span> <span class="org-variable-name">yyy</span> = 0x1234;
+    xxx += 1;
+    printf(<span class="org-string">"%d\n"</span>, bar(xxx));
+}
+
+<span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]) {
+    foo(127);
+}
+
+</pre>
+</div>
+
+<pre class="example" id="org000001e">
+$&gt; aarch64-linux-gnu-gcc test.c -O0 -g3
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000025" class="outline-4">
+<h4 id="org0000025"><span class="section-number-4">1.3.2</span> DIE</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<p>
+DIE 即 Debugging Info Entry, 以上面的 foo 函数为例, 其 DIE 为:
+</p>
+
+<pre class="example" id="org0000022">
+&lt; 1&gt;&lt;0x000000bb&gt;    DW_TAG_subprogram
+                      DW_AT_external              yes(1)
+                      DW_AT_name                  foo
+                      DW_AT_decl_file             0x00000001 /home/sunway/test.c
+                      DW_AT_decl_line             0x0000000c
+                      DW_AT_prototyped            yes(1)
+                      DW_AT_low_pc                0x00400590
+                      DW_AT_high_pc               &lt;offset-from-lowpc&gt;68
+                      DW_AT_frame_base            len 0x0001: 9c: DW_OP_call_frame_cfa
+                      DW_AT_GNU_all_tail_call_sites yes(1)
+                      DW_AT_sibling               &lt;0x000000f5&gt;
+&lt; 2&gt;&lt;0x000000d8&gt;      DW_TAG_formal_parameter
+                        DW_AT_name                  xxx
+                        DW_AT_decl_file             0x00000001 /home/sunway/test.c
+                        DW_AT_decl_line             0x0000000c
+                        DW_AT_type                  &lt;0x00000046&gt;
+                        DW_AT_location              len 0x0002: 916c: DW_OP_fbreg -20
+&lt; 2&gt;&lt;0x000000e6&gt;      DW_TAG_variable
+                        DW_AT_name                  yyy
+                        DW_AT_decl_file             0x00000001 /home/sunway/test.c
+                        DW_AT_decl_line             0x0000000d
+                        DW_AT_type                  &lt;0x00000046&gt;
+                        DW_AT_location              len 0x0002: 917c: DW_OP_fbreg -4
+</pre>
+
+<ul class="org-ul">
+<li>DW_TAG_subprogram 表示函数, 包含名字, 所在文件, 行号, PC 范围, 以及参数, 变量等</li>
+
+<li>DW_TAG_formal_parameter 表示参数, 其中 DW_AT_location 表示参数保存在哪里,
+DW_OP_fbreg -20 表示 CFA - 20 这个地址保存着参数. 除了 DW_OP_fbreg, 常用的还有
+DW_OP_breg, DW_OP_reg, 以及更复杂的 dwarf expression</li>
+
+<li>DW_AT_location 是 DW_OP_reg 时表示变量保存在寄存器中, 而不是通过寄存器指示的内存地址</li>
+
+<li>DW_AT_location 可能不存在, 例如变量被优化编译器优化掉</li>
+</ul>
+
+<pre class="example" id="org0000023">
+$&gt; aarch64-linux-gnu-gcc test.c -O2 -g3
+$&gt; dwarfdump a.out
+&lt; 2&gt;&lt;0x000002ef&gt;      DW_TAG_formal_parameter
+                        DW_AT_name                  xxx
+                        DW_AT_decl_file             0x00000001 /home/sunway/test.c
+                        DW_AT_decl_line             0x0000000c
+                        DW_AT_type                  &lt;0x0000004d&gt;
+                        DW_AT_location              &lt;loclist at offset 0x00000039 with 4 entries follows&gt;
+                        [ 0]&lt; offset pair low-off : 0x00400550 addr  0x00400550 high-off  0x00400550 addr 0x00400550&gt;DW_OP_reg0
+                        [ 1]&lt; offset pair low-off : 0x00400550 addr  0x00400550 high-off  0x00400558 addr 0x00400558&gt;DW_OP_breg0+1 DW_OP_stack_value
+                        [ 2]&lt; offset pair low-off : 0x00400558 addr  0x00400558 high-off  0x0040055f addr 0x0040055f&gt;DW_OP_reg0
+                        [ 3]&lt; offset pair low-off : 0x0040055f addr  0x0040055f high-off  0x00400560 addr 0x00400560&gt;DW_OP_GNU_entry_value 0x00000001 contents 0x50 DW_OP_plus_uconst 1 DW_OP_stack_value
+&lt; 2&gt;&lt;0x000002fe&gt;      DW_TAG_variable
+                        DW_AT_name                  yyy
+                        DW_AT_decl_file             0x00000001 /home/sunway/test.c
+                        DW_AT_decl_line             0x0000000d
+                        DW_AT_type                  &lt;0x0000004d&gt;
+                        DW_AT_const_value           4660
+
+</pre>
+
+<p>
+使用 O2 编译后, xxx 初始通过 DW_OP_reg0 被保存在 reg0 中, 然后在下一个 LOC 为
+DW_OP_breg0+1 DW_OP_stack_value, 对应源码中的 `xxx+=1`, 该 Dwarf expression 的意义为:
+</p>
+
+<ol class="org-ol">
+<li>取 reg0 的值后加 1</li>
+
+<li><p>
+通过 DW_OP_stack_value 从 dwarf 表达式栈上取值, 并作为变量的`值`而不是`变量保存的地址`
+</p>
+
+<pre class="example" id="org0000024">
+DW_OP_stack_value
+
+The DW_OP_stack_value operation specifies that the object does not exist in memory but its
+value is nonetheless known and is at the top of the DWARF expression stack. In this form of
+location description, the DWARF expression represents the actual value of the object, rather
+than its location. The DW_OP_stack_value operation terminates the expression.
+</pre></li>
+</ol>
+
+<p>
+需要注意的是, 当优化编译器把变量放在寄存器上时, 虽然 DIE 有足够的信息, 但可能后面 FDE 并无法恢复相应的寄存器的值, 导致调试时还是无法得到相应的变量的值 (gdb 显示为 &lt;optimized out&gt;)
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000002b" class="outline-3">
+<h3 id="org000002b"><span class="section-number-3">1.4</span> DWARF 表达式</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+dwarf 表达式的思想与 BPF 及 seccomp 类似: 通过一个小型的解释器, 达到比普通配置更大的灵活性.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000002e" class="outline-3">
+<h3 id="org000002e"><span class="section-number-3">1.5</span> WAIT STAB</h3>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway (sunwayforever@gmail.com)<br />
+Date: 2018-12-20 Thu 00:00<br />
+Last updated: 2021-09-06 Mon 09:05</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
+<br />
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>
