@@ -50,9 +50,11 @@
 </li>
 <li><a href="#org000000f">1.2. RISC Assembly</a>
 <ul>
-<li><a href="#org0000029">1.2.1. Overview</a></li>
+<li><a href="#org000002c">1.2.1. Overview</a></li>
 <li><a href="#org0000021">1.2.2. Register</a></li>
 <li><a href="#org0000047">1.2.3. RV32I</a></li>
+<li><a href="#org000004c">1.2.4. Pseudo Instruction</a></li>
+<li><a href="#org0000050">1.2.5. Demo</a></li>
 </ul>
 </li>
 </ul>
@@ -212,8 +214,8 @@ gdb-multiarch $<span class="org-variable-name">app</span> -x /tmp/gdb.cmds
 <h3 id="org000000f"><span class="section-number-3">1.2</span> RISC Assembly</h3>
 <div class="outline-text-3" id="text-1-2">
 </div>
-<div id="outline-container-org0000029" class="outline-4">
-<h4 id="org0000029"><span class="section-number-4">1.2.1</span> Overview</h4>
+<div id="outline-container-org000002c" class="outline-4">
+<h4 id="org000002c"><span class="section-number-4">1.2.1</span> Overview</h4>
 <div class="outline-text-4" id="text-1-2-1">
 <p>
 RSIC ISA 同一个基础指令集 RV32I 和一系列的扩展指令集组成:
@@ -272,8 +274,8 @@ RISC-V 共定义了 32 个寄存器:
 <h4 id="org0000047"><span class="section-number-4">1.2.3</span> RV32I</h4>
 <div class="outline-text-4" id="text-1-2-3">
 </div>
-<div id="outline-container-org000002c" class="outline-5">
-<h5 id="org000002c"><span class="section-number-5">1.2.3.1</span> Overview</h5>
+<div id="outline-container-org000002d" class="outline-5">
+<h5 id="org000002d"><span class="section-number-5">1.2.3.1</span> Overview</h5>
 <div class="outline-text-5" id="text-1-2-3-1">
 <p>
 RV32I 共 47 条指令, 分为 6 种格式:
@@ -390,11 +392,15 @@ rs1 (op1), rs2 (op2), imm (offset)
 以 blt 为例:
 </p>
 
-<pre class="example" id="org000002a">
+<pre class="example" id="org0000029">
 imm[12|10:5] rs2 rs1 100 imm[4:1|11] 1100011
 
 if rs1 &lt; rs2: pc+=imm
-</pre></li>
+</pre>
+
+<p>
+imm 使用的是 imm[12:1], 因为 risc-v 指令最短是 16 bit, 所以 offset 是 2 字节对齐的, 即 imm[0] 必定为 0, 使用 imm[12:1] 可以使 branch 范围变为 8k
+</p></li>
 
 <li><p>
 U, upper intermediate
@@ -430,18 +436,22 @@ jal:
 imm[20|10:1|11|19:12] rd 1101111
 
 rd = pc + 4
-pc += imm*2
-</pre></li>
+pc += imm
+</pre>
+
+<p>
+与 B 指令类似, 没有使用 imm[0], J 跳转范围扩大为 2M
+</p></li>
 </ol>
 </div>
 </div>
 
-<div id="outline-container-org0000030" class="outline-5">
-<h5 id="org0000030"><span class="section-number-5">1.2.3.2</span> Sample</h5>
+<div id="outline-container-org0000046" class="outline-5">
+<h5 id="org0000046"><span class="section-number-5">1.2.3.2</span> Sample</h5>
 <div class="outline-text-5" id="text-1-2-3-2">
 </div>
-<div id="outline-container-org000002d" class="outline-6">
-<h6 id="org000002d"><span class="section-number-6">1.2.3.2.1</span> I-Type Instructions</h6>
+<div id="outline-container-org0000030" class="outline-6">
+<h6 id="org0000030"><span class="section-number-6">1.2.3.2.1</span> I-Type Instructions</h6>
 <div class="outline-text-6" id="text-1-2-3-2-1">
 <p>
 I 类型指令都是 `xxx rd, rs1, imm` 的形式, 其中 imm 12 bit, 包含以下指令:
@@ -528,7 +538,10 @@ I 类型指令都是 `xxx rd, rs1, imm` 的形式, 其中 imm 12 bit, 包含以�
     <span class="org-keyword">jr</span> ra
 
 <span class="org-function-name">jalr_test</span>:
-    ## jalr &#24120;&#29992;&#26469;&#20174;&#20989;&#25968;&#20013;&#36820;&#22238;, &#30456;&#24403;&#20110; rd=pc+4<span class="org-comment-delimiter">; </span><span class="org-comment">pc=offset(rs1)</span>
+    ## jalr rd, imm(rs1), &#30456;&#24403;&#20110; rd=pc+4<span class="org-comment-delimiter">; </span><span class="org-comment">pc=imm(rs1)</span>
+    ## jalr &#21487;&#20197;&#29992;&#26469;&#20174;&#20989;&#25968;&#20013;&#36820;&#22238;
+    ## &#21478;&#22806;, J &#21644; B &#25351;&#20196;&#36339;&#36716;&#26102;&#37117;&#26159; pc relative &#36339;&#36716;. &#36890;&#36807; I &#25351;&#20196;&#30340; jalr
+    ## &#21487;&#20197;&#23454;&#29616;&#25972;&#20010;&#22320;&#22336;&#31354;&#38388;&#33539;&#22260;&#30340;&#36339;&#36716;
     <span class="org-keyword">jalr</span> zero, 0(ra)
 
     <span class="org-keyword">.data</span>
@@ -711,19 +724,471 @@ B 指令用于条件跳转, 它的格式与 S 指令基本相同, 只是 imm 的
 </ul>
 
 <p>
-由于 imm 有 12 bit, 所以跳转的范围为 4K
+由于 imm encode 为 imm[12:1], 所以跳转的范围为 8k
 </p>
 </div>
 </div>
 
+<div id="outline-container-org000003f" class="outline-6">
+<h6 id="org000003f"><span class="section-number-6">1.2.3.2.5</span> U-Type Instructions</h6>
+<div class="outline-text-6" id="text-1-2-3-2-5">
+<p>
+U 指令用来操作一个 imm 的高位, 可以和其它指令配合来操作 32 位数, 有两条指令:
+</p>
 
-<div id="outline-container-org000003e" class="outline-6">
-<h6 id="org000003e"><span class="section-number-6">1.2.3.2.5</span> U-Type Instructions</h6>
+<ul class="org-ul">
+<li>lui (load upper imm)</li>
+<li>auipc (append upper imm to pc)</li>
+</ul>
+
+<div class="org-src-container">
+<pre class="src src-asm">    ## riscv64-linux-gnu-gcc test.s -static
+    <span class="org-keyword">.global</span> main
+
+<span class="org-keyword">.text</span>
+<span class="org-function-name">main</span>:
+    <span class="org-keyword">addi</span> sp, sp, -4
+    <span class="org-keyword">sw</span> ra, 4(sp)
+
+    ## ------ lui ------
+    ## lui &#21152;&#36733;&#19968;&#20010; imm &#30340;&#39640; 20 &#20301;&#21040;&#23492;&#23384;&#22120;
+    ## &#37197;&#21512; addi &#30340; 12 &#20301; imm, &#21487;&#20197;&#21152;&#36733; 32 &#20301; imm
+    <span class="org-keyword">la</span> a0, lui_msg
+    <span class="org-keyword">lui</span> a1, 1&lt;&lt;16
+    <span class="org-keyword">addi</span> a1, a1, 1
+    <span class="org-keyword">call</span> printf
+
+    ## &#36825;&#37324;&#29992; lui, addi &#26469;&#21152;&#36733; lui_msg &#22320;&#22336;&#21040; a0
+    ## &#20294;&#19982; la &#20266;&#25351;&#20196;&#25928;&#26524;&#24182;&#38750;&#23436;&#20840;&#30456;&#21516;, &#22240;&#20026;&#36890;&#36807; lui, addi &#26041;&#24335;
+    ## &#26159;&#23545; lui_msg &#30340;&#32477;&#23545;&#22320;&#22336;&#23547;&#22336;, &#20294; la &#36890;&#24120;&#20250;&#20351;&#29992; GOT &#25110; pc relative &#23547;&#22336;
+    <span class="org-keyword">lui</span> a0, <span class="org-variable-name">%hi</span>(lui_msg)
+    <span class="org-keyword">addi</span> a0, a0, <span class="org-variable-name">%lo</span>(lui_msg)
+    <span class="org-keyword">lui</span> a1, 1&lt;&lt;16
+    <span class="org-keyword">addi</span> a1, a1, 1
+    <span class="org-keyword">call</span> printf
+
+    ## ------ auipc ------
+    ## auipc rd, imm &#30456;&#24403;&#20110; rd=pc+imm, &#37197;&#21512;&#20854;&#23427;&#25351;&#20196;&#21487;&#20197;
+    ## &#24471;&#21040;&#30456;&#23545;&#20110; pc &#30340; 32 &#20301;&#22320;&#22336;
+<span class="org-function-name">1</span>:  <span class="org-keyword">auipc</span> a0, <span class="org-variable-name">%pcrel</span>_hi(auipc_msg)
+    ## &#36825;&#37324;&#30340; 1b &#26159; linker &#35748;&#35782;&#30340;&#29305;&#27530;&#20889;&#27861;, &#36825;&#37324;&#26080;&#27861;&#29992; <span class="org-variable-name">%pcrel</span>_lo(auipc_msg), &#22240;&#20026;&#20004;&#26465;&#25351;&#20196;&#22320;&#22336;&#19981;&#21516;
+    ## https:<span class="org-comment-delimiter">//</span><span class="org-comment">sourceware.org/binutils/docs/as/RISC_002dV_002dModifiers.html</span>
+    <span class="org-keyword">addi</span> a0, a0, <span class="org-variable-name">%pcrel</span>_lo(1b)
+    <span class="org-keyword">call</span> printf
+
+    <span class="org-keyword">lw</span> ra, 4(sp)
+    <span class="org-keyword">addi</span> sp, sp, 4
+    <span class="org-keyword">li</span> a0, 0
+    <span class="org-keyword">jr</span> ra
+
+    <span class="org-keyword">.data</span>
+
+<span class="org-function-name">lui_msg</span>:    .asciz <span class="org-string">"lui: %x\n"</span>
+<span class="org-function-name">auipc_msg</span>:   .asciz <span class="org-string">"auipc\n"</span>
+</pre>
+</div>
+
+<pre class="example" id="org000003e">
+lui: 10000001
+lui: 10000001
+auipc
+</pre>
+</div>
 </div>
 
 <div id="outline-container-org0000041" class="outline-6">
 <h6 id="org0000041"><span class="section-number-6">1.2.3.2.6</span> J-Type Instructions</h6>
+<div class="outline-text-6" id="text-1-2-3-2-6">
+<p>
+J 指令和 U 指令格式类似, 只有一条 jal (jump and link) 指令, 可以支持 2M 范围的
+pc 相对跳转
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm">    ## riscv64-linux-gnu-gcc test.s -static
+    <span class="org-keyword">.global</span> main
+
+    <span class="org-keyword">.text</span>
+<span class="org-function-name">main</span>:
+    <span class="org-keyword">addi</span> sp, sp, -4
+    <span class="org-keyword">sw</span> ra, 4(sp)
+
+    <span class="org-keyword">la</span> a0, hello_msg
+    <span class="org-keyword">jal</span> ra, printf
+
+    <span class="org-keyword">lw</span> ra, 4(sp)
+    <span class="org-keyword">addi</span> sp, sp, 4
+    <span class="org-keyword">li</span> a0, 0
+    <span class="org-keyword">jr</span> ra
+
+    <span class="org-keyword">.data</span>
+<span class="org-function-name">hello_msg</span>:    .asciz <span class="org-string">"hello\n"</span>
+
+</pre>
 </div>
+
+<pre class="example" id="org0000042">
+hello
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000004c" class="outline-4">
+<h4 id="org000004c"><span class="section-number-4">1.2.4</span> Pseudo Instruction</h4>
+<div class="outline-text-4" id="text-1-2-4">
+<p>
+伪指令是 assembler 提供的, 和 ISA 没有关系, 主要是为了方便使用, 尤其是涉及到复杂的寻址方式的操作, 例如 la, call 等.
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<tbody>
+<tr>
+<td class="org-left">la rd, symbol</td>
+<td class="org-left">auipc rd, symbol[31:12]; addi rd, rd, symbol[11:0]</td>
+</tr>
+
+<tr>
+<td class="org-left">l{b,h,w,d} rd, symbol</td>
+<td class="org-left">auipc rd, symbol[31:12]; l{b,h,w,d} rd, symbol[11:0](rd)</td>
+</tr>
+
+<tr>
+<td class="org-left">s{b,h,w,d} rd, symbol, rt</td>
+<td class="org-left">auipc rt, symbol[31:12]; s{b,h,w,d} rd, symbol[11:0](rt)</td>
+</tr>
+
+<tr>
+<td class="org-left">fl{w,d} rd, symbol, rt</td>
+<td class="org-left">auipc rt, symbol[31:12]; fl{w,d} rd, symbol[11:0](rt)</td>
+</tr>
+
+<tr>
+<td class="org-left">fs{w,d} rd, symbol, rt</td>
+<td class="org-left">auipc rt, symbol[31:12]; fs{w,d} rd, symbol[11:0](rt)</td>
+</tr>
+
+<tr>
+<td class="org-left">nop</td>
+<td class="org-left">addi x0, x0, 0</td>
+</tr>
+
+<tr>
+<td class="org-left">li rd, immediate</td>
+<td class="org-left">myriad sequences</td>
+</tr>
+
+<tr>
+<td class="org-left">mv rd, rs</td>
+<td class="org-left">addi rd, rs, 0</td>
+</tr>
+
+<tr>
+<td class="org-left">not rd, rs</td>
+<td class="org-left">xori rd, rs, -1</td>
+</tr>
+
+<tr>
+<td class="org-left">neg rd, rs</td>
+<td class="org-left">sub rd, x0, rs</td>
+</tr>
+
+<tr>
+<td class="org-left">negw rd, rs</td>
+<td class="org-left">subw rd, x0, rs</td>
+</tr>
+
+<tr>
+<td class="org-left">sext.b rd, rs</td>
+<td class="org-left">slli rd, rs, XLEN - 8; srai rd, rd, XLEN - 8</td>
+</tr>
+
+<tr>
+<td class="org-left">sext.h rd, rs</td>
+<td class="org-left">slli rd, rs, XLEN - 16; srai rd, rd, XLEN - 16</td>
+</tr>
+
+<tr>
+<td class="org-left">sext.w rd, rs</td>
+<td class="org-left">addiw rd, rs, 0</td>
+</tr>
+
+<tr>
+<td class="org-left">zext.b rd, rs</td>
+<td class="org-left">andi rd, rs, 255</td>
+</tr>
+
+<tr>
+<td class="org-left">zext.h rd, rs</td>
+<td class="org-left">slli rd, rs, XLEN - 16; srli rd, rd, XLEN - 16</td>
+</tr>
+
+<tr>
+<td class="org-left">zext.w rd, rs</td>
+<td class="org-left">slli rd, rs, XLEN - 32; srli rd, rd, XLEN - 32</td>
+</tr>
+
+<tr>
+<td class="org-left">seqz rd, rs</td>
+<td class="org-left">sltiu rd, rs, 1</td>
+</tr>
+
+<tr>
+<td class="org-left">snez rd, rs</td>
+<td class="org-left">sltu rd, x0, rs</td>
+</tr>
+
+<tr>
+<td class="org-left">sltz rd, rs</td>
+<td class="org-left">slt rd, rs, x0</td>
+</tr>
+
+<tr>
+<td class="org-left">sgtz rd, rs</td>
+<td class="org-left">slt rd, x0, rs</td>
+</tr>
+
+<tr>
+<td class="org-left">beqz rs, offset</td>
+<td class="org-left">beq rs, x0, offset</td>
+</tr>
+
+<tr>
+<td class="org-left">bnez rs, offset</td>
+<td class="org-left">bne rs, x0, offset</td>
+</tr>
+
+<tr>
+<td class="org-left">blez rs, offset</td>
+<td class="org-left">bge x0, rs, offset</td>
+</tr>
+
+<tr>
+<td class="org-left">bgez rs, offset</td>
+<td class="org-left">bge rs, x0, offset</td>
+</tr>
+
+<tr>
+<td class="org-left">bltz rs, offset</td>
+<td class="org-left">blt rs, x0, offset</td>
+</tr>
+
+<tr>
+<td class="org-left">bgtz rs, offset</td>
+<td class="org-left">blt x0, rs, offset</td>
+</tr>
+
+<tr>
+<td class="org-left">bgt rs, rt, offset</td>
+<td class="org-left">blt rt, rs, offset</td>
+</tr>
+
+<tr>
+<td class="org-left">ble rs, rt, offset</td>
+<td class="org-left">bge rt, rs, offset</td>
+</tr>
+
+<tr>
+<td class="org-left">bgtu rs, rt, offset</td>
+<td class="org-left">bltu rt, rs, offset</td>
+</tr>
+
+<tr>
+<td class="org-left">bleu rs, rt, offset</td>
+<td class="org-left">bgeu rt, rs, offset</td>
+</tr>
+
+<tr>
+<td class="org-left">j offset</td>
+<td class="org-left">jal x0, offset</td>
+</tr>
+
+<tr>
+<td class="org-left">jal offset</td>
+<td class="org-left">jal x1, offset</td>
+</tr>
+
+<tr>
+<td class="org-left">jr rs</td>
+<td class="org-left">jalr x0, rs, 0</td>
+</tr>
+
+<tr>
+<td class="org-left">jalr rs</td>
+<td class="org-left">jalr x1, rs, 0</td>
+</tr>
+
+<tr>
+<td class="org-left">ret</td>
+<td class="org-left">jalr x0, x1, 0</td>
+</tr>
+
+<tr>
+<td class="org-left">call offset</td>
+<td class="org-left">auipc x6, offset[31:12]; jalr x1, x6, offset[11:0]</td>
+</tr>
+
+<tr>
+<td class="org-left">tail offset</td>
+<td class="org-left">auipc x6, offset[31:12]; jalr x0, x6, offset[11:0]</td>
+</tr>
+
+<tr>
+<td class="org-left">fence</td>
+<td class="org-left">fence iorw, iorw</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+la (load address) 和 call 很复杂, 因为根据编译参数 (例如 pic) 以及 offset 的大小,
+symbol 地址可以有不同的表示.
+</p>
+
+<ul class="org-ul">
+<li>使用绝对地址</li>
+<li>使用 pc-relative</li>
+<li>使用 GOT</li>
+</ul>
+
+<div class="org-src-container">
+<pre class="src src-asm">    ## riscv64-linux-gnu-gcc test.s -static
+    <span class="org-keyword">.global</span> main
+
+    <span class="org-keyword">.text</span>
+<span class="org-function-name">main</span>:
+    <span class="org-keyword">addi</span> sp, sp, -4
+    <span class="org-keyword">sw</span> ra, 4(sp)
+
+    ## &#32477;&#23545;&#22320;&#22336;
+    <span class="org-keyword">lui</span> a0, <span class="org-variable-name">%hi</span>(hello_msg)
+    <span class="org-keyword">addi</span> a0, a0, <span class="org-variable-name">%lo</span>(hello_msg)
+    <span class="org-keyword">call</span> printf
+
+    ## pc-relative &#22320;&#22336;
+<span class="org-function-name">.1</span>:
+    <span class="org-keyword">auipc</span> a0, <span class="org-variable-name">%pcrel</span>_hi(hello_msg)
+    <span class="org-keyword">addi</span> a0, a0, <span class="org-variable-name">%pcrel</span>_lo(.1)
+    <span class="org-keyword">call</span> printf
+
+    ## got &#22320;&#22336;
+    ## auipc a0, $got_pcrel_hi &#22909;&#20687;&#19981;&#25903;&#25345;..
+    ## la &#20266;&#25351;&#20196;&#20250;&#32534;&#35793;&#25104;&#31867;&#20284;&#19979;&#38754;&#30340;&#20195;&#30721;:
+    ## auipc   a0,0x60
+    ## ld      a0,956(a0) # 70810 &lt;_GLOBAL_OFFSET_TABLE_+0x8&gt;
+    <span class="org-keyword">la</span> a0,hello_msg
+    <span class="org-keyword">call</span> printf
+
+    <span class="org-keyword">lw</span> ra, 4(sp)
+    <span class="org-keyword">addi</span> sp, sp, 4
+    <span class="org-keyword">move</span> a0, zero
+    <span class="org-keyword">ret</span>
+
+    <span class="org-keyword">.data</span>
+<span class="org-function-name">hello_msg</span>:    .asciz <span class="org-string">"hello\n"</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000050" class="outline-4">
+<h4 id="org0000050"><span class="section-number-4">1.2.5</span> Demo</h4>
+<div class="outline-text-4" id="text-1-2-5">
+<div class="org-src-container">
+<pre class="src src-asm">    ## riscv64-linux-gnu-gcc test.s -static
+    <span class="org-keyword">.global</span> main
+
+    <span class="org-keyword">.text</span>
+<span class="org-function-name">print_data</span>:
+    <span class="org-keyword">addi</span> sp, sp, -4
+    <span class="org-keyword">sw</span> ra, 4(sp)
+
+    <span class="org-keyword">la</span> s0, data
+    <span class="org-keyword">la</span> s1, data_end
+    <span class="org-keyword">addi</span> s0, s0, -8
+
+<span class="org-function-name">print_loop</span>:
+    <span class="org-keyword">addi</span> s0, s0, 8
+    <span class="org-keyword">beq</span> s0, s1, print_end
+
+    <span class="org-keyword">la</span> a0, print_fmt
+    <span class="org-keyword">ld</span> a1, 0(s0)
+    <span class="org-keyword">call</span> printf
+    <span class="org-keyword">j</span> print_loop
+
+<span class="org-function-name">print_end</span>:
+    <span class="org-keyword">la</span> a0, print_fmt_new_line
+    <span class="org-keyword">call</span> printf
+
+    <span class="org-keyword">lw</span> ra, 4(sp)
+    <span class="org-keyword">addi</span> sp, sp, 4
+    <span class="org-keyword">ret</span>
+
+<span class="org-function-name">main</span>:
+    <span class="org-keyword">addi</span> sp, sp, -4
+    <span class="org-keyword">sw</span> ra, 4(sp)
+
+    <span class="org-keyword">call</span> print_data
+
+    <span class="org-keyword">la</span> t0, data
+    <span class="org-keyword">addi</span> t0, t0, -8
+    <span class="org-keyword">la</span> t2, data_end
+
+<span class="org-function-name">main_outer_loop</span>:
+    <span class="org-keyword">addi</span> t0, t0, 8
+    <span class="org-keyword">beq</span> t0, t2, main_end
+    <span class="org-keyword">addi</span> t1, t0, -8
+
+<span class="org-function-name">main_inner_loop</span>:
+    <span class="org-keyword">addi</span> t1, t1, 8
+    <span class="org-keyword">beq</span> t1, t2, main_outer_loop
+    <span class="org-keyword">ld</span> s0, 0(t0)
+    <span class="org-keyword">ld</span> s1, 0(t1)
+    <span class="org-keyword">blt</span> s0, s1, main_continue
+    ## swap
+    <span class="org-keyword">sd</span> s1, 0(t0)
+    <span class="org-keyword">sd</span> s0, 0(t1)
+<span class="org-function-name">main_continue</span>:
+    <span class="org-keyword">j</span> main_inner_loop
+
+<span class="org-function-name">main_end</span>:
+    <span class="org-keyword">call</span> print_data
+    <span class="org-keyword">lw</span> ra, 4(sp)
+    <span class="org-keyword">addi</span> sp, sp, 4
+    <span class="org-keyword">move</span> a0, zero
+    <span class="org-keyword">ret</span>
+
+    <span class="org-keyword">.data</span>
+<span class="org-function-name">data</span>:
+    <span class="org-keyword">.dword</span> 1
+    <span class="org-keyword">.dword</span> 1
+    <span class="org-keyword">.dword</span> 4
+    <span class="org-keyword">.dword</span> 3
+    <span class="org-keyword">.dword</span> 10
+    <span class="org-keyword">.dword</span> 5
+<span class="org-function-name">data_end</span>:
+
+<span class="org-function-name">print_fmt_new_line</span>:
+    <span class="org-keyword">.asciz</span> <span class="org-string">"\n"</span>
+
+<span class="org-function-name">print_fmt</span>:
+    <span class="org-keyword">.asciz</span> <span class="org-string">"%ld "</span>
+
+</pre>
+</div>
+
+<pre class="example" id="org000004f">
+1 1 4 3 10 5 
+1 1 3 4 5 10
+</pre>
 </div>
 </div>
 </div>
@@ -733,7 +1198,7 @@ B 指令用于条件跳转, 它的格式与 S 指令基本相同, 只是 imm 的
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-02-08 Tue 15:30<br />
-Last updated: 2022-02-09 Wed 20:15</p>
+Last updated: 2022-02-10 Thu 19:26</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
