@@ -50,7 +50,7 @@
 </li>
 <li><a href="#org000005e">1.2. RISC-V Assembly</a>
 <ul>
-<li><a href="#org0000030">1.2.1. Overview</a></li>
+<li><a href="#org000002f">1.2.1. Overview</a></li>
 <li><a href="#org0000021">1.2.2. Register</a></li>
 <li><a href="#org0000047">1.2.3. RV32I</a></li>
 <li><a href="#org000004c">1.2.4. Pseudo Instruction</a></li>
@@ -68,7 +68,14 @@
 <li><a href="#org0000074">1.4.6. RV64G</a></li>
 </ul>
 </li>
-<li><a href="#org00000a7">1.5. Privileged ISA</a></li>
+<li><a href="#org00000b3">1.5. Privileged ISA</a>
+<ul>
+<li><a href="#org00000a7">1.5.1. Overview</a></li>
+<li><a href="#org00000aa">1.5.2. Machine-Level CSRs</a></li>
+<li><a href="#org00000ad">1.5.3. Supervisor-Level CSRs</a></li>
+<li><a href="#org00000b0">1.5.4. Sample</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
@@ -243,8 +250,8 @@ gdb-multiarch $<span class="org-variable-name">app</span> -x /tmp/gdb.cmds
 </p>
 </div>
 
-<div id="outline-container-org0000030" class="outline-4">
-<h4 id="org0000030"><span class="section-number-4">1.2.1</span> Overview</h4>
+<div id="outline-container-org000002f" class="outline-4">
+<h4 id="org000002f"><span class="section-number-4">1.2.1</span> Overview</h4>
 <div class="outline-text-4" id="text-1-2-1">
 <p>
 RSIC-V ISA 由一个基础指令集 RV32I 和一系列的扩展指令集组成:
@@ -303,8 +310,8 @@ RV32I 共定义了 32 个寄存器:
 <h4 id="org0000047"><span class="section-number-4">1.2.3</span> RV32I</h4>
 <div class="outline-text-4" id="text-1-2-3">
 </div>
-<div id="outline-container-org000002f" class="outline-5">
-<h5 id="org000002f"><span class="section-number-5">1.2.3.1</span> Overview</h5>
+<div id="outline-container-org0000030" class="outline-5">
+<h5 id="org0000030"><span class="section-number-5">1.2.3.1</span> Overview</h5>
 <div class="outline-text-5" id="text-1-2-3-1">
 <p>
 RV32I 共 47 条指令, 长度均为 32bit, 分为 6 种格式:
@@ -2052,12 +2059,133 @@ xxx.d 与 xxx.w 对应, 例如 amoadd.d
 </div>
 </div>
 
-<div id="outline-container-org00000a7" class="outline-3">
-<h3 id="org00000a7"><span class="section-number-3">1.5</span> Privileged ISA</h3>
+<div id="outline-container-org00000b3" class="outline-3">
+<h3 id="org00000b3"><span class="section-number-3">1.5</span> Privileged ISA</h3>
 <div class="outline-text-3" id="text-1-5">
+</div>
+<div id="outline-container-org00000a7" class="outline-4">
+<h4 id="org00000a7"><span class="section-number-4">1.5.1</span> Overview</h4>
+<div class="outline-text-4" id="text-1-5-1">
+<p>
+<a href="https://riscv.org/wp-content/uploads/2017/05/riscv-privileged-v1.10.pdf">https://riscv.org/wp-content/uploads/2017/05/riscv-privileged-v1.10.pdf</a>
+</p>
+
 <p>
 <a href="https://danielmangum.com/posts/risc-v-bytes-privilege-levels/">https://danielmangum.com/posts/risc-v-bytes-privilege-levels/</a>
 </p>
+
+<p>
+RISC-V 主要有 M (machine), S (supervisor), U (user) 三种模式.
+</p>
+
+<ul class="org-ul">
+<li>M 是最基础的, 权限最高的模式, 适用于裸系统</li>
+
+<li>S 用来运行 OS</li>
+
+<li>U 用来运行应用程序</li>
+</ul>
+
+<p>
+通过 ecall 和 {m,s}ret 指令可以在模式之间转换:
+</p>
+
+<ol class="org-ol">
+<li>mret
+
+<ul class="org-ul">
+<li>M -&gt; S</li>
+
+<li>jump to mepc (machine excepiton pc)</li>
+</ul></li>
+
+<li>sret
+
+<ul class="org-ul">
+<li>S -&gt; U</li>
+
+<li>jump to sepc (supervisor exception pc)</li>
+</ul></li>
+
+<li>ecall 
+
+<ul class="org-ul">
+<li>U -&gt; S 或 S -&gt; M</li>
+
+<li>jump to stvec (supervisor trap vector) (或 mtvec (machine trap vector))</li>
+</ul></li>
+</ol>
+
+<p>
+通过 ecall 进入 S (或 M 模式) 前, sepc (或 mepc) 自动被设置为 next pc, 然后跳转到 stvec (或 mtvec), 后者称为中断向量.
+</p>
+
+<p>
+低权限模式无法设置高权限模式的 vec, 所以提升权限后只能执行高权限预设的动作, 例如
+syscall
+</p>
+
+<p>
+前面提到的 mepc, sepc, stvec, mtvec 都是 CSR (control status register),
+Privileged ISA 给 CSR 预留了 12 bit 的命名空间
+</p>
+</div>
+</div>
+
+<div id="outline-container-org00000aa" class="outline-4">
+<h4 id="org00000aa"><span class="section-number-4">1.5.2</span> Machine-Level CSRs</h4>
+</div>
+
+<div id="outline-container-org00000ad" class="outline-4">
+<h4 id="org00000ad"><span class="section-number-4">1.5.3</span> Supervisor-Level CSRs</h4>
+</div>
+
+<div id="outline-container-org00000b0" class="outline-4">
+<h4 id="org00000b0"><span class="section-number-4">1.5.4</span> Sample</h4>
+<div class="outline-text-4" id="text-1-5-4">
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-keyword">.section</span> .text
+<span class="org-keyword">.global</span> start
+
+<span class="org-function-name">start</span>:
+    <span class="org-keyword">la</span>      t0, supervisor
+    <span class="org-keyword">csrw</span>    mepc, t0
+    <span class="org-keyword">la</span>      t1, m_trap
+    <span class="org-keyword">csrw</span>    mtvec, t1
+    <span class="org-keyword">li</span>      t2, 0x1800
+    <span class="org-keyword">csrc</span>    mstatus, t2
+    <span class="org-keyword">li</span>      t3, 0x800
+    <span class="org-keyword">csrs</span>    mstatus, t3
+    <span class="org-keyword">li</span>      t4, 0x100
+    <span class="org-keyword">csrs</span>    medeleg, t4
+    <span class="org-keyword">mret</span>
+
+<span class="org-function-name">m_trap</span>:
+    <span class="org-keyword">csrr</span>    t0, mepc
+    <span class="org-keyword">csrr</span>    t1, mcause
+    <span class="org-keyword">la</span>      t2, supervisor
+    <span class="org-keyword">csrw</span>    mepc, t2
+    <span class="org-keyword">mret</span>
+
+<span class="org-function-name">supervisor</span>:
+    <span class="org-keyword">la</span>      t0, user
+    <span class="org-keyword">csrw</span>    sepc, t0
+    <span class="org-keyword">la</span>      t1, s_trap
+    <span class="org-keyword">csrw</span>    stvec, t1
+    <span class="org-keyword">sret</span>
+
+<span class="org-function-name">s_trap</span>:
+    <span class="org-keyword">csrr</span>    t0, sepc
+    <span class="org-keyword">csrr</span>    t1, scause
+    <span class="org-keyword">ecall</span>
+
+<span class="org-function-name">user</span>:
+    <span class="org-keyword">csrr</span>    t0, instret
+    <span class="org-keyword">ecall</span>
+
+</pre>
+</div>
+</div>
 </div>
 </div>
 </div>
@@ -2066,7 +2194,7 @@ xxx.d 与 xxx.w 对应, 例如 amoadd.d
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-02-08 Tue 15:30<br />
-Last updated: 2022-02-14 Mon 17:47</p>
+Last updated: 2022-02-15 Tue 20:00</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
