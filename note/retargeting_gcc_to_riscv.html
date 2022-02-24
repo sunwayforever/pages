@@ -1,0 +1,875 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>Retargeting GCC To RISC-V</title>
+
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Retargeting GCC To RISC-V</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org000003e">1. Retargeting GCC To RISC-V</a>
+<ul>
+<li><a href="#org0000000">1.1. Overview</a></li>
+<li><a href="#org0000005">1.2. 测试环境</a></li>
+<li><a href="#org0000020">1.3. binutils</a>
+<ul>
+<li><a href="#org0000008">1.3.1. objdump</a></li>
+<li><a href="#org000001d">1.3.2. as</a></li>
+</ul>
+</li>
+<li><a href="#org000002f">1.4. newlib</a>
+<ul>
+<li><a href="#org0000023">1.4.1. syscall</a></li>
+<li><a href="#org0000026">1.4.2. setjmp/longjmp</a></li>
+<li><a href="#org0000029">1.4.3. 针对 riscv 的优化版本</a></li>
+<li><a href="#org000002c">1.4.4. 需要直接操作 fcsr 的函数</a></li>
+</ul>
+</li>
+<li><a href="#org000003b">1.5. gcc</a>
+<ul>
+<li><a href="#org0000032">1.5.1. gimple</a></li>
+<li><a href="#org0000035">1.5.2. rtl</a></li>
+<li><a href="#org0000038">1.5.3. machine description</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000003e" class="outline-2">
+<h2 id="org000003e"><span class="section-number-2">1</span> Retargeting GCC To RISC-V</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="https://github.com/riscv-collab/riscv-gnu-toolchain">https://github.com/riscv-collab/riscv-gnu-toolchain</a>
+</p>
+
+<p>
+<a href="https://www.cse.iitb.ac.in/~uday/courses/cs715-09/">https://www.cse.iitb.ac.in/~uday/courses/cs715-09/</a>
+</p>
+</div>
+
+<div id="outline-container-org0000000" class="outline-3">
+<h3 id="org0000000"><span class="section-number-3">1.1</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+retargeting 是指让 gcc 在代码生成时支持一种新的后端, 具体的改动涉及到:
+</p>
+
+<ol class="org-ol">
+<li>gcc, 主要的工作是涉及到 gcc 的 rtl 部分, 包括如何分配寄存器和生成平台相关的汇编</li>
+
+<li>binutils, 主要包括 objdump, as 等, 主要工作是如何把平台相关的汇编翻译成平台相关的机器指令</li>
+
+<li>libc, libc 中并非全都是 c 代码, 有少量涉及到 syscall, crt 等的代码是使用平台相关的汇编写的</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000005" class="outline-3">
+<h3 id="org0000005"><span class="section-number-3">1.2</span> 测试环境</h3>
+<div class="outline-text-3" id="text-1-2">
+<pre class="example" id="org0000003">
+git clone https://github.com/sunwayforever/riscv-gnu-toolchain.git -b initial
+</pre>
+
+<p>
+configure &amp; make 后的目录结构为:
+</p>
+
+<pre class="example" id="org0000004">
+# riscv 针对 binutils 添加的文件
+binutils
+# 编译时使用的 build 目录,
+# 在 build-binutils-newlib 单独 make install 可以单独编译 binutils
+build-binutils-newlib
+# 在 build-gcc-newlib 单独 make install 可以单独编译 gcc
+build-gcc-newlib
+# riscv 针对 gcc 添加的文件
+gcc
+linux-headers
+# riscv 针对 newlib 添加的文件
+newlib
+# riscv 除了添加文件以外需要的 patch, 主要是修改 makefile 和配置文件
+# 以编译新加入的文件
+patches
+scripts
+# make 时会先下载 gcc-4.9.1 以及 binutils, newlib 的相应版本到 src
+# 并解压为 src/original-{gcc, binutils, newlib}, 然后
+# 把 original-binutils 和 ../binutils 复制到 src/binutils
+# 把 original-gcc, original-newlib 和 ../gcc, ../newlib 复制到 src/newlib-gcc
+# 最后 apply patches 中的 patch, 所以最终编译时源码都在 src/{newlib-gcc, binutils} 中
+src
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000020" class="outline-3">
+<h3 id="org0000020"><span class="section-number-3">1.3</span> binutils</h3>
+<div class="outline-text-3" id="text-1-3">
+</div>
+<div id="outline-container-org0000008" class="outline-4">
+<h4 id="org0000008"><span class="section-number-4">1.3.1</span> objdump</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<p>
+objdump 的主要工作是把指令转换为汇编, 例如:
+</p>
+</div>
+
+<div id="outline-container-org000000b" class="outline-5">
+<h5 id="org000000b"><span class="section-number-5">1.3.1.1</span> print_insn_riscv</h5>
+<div class="outline-text-5" id="text-1-3-1-1">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">int</span> <span class="org-function-name">print_insn_riscv</span>(<span class="org-type">bfd_vma</span> <span class="org-variable-name">memaddr</span>, <span class="org-keyword">struct</span> <span class="org-type">disassemble_info</span> *<span class="org-variable-name">info</span>) {
+    <span class="org-type">uint16_t</span> <span class="org-variable-name">i2</span>;
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">insn_t &#21363; uint64_t, &#26159;&#25351; riscv &#25351;&#20196;&#26368;&#22823;&#38271;&#24230;&#20026; 64bit</span><span class="org-comment-delimiter"> */</span>    
+    <span class="org-type">insn_t</span> <span class="org-variable-name">insn</span> = 0;
+    <span class="org-type">bfd_vma</span> <span class="org-variable-name">n</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">status</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">disassemble &#26102;&#20808;&#19968;&#27425;&#24615;&#35835;&#20837; 2 bytes, &#28982;&#21518;&#26681;&#25454; riscv_insn_length &#20915;&#23450;&#26159;&#21542;&#36824;</span>
+<span class="org-comment">     * &#38656;&#35201;&#35835;&#20837;&#26356;&#22810;&#30340;&#25968;&#25454;, riscv &#25351;&#20196;&#38271;&#24230;&#26159; 2~8 bytes, &#20294;&#36890;&#24120;&#26159; 4 bytes.</span>
+<span class="org-comment">     *</span>
+<span class="org-comment">     * &#22240;&#20026; riscv &#25351;&#20196;&#26159; little-endian (&#20302;&#20301;&#20445;&#23384;&#22312;&#20302;&#22320;&#22336;), &#25152;&#20197;</span>
+<span class="org-comment">     * riscv_insn_length &#23454;&#38469;&#26159;&#26681;&#25454;&#25351;&#20196;&#20302; 7 &#20301; opcode &#26469;&#21028;&#26029;&#23427;&#26159;&#21542;&#26159; 16 &#20301;</span>
+<span class="org-comment">     * compact &#25351;&#20196;, 32 &#20301;&#25351;&#20196;&#25110;&#32773; 48/64 &#20301;&#25193;&#23637;&#25351;&#20196;</span>
+<span class="org-comment">     * </span>
+<span class="org-comment">     *</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">for</span> (n = 0; n &lt; <span class="org-keyword">sizeof</span>(insn) &amp;&amp; n &lt; riscv_insn_length(insn); n += 2) {
+        status =
+            (*info-&gt;read_memory_func)(memaddr + n, (<span class="org-type">bfd_byte</span> *)&amp;i2, 2, info);
+        <span class="org-keyword">if</span> (status != 0) {
+            <span class="org-keyword">if</span> (n &gt; 0) <span class="org-comment-delimiter">/* </span><span class="org-comment">Don't fail just because we fell off the end.</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-keyword">break</span>;
+            (*info-&gt;memory_error_func)(status, memaddr, info);
+            <span class="org-keyword">return</span> status;
+        }
+
+        i2 = bfd_getl16(&amp;i2);
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">little endian</span><span class="org-comment-delimiter"> */</span>
+        insn |= (<span class="org-type">insn_t</span>)i2 &lt;&lt; (8 * n);
+    }
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#21442;&#32771; mips, &#20294;&#38024;&#23545; riscv &#20462;&#25913;&#30340;&#29256;&#26412;, &#22240;&#20026; riscv &#21644; mips &#24456;&#30456;&#20284;</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">return</span> print_insn_mips(memaddr, insn, info);
+}
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000000e" class="outline-5">
+<h5 id="org000000e"><span class="section-number-5">1.3.1.2</span> print_insn_mips</h5>
+<div class="outline-text-5" id="text-1-3-1-2">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-comment-delimiter">/* </span><span class="org-comment">riscv_builtin_opcodes</span><span class="org-comment-delimiter"> */</span>
+<span class="org-comment-delimiter">/* </span>
+<span class="org-comment"> *</span>
+<span class="org-comment"> * &#31532;&#19968;&#20010;&#20363;&#23376;:</span>
+<span class="org-comment"> *  {"addi", "I", "d,s,j", MATCH_ADDI, MASK_ADDI, match_opcode, WR_xd | RD_xs1},</span>
+<span class="org-comment"> *</span>
+<span class="org-comment"> *  "I" &#34920;&#31034; I &#25351;&#20196;</span>
+<span class="org-comment"> *</span>
+<span class="org-comment"> *  "d,s,j" &#34920;&#31034;&#23545;&#24212;&#27719;&#32534;&#30340;&#27169;&#26495;&#26159; addi rd, rs1, imm &#30340;&#24418;&#24335;</span>
+<span class="org-comment"> *</span>
+<span class="org-comment"> *  MATCH_ADDI &#20026; 0x13, &#21363; b0010011, &#20195;&#34920; addi &#25351;&#20196;&#30340;&#20302; 7 &#20301; opcode &#30340;&#20540;</span>
+<span class="org-comment"> *</span>
+<span class="org-comment"> *  MASK_ADDI &#20026; 0x707f, &#21363; b 111 00000 1111111, &#26159;&#25351;&#29992;&#36825;&#20010; mask &#21435;&#25481;&#25351;&#20196;&#20013;&#21464;&#21270;</span>
+<span class="org-comment"> *  &#30340;&#37096;&#20998;: rd, rs1, imm</span>
+<span class="org-comment"> *</span>
+<span class="org-comment"> *  match_opcode &#26159;&#19968;&#20010;&#20989;&#25968;, &#30446;&#22320;&#26159;&#21028;&#26029;&#19968;&#26465;&#26426;&#22120;&#25351;&#20196;&#19982;&#36825;&#20010;&#27169;&#26495;&#26159;&#21542;&#21305;&#37197;, &#23427;&#23454;&#29616;&#26159;</span>
+<span class="org-comment"> *  return (insn &amp; op-&gt;mask) == op-&gt;match, &#25152;&#20197;&#36825;&#37324;&#23450;&#20041;&#30340;&#27169;&#26495;&#30340;&#20316;&#29992;&#23601;&#26159;&#26681;&#25454; mask</span>
+<span class="org-comment"> *  &#21462;&#20986; insn &#20013;&#30340;&#29305;&#23450;&#25968;&#25454;, &#19982; match &#21305;&#37197;</span>
+<span class="org-comment"> *</span>
+<span class="org-comment"> * &#31532;&#20108;&#20010;&#20363;&#23376;:</span>
+<span class="org-comment"> *  {"li", "I", "d,j", MATCH_ADDI, MASK_ADDI | MASK_RS1, match_opcode, INSN_ALIAS | WR_xd}</span>
+<span class="org-comment"> *</span>
+<span class="org-comment"> *  INSN_ALIAS &#34920;&#31034; li &#26159;&#19968;&#20010; alias. &#23454;&#38469;&#19978;&#36825;&#20010;&#27169;&#26495;&#20250;&#21305;&#37197;&#21040; addi rd, zero, imm,</span>
+<span class="org-comment"> *  &#25152;&#20197; objdump &#26102;&#38024;&#23545;&#36825;&#20010;&#26426;&#22120;&#25351;&#20196;&#20250;&#36755;&#20986; li rd, imm &#32780;&#19981;&#26159; addi rd, zero, imm,</span>
+<span class="org-comment"> *  &#22240;&#20026; li &#25351;&#20196;&#22312;&#21015;&#34920;&#20013;&#27604; addi &#26356;&#38752;&#21069;. &#36890;&#36807; objdump -Mno-aliases &#21487;&#20197;&#24573;&#30053;&#25481;&#25152;&#26377;</span>
+<span class="org-comment"> *  &#24102; INSN_ALIAS &#26631;&#35760;&#30340;&#27169;&#26495;</span>
+<span class="org-comment"> *</span>
+<span class="org-comment"> * &#31532;&#19977;&#20010;&#20363;&#23376;:</span>
+<span class="org-comment"> *   {"li", "I", "d,I", 0, (int)M_LI, match_never, INSN_MACRO},</span>
+<span class="org-comment"> *   </span>
+<span class="org-comment"> * &#36825;&#37324;&#23545;&#24212;&#30340; li &#26159;&#29992;&#26469;&#21152;&#36733; 32 &#20301;&#31435;&#21363;&#25968;&#30340;&#20266;&#25351;&#20196;, &#36890;&#36807; INSN_MACRO &#26631;&#35782;. &#30001;&#20110;&#23427;&#20250;</span>
+<span class="org-comment"> * &#20135;&#29983;&#20004;&#26465;&#25351;&#20196; (lui, addi), &#25152;&#20197;&#26080;&#27861;&#22312; disassemble &#26102;&#26681;&#25454;&#19968;&#26465;&#26426;&#22120;&#25351;&#20196;&#21305;&#37197;&#21040;&#36825;&#20010;</span>
+<span class="org-comment"> * &#27169;&#26495;, &#25152;&#20197;&#29992; match_never &#36339;&#36807;&#23427;. &#34429;&#28982;&#23545; disassemble &#27809;&#29992;, &#20294; assember &#20250;&#20351;&#29992;</span>
+<span class="org-comment"> * &#23427;. &#25152;&#20197; objdump &#26080;&#27861;&#36824;&#21407;&#26576;&#20123;&#20266;&#25351;&#20196;</span>
+<span class="org-comment"> *</span>
+<span class="org-comment"> *</span><span class="org-comment-delimiter"> */</span>
+<span class="org-keyword">const</span> <span class="org-keyword">struct</span> <span class="org-type">riscv_opcode</span> <span class="org-variable-name">riscv_builtin_opcodes</span>[] = {
+    {<span class="org-string">"unimp"</span>, <span class="org-string">"I"</span>, <span class="org-string">""</span>, 0, 0xffff, match_opcode, 0},
+    {<span class="org-string">"nop"</span>, <span class="org-string">"I"</span>, <span class="org-string">""</span>, MATCH_ADDI, MASK_ADDI | MASK_RD | MASK_RS1 | MASK_IMM,
+     match_opcode, INSN_ALIAS},
+    {<span class="org-string">"li"</span>, <span class="org-string">"I"</span>, <span class="org-string">"d,j"</span>, MATCH_ADDI, MASK_ADDI | MASK_RS1, match_opcode,
+     INSN_ALIAS | WR_xd}, <span class="org-comment-delimiter">/* </span><span class="org-comment">addi</span><span class="org-comment-delimiter"> */</span>
+    {<span class="org-string">"li"</span>, <span class="org-string">"I"</span>, <span class="org-string">"d,I"</span>, 0, (<span class="org-type">int</span>)M_LI, match_never, INSN_MACRO},
+    {<span class="org-string">"mv"</span>, <span class="org-string">"I"</span>, <span class="org-string">"d,s"</span>, MATCH_ADDI, MASK_ADDI | MASK_IMM, match_opcode,
+     INSN_ALIAS | WR_xd | RD_xs1},
+    {<span class="org-string">"move"</span>, <span class="org-string">"I"</span>, <span class="org-string">"d,s"</span>, MATCH_ADDI, MASK_ADDI | MASK_IMM, match_opcode,
+     INSN_ALIAS | WR_xd | RD_xs1},
+    {<span class="org-string">"b"</span>, <span class="org-string">"I"</span>, <span class="org-string">"p"</span>, MATCH_BEQ, MASK_BEQ | MASK_RS1 | MASK_RS2, match_opcode,
+     0}, <span class="org-comment-delimiter">/* </span><span class="org-comment">beq 0,0</span><span class="org-comment-delimiter"> */</span>
+    {<span class="org-string">"andi"</span>, <span class="org-string">"I"</span>, <span class="org-string">"d,s,j"</span>, MATCH_ANDI, MASK_ANDI, match_opcode, WR_xd | RD_xs1},
+    {<span class="org-string">"and"</span>, <span class="org-string">"I"</span>, <span class="org-string">"d,s,t"</span>, MATCH_AND, MASK_AND, match_opcode,
+     WR_xd | RD_xs1 | RD_xs2},
+    {<span class="org-string">"and"</span>, <span class="org-string">"I"</span>, <span class="org-string">"d,s,j"</span>, MATCH_ANDI, MASK_ANDI, match_opcode,
+     INSN_ALIAS | WR_xd | RD_xs1},
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    {<span class="org-string">"addi"</span>, <span class="org-string">"I"</span>, <span class="org-string">"d,s,j"</span>, MATCH_ADDI, MASK_ADDI, match_opcode, WR_xd | RD_xs1},
+    {<span class="org-string">"add"</span>, <span class="org-string">"I"</span>, <span class="org-string">"d,s,t"</span>, MATCH_ADD, MASK_ADD, match_opcode,
+     WR_xd | RD_xs1 | RD_xs2},
+    {<span class="org-string">"add"</span>, <span class="org-string">"I"</span>, <span class="org-string">"d,s,t,0"</span>, MATCH_ADD, MASK_ADD, match_opcode,
+     WR_xd | RD_xs1 | RD_xs2},
+    {<span class="org-string">"add"</span>, <span class="org-string">"I"</span>, <span class="org-string">"d,s,j"</span>, MATCH_ADDI, MASK_ADDI, match_opcode,
+     INSN_ALIAS | WR_xd | RD_xs1},
+};
+
+<span class="org-keyword">static</span> <span class="org-type">int</span> <span class="org-function-name">print_insn_mips</span>(
+    <span class="org-type">bfd_vma</span> <span class="org-variable-name">memaddr</span>, <span class="org-type">insn_t</span> <span class="org-variable-name">word</span>, <span class="org-type">disassemble_info</span> *<span class="org-variable-name">info</span>) {
+    <span class="org-keyword">const</span> <span class="org-keyword">struct</span> <span class="org-type">riscv_opcode</span> *<span class="org-variable-name">op</span>;
+    <span class="org-keyword">static</span> <span class="org-type">bfd_boolean</span> <span class="org-variable-name">init</span> = 0;
+    <span class="org-keyword">static</span> <span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">extension</span> = <span class="org-constant">NULL</span>;
+    <span class="org-keyword">static</span> <span class="org-keyword">const</span> <span class="org-keyword">struct</span> <span class="org-type">riscv_opcode</span> *<span class="org-variable-name">mips_hash</span>[OP_MASK_OP + 1];
+    <span class="org-keyword">struct</span> <span class="org-type">riscv_private_data</span> *<span class="org-variable-name">pd</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">insnlen</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#36825;&#37324; mips_hash &#24182;&#19981;&#26159;&#19968;&#20010; hash table, &#23427;&#23454;&#38469;&#30456;&#24403;&#20110;&#19968;&#20010;&#36339;&#36716;&#34920;:</span>
+<span class="org-comment">     *</span>
+<span class="org-comment">     * riscv_opcodes &#19968;&#20849;&#26377; NUMOPCODES &#26465;&#27169;&#26495;, &#21305;&#37197; insn &#26102;&#38656;&#35201;&#20174;&#22836;&#20381;&#27425;&#21435;&#26597;&#30475;</span>
+<span class="org-comment">     * insn &#26159;&#21542;&#19982;&#24403;&#21069;&#27169;&#26495;&#21305;&#37197;, &#20026;&#20102;&#36991;&#20813;&#20174;&#22836;&#26597;&#25214;, &#25226;&#25152;&#26377; riscv_opcodes &#25353; &#20302; 7</span>
+<span class="org-comment">     * &#20301; opcode &#32479;&#35745;&#27599;&#19968;&#27425;&#20986;&#29616;&#30340;&#20301;&#32622;, &#27599;&#27425;&#26597;&#25214;&#26159;&#20808;&#26681;&#25454; opcode &#36339;&#21040;&#35813;&#20301;&#32622;&#21518;&#20877;&#32447;</span>
+<span class="org-comment">     * &#24615;&#26597;&#25214;</span>
+<span class="org-comment">     * </span>
+<span class="org-comment">     *</span>
+<span class="org-comment">     *</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>init) {
+        <span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">i</span>;
+        <span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">e_flags</span> = elf_elfheader(info-&gt;section-&gt;owner)-&gt;e_flags;
+        extension = riscv_elf_flag_to_name(EF_GET_RISCV_EXT(e_flags));
+
+        <span class="org-keyword">for</span> (i = 0; i &lt;= OP_MASK_OP; i++)
+            <span class="org-keyword">for</span> (op = riscv_opcodes; op &lt; &amp;riscv_opcodes[NUMOPCODES]; op++)
+                <span class="org-keyword">if</span> (i == ((op-&gt;match &gt;&gt; OP_SH_OP) &amp; OP_MASK_OP)) {
+                    mips_hash[i] = op;
+                    <span class="org-keyword">break</span>;
+                }
+
+        init = 1;
+    }
+
+    insnlen = riscv_insn_length(word);
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+
+    op = mips_hash[(word &gt;&gt; OP_SH_OP) &amp; OP_MASK_OP];
+    <span class="org-keyword">if</span> (op != <span class="org-constant">NULL</span>) {
+        <span class="org-keyword">for</span> (; op &lt; &amp;riscv_opcodes[NUMOPCODES]; op++) {
+            <span class="org-keyword">if</span> ((op-&gt;match_func)(op, word) &amp;&amp;
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">&#22788;&#29702; -Mno-aliases &#36873;&#39033;</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-negation-char">!</span>(no_aliases &amp;&amp; (op-&gt;pinfo &amp; INSN_ALIAS)) &amp;&amp;
+                <span class="org-negation-char">!</span>(op-&gt;subset[0] == <span class="org-string">'X'</span> &amp;&amp; strcmp(op-&gt;subset, extension))) {
+                (*info-&gt;fprintf_func)(info-&gt;stream, <span class="org-string">"%s"</span>, op-&gt;name);
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">print_insn_args &#20250;&#25171;&#21360;&#20986;&#21518;&#32493;&#30340;&#21442;&#25968;, &#26681;&#25454;&#27169;&#26495;&#20013;&#30340; "d,s" &#24418;&#24335;&#30340;</span>
+<span class="org-comment">                 * fmt string</span><span class="org-comment-delimiter"> */</span>
+                print_insn_args(op-&gt;args, word, memaddr, info);
+                <span class="org-keyword">if</span> (pd-&gt;print_addr != (<span class="org-type">bfd_vma</span>)-1) {
+                    info-&gt;target = pd-&gt;print_addr;
+                    (*info-&gt;fprintf_func)(info-&gt;stream, <span class="org-string">" # "</span>);
+                    (*info-&gt;print_address_func)(info-&gt;target, info);
+                    pd-&gt;print_addr = -1;
+                }
+                <span class="org-keyword">return</span> insnlen;
+            }
+        }
+    }
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">Handle undefined instructions.</span><span class="org-comment-delimiter">  */</span>
+    info-&gt;insn_type = dis_noninsn;
+    (*info-&gt;fprintf_func)(info-&gt;stream, <span class="org-string">"0x%llx"</span>, (<span class="org-type">unsigned</span> <span class="org-type">long</span> <span class="org-type">long</span>)word);
+    <span class="org-keyword">return</span> insnlen;
+}
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000011" class="outline-5">
+<h5 id="org0000011"><span class="section-number-5">1.3.1.3</span> print_insn_args</h5>
+<div class="outline-text-5" id="text-1-3-1-3">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">print_insn_args</span>(
+    <span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">d</span>, <span class="org-type">insn_t</span> <span class="org-variable-name">l</span>, <span class="org-type">bfd_vma</span> <span class="org-variable-name">pc</span>, <span class="org-type">disassemble_info</span> *<span class="org-variable-name">info</span>) {
+    <span class="org-keyword">struct</span> <span class="org-type">riscv_private_data</span> *<span class="org-variable-name">pd</span> = info-&gt;private_data;
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#22312;&#20351;&#29992; rs1 &#30340;&#25351;&#20196;&#20013;, rs1 &#30340;&#20301;&#32622;&#21644;&#38271;&#24230;&#37117;&#26159;&#30830;&#23450;&#30340;:</span>
+<span class="org-comment">     * </span>
+<span class="org-comment">     * OP_SH_RS1 &#20026; 15, OP_MASK_RS1 &#20026; 0x1f (b11111), &#34920;&#31034; rs1 &#22312;&#20302; 15 &#20301;&#24320;&#22987;&#30340;&#36830;</span>
+<span class="org-comment">     * &#32493; 5 bit. &#32780; rd &#22312;&#20302; 7 &#20301;&#24320;&#22987;&#30340;&#36830;&#32493; 5 bit</span>
+<span class="org-comment">     * </span>
+<span class="org-comment">     *</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">int</span> <span class="org-variable-name">rs1</span> = (l &gt;&gt; OP_SH_RS1) &amp; OP_MASK_RS1;
+    <span class="org-type">int</span> <span class="org-variable-name">rd</span> = (l &gt;&gt; OP_SH_RD) &amp; OP_MASK_RD;
+
+    <span class="org-keyword">if</span> (*d != <span class="org-string">'\0'</span>) (*info-&gt;fprintf_func)(info-&gt;stream, <span class="org-string">"\t"</span>);
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#35299;&#26512;&#27169;&#26495;&#20013;&#30340; args fmt, &#20363;&#22914; addi &#30340; "d,s,j"</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">for</span> (; *d != <span class="org-string">'\0'</span>; d++) {
+        <span class="org-keyword">switch</span> (*d) {
+            <span class="org-keyword">case</span> <span class="org-string">','</span>:
+            <span class="org-keyword">case</span> <span class="org-string">'('</span>:
+            <span class="org-keyword">case</span> <span class="org-string">')'</span>:
+            <span class="org-keyword">case</span> <span class="org-string">'['</span>:
+            <span class="org-keyword">case</span> <span class="org-string">']'</span>:
+                (*info-&gt;fprintf_func)(info-&gt;stream, <span class="org-string">"%c"</span>, *d);
+                <span class="org-keyword">break</span>;
+
+            <span class="org-keyword">case</span> <span class="org-string">'b'</span>:
+            <span class="org-keyword">case</span> <span class="org-string">'s'</span>:
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">s &#20195;&#34920; rs1</span><span class="org-comment-delimiter"> */</span>
+                (*info-&gt;fprintf_func)(info-&gt;stream, <span class="org-string">"%s"</span>, mips_gpr_names[rs1]);
+                <span class="org-keyword">break</span>;
+
+            <span class="org-keyword">case</span> <span class="org-string">'t'</span>:
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">t &#20195;&#34920; rs2</span><span class="org-comment-delimiter"> */</span>
+                (*info-&gt;fprintf_func)(
+                    info-&gt;stream, <span class="org-string">"%s"</span>,
+                    mips_gpr_names[(l &gt;&gt; OP_SH_RS2) &amp; OP_MASK_RS2]);
+                <span class="org-keyword">break</span>;
+
+            <span class="org-keyword">case</span> <span class="org-string">'j'</span>:
+                <span class="org-keyword">if</span> ((l &amp; MASK_ADDI) == MATCH_ADDI)
+                    maybe_print_address(pd, rs1, EXTRACT_ITYPE_IMM(l));
+                <span class="org-comment-delimiter">/*</span>
+<span class="org-comment">                 * j &#20195;&#34920;&#31435;&#21363;&#25968;, &#20294;&#31435;&#21363;&#25968;&#22312; rv32i &#38024;&#23545;&#19981;&#21516;&#25351;&#20196;&#26377;&#19981;&#21516;&#30340;&#32534;&#30721;&#26041;&#24335;,</span>
+<span class="org-comment">                 * &#25152;&#20197;&#36890;&#36807; EXTRACT_{I,S,SB,U,UJ}TYPE_IMM(l) &#20174; insn &#20013;&#33719;&#24471;&#31435;&#21363;</span>
+<span class="org-comment">                 * &#25968;</span><span class="org-comment-delimiter"> */</span>
+                (*info-&gt;fprintf_func)(
+                    info-&gt;stream, <span class="org-string">"%d"</span>, (<span class="org-type">int</span>)EXTRACT_ITYPE_IMM(l));
+                <span class="org-keyword">break</span>;
+
+            <span class="org-keyword">case</span> <span class="org-string">'d'</span>:
+                <span class="org-keyword">if</span> ((l &amp; MASK_AUIPC) == MATCH_AUIPC)
+                    pd-&gt;hi_addr[rd] =
+                        pc + (EXTRACT_UTYPE_IMM(l) &lt;&lt; RISCV_IMM_BITS);
+                <span class="org-keyword">else</span> <span class="org-keyword">if</span> ((l &amp; MASK_LUI) == MATCH_LUI)
+                    pd-&gt;hi_addr[rd] = EXTRACT_UTYPE_IMM(l) &lt;&lt; RISCV_IMM_BITS;
+                <span class="org-comment-delimiter">/*</span>
+<span class="org-comment">                 * &#20551;&#35774;&#21069;&#38754;&#20174; insn &#20013;&#35835;&#21040; rd &#20540;&#20026; 2, &#21017; mips_gpr_names[rd] &#20026; x2</span>
+<span class="org-comment">                 * &#25110; s0, &#36890;&#36807; objdump -M gpr-names=numeric &#25110; -M gpr-names=32</span>
+<span class="org-comment">                 * &#26469;&#20999;&#25442;&#20004;&#31181;&#21629;&#20196;&#26041;&#24335;</span><span class="org-comment-delimiter"> */</span>
+                (*info-&gt;fprintf_func)(info-&gt;stream, <span class="org-string">"%s"</span>, mips_gpr_names[rd]);
+                <span class="org-keyword">break</span>;
+
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+
+            <span class="org-keyword">default</span>:
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">xgettext:c-format</span><span class="org-comment-delimiter"> */</span>
+                (*info-&gt;fprintf_func)(
+                    info-&gt;stream,
+                    _(<span class="org-string">"# internal error, undefined modifier (%c)"</span>), *d);
+                <span class="org-keyword">return</span>;
+        }
+    }
+}
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000001d" class="outline-4">
+<h4 id="org000001d"><span class="section-number-4">1.3.2</span> as</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<p>
+as 的工作是把汇编转换为机器指令, 同时在 gcc 4.9.1 中, 后端也是生成汇编后再由 as
+转换为机器指令, 而不是直接由后端直接生成机器指令.
+</p>
+</div>
+
+<div id="outline-container-org0000014" class="outline-5">
+<h5 id="org0000014"><span class="section-number-5">1.3.2.1</span> md_assemble</h5>
+<div class="outline-text-5" id="text-1-3-2-1">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">void</span> <span class="org-function-name">md_assemble</span>(<span class="org-type">char</span> *<span class="org-variable-name">str</span>) {
+    <span class="org-keyword">struct</span> <span class="org-type">mips_cl_insn</span> <span class="org-variable-name">insn</span>;
+
+    imm_expr.X_op = O_absent;
+    offset_expr.X_op = O_absent;
+    imm_reloc = BFD_RELOC_UNUSED;
+    offset_reloc = BFD_RELOC_UNUSED;
+
+    mips_ip(str, &amp;insn);
+
+    <span class="org-keyword">if</span> (insn.insn_mo-&gt;pinfo == INSN_MACRO)
+        macro(&amp;insn);
+    <span class="org-keyword">else</span> {
+        <span class="org-keyword">if</span> (imm_expr.X_op != O_absent)
+            append_insn(&amp;insn, &amp;imm_expr, imm_reloc);
+        <span class="org-keyword">else</span> <span class="org-keyword">if</span> (offset_expr.X_op != O_absent)
+            append_insn(&amp;insn, &amp;offset_expr, offset_reloc);
+        <span class="org-keyword">else</span>
+            append_insn(&amp;insn, <span class="org-constant">NULL</span>, BFD_RELOC_UNUSED);
+    }
+}
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000017" class="outline-5">
+<h5 id="org0000017"><span class="section-number-5">1.3.2.2</span> mips_ip</h5>
+<div class="outline-text-5" id="text-1-3-2-2">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">mips_ip</span>(<span class="org-type">char</span> *<span class="org-variable-name">str</span>, <span class="org-keyword">struct</span> <span class="org-type">mips_cl_insn</span> *<span class="org-variable-name">ip</span>) {
+    <span class="org-type">char</span> *<span class="org-variable-name">s</span>;
+    <span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">args</span>;
+    <span class="org-type">char</span> <span class="org-variable-name">c</span> = 0;
+    <span class="org-keyword">struct</span> <span class="org-type">riscv_opcode</span> *<span class="org-variable-name">insn</span>;
+    <span class="org-type">char</span> *<span class="org-variable-name">argsStart</span>;
+    <span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">regno</span>;
+    <span class="org-type">char</span> <span class="org-variable-name">save_c</span> = 0;
+    <span class="org-type">int</span> <span class="org-variable-name">argnum</span>;
+    <span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">rtype</span>;
+    <span class="org-keyword">const</span> <span class="org-keyword">struct</span> <span class="org-type">percent_op_match</span> *<span class="org-variable-name">p</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">op_hash &#26159;&#19968;&#20010;&#20197; name &#20026; key &#30340; hash table, &#29992;&#20110;&#24555;&#36895;&#30340;&#26681;&#25454;&#27719;&#32534;&#25351;&#20196;&#30340;&#21517;&#23383;</span>
+<span class="org-comment">     * (&#22914; addi) &#25214;&#21040;&#23545;&#24212;&#30340;&#27169;&#26495;. &#36825;&#37324;&#29992;&#30340;&#26159;&#21644; objdump &#30456;&#21516;&#30340;&#19968;&#22871;&#27169;&#26495;. &#20294;&#30001;&#20110;&#23384;&#22312;</span>
+<span class="org-comment">     * &#21517;&#23383;&#30456;&#21516;&#32780;&#21442;&#25968;&#19981;&#21516;&#30340;&#27169;&#26495;, &#25152;&#20197;&#36825;&#37324; op_hash &#20445;&#23384;&#30340;&#26159;&#21517;&#23383;&#23545;&#24212;&#30340;&#31532;&#19968;&#20010;&#27169;&#26495;,</span>
+<span class="org-comment">     * &#21518;&#32493;&#22312;&#26597;&#25214;&#26102;&#20250;&#20381;&#27425;&#22788;&#29702;&#21517;&#23383;&#21305;&#37197;&#30340;&#25152;&#26377;&#27169;&#26495;</span><span class="org-comment-delimiter">*/</span>
+    insn = (<span class="org-keyword">struct</span> <span class="org-type">riscv_opcode</span> *)hash_find(op_hash, str);
+
+    argsStart = s;
+    <span class="org-keyword">for</span> (;;) {
+        <span class="org-type">bfd_boolean</span> <span class="org-variable-name">ok</span> = TRUE;
+
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">create_insn &#20250;&#25226; insn &#30340; opcode (op-&gt;match) &#20808;&#22635;&#20805;&#21040; ip &#20013;, &#28982;&#21518;&#21518;&#32493;</span>
+<span class="org-comment">         * &#30340;&#20195;&#30721;&#35201;&#22635;&#20805; args</span><span class="org-comment-delimiter"> */</span>
+        create_insn(ip, insn);
+        argnum = 1;
+        <span class="org-keyword">for</span> (args = insn-&gt;args;; ++args) {
+            s += strspn(s, <span class="org-string">" \t"</span>);
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">args &#26159;&#27169;&#26495;&#21442;&#25968;, s &#26159;&#23454;&#38469;&#21442;&#25968;</span><span class="org-comment-delimiter"> */</span>
+            <span class="org-keyword">switch</span> (*args) {
+                <span class="org-keyword">case</span> <span class="org-string">'\0'</span>: <span class="org-comment-delimiter">/* </span><span class="org-comment">end of args</span><span class="org-comment-delimiter"> */</span>
+                    <span class="org-keyword">if</span> (*s == <span class="org-string">'\0'</span>) <span class="org-keyword">return</span>;
+                    <span class="org-keyword">break</span>;
+
+                <span class="org-keyword">case</span> <span class="org-string">','</span>:
+                    ++argnum;
+                    <span class="org-keyword">if</span> (*s++ == *args) <span class="org-keyword">continue</span>;
+                    s--;
+                    <span class="org-keyword">break</span>;
+
+                <span class="org-keyword">case</span> <span class="org-string">'('</span>:
+                <span class="org-keyword">case</span> <span class="org-string">')'</span>:
+                <span class="org-keyword">case</span> <span class="org-string">'['</span>:
+                <span class="org-keyword">case</span> <span class="org-string">']'</span>:
+                    <span class="org-keyword">if</span> (*s++ == *args) <span class="org-keyword">continue</span>;
+                    <span class="org-keyword">break</span>;
+
+                <span class="org-keyword">case</span> <span class="org-string">'d'</span>: <span class="org-comment-delimiter">/* </span><span class="org-comment">destination register</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-keyword">case</span> <span class="org-string">'s'</span>: <span class="org-comment-delimiter">/* </span><span class="org-comment">source register</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-keyword">case</span> <span class="org-string">'t'</span>: <span class="org-comment-delimiter">/* </span><span class="org-comment">target register</span><span class="org-comment-delimiter"> */</span>
+                    <span class="org-comment-delimiter">/* </span><span class="org-comment">s &#26159;&#27719;&#32534;&#20013;&#30340;&#23545;&#24212;&#20110;&#27169;&#26495;&#21442;&#25968;&#20301;&#32622;&#30340;&#23492;&#23384;&#22120;&#30340;&#21517;&#23383;, &#20363;&#22914; s0, x0</span>
+<span class="org-comment">                     * &#31561;, reg_lookup &#26159;&#25171;&#21040; s0 &#23545;&#24212;&#30340; regno: 2</span><span class="org-comment-delimiter"> */</span>
+                    ok = reg_lookup(&amp;s, RTYPE_NUM | RTYPE_GP, &amp;regno);
+                    <span class="org-keyword">if</span> (ok) {
+                        c = *args;
+                        <span class="org-keyword">if</span> (*s == <span class="org-string">' '</span>) ++s;
+
+                        <span class="org-comment-delimiter">/* </span><span class="org-comment">Now that we have assembled one operand, we use the</span>
+<span class="org-comment">                         * args string to figure out where it goes in the</span>
+<span class="org-comment">                         * instruction.</span><span class="org-comment-delimiter">  */</span>
+                        <span class="org-keyword">switch</span> (c) {
+                            <span class="org-keyword">case</span> <span class="org-string">'s'</span>:
+                                <span class="org-comment-delimiter">/* </span><span class="org-comment">INSERT_OPERAND &#20808;&#26681;&#25454; RS1 &#30340; shift &#21644; mask &#25226;</span>
+<span class="org-comment">                                 * regno &#20889;&#21040; ip &#30340;&#29305;&#23450;&#20301;&#32622;</span><span class="org-comment-delimiter"> */</span>
+                                INSERT_OPERAND(RS1, *ip, regno);
+                                <span class="org-keyword">break</span>;
+                            <span class="org-keyword">case</span> <span class="org-string">'d'</span>:
+                                INSERT_OPERAND(RD, *ip, regno);
+                                <span class="org-keyword">break</span>;
+                            <span class="org-keyword">case</span> <span class="org-string">'t'</span>:
+                                INSERT_OPERAND(RS2, *ip, regno);
+                                <span class="org-keyword">break</span>;
+                        }
+                        <span class="org-keyword">continue</span>;
+                    }
+                    <span class="org-keyword">break</span>;
+
+                <span class="org-keyword">case</span> <span class="org-string">'j'</span>: <span class="org-comment-delimiter">/* </span><span class="org-comment">sign-extended immediate</span><span class="org-comment-delimiter"> */</span>
+                    offset_reloc = BFD_RELOC_RISCV_LO12_I;
+                    p = percent_op_itype;
+                    <span class="org-keyword">goto</span> <span class="org-constant">alu_op</span>;
+
+                <span class="org-constant">alu_op</span>:
+                    <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>my_getSmallExpression(
+                            &amp;offset_expr, &amp;offset_reloc, s, p)) {
+                        normalize_constant_expr(&amp;offset_expr);
+                        <span class="org-keyword">if</span> (offset_expr.X_op != O_constant ||
+                            (*args == <span class="org-string">'0'</span> &amp;&amp; offset_expr.X_add_number != 0) ||
+                            offset_expr.X_add_number &gt;=
+                                (<span class="org-type">signed</span>)RISCV_IMM_REACH / 2 ||
+                            offset_expr.X_add_number &lt;
+                                -(<span class="org-type">signed</span>)RISCV_IMM_REACH / 2)
+                            <span class="org-keyword">break</span>;
+                    }
+                    <span class="org-comment-delimiter">/* </span><span class="org-comment">offset_expr.X_add_number &#20250;&#26159;&#27719;&#32534;&#20013;&#30340;&#31435;&#21363;&#25968;, offset_expr</span>
+<span class="org-comment">                     * &#26159;&#19968;&#20010;&#20840;&#23616;&#21464;&#37327;, &#21518;&#32493; md_assemble &#20013;&#30340; append_insn &#20250;&#25226;&#23427;</span>
+<span class="org-comment">                     * &#32534;&#30721;&#21040;&#25351;&#20196;&#20013;</span><span class="org-comment-delimiter">*/</span>
+                    s = expr_end;
+                    <span class="org-keyword">continue</span>;
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-keyword">default</span>:
+                    as_bad(_(<span class="org-string">"bad char = '%c'\n"</span>), *args);
+                    internalError();
+            }
+            <span class="org-keyword">break</span>;
+        }
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">&#24403;&#21069;&#27169;&#26495;&#30340;&#21442;&#25968;&#19982;&#25351;&#20196;&#19981;&#21305;&#37197;, &#21017;&#32487;&#32493;&#22788;&#29702;&#19979;&#19968;&#26465;&#21516;&#21517;&#30340;&#27169;&#26495;, &#25152;&#20197;&#22312;</span>
+<span class="org-comment">         * riscv_opcodes &#20013;&#30456;&#21516;&#21517;&#23383;&#30340;&#27169;&#26495;&#38656;&#35201;&#25918;&#22312;&#19968;&#36215;</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">if</span> (insn + 1 &lt; &amp;riscv_opcodes[NUMOPCODES] &amp;&amp;
+            <span class="org-negation-char">!</span>strcmp(insn-&gt;name, insn[1].name)) {
+            ++insn;
+            s = argsStart;
+            insn_error = _(<span class="org-string">"illegal operands"</span>);
+            <span class="org-keyword">continue</span>;
+        }
+        <span class="org-keyword">if</span> (save_c) *(--argsStart) = save_c;
+        insn_error = _(<span class="org-string">"illegal operands"</span>);
+        <span class="org-keyword">return</span>;
+    }
+}
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000001a" class="outline-5">
+<h5 id="org000001a"><span class="section-number-5">1.3.2.3</span> macro</h5>
+<div class="outline-text-5" id="text-1-3-2-3">
+<p>
+mips_ip 返回后, insn 相应的位已经被赋值, imm_expr, offset_expr 也被赋值, 如果
+insn 不是 macro, 则 imm_expr, offset_expr 会被直接编码到 insn 中, 但如果 insn 是一个 macro, 则 {imm,offset}_expr 肯定是无法直接编码的, 这时需要通过 macro 函数单独处理, 例如产生多条 insn.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">macro</span>(<span class="org-keyword">struct</span> <span class="org-type">mips_cl_insn</span> *<span class="org-variable-name">ip</span>) {
+    <span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">rd</span>, <span class="org-variable-name">rs1</span>, <span class="org-variable-name">rs2</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">mask</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">rd, rs1, rs2, imm_expr, offset_expr &#19981;&#20877;&#38656;&#35201;&#20174;&#27719;&#32534;&#20013;&#35299;&#26512;, &#22240;&#20026;&#21069;&#38754;&#24050;&#32463;&#35299;</span>
+<span class="org-comment">     * &#26512;&#23436;&#20102;</span><span class="org-comment-delimiter"> */</span>
+
+    rd = (ip-&gt;insn_opcode &gt;&gt; OP_SH_RD) &amp; OP_MASK_RD;
+    rs1 = (ip-&gt;insn_opcode &gt;&gt; OP_SH_RS1) &amp; OP_MASK_RS1;
+    rs2 = (ip-&gt;insn_opcode &gt;&gt; OP_SH_RS2) &amp; OP_MASK_RS2;
+    mask = ip-&gt;insn_mo-&gt;mask;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#20197; li &#20026;&#20363;:</span>
+<span class="org-comment">     * {"li",        "I",   "d,I",  0,    (int) M_LI,  match_never, INSN_MACRO</span>
+<span class="org-comment">     * },</span>
+<span class="org-comment">     *</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">switch</span> (mask) {
+        <span class="org-keyword">case</span> M_LI:
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">load_const &#20250;&#21464;&#25104;&#20004;&#26465;&#25351;&#20196;: lui &amp; addi</span><span class="org-comment-delimiter"> */</span>
+            load_const(rd, &amp;imm_expr);
+            <span class="org-keyword">break</span>;
+
+        <span class="org-keyword">case</span> M_LA:
+        <span class="org-keyword">case</span> M_LLA:
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">Load the address of a symbol into a register.</span><span class="org-comment-delimiter"> */</span>
+            <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>IS_SEXT_32BIT_NUM(offset_expr.X_add_number))
+                as_bad(_(<span class="org-string">"offset too large"</span>));
+
+            <span class="org-keyword">if</span> (offset_expr.X_op == O_constant)
+                load_const(rd, &amp;offset_expr);
+            <span class="org-keyword">else</span> <span class="org-keyword">if</span> (is_pic &amp;&amp; mask == M_LA) <span class="org-comment-delimiter">/* </span><span class="org-comment">Global PIC symbol</span><span class="org-comment-delimiter"> */</span>
+                pcrel_load(
+                    rd, rd, &amp;offset_expr, LOAD_ADDRESS_INSN,
+                    BFD_RELOC_RISCV_GOT_HI20, BFD_RELOC_RISCV_GOT_LO12);
+            <span class="org-keyword">else</span> <span class="org-comment-delimiter">/* </span><span class="org-comment">Local PIC symbol, or any non-PIC symbol</span><span class="org-comment-delimiter"> */</span>
+                pcrel_load(
+                    rd, rd, &amp;offset_expr, <span class="org-string">"addi"</span>, BFD_RELOC_RISCV_PCREL_HI20,
+                    BFD_RELOC_RISCV_PCREL_LO12_I);
+            <span class="org-keyword">break</span>;
+
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">case</span> M_JUMP:
+            rd = 0;
+            <span class="org-keyword">goto</span> <span class="org-constant">do_call</span>;
+        <span class="org-keyword">case</span> M_CALL:
+            rd = LINK_REG;
+        <span class="org-constant">do_call</span>:
+            rs1 = reg_lookup_assert(<span class="org-string">"t0"</span>, RTYPE_GP);
+            riscv_call(rd, rs1, &amp;offset_expr, offset_reloc);
+            <span class="org-keyword">break</span>;
+
+        <span class="org-keyword">default</span>:
+            as_bad(_(<span class="org-string">"Macro %s not implemented"</span>), ip-&gt;insn_mo-&gt;name);
+            <span class="org-keyword">break</span>;
+    }
+}
+
+<span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">load_const</span>(<span class="org-type">int</span> <span class="org-variable-name">reg</span>, <span class="org-type">expressionS</span> *<span class="org-variable-name">ep</span>) {
+    <span class="org-keyword">if</span> (rv64 &amp;&amp; <span class="org-negation-char">!</span>IS_SEXT_32BIT_NUM(ep-&gt;X_add_number)) {
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">64 bit</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    } <span class="org-keyword">else</span> {
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">32 bit</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-type">int</span> <span class="org-variable-name">hi_reg</span> = ZERO;
+
+        <span class="org-type">int32_t</span> <span class="org-variable-name">hi</span> = ep-&gt;X_add_number &amp; (RISCV_IMM_REACH - 1);
+        hi = hi &lt;&lt; (32 - RISCV_IMM_BITS) &gt;&gt; (32 - RISCV_IMM_BITS);
+        hi = (<span class="org-type">int32_t</span>)ep-&gt;X_add_number - hi;
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">&#36825;&#37324;&#20250;&#23545;&#24212;&#20004;&#26465;&#25351;&#20196;:</span>
+<span class="org-comment">         * lui rd, %hi(imm)</span>
+<span class="org-comment">         * addi rd, zero, %lo(imm)</span>
+<span class="org-comment">         *</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">if</span> (hi) {
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">macro_build &#21644; mips_ip &#31867;&#20284;</span><span class="org-comment-delimiter"> */</span>
+            macro_build(ep, <span class="org-string">"lui"</span>, <span class="org-string">"d,u"</span>, reg, BFD_RELOC_RISCV_HI20);
+            hi_reg = reg;
+        }
+
+        <span class="org-keyword">if</span> ((ep-&gt;X_add_number &amp; (RISCV_IMM_REACH - 1)) || hi_reg == ZERO)
+            macro_build(
+                ep, ADD32_INSN, <span class="org-string">"d,s,j"</span>, reg, hi_reg, BFD_RELOC_RISCV_LO12_I);
+    }
+}
+
+<span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">riscv_call</span>(
+    <span class="org-type">int</span> <span class="org-variable-name">destreg</span>, <span class="org-type">int</span> <span class="org-variable-name">tempreg</span>, <span class="org-type">expressionS</span> *<span class="org-variable-name">ep</span>, <span class="org-type">bfd_reloc_code_real_type</span> <span class="org-variable-name">reloc</span>) {
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#36825;&#37324;&#24863;&#35273;&#26377;&#38382;&#39064;:</span>
+<span class="org-comment">     * call &#24212;&#35813;&#29983;&#25104;&#20004;&#26465;&#25351;&#20196;:</span>
+<span class="org-comment">     * auipc t0, %pcrelhi(imm)</span>
+<span class="org-comment">     * jalr rd, (%pcrello (imm))t0</span>
+<span class="org-comment">     *</span><span class="org-comment-delimiter"> */</span>
+    macro_build(ep, <span class="org-string">"auipc"</span>, <span class="org-string">"d,u"</span>, tempreg, reloc);
+    macro_build(<span class="org-constant">NULL</span>, <span class="org-string">"jalr"</span>, <span class="org-string">"d,s"</span>, destreg, tempreg);
+}
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000002f" class="outline-3">
+<h3 id="org000002f"><span class="section-number-3">1.4</span> newlib</h3>
+<div class="outline-text-3" id="text-1-4">
+</div>
+<div id="outline-container-org0000023" class="outline-4">
+<h4 id="org0000023"><span class="section-number-4">1.4.1</span> syscall</h4>
+<div class="outline-text-4" id="text-1-4-1">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-keyword">inline</span> <span class="org-type">long</span>
+<span class="org-function-name">__internal_syscall</span>(<span class="org-type">long</span> <span class="org-variable-name">n</span>, <span class="org-type">long</span> <span class="org-variable-name">_a0</span>, <span class="org-type">long</span> <span class="org-variable-name">_a1</span>, <span class="org-type">long</span> <span class="org-variable-name">_a2</span>, <span class="org-type">long</span> <span class="org-variable-name">_a3</span>)
+{
+  <span class="org-keyword">register</span> <span class="org-type">long</span> <span class="org-function-name">v0</span> <span class="org-keyword">asm</span>(<span class="org-string">"v0"</span>) = n;
+  <span class="org-keyword">register</span> <span class="org-type">long</span> <span class="org-function-name">a0</span> <span class="org-keyword">asm</span>(<span class="org-string">"a0"</span>) = _a0;
+  <span class="org-keyword">register</span> <span class="org-type">long</span> <span class="org-function-name">a1</span> <span class="org-keyword">asm</span>(<span class="org-string">"a1"</span>) = _a1;
+  <span class="org-keyword">register</span> <span class="org-type">long</span> <span class="org-function-name">a2</span> <span class="org-keyword">asm</span>(<span class="org-string">"a2"</span>) = _a2;
+  <span class="org-keyword">register</span> <span class="org-type">long</span> <span class="org-function-name">a3</span> <span class="org-keyword">asm</span>(<span class="org-string">"a3"</span>) = _a3;
+
+  <span class="org-keyword">asm</span> <span class="org-keyword">volatile</span> (<span class="org-string">"scall\n"</span>
+        <span class="org-string">"bltz v0, __syscall_error"</span>
+        : <span class="org-string">"+r"</span>(v0) : <span class="org-string">"r"</span>(a0), <span class="org-string">"r"</span>(a1), <span class="org-string">"r"</span>(a2), <span class="org-string">"r"</span>(a3));
+
+  <span class="org-keyword">return</span> v0;
+}
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000026" class="outline-4">
+<h4 id="org0000026"><span class="section-number-4">1.4.2</span> setjmp/longjmp</h4>
+<div class="outline-text-4" id="text-1-4-2">
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-preprocessor"># define</span> <span class="org-variable-name">REG_S</span>    sw
+<span class="org-preprocessor"># define</span> <span class="org-variable-name">REG_L</span>     lw
+<span class="org-preprocessor"># define</span> <span class="org-variable-name">SZREG</span> 4
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">int setjmp (jmp_buf);  */</span>
+  <span class="org-keyword">.globl</span>  setjmp
+<span class="org-function-name">setjmp</span>:
+    <span class="org-keyword">REG_S</span> ra,  0*SZREG(a0)
+    <span class="org-keyword">REG_S</span> s0,  1*SZREG(a0)
+    <span class="org-keyword">REG_S</span> s1,  2*SZREG(a0)
+    <span class="org-keyword">REG_S</span> s2,  3*SZREG(a0)
+    <span class="org-keyword">REG_S</span> s3,  4*SZREG(a0)
+    <span class="org-keyword">REG_S</span> s4,  5*SZREG(a0)
+    <span class="org-keyword">REG_S</span> s5,  6*SZREG(a0)
+    <span class="org-keyword">REG_S</span> s6,  7*SZREG(a0)
+    <span class="org-keyword">REG_S</span> s7,  8*SZREG(a0)
+    <span class="org-keyword">REG_S</span> s8,  9*SZREG(a0)
+    <span class="org-keyword">REG_S</span> s9, 10*SZREG(a0)
+    <span class="org-keyword">REG_S</span> s10,11*SZREG(a0)
+    <span class="org-keyword">REG_S</span> s11,12*SZREG(a0)
+    <span class="org-keyword">REG_S</span> sp, 13*SZREG(a0)
+    <span class="org-keyword">REG_S</span> tp, 14*SZREG(a0)
+
+    <span class="org-keyword">li</span> v0, 0
+    <span class="org-keyword">ret</span>
+
+  <span class="org-keyword">.globl</span>  longjmp
+<span class="org-function-name">longjmp</span>:
+    <span class="org-keyword">REG_L</span> ra,  0*SZREG(a0)
+    <span class="org-keyword">REG_L</span> s0,  1*SZREG(a0)
+    <span class="org-keyword">REG_L</span> s1,  2*SZREG(a0)
+    <span class="org-keyword">REG_L</span> s2,  3*SZREG(a0)
+    <span class="org-keyword">REG_L</span> s3,  4*SZREG(a0)
+    <span class="org-keyword">REG_L</span> s4,  5*SZREG(a0)
+    <span class="org-keyword">REG_L</span> s5,  6*SZREG(a0)
+    <span class="org-keyword">REG_L</span> s6,  7*SZREG(a0)
+    <span class="org-keyword">REG_L</span> s7,  8*SZREG(a0)
+    <span class="org-keyword">REG_L</span> s8,  9*SZREG(a0)
+    <span class="org-keyword">REG_L</span> s9, 10*SZREG(a0)
+    <span class="org-keyword">REG_L</span> s10,11*SZREG(a0)
+    <span class="org-keyword">REG_L</span> s11,12*SZREG(a0)
+    <span class="org-keyword">REG_L</span> sp, 13*SZREG(a0)
+    <span class="org-keyword">REG_L</span> tp, 14*SZREG(a0)
+
+    <span class="org-keyword">sltiu</span> v0, a1, 1    # v0 = (a1 == 0)
+    <span class="org-keyword">add</span>   v0, v0, a1   # v0 = (a1 == 0) ? 1 : a1
+    <span class="org-keyword">ret</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000029" class="outline-4">
+<h4 id="org0000029"><span class="section-number-4">1.4.3</span> 针对 riscv 的优化版本</h4>
+<div class="outline-text-4" id="text-1-4-3">
+<ul class="org-ul">
+<li>memcpy</li>
+
+<li>memset</li>
+
+<li>strcpy</li>
+
+<li>strlen</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000002c" class="outline-4">
+<h4 id="org000002c"><span class="section-number-4">1.4.4</span> 需要直接操作 fcsr 的函数</h4>
+<div class="outline-text-4" id="text-1-4-4">
+<p>
+fcsr 是 floating control and status register
+</p>
+
+<ul class="org-ul">
+<li>fp{set,get}sticky</li>
+<li>fp{set,get}round</li>
+<li>fp{get,get}mask</li>
+</ul>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000003b" class="outline-3">
+<h3 id="org000003b"><span class="section-number-3">1.5</span> gcc</h3>
+<div class="outline-text-3" id="text-1-5">
+</div>
+<div id="outline-container-org0000032" class="outline-4">
+<h4 id="org0000032"><span class="section-number-4">1.5.1</span> gimple</h4>
+<div class="outline-text-4" id="text-1-5-1">
+<p>
+gimple 相当于 gcc HIR, 主要涉及到 basic block, SSA 等的构造和上层的优化
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000035" class="outline-4">
+<h4 id="org0000035"><span class="section-number-4">1.5.2</span> rtl</h4>
+<div class="outline-text-4" id="text-1-5-2">
+<p>
+rtl (Register Transfer Language) 相当于 gcc LIR, 主要涉及到寄存器分配, 汇编代码生成和底层优化
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000038" class="outline-4">
+<h4 id="org0000038"><span class="section-number-4">1.5.3</span> machine description</h4>
+<div class="outline-text-4" id="text-1-5-3">
+<p>
+rtl 一部分功能 (例如某些优化) 是设备无关的, 但有些功能是设备相关的, 需要以
+machine description (md 文件和相应的 {h,c} 文件) 为依据.
+</p>
+
+<p>
+这些设备相关的部分包括:
+</p>
+
+<ol class="org-ol">
+<li>md 类似于 assemble/disassemble 时的 riscv_opcodes 模板: 它用来表示 `什么样的 rtl 代码被翻译成什么样的汇编代码`.</li>
+
+<li>md 还需要告诉 rtl 关于 target 的寄存器的情况, rtl 需要据此完成寄存器的分配</li>
+
+<li>md 还定义了一些 peephole optimization</li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway (sunwayforever@gmail.com)<br />
+Date: 2022-02-24 Thu 11:58<br />
+Last updated: 2022-02-24 Thu 18:52</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
+<br />
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>
