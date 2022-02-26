@@ -48,20 +48,15 @@
 </ul>
 </li>
 <li><a href="#org0000007">1.2. pthread_tls</a></li>
-<li><a href="#org000000e">1.3. elf_tls</a></li>
-<li><a href="#org0000015">1.4. 直接使用 thread pointer</a>
+<li><a href="#org0000013">1.3. elf_tls</a>
 <ul>
-<li><a href="#org000000f">1.4.1. arm</a></li>
-<li><a href="#org0000012">1.4.2. riscv</a></li>
+<li><a href="#org000000f">1.3.1. arm</a></li>
+<li><a href="#org0000012">1.3.2. riscv</a></li>
 </ul>
 </li>
-<li><a href="#org0000014">1.5. errno</a></li>
-<li><a href="#org0000028">1.6. tls_relocation</a>
-<ul>
-<li><a href="#org0000026">1.6.1. emutls 的重定位</a></li>
-<li><a href="#org0000025">1.6.2. elf_tls 的重定位</a></li>
-</ul>
-</li>
+<li><a href="#org0000014">1.4. errno</a></li>
+<li><a href="#org0000024">1.5. emutls 的实现</a></li>
+<li><a href="#org0000026">1.6. elf_tls 的实现</a></li>
 </ul>
 </li>
 </ul>
@@ -81,21 +76,29 @@
 </p>
 
 <p>
-工具链会负责把 __thread 转换为三种不同的实现方式:
-</p>
-
-<ol class="org-ol">
-<li>emutls</li>
-
-<li><p>
-elf-tls
+__thread 关键要求编译器 setup tls
 </p>
 
 <p>
-elf-tls 依赖 thread pointer
+工具链会负责把 __thread 转换为两种不同的实现方式:
+</p>
+
+<ol class="org-ol">
+<li><p>
+emutls
+</p>
+
+<p>
+使用 pthread 实现
 </p></li>
 
-<li>直接使用 thread pointer</li>
+<li><p>
+elf_tls
+</p>
+
+<p>
+使用 thread pointer 实现
+</p></li>
 </ol></li>
 
 <li><p>
@@ -103,7 +106,7 @@ elf-tls 依赖 thread pointer
 </p>
 
 <p>
-pthread 依赖 thread pointer
+pthread 要求用户 setup tls, 底层使用 thread pointer 实现
 </p></li>
 </ol>
 </div>
@@ -216,22 +219,17 @@ pthread_tls 最终会使用 thread pointer: arm 的 thread pointer 是 tpidr_el0
 </div>
 </div>
 
-<div id="outline-container-org000000e" class="outline-3">
-<h3 id="org000000e"><span class="section-number-3">1.3</span> elf_tls</h3>
+<div id="outline-container-org0000013" class="outline-3">
+<h3 id="org0000013"><span class="section-number-3">1.3</span> elf_tls</h3>
 <div class="outline-text-3" id="text-1-3">
 <p>
 <a href="https://www.akkadia.org/drepper/tls.pdf">https://www.akkadia.org/drepper/tls.pdf</a>
 </p>
 </div>
-</div>
 
-<div id="outline-container-org0000015" class="outline-3">
-<h3 id="org0000015"><span class="section-number-3">1.4</span> 直接使用 thread pointer</h3>
-<div class="outline-text-3" id="text-1-4">
-</div>
 <div id="outline-container-org000000f" class="outline-4">
-<h4 id="org000000f"><span class="section-number-4">1.4.1</span> arm</h4>
-<div class="outline-text-4" id="text-1-4-1">
+<h4 id="org000000f"><span class="section-number-4">1.3.1</span> arm</h4>
+<div class="outline-text-4" id="text-1-3-1">
 <div class="org-src-container">
 <pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;errno.h&gt;</span>
 
@@ -251,7 +249,7 @@ __thread <span class="org-type">int</span> <span class="org-variable-name">zzz</
 </pre>
 </div>
 
-<pre class="example" id="org000000d">
+<pre class="example" id="org000000a">
 $&gt; aarch64-linux-gnu-gcc test.c -O0 -g3 -static
 $&gt; aarch64-linux-gnu-objdump -D ./a.out
 
@@ -288,9 +286,9 @@ $&gt; ./a.out
 </div>
 
 <div id="outline-container-org0000012" class="outline-4">
-<h4 id="org0000012"><span class="section-number-4">1.4.2</span> riscv</h4>
-<div class="outline-text-4" id="text-1-4-2">
-<pre class="example" id="org0000011">
+<h4 id="org0000012"><span class="section-number-4">1.3.2</span> riscv</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<pre class="example" id="org000000e">
 0000000000000000 &lt;main&gt;:
    0:   1101                    addi    sp,sp,-32
    2:   ec22                    sd      s0,24(sp)
@@ -324,8 +322,8 @@ riscv 使用 tp 做为 thread pointer
 </div>
 
 <div id="outline-container-org0000014" class="outline-3">
-<h3 id="org0000014"><span class="section-number-3">1.5</span> errno</h3>
-<div class="outline-text-3" id="text-1-5">
+<h3 id="org0000014"><span class="section-number-3">1.4</span> errno</h3>
+<div class="outline-text-3" id="text-1-4">
 <p>
 error 是使用 tls 实现的.
 </p>
@@ -341,13 +339,9 @@ error 是使用 tls 实现的.
 </div>
 </div>
 
-<div id="outline-container-org0000028" class="outline-3">
-<h3 id="org0000028"><span class="section-number-3">1.6</span> tls_relocation</h3>
-<div class="outline-text-3" id="text-1-6">
-</div>
-<div id="outline-container-org0000026" class="outline-4">
-<h4 id="org0000026"><span class="section-number-4">1.6.1</span> emutls 的重定位</h4>
-<div class="outline-text-4" id="text-1-6-1">
+<div id="outline-container-org0000024" class="outline-3">
+<h3 id="org0000024"><span class="section-number-3">1.5</span> emutls 的实现</h3>
+<div class="outline-text-3" id="text-1-5">
 <div class="org-src-container">
 <pre class="src src-c">__thread <span class="org-type">int</span> <span class="org-variable-name">xxx</span> = 0xa;
 
@@ -366,7 +360,7 @@ gcc 编译以上代码时, 会生成几个特殊的符号:
 <li>__emutls_v.xxx</li>
 </ul>
 
-<pre class="example" id="org000001b">
+<pre class="example" id="org0000018">
 $&gt; aarch64-linux-android-gcc foo.c -fPIC -shared -o libfoo.so -O0 -g3
 $&gt; nm libfoo.so|grep xxx
 0000000000000d24 r __emutls_t.xxx
@@ -376,9 +370,9 @@ $&gt; nm libfoo.so|grep xxx
 </pre>
 </div>
 
-<div id="outline-container-org0000018" class="outline-5">
-<h5 id="org0000018"><span class="section-number-5">1.6.1.1</span> __emutls_v</h5>
-<div class="outline-text-5" id="text-1-6-1-1">
+<div id="outline-container-org0000019" class="outline-5">
+<h5 id="org0000019"><span class="section-number-5">1.5.0.1</span> __emutls_v</h5>
+<div class="outline-text-5" id="text-1-5-0-1">
 <p>
 __emutls_v 的类型是 __emutls_control:
 </p>
@@ -426,8 +420,8 @@ emutls array 中找到 xxx 真正的 tls 地址
 
 
 <div id="outline-container-org000001f" class="outline-5">
-<h5 id="org000001f"><span class="section-number-5">1.6.1.2</span> __emutls_t</h5>
-<div class="outline-text-5" id="text-1-6-1-2">
+<h5 id="org000001f"><span class="section-number-5">1.5.0.2</span> __emutls_t</h5>
+<div class="outline-text-5" id="text-1-5-0-2">
 <p>
 __emutls_t.xxx 保存着 xxx 的初值
 </p>
@@ -435,9 +429,9 @@ __emutls_t.xxx 保存着 xxx 的初值
 </div>
 
 <div id="outline-container-org0000023" class="outline-5">
-<h5 id="org0000023"><span class="section-number-5">1.6.1.3</span> example</h5>
-<div class="outline-text-5" id="text-1-6-1-3">
-<pre class="example" id="org0000022">
+<h5 id="org0000023"><span class="section-number-5">1.5.0.3</span> example</h5>
+<div class="outline-text-5" id="text-1-5-0-3">
+<pre class="example" id="org0000020">
 $&gt; objdump -D libfoo.so
 
 0000000000000a4c &lt;foo&gt;:
@@ -486,8 +480,12 @@ Disassembly of section .rodata:
 </div>
 </div>
 
-<div id="outline-container-org0000025" class="outline-4">
-<h4 id="org0000025"><span class="section-number-4">1.6.2</span> elf_tls 的重定位</h4>
+<div id="outline-container-org0000026" class="outline-3">
+<h3 id="org0000026"><span class="section-number-3">1.6</span> elf_tls 的实现</h3>
+<div class="outline-text-3" id="text-1-6">
+<p>
+TBD
+</p>
 </div>
 </div>
 </div>
@@ -507,7 +505,7 @@ Disassembly of section .rodata:
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2017-04-01 Sat 00:00<br />
-Last updated: 2022-02-26 Sat 01:46</p>
+Last updated: 2022-02-26 Sat 10:31</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
