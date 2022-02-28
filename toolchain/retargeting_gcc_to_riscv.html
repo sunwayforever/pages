@@ -54,7 +54,7 @@
 <ul>
 <li><a href="#org0000023">1.4.1. syscall</a></li>
 <li><a href="#org0000026">1.4.2. setjmp/longjmp</a></li>
-<li><a href="#org0000029">1.4.3. 针对 riscv 优化的函数</a></li>
+<li><a href="#org0000029">1.4.3. 某些可以优化的函数</a></li>
 <li><a href="#org000002c">1.4.4. 直接操作 fcsr 的函数</a></li>
 <li><a href="#org000002f">1.4.5. tls 相关</a></li>
 </ul>
@@ -710,6 +710,8 @@ svc, syscall, sysenter, &#x2026; 等
 <pre class="src src-C"><span class="org-keyword">static</span> <span class="org-keyword">inline</span> <span class="org-type">long</span>
 <span class="org-function-name">__internal_syscall</span>(<span class="org-type">long</span> <span class="org-variable-name">n</span>, <span class="org-type">long</span> <span class="org-variable-name">_a0</span>, <span class="org-type">long</span> <span class="org-variable-name">_a1</span>, <span class="org-type">long</span> <span class="org-variable-name">_a2</span>, <span class="org-type">long</span> <span class="org-variable-name">_a3</span>)
 {
+  <span class="org-comment-delimiter">/* </span><span class="org-comment">&#26368;&#26032;&#30340; riscv abi &#37324;, syscall number &#20351;&#29992; a7, &#32780;&#19981;&#26159; v0, &#22240;&#20026; vx &#36825;&#20010;&#21517;&#23383;&#34987;</span>
+<span class="org-comment">   * &#20998;&#37197;&#32473; rv32v &#20351;&#29992;</span><span class="org-comment-delimiter"> */</span>
   <span class="org-keyword">register</span> <span class="org-type">long</span> <span class="org-function-name">v0</span> <span class="org-keyword">asm</span>(<span class="org-string">"v0"</span>) = n;
   <span class="org-keyword">register</span> <span class="org-type">long</span> <span class="org-function-name">a0</span> <span class="org-keyword">asm</span>(<span class="org-string">"a0"</span>) = _a0;
   <span class="org-keyword">register</span> <span class="org-type">long</span> <span class="org-function-name">a1</span> <span class="org-keyword">asm</span>(<span class="org-string">"a1"</span>) = _a1;
@@ -720,6 +722,7 @@ svc, syscall, sysenter, &#x2026; 等
         <span class="org-string">"bltz v0, __syscall_error"</span>
         : <span class="org-string">"+r"</span>(v0) : <span class="org-string">"r"</span>(a0), <span class="org-string">"r"</span>(a1), <span class="org-string">"r"</span>(a2), <span class="org-string">"r"</span>(a3));
 
+  <span class="org-comment-delimiter">/* </span><span class="org-comment">&#26368;&#26032;&#30340; riscv abi &#37324;, function retval &#29992; a0/a1, &#32780;&#19981;&#26159; v0/v1</span><span class="org-comment-delimiter"> */</span>
   <span class="org-keyword">return</span> v0;
 }
 
@@ -785,7 +788,7 @@ svc, syscall, sysenter, &#x2026; 等
 </div>
 
 <div id="outline-container-org0000029" class="outline-4">
-<h4 id="org0000029"><span class="section-number-4">1.4.3</span> 针对 riscv 优化的函数</h4>
+<h4 id="org0000029"><span class="section-number-4">1.4.3</span> 某些可以优化的函数</h4>
 <div class="outline-text-4" id="text-1-4-3">
 <ul class="org-ul">
 <li>memcpy</li>
@@ -795,7 +798,51 @@ svc, syscall, sysenter, &#x2026; 等
 <li>strcpy</li>
 
 <li>strlen</li>
+
+<li>strcmp</li>
 </ul>
+
+<p>
+以 strlen 为例:
+</p>
+
+<p>
+正常的 strlen 需要针对每一个 byte 去 load &amp; check null, 优化后版本大致是这样的:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">while</span>(x = *((<span class="org-type">int</span>*)(data) ++), <span class="org-negation-char">!</span>check_null(x));
+
+<span class="org-keyword">if</span> (data[0] == 0) {
+    <span class="org-keyword">return</span> data - start;
+}
+<span class="org-keyword">if</span> (data[1] == 0) {
+    <span class="org-keyword">return</span> data - start + 1;
+}
+<span class="org-keyword">if</span> (data[2] == 0) {
+    <span class="org-keyword">return</span> data - start + 2;
+}
+<span class="org-keyword">if</span> (data[3] == 0) {
+    <span class="org-keyword">return</span> data - start + 3;
+}
+</pre>
+</div>
+
+<p>
+其中 check_null 用来检测一个 int 是否包含 0, 例如 0xab00cdef, 0x00abcdef 这种情况. 大致的思想是:
+</p>
+
+<ol class="org-ol">
+<li>设置 mask 为 0x7f7f7f7f, 即每个 byte 为 b01111111, 最高位为 0.</li>
+<li>假设 data 对应的某一个 byte 不是 0 (低 7 位包含 1)</li>
+<li>计算 w = data &amp; mask, 因为 data 包含 1, 所以 w 包含 1</li>
+<li>计算 w = w + mask, 因为 w 低 7 位包含 1, 所以 w + mask 会产生进位, 导致 w 最高位变为 1</li>
+<li>计算 w = ~(w|mask), 结果 w 为 0</li>
+</ol>
+
+<p>
+所以 check_null 返回 0 表示一个 int 不包含 0   
+</p>
 </div>
 </div>
 
@@ -1553,7 +1600,7 @@ x = (<span class="org-type">int</span>)x;
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-02-24 Thu 11:58<br />
-Last updated: 2022-02-25 Fri 23:56</p>
+Last updated: 2022-02-28 Mon 13:11</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
