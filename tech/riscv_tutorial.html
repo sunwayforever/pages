@@ -92,6 +92,10 @@
 <p>
 <a href="http://riscvbook.com/chinese/RISC-V-Reader-Chinese-v2p1.pdf">http://riscvbook.com/chinese/RISC-V-Reader-Chinese-v2p1.pdf</a>
 </p>
+
+<p>
+<a href="https://tinyurl.com/2p8ezuym">Computer Organization and Design RISC-V Edition</a>
+</p>
 </div>
 
 <div id="outline-container-org000001d" class="outline-3">
@@ -296,11 +300,22 @@ RV32I 共定义了 32 个寄存器, 寄存器宽度为 32, 用 XLEN 表示
 <ul class="org-ul">
 <li>zero 始终为 0, 可以用来实现一些其它指令, 例如 addi t0, zero, 0x1 相当于给 t0
 赋值为 1</li>
+
 <li>ra 是 return address, 函数返回时默认返回地址在 ra, 通过 jalr zero, 0(ra) 返回</li>
+
+<li>tp 是 thread pointer, 用来实现 <a href="../toolchain/thread_local_storage.html#ID-aee24416-b9d0-4295-9511-7dcf4b29468d">Thread Local Storage</a></li>
+
+<li>gp 是 <a href="mips_tutorial.html#ID-dad2ac71-9292-447c-8f15-5882363d5993">global pointer</a></li>
+
 <li>a0&#x2026;a7 做为函数参数, 同时 a0&#x2026;a1 做为函数返回值</li>
+
 <li>t0&#x2026;t6 是 caller saved 通用寄存器</li>
+
 <li>s1&#x2026;s11 是 callee saved 通用寄存器</li>
-<li>fp, sp</li>
+
+<li>fp 是 frame pointer, 主要和 <a href="../toolchain/backtrace.html#ID-c7408db7-c6d4-4085-97a1-644a9c61bd7b">Backtrace</a> 有关</li>
+
+<li>sp</li>
 </ul>
 </div>
 </div>
@@ -327,10 +342,21 @@ RV32I 共 47 条指令, 长度均为 32bit, 分为 6 种格式:
 </p>
 
 <ul class="org-ul">
-<li>opcode</li>
+<li>opcode, 类似的指令有相同的 opcode, 例如:
 
-<li>funct3, funct7 是对 opcode 的补充, 例如所有的 load 指令的 opcode 都是 b11, 通过
-func3 来区分 lb, lh, lw &#x2026;</li>
+<ul class="org-ul">
+<li>I 指令中的 load 指令 opcode 都是 b11</li>
+
+<li>I 指令中的算术运算都是 b10011</li>
+
+<li>R 指令都是 b110011</li>
+
+<li>S 指令都是 b100011, B 指令都是 b1100111</li>
+
+<li>U 指令为 b110111, J 指令为 b1101111</li>
+</ul></li>
+
+<li>funct3, funct7 是对 opcode 的补充, 例如所有的 load 指令的 opcode 都是 b11, 通过 func3 来区分 lb, lh, lw &#x2026;</li>
 </ul>
 
 <p>
@@ -453,8 +479,41 @@ imm[12|10:5] rs2 rs1 100 imm[4:1|11] 1100011
 </pre>
 
 <p>
-imm 使用的是 imm[12:1], 因为 risc-v 指令最短是 16 bit, 所以 offset 是 2 字节对齐的, 即 imm[0] 必定为 0, 使用 imm[12:1] 可以使 branch 范围变为 8k
-</p></li>
+imm 使用的是 imm[12:1], 因为 risc-v 指令最短是 16 bit (RV32C), 所以 offset 是
+2 字节对齐的, 即 imm[0] 必定为 0, 使用 imm[12:1] 可以使 branch 范围变为
+(-4k,+4k)+pc.
+</p>
+
+<p>
+`+pc` 是指 pc-relative, B/J 指令都是 pc-relative 的, 它的操作数中的 imm 是跳转目标相对当前 pc 的偏移量.
+</p>
+
+<p>
+如果 B 指令要跳转的范围大于 8k 小于 2M, 可以使用 jal:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm">## before
+<span class="org-function-name">beq</span> <span class="org-keyword">s1</span>, s2, L1
+
+## after
+<span class="org-function-name">bne</span> <span class="org-keyword">s1</span>, s2, L2
+<span class="org-function-name">jal</span> <span class="org-keyword">zero</span>, L1
+</pre>
+</div>
+
+<p>
+如果跳转范围大于 2M, 则需要换成 jalr:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">1</span>:  <span class="org-keyword">auipc</span> a0, <span class="org-variable-name">%pcrel</span>_hi(L1)
+    <span class="org-keyword">addi</span> a0, a0, <span class="org-variable-name">%pcrel</span>_lo(1b)
+
+    <span class="org-keyword">bne</span> s1, s2, L2
+    <span class="org-keyword">jalr</span> zero, 0(a0)
+</pre>
+</div></li>
 
 <li><p>
 U, upper intermediate
@@ -489,7 +548,7 @@ imm[20|10:1|11|19:12] rd 1101111
 </pre>
 
 <p>
-与 B 指令类似, 没有使用 imm[0], J 跳转范围扩大为 2M
+与 B 指令类似, 没有使用 imm[0], J 跳转范围扩大为 (-1M, +1M)+pc
 </p></li>
 </ol>
 </div>
@@ -596,6 +655,8 @@ I 类型指令都是 `xxx rd, rs1, imm` 的形式, 其中 imm 12 bit, 包含以�
     ## jalr &#21487;&#20197;&#29992;&#26469;&#20174;&#20989;&#25968;&#20013;&#36820;&#22238;
     ## &#21478;&#22806;, J &#21644; B &#25351;&#20196;&#36339;&#36716;&#26102;&#37117;&#26159; pc relative &#36339;&#36716;. &#36890;&#36807; I &#25351;&#20196;&#30340; jalr
     ## &#21487;&#20197;&#23454;&#29616;&#25972;&#20010;&#22320;&#22336;&#31354;&#38388;&#33539;&#22260;&#30340;&#36339;&#36716;
+    ## jalr &#30340;&#20856;&#22411;&#24212;&#29992;&#26159; procedure return &#21644;&#38024;&#23545;
+    ## `switch ... case` &#30340; branch table
     <span class="org-keyword">jalr</span> zero, 0(ra)
 
     <span class="org-keyword">.data</span>
@@ -782,7 +843,11 @@ B 指令用于条件跳转, 它的格式与 S 指令基本相同, 只是 imm 的
 </ul>
 
 <p>
-由于 imm encode 为 imm[12:1], 所以跳转的范围为 8k
+由于 imm encode 为 imm[12:1], 所以跳转的范围为 (-4k, +4k)
+</p>
+
+<p>
+riscv 的 b 指令直接比较 rs1, rs2 并跳转, 而不是像 arm 那样拆分成两条指令: 第一条比较并设置 flag, 第二条根据 flag 跳转.
 </p>
 </div>
 </div>
@@ -851,8 +916,19 @@ lui: 10000001
 lui: 10000001
 auipc
 </pre>
+
+<p>
+如果要加载一个 64 位的立即数, 可以有两种方法:
+</p>
+
+<ol class="org-ol">
+<li>通过 ld</li>
+
+<li>先加载高 32 位 (lui, addi) 到 x, 然后 x 左移 32 位, 最后加载低 32 位到 x</li>
+</ol>
 </div>
 </div>
+
 
 <div id="outline-container-org0000046" class="outline-6">
 <h6 id="org0000046"><span class="section-number-6">1.2.3.2.6</span> J-Type Instructions</h6>
@@ -2438,7 +2514,7 @@ Supervisor Address Translation and Protection
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-02-08 Tue 15:30<br />
-Last updated: 2022-03-01 Tue 12:04</p>
+Last updated: 2022-03-01 Tue 16:47</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
