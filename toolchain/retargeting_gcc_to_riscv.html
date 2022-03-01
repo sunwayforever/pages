@@ -44,16 +44,16 @@
 <ul>
 <li><a href="#org0000000">1.1. Overview</a></li>
 <li><a href="#org0000005">1.2. 测试环境</a></li>
-<li><a href="#org0000020">1.3. binutils</a>
+<li><a href="#org0000023">1.3. binutils</a>
 <ul>
 <li><a href="#org0000011">1.3.1. objdump</a></li>
-<li><a href="#org000001d">1.3.2. as</a></li>
+<li><a href="#org0000020">1.3.2. as</a></li>
 </ul>
 </li>
 <li><a href="#org0000032">1.4. newlib</a>
 <ul>
-<li><a href="#org0000023">1.4.1. syscall</a></li>
-<li><a href="#org0000026">1.4.2. setjmp/longjmp</a></li>
+<li><a href="#org0000026">1.4.1. syscall</a></li>
+<li><a href="#org0000029">1.4.2. setjmp/longjmp</a></li>
 <li><a href="#org000002a">1.4.3. 某些可以优化的函数</a></li>
 <li><a href="#org000002c">1.4.4. 直接操作 fcsr 的函数</a></li>
 <li><a href="#org000002f">1.4.5. tls 相关</a></li>
@@ -139,8 +139,8 @@ src
 </div>
 </div>
 
-<div id="outline-container-org0000020" class="outline-3">
-<h3 id="org0000020"><span class="section-number-3">1.3</span> binutils</h3>
+<div id="outline-container-org0000023" class="outline-3">
+<h3 id="org0000023"><span class="section-number-3">1.3</span> binutils</h3>
 <div class="outline-text-3" id="text-1-3">
 </div>
 <div id="outline-container-org0000011" class="outline-4">
@@ -413,8 +413,8 @@ objdump 的主要工作是把指令转换为汇编
 </div>
 </div>
 
-<div id="outline-container-org000001d" class="outline-4">
-<h4 id="org000001d"><span class="section-number-4">1.3.2</span> as</h4>
+<div id="outline-container-org0000020" class="outline-4">
+<h4 id="org0000020"><span class="section-number-4">1.3.2</span> as</h4>
 <div class="outline-text-4" id="text-1-3-2">
 <p>
 as 的工作是把汇编转换为机器指令. 在 gcc 4.9.1 中, 后端也是生成汇编后再由 as 转换为机器指令, 而不是直接由后端直接生成机器指令.
@@ -585,7 +585,7 @@ as 的工作是把汇编转换为机器指令. 在 gcc 4.9.1 中, 后端也是�
 <div class="outline-text-5" id="text-1-3-2-3">
 <p>
 mips_ip 返回后, insn 相应的位已经被赋值, imm_expr, offset_expr 也被赋值, 如果
-insn 不是 macro, 则 imm_expr, offset_expr 会被直接编码到 insn 中, 但如果 insn 是一个 macro, 则 {imm,offset}_expr 肯定是无法直接编码的, 这时需要通过 macro 函数单独处理, 例如产生多条 insn.
+insn 不是 macro, 则 imm_expr, offset_expr 会通过 append_insn 直接编码在 insn 或保留 symbol 和 reloc_type 留给 link editor 处理. 但如果 insn 是一个 macro, 则需要通过 macro 函数单独处理, 以展开成多条 insn.
 </p>
 
 <div class="org-src-container">
@@ -675,16 +675,28 @@ insn 不是 macro, 则 imm_expr, offset_expr 会被直接编码到 insn 中, 但
 
 <span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">riscv_call</span>(
     <span class="org-type">int</span> <span class="org-variable-name">destreg</span>, <span class="org-type">int</span> <span class="org-variable-name">tempreg</span>, <span class="org-type">expressionS</span> *<span class="org-variable-name">ep</span>, <span class="org-type">bfd_reloc_code_real_type</span> <span class="org-variable-name">reloc</span>) {
-    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#36825;&#37324;&#24863;&#35273;&#26377;&#38382;&#39064;:</span>
-<span class="org-comment">     * call &#24212;&#35813;&#29983;&#25104;&#20004;&#26465;&#25351;&#20196;:</span>
-<span class="org-comment">     * auipc t0, %pcrelhi(imm)</span>
-<span class="org-comment">     * jalr rd, (%pcrello (imm))t0</span>
-<span class="org-comment">     *</span><span class="org-comment-delimiter"> */</span>
     macro_build(ep, <span class="org-string">"auipc"</span>, <span class="org-string">"d,u"</span>, tempreg, reloc);
     macro_build(<span class="org-constant">NULL</span>, <span class="org-string">"jalr"</span>, <span class="org-string">"d,s"</span>, destreg, tempreg);
 }
 </pre>
 </div>
+</div>
+</div>
+
+<div id="outline-container-org000001d" class="outline-5">
+<h5 id="org000001d"><span class="section-number-5">1.3.2.4</span> append_insn</h5>
+<div class="outline-text-5" id="text-1-3-2-4">
+<p>
+append_insn 主要的工作是根据 reloc_type 决定 imm 或 offset 如何处理:
+</p>
+
+<ol class="org-ol">
+<li>使用常量的指令可以直接把 constant 编码到指令中, 只是需要考虑不同的类型
+(I,S,U) 对 imm 的编码不太一样</li>
+
+<li>TODO: 使用 symbol 的指令无法把 symbol 的地址直接编码到指令中, assembling 阶段只能确定 symbol 和 reloc_type (<a href="../tech/riscv_tutorial.html#ID-4db5f11b-34ce-491b-beaf-eb3333381f12">Relocation</a>), 最终地址在链接阶段由 link editor
+来处理.</li>
+</ol>
 </div>
 </div>
 </div>
@@ -698,8 +710,8 @@ newlib 是一个适用于嵌入式系统的小型 libc
 </p>
 </div>
 
-<div id="outline-container-org0000023" class="outline-4">
-<h4 id="org0000023"><span class="section-number-4">1.4.1</span> syscall</h4>
+<div id="outline-container-org0000026" class="outline-4">
+<h4 id="org0000026"><span class="section-number-4">1.4.1</span> syscall</h4>
 <div class="outline-text-4" id="text-1-4-1">
 <p>
 riscv 通过 scall (最新的规范改成了 ecall) 来发起 syscall, 对应其它平台的 int,
@@ -731,8 +743,8 @@ svc, syscall, sysenter, &#x2026; 等
 </div>
 </div>
 
-<div id="outline-container-org0000026" class="outline-4">
-<h4 id="org0000026"><span class="section-number-4">1.4.2</span> setjmp/longjmp</h4>
+<div id="outline-container-org0000029" class="outline-4">
+<h4 id="org0000029"><span class="section-number-4">1.4.2</span> setjmp/longjmp</h4>
 <div class="outline-text-4" id="text-1-4-2">
 <div class="org-src-container">
 <pre class="src src-asm"><span class="org-preprocessor"># define</span> <span class="org-variable-name">REG_S</span>    sw
@@ -855,7 +867,7 @@ gimple 相当于 gcc HIR, 主要涉及到 basic block, SSA 等的构造和上层
 </pre>
 </div>
 
-<pre class="example" id="org0000035">
+<pre class="example" id="org0000038">
 $&gt; /opt/riscv/bin/riscv-elf-gcc test.c -c -fdump-tree-all -O0
 $&gt; tree
 .
@@ -895,10 +907,10 @@ test.c.004t.gimple 为例:
 </ul>
 </div>
 
-<div id="outline-container-org0000038" class="outline-5">
-<h5 id="org0000038"><span class="section-number-5">1.5.1.1</span> .gimple pass</h5>
+<div id="outline-container-org000003a" class="outline-5">
+<h5 id="org000003a"><span class="section-number-5">1.5.1.1</span> .gimple pass</h5>
 <div class="outline-text-5" id="text-1-5-1-1">
-<pre class="example" id="org0000036">
+<pre class="example" id="org0000039">
 $&gt; cat test.c.004t.gimple
 
 foo ()
@@ -937,10 +949,10 @@ foo ()
 </div>
 
 
-<div id="outline-container-org000003d" class="outline-5">
-<h5 id="org000003d"><span class="section-number-5">1.5.1.2</span> .cfg pass</h5>
+<div id="outline-container-org000003f" class="outline-5">
+<h5 id="org000003f"><span class="section-number-5">1.5.1.2</span> .cfg pass</h5>
 <div class="outline-text-5" id="text-1-5-1-2">
-<pre class="example" id="org000003a">
+<pre class="example" id="org000003d">
 $&gt; cat test.c.011t.cfg
 
 ;; Function foo (foo, funcdef_no=0, decl_uid=1363, symbol_order=0)
@@ -997,7 +1009,7 @@ dot 文件, 转换为 png 后为:
 </p>
 
 
-<div id="org000003b" class="figure">
+<div id="org000003e" class="figure">
 <p><img src="../extra/gimple_cfg.png" alt="gimple_cfg.png" />
 </p>
 </div>
@@ -1011,7 +1023,7 @@ dot 文件, 转换为 png 后为:
 <div id="outline-container-org0000041" class="outline-5">
 <h5 id="org0000041"><span class="section-number-5">1.5.1.3</span> .ssa pass</h5>
 <div class="outline-text-5" id="text-1-5-1-3">
-<pre class="example" id="org000003f">
+<pre class="example" id="org0000042">
 $&gt; cat test.c.015t.ssa
 
 ;; Function foo (foo, funcdef_no=0, decl_uid=1363, symbol_order=0)
@@ -1072,7 +1084,7 @@ rtl (Register Transfer Language) 相当于 gcc LIR, 主要涉及到寄存器分�
 通过 `-fdump-rtl-all` 可以 dump 出某些 rtl pass 的中间结果
 </p>
 
-<pre class="example" id="org0000046">
+<pre class="example" id="org0000049">
 $&gt; /opt/riscv/bin/riscv-elf-gcc test.c -c -O0 -fdump-rtl-all
 $&gt; tree|grep -E ".*[0-9]+r"
 ├── test.c.170r.expand
@@ -1100,10 +1112,10 @@ $&gt; tree|grep -E ".*[0-9]+r"
 </pre>
 </div>
 
-<div id="outline-container-org000004a" class="outline-5">
-<h5 id="org000004a"><span class="section-number-5">1.5.2.1</span> .expand pass</h5>
+<div id="outline-container-org000004c" class="outline-5">
+<h5 id="org000004c"><span class="section-number-5">1.5.2.1</span> .expand pass</h5>
 <div class="outline-text-5" id="text-1-5-2-1">
-<pre class="example" id="org0000047">
+<pre class="example" id="org000004a">
 ;;
 ;; Full RTL generated for this function:
 ;;
@@ -1216,7 +1228,7 @@ $&gt; tree|grep -E ".*[0-9]+r"
 rtl ir 基于 lisp, 例如
 </p>
 
-<pre class="example" id="org0000048">
+<pre class="example" id="org000004b">
 (insn 7 6 8 2 (set (reg:SF 77)
         (plus:SF (reg:SF 76)
             (reg:SF 76))) test.c:5 -1
@@ -1237,7 +1249,7 @@ rtl 使用无限个虚拟寄存器, 后面的 pass 会负责分配具体的寄�
 <div id="outline-container-org000004e" class="outline-5">
 <h5 id="org000004e"><span class="section-number-5">1.5.2.2</span> .reload pass</h5>
 <div class="outline-text-5" id="text-1-5-2-2">
-<pre class="example" id="org000004c">
+<pre class="example" id="org000004f">
 (note 1 0 3 NOTE_INSN_DELETED)
 (note 3 1 2 2 [bb 2] NOTE_INSN_BASIC_BLOCK)
 (note 2 3 5 2 NOTE_INSN_FUNCTION_BEG)
@@ -1465,14 +1477,14 @@ rtl reload pass 相关的代码会根据这些定义来完成寄存器分配
 </div>
 </div>
 
-<div id="outline-container-org0000059" class="outline-5">
-<h5 id="org0000059"><span class="section-number-5">1.5.3.2</span> md 模板</h5>
+<div id="outline-container-org000005b" class="outline-5">
+<h5 id="org000005b"><span class="section-number-5">1.5.3.2</span> md 模板</h5>
 <div class="outline-text-5" id="text-1-5-3-2">
 <p>
 md 模板在 riscv.md 中, 是 rtl 翻译成汇编的核心部分, 例如:
 </p>
 
-<pre class="example" id="org0000056">
+<pre class="example" id="org0000059">
 (define_insn "add&lt;mode&gt;3"
   [
   ;; rtl 模板
@@ -1497,7 +1509,7 @@ md 模板在 riscv.md 中, 是 rtl 翻译成汇编的核心部分, 例如:
 test.c 中的 `float y = x + x` 对应的 rtl expression 大约是
 </p>
 
-<pre class="example" id="org0000057">
+<pre class="example" id="org000005a">
 (insn# 0 0 (set (reg:SF 48 f16)
         (plus:SF (reg:SF 48 f16)
             (reg:SF 49 f17))) test.c:5# {addsf3}
@@ -1514,7 +1526,7 @@ f16,f16,f17`
 <div id="outline-container-org000005d" class="outline-5">
 <h5 id="org000005d"><span class="section-number-5">1.5.3.3</span> peephole 模板</h5>
 <div class="outline-text-5" id="text-1-5-3-3">
-<pre class="example" id="org000005b">
+<pre class="example" id="org000005e">
 ;; Simplify (int)(a + 1), etc.
 (define_peephole2
   [(set (match_operand:DI 0 "register_operand")
@@ -1560,7 +1572,7 @@ x = (<span class="org-type">int</span>)x;
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-02-24 Thu 11:58<br />
-Last updated: 2022-03-01 Tue 11:20</p>
+Last updated: 2022-03-01 Tue 22:36</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
