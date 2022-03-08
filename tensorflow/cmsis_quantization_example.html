@@ -73,10 +73,11 @@
 <li><a href="#org0000009">1.2. weight 量化</a></li>
 <li><a href="#org000000c">1.3. activiation 量化</a></li>
 <li><a href="#org0000010">1.4. 坑</a></li>
-<li><a href="#org0000019">1.5. 完整代码</a>
+<li><a href="#org000001b">1.5. Sample</a>
 <ul>
-<li><a href="#org0000013">1.5.1. 模型定义</a></li>
-<li><a href="#org0000016">1.5.2. 量化</a></li>
+<li><a href="#org0000012">1.5.1. keras 模型</a></li>
+<li><a href="#org0000015">1.5.2. cmsis 模型</a></li>
+<li><a href="#org0000016">1.5.3. 量化</a></li>
 </ul>
 </li>
 <li><a href="#org000001c">1.6. cmsis-nn 与 tflite 量化</a></li>
@@ -115,11 +116,12 @@ dec_bit 指 float 最多可以左移 dec_bit 而不超过量化范围.
 </p>
 
 <p>
-CMSIS 是对称量化, 且 scale 为 \(2^{n}\) 的形式, dec_bit 即是 scale:
+CMSIS 是对称量化, 且 scale 为 \(2^{n}\) 的形式:
 </p>
 
 <ul class="org-ul">
-<li>\(scale=dec\_bit(abs(x)_{max})\)</li>
+<li>\(scale=2^{dec\_bit(abs(x)_{max})}\)</li>
+
 <li>\(zero\_point=0\)</li>
 </ul>
 </div>
@@ -337,12 +339,12 @@ regularizer), 导致训练的越多 weight 越大 (从 0.x 增加到 2.x), 而 w
 </div>
 
 
-<div id="outline-container-org0000019" class="outline-3">
-<h3 id="org0000019"><span class="section-number-3">1.5</span> 完整代码</h3>
+<div id="outline-container-org000001b" class="outline-3">
+<h3 id="org000001b"><span class="section-number-3">1.5</span> Sample</h3>
 <div class="outline-text-3" id="text-1-5">
 </div>
-<div id="outline-container-org0000013" class="outline-4">
-<h4 id="org0000013"><span class="section-number-4">1.5.1</span> 模型定义</h4>
+<div id="outline-container-org0000012" class="outline-4">
+<h4 id="org0000012"><span class="section-number-4">1.5.1</span> keras 模型</h4>
 <div class="outline-text-4" id="text-1-5-1">
 <div class="org-src-container">
 <pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">cnn</span>():
@@ -381,9 +383,48 @@ regularizer), 导致训练的越多 weight 越大 (从 0.x 增加到 2.x), 而 w
 </div>
 </div>
 
-<div id="outline-container-org0000016" class="outline-4">
-<h4 id="org0000016"><span class="section-number-4">1.5.2</span> 量化</h4>
+<div id="outline-container-org0000015" class="outline-4">
+<h4 id="org0000015"><span class="section-number-4">1.5.2</span> cmsis 模型</h4>
 <div class="outline-text-4" id="text-1-5-2">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">void</span> <span class="org-function-name">CNN</span>::run_nn(<span class="org-type">q7_t</span>* <span class="org-variable-name">in_data</span>, <span class="org-type">q7_t</span>* <span class="org-variable-name">out_data</span>) {
+    arm_convolve_HWC_q7_basic_nonsquare(
+        in_data, CONV1_IN_X, CONV1_IN_Y, CONV1_IN_CH, conv1_wt, CONV1_OUT_CH,
+        CONV1_KERNEL_X, CONV1_KERNEL_Y, CONV1_PADDING_X, CONV1_PADDING_Y,
+        CONV1_STRIDE_X, CONV1_STRIDE_Y, conv1_bias, CONV1_BIAS_SHIFT,
+        CONV1_OUT_SHIFT, buffer1, CONV1_OUT_X, CONV1_OUT_Y, (<span class="org-type">q15_t</span>*)buffer3,
+        <span class="org-constant">NULL</span>);
+    arm_relu_q7(buffer1, CONV1_OUT_X * CONV1_OUT_Y * CONV1_OUT_CH);
+    arm_convolve_HWC_q7_basic_nonsquare(
+        buffer1, CONV2_IN_X, CONV2_IN_Y, CONV2_IN_CH, conv2_wt, CONV2_OUT_CH,
+        CONV2_KERNEL_X, CONV2_KERNEL_Y, CONV2_PADDING_X, CONV2_PADDING_Y,
+        CONV2_STRIDE_X, CONV2_STRIDE_Y, conv2_bias, CONV2_BIAS_SHIFT,
+        CONV2_OUT_SHIFT, buffer2, CONV2_OUT_X, CONV2_OUT_Y, (<span class="org-type">q15_t</span>*)buffer3,
+        <span class="org-constant">NULL</span>);
+    arm_relu_q7(buffer2, CONV2_OUT_X * CONV2_OUT_Y * CONV2_OUT_CH);
+    arm_fully_connected_q7(
+        buffer2, dense1_wt, DENSE1_INPUT_DIM, DENSE1_OUTPUT_DIM,
+        DENSE1_BIAS_SHIFT, DENSE1_OUT_SHIFT, dense1_bias, buffer1,
+        (<span class="org-type">q15_t</span>*)buffer3);
+    arm_relu_q7(buffer1, DENSE1_OUTPUT_DIM);
+    arm_fully_connected_q7(
+        buffer1, dense2_wt, DENSE2_INPUT_DIM, DENSE2_OUTPUT_DIM,
+        DENSE2_BIAS_SHIFT, DENSE2_OUT_SHIFT, dense2_bias, buffer2,
+        (<span class="org-type">q15_t</span>*)buffer3);
+    arm_relu_q7(buffer2, DENSE2_OUTPUT_DIM);
+    arm_fully_connected_q7(
+        buffer2, dense3_wt, DENSE3_INPUT_DIM, DENSE3_OUTPUT_DIM,
+        DENSE3_BIAS_SHIFT, DENSE3_OUT_SHIFT, dense3_bias, out_data,
+        (<span class="org-type">q15_t</span>*)buffer3);
+}
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000016" class="outline-4">
+<h4 id="org0000016"><span class="section-number-4">1.5.3</span> 量化</h4>
+<div class="outline-text-4" id="text-1-5-3">
 <div class="org-src-container">
 <pre class="src src-python"><span class="org-keyword">import</span> tensorflow <span class="org-keyword">as</span> tf
 <span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
@@ -512,7 +553,7 @@ tflite for mcu 底层支持 cmsis-nn, 但 tflite 的量化规范来自于 gemmlo
 <div class="outline-text-2" id="text-org0000022">
 <p>
 <a href="quantization.html#ID-6ad56dfa-9772-478b-9872-6f8294d6cb19">Quantization</a>
-(<i>Quantization &gt; Overview</i>):  有些框架例如 <a href="cmsis_quantization_example.html#ID-d51beea9-ed7e-4308-9659-7832d723f6e3">CMSIS Quantization</a> 会要求 scale 的值必须是 \(2^{n}\) 的形式, 这样可以 用移位代替除法.
+(<i>Quantization &gt; Overview</i>):  scale 正常为浮点数, 但有些框架例如 <a href="cmsis_quantization_example.html#ID-d51beea9-ed7e-4308-9659-7832d723f6e3">CMSIS</a> 会要求 scale 的值必须是 \(2^{n}\) 的形式, 这样可以避免浮点数乘法, 同时可以用移位代替整数乘法. tflite 会使用浮点数 scale, 但是可以用 <a href="tflite_quantization_detail.html#ID-4c9c1064-5ff5-4111-95bf-2916a5b24e9e">rounding_doubling_high_mul</a> 转换为整数乘法.
 </p>
 
 <p>
@@ -526,7 +567,7 @@ tflite for mcu 底层支持 cmsis-nn, 但 tflite 的量化规范来自于 gemmlo
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2020-09-21 Mon 00:00<br />
-Last updated: 2022-03-08 Tue 16:04</p>
+Last updated: 2022-03-08 Tue 17:28</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
