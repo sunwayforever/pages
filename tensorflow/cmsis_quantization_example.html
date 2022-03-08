@@ -269,21 +269,33 @@ FC1 -&gt; ReLU -&gt; FC2
 </p>
 
 <p>
-当计算 FC2 的 input 量化参数时, 不能使用 ReLU 的输出做为 FC2 的 input, 因为
-FC1 的 ouptut 与 FC2 的 input 的值并不相同, 但 cmsis-nn 针对 ReLU 并没有对应的 output_shift 参数. 所以 inference 时, FC1 的输出与 FC1 输出量化参数一致,但与 FC2 输入量化参数并不一致.
+正常情况下, cmsis relu 的代码应该是这样的:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-comment-delimiter">/* </span><span class="org-comment">input &#26159; fc1 &#30340;&#32467;&#26524;</span>
+<span class="org-comment"> * output_shift &#26159; relu &#36755;&#20986;&#30340;&#37327;&#21270;&#21442;&#25968;</span><span class="org-comment-delimiter"> */</span>
+<span class="org-type">void</span> <span class="org-function-name">relu</span>(input, output_shift, ouput) {
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">cmsis &#26159;&#23545;&#31216;&#37327;&#21270;, &#25152;&#20197; input_bias=0</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">int</span> <span class="org-variable-name">input_bias</span> = 0;
+    <span class="org-keyword">if</span> (input &gt; input_bias) {
+        <span class="org-keyword">return</span> input &gt;&gt; output_shift
+    }
+    <span class="org-keyword">return</span> 0
+}
+</pre>
+</div>
+
+<p>
+但实际上 cmsis 的 relu api 并不支持 output_shift 参数, 或者说 output_shift 为
+0, 即 relu 的 output_scale 等于 input_scale (因为
+output_shift=input_scale-output_scale)
 </p>
 
 <p>
-为解决这个问题, FC2 的 input 可以直接使用 FC1 output 的量化参数, 或者给
-cmsis-nn 加 patch, 使 ReLU 计算时完成如下的操作:
+所以 FC2 的 input_scale 应该直接使用 ReLU 的 input_scale, 而不能自己根据 FC2
+input 范围来计算, 相当于量化时 relu 被 `pass throught`.
 </p>
-
-<pre class="example" id="org000000f">
-Quantize(
-  Dequantize(FC1_OUT,FC1_OUTPUT_QUANT_PARAM),
-  FC2_INPUT_QUANT_PARAM
- )
-</pre>
 
 <p>
 除了 ReLU, CMSIS 中的 average pooling, max pooling, 也有类似的问题 (softmax
@@ -512,7 +524,7 @@ tflite for mcu 底层支持 cmsis-nn, 但 tflite 的量化规范来自于 gemmlo
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2020-09-21 Mon 00:00<br />
-Last updated: 2022-03-07 Mon 14:55</p>
+Last updated: 2022-03-08 Tue 14:21</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
