@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>GCC Machine Description</title>
+
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">GCC Machine Description</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org0000015">1. GCC Machine Description</a>
+<ul>
+<li><a href="#org0000008">1.1. Gimple to RTL</a>
+<ul>
+<li><a href="#org0000000">1.1.1. Overview</a></li>
+<li><a href="#org0000004">1.1.2. backtrace</a></li>
+<li><a href="#ID-c1ff5b55-a6cd-41c5-aab9-248f52262030">1.1.3. optab_libfunc</a></li>
+</ul>
+</li>
+<li><a href="#org0000012">1.2. RTL to Assembly</a>
+<ul>
+<li><a href="#org000000b">1.2.1. Overview</a></li>
+<li><a href="#org000000f">1.2.2. backtrace</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000015" class="outline-2">
+<h2 id="org0000015"><span class="section-number-2">1</span> GCC Machine Description</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org0000008" class="outline-3">
+<h3 id="org0000008"><span class="section-number-3">1.1</span> Gimple to RTL</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-org0000000" class="outline-4">
+<h4 id="org0000000"><span class="section-number-4">1.1.1</span> Overview</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+rtl 的 `pass_expand` 用来把 gimple 转换为 rtl, 以 `两个浮点数相加` 为例:
+</p>
+
+<ol class="org-ol">
+<li>add 对应的 gimple tree code 为 PLUS_EXPR, 定义在 tree.def 中</li>
+
+<li>通过 `optab_for_tree_code` 查找 optab, PLUS_EXPR 对应的 optab 为 add_optab,
+定义在 optabs.def. PLUS_EXPR 与 add_optab 的对应关系是预设好的.</li>
+
+<li>通过 `optab_handler` 查找 add_optab 和 E_SFmode 对应的 insn_code 为
+CODE_FOR_addsf3, 定义在 md 中, 由 gencodes 扫描 md 生成. add_optab 与
+CODE_FOR_addsf3 的对应关系由 genopinit 根据 optabs.def 生成
+(match_pattern@gensupport.c)</li>
+
+<li>用 insn_code 做索引在 insn_data 中查找到 `gen_addsf3` 函数. insn_data 由
+genoutput 扫描 md 生成. gen_addsf3 由 genemit 生成</li>
+
+<li>gen_addsf3 生成 addsf3 对应的 rtl expression</li>
+
+<li>rtl.def 定义了 rtl 的 expression code, 例如 SET, PLUS, &#x2026;</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000004" class="outline-4">
+<h4 id="org0000004"><span class="section-number-4">1.1.2</span> backtrace</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<pre class="example" id="org0000003">
+#0  gen_addsf3 (operand0=0x7fffffffb250, operand1=0x7ffff7786bb8, 
+    operand2=0xf8360d &lt;maybe_legitimize_operands(insn_code, unsigned int, unsigned int, expand_operand*)+46&gt;) at insn-emit.c:45
+#1  0x0000000000ef17fa in insn_gen_fn::operator()&lt;rtx_def*, rtx_def*, rtx_def*&gt; (this=0x1ecacb8 &lt;insn_data+56&gt;) at ../.././riscv-gcc/gcc/recog.h:407
+#2  0x0000000000f83a1e in maybe_gen_insn (icode=CODE_FOR_addsf3, nops=3, ops=0x7fffffffb250) at ../.././riscv-gcc/gcc/optabs.c:7787
+#3  0x0000000000f6ef4a in expand_binop_directly (icode=CODE_FOR_addsf3, mode=E_SFmode, binoptab=add_optab, op0=0x7ffff7786be8, op1=0x7ffff7786c18, 
+    target=0x7ffff7786bb8, unsignedp=0, methods=OPTAB_LIB_WIDEN, last=0x7ffff7676540) at ../.././riscv-gcc/gcc/optabs.c:1409
+#4  0x0000000000f6f417 in expand_binop (mode=E_SFmode, binoptab=add_optab, op0=0x7ffff7786be8, op1=0x7ffff7786c18, target=0x7ffff7786bb8, unsignedp=0, 
+    methods=OPTAB_LIB_WIDEN) at ../.././riscv-gcc/gcc/optabs.c:1496
+#5  0x0000000000c9079a in expand_expr_real_2 (ops=0x7fffffffbb80, target=0x7ffff7786bb8, tmode=E_SFmode, modifier=EXPAND_NORMAL)
+    at ../.././riscv-gcc/gcc/expr.c:10007
+#6  0x0000000000b197f4 in expand_gimple_stmt_1 (stmt=0x7ffff7784000) at ../.././riscv-gcc/gcc/cfgexpand.c:3947
+#7  0x0000000000b199f1 in expand_gimple_stmt (stmt=0x7ffff7784000) at ../.././riscv-gcc/gcc/cfgexpand.c:4008
+#8  0x0000000000b20b17 in expand_gimple_basic_block (bb=0x7ffff7761138, disable_tail_calls=false) at ../.././riscv-gcc/gcc/cfgexpand.c:6045
+#9  0x0000000000b223d3 in (anonymous namespace)::pass_expand::execute (this=0x23401c0, fun=0x7ffff777e000) at ../.././riscv-gcc/gcc/cfgexpand.c:6729
+#10 0x0000000000fdd7d1 in execute_one_pass (pass=0x23401c0) at ../.././riscv-gcc/gcc/passes.c:2567
+#11 0x0000000000fddb1e in execute_pass_list_1 (pass=0x23401c0) at ../.././riscv-gcc/gcc/passes.c:2656
+#12 0x0000000000fddbab in execute_pass_list (fn=0x7ffff777e000, pass=0x233c270) at ../.././riscv-gcc/gcc/passes.c:2667
+#13 0x0000000000b6f617 in cgraph_node::expand (this=0x7ffff7780000) at ../.././riscv-gcc/gcc/cgraphunit.c:1830
+#14 0x0000000000b6fd15 in cgraph_order_sort::process (this=0x2333788) at ../.././riscv-gcc/gcc/cgraphunit.c:2069
+#15 0x0000000000b6ffce in output_in_order () at ../.././riscv-gcc/gcc/cgraphunit.c:2137
+#16 0x0000000000b705a6 in symbol_table::compile (this=0x7ffff7670000) at ../.././riscv-gcc/gcc/cgraphunit.c:2355
+#17 0x0000000000b709d2 in symbol_table::finalize_compilation_unit (this=0x7ffff7670000) at ../.././riscv-gcc/gcc/cgraphunit.c:2539
+#18 0x000000000110d05f in compile_file () at ../.././riscv-gcc/gcc/toplev.c:482
+#19 0x00000000011100c6 in do_compile () at ../.././riscv-gcc/gcc/toplev.c:2201
+#20 0x00000000011103e8 in toplev::main (this=0x7fffffffc176, argc=14, argv=0x7fffffffc288) at ../.././riscv-gcc/gcc/toplev.c:2340
+#21 0x0000000001bf4bf5 in main (argc=14, argv=0x7fffffffc288) at ../.././riscv-gcc/gcc/main.c:39
+</pre>
+</div>
+</div>
+
+<div id="outline-container-ID-c1ff5b55-a6cd-41c5-aab9-248f52262030" class="outline-4">
+<h4 id="ID-c1ff5b55-a6cd-41c5-aab9-248f52262030"><span class="section-number-4">1.1.3</span> optab_libfunc</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<p>
+当 optab_handler 找不到 `optab+machmode` 对应的 insn 时, 会通过 optab_libfunc 生成对某个外部函数的调用, 例如 __divsf3. 这些函数是在 <a href="bare_metal.html#ID-27a07646-18c6-4504-b36e-a5d63871a0d2">libgcc</a> 中实现的.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">rtx</span> <span class="org-function-name">optab_libfunc</span>(<span class="org-type">optab</span> <span class="org-variable-name">optab</span>, <span class="org-type">machine_mode</span> <span class="org-variable-name">mode</span>) {
+    <span class="org-keyword">struct</span> <span class="org-type">libfunc_entry</span> <span class="org-variable-name">e</span>;
+    <span class="org-keyword">struct</span> <span class="org-type">libfunc_entry</span> **<span class="org-variable-name">slot</span>;
+
+    e.op = optab;
+    e.mode1 = mode;
+    e.mode2 = VOIDmode;
+    slot = libfunc_hash-&gt;find_slot(&amp;e, NO_INSERT);
+    <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>slot) {
+        <span class="org-keyword">const</span> <span class="org-keyword">struct</span> <span class="org-type">optab_libcall_d</span> *<span class="org-variable-name">d</span> =
+            &amp;normlib_def[optab - FIRST_NORM_OPTAB];
+
+        <span class="org-keyword">if</span> (d-&gt;libcall_gen == <span class="org-constant">NULL</span>) <span class="org-keyword">return</span> <span class="org-constant">NULL</span>;
+
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">d-&gt;libcall_gen &#20013;&#20449;&#24687;&#26469;&#33258; optabs.def, &#20363;&#22914;</span>
+<span class="org-comment">         * OPTAB_NL(add_optab, "add$P$a3", PLUS, "add", '3', gen_int_fp_fixed_libfunc)</span>
+<span class="org-comment">         * &#34920;&#31034; add_optab &#30340; libcall_basename &#20026; "add", libcall_gen &#20026; gen_int_fp_fixed_libfunc,</span>
+<span class="org-comment">         * &#21518;&#32773;&#20250;&#26681;&#25454; libcall_basename(add) &#21644; mode (sf) &#29983;&#25104;&#19968;&#20010;&#21517;&#20026; __addsf3 &#30340; libfunc_entry</span>
+<span class="org-comment">         * &#21518;&#36890;&#36807; set_optab_libfunc &#35774;&#32622;&#21040; libfunc_hash, &#21518;&#32493;&#23601;&#21487;&#20197;&#29983;&#25104;&#23545; __addsf3 &#30340;&#35843;&#29992;</span>
+<span class="org-comment">         *</span><span class="org-comment-delimiter"> */</span>
+
+        d-&gt;libcall_gen(optab, d-&gt;libcall_basename, d-&gt;libcall_suffix, mode);
+        slot = libfunc_hash-&gt;find_slot(&amp;e, NO_INSERT);
+        <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>slot) <span class="org-keyword">return</span> <span class="org-constant">NULL</span>;
+    }
+    <span class="org-keyword">return</span> (*slot)-&gt;libfunc;
+}
+</pre>
+</div>
+
+<p>
+实际上 soft-float 与 hard-float 的区别就是是通过 optab_libfunc 机制来体现的:
+</p>
+
+<pre class="example" id="org0000007">
+(define_insn "div&lt;mode&gt;3"
+  [(set (match_operand:ANYF           0 "register_operand" "=f")
+    (div:ANYF (match_operand:ANYF 1 "register_operand" " f")
+          (match_operand:ANYF 2 "register_operand" " f")))]
+  "TARGET_HARD_FLOAT &amp;&amp; TARGET_FDIV"
+  "fdiv.&lt;fmt&gt;\t%0,%1,%2"
+  [(set_attr "type" "fdiv")
+   (set_attr "mode" "&lt;UNITMODE&gt;")])
+</pre>
+
+<p>
+当 TARGET_HARD_FLOAT 时, optab_handler 会找到这里会产生的 divsf3/divdf3 两条
+insn. 否则就会通过 optab_libfunc 产生对 __divsf3/__divdf3 的调用
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000012" class="outline-3">
+<h3 id="org0000012"><span class="section-number-3">1.2</span> RTL to Assembly</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-org000000b" class="outline-4">
+<h4 id="org000000b"><span class="section-number-4">1.2.1</span> Overview</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+rtl 通过一些 rtl pass 后最终由 rtl 的 `pass_final` 生成 assembly
+</p>
+
+<ol class="org-ol">
+<li>通过 recog 函数查找 rtx_insn 对应的 insn_code. recog 由 genrecog 扫描 md 生成.
+整个 recog 相当于一个根据 md 生成的巨大的 switch-case</li>
+
+<li>通过 `get_insn_template` 从 insn_data 以 insn_code 为索引查找 assembly template</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org000000f" class="outline-4">
+<h4 id="org000000f"><span class="section-number-4">1.2.2</span> backtrace</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<pre class="example" id="org000000e">
+#0  get_insn_template (code=0, insn=0x7fffffffbc00) at ../.././riscv-gcc/gcc/final.c:2063
+#1  0x0000000000ca46cb in final_scan_insn_1 (insn=0x7ffff7676880, file=0x2352480, optimize_p=0, nopeepholes=0, seen=0x7fffffffbdbc)
+    at ../.././riscv-gcc/gcc/final.c:3062
+#2  0x0000000000ca4b06 in final_scan_insn (insn=0x7ffff7676880, file=0x2352480, optimize_p=0, nopeepholes=0, seen=0x7fffffffbdbc)
+    at ../.././riscv-gcc/gcc/final.c:3175
+#3  0x0000000000ca2a44 in final_1 (first=0x7ffff77870a8, file=0x2352480, seen=0, optimize_p=0) at ../.././riscv-gcc/gcc/final.c:2022
+#4  0x0000000000ca76c5 in rest_of_handle_final () at ../.././riscv-gcc/gcc/final.c:4680
+#5  0x0000000000ca792f in (anonymous namespace)::pass_final::execute (this=0x2342260) at ../.././riscv-gcc/gcc/final.c:4758
+#6  0x0000000000fdd7d1 in execute_one_pass (pass=0x2342260) at ../.././riscv-gcc/gcc/passes.c:2567
+#7  0x0000000000fddb1e in execute_pass_list_1 (pass=0x2342260) at ../.././riscv-gcc/gcc/passes.c:2656
+#8  0x0000000000fddb4f in execute_pass_list_1 (pass=0x2341d80) at ../.././riscv-gcc/gcc/passes.c:2657
+#9  0x0000000000fddb4f in execute_pass_list_1 (pass=0x2340220) at ../.././riscv-gcc/gcc/passes.c:2657
+#10 0x0000000000fddbab in execute_pass_list (fn=0x7ffff777e000, pass=0x233c270) at ../.././riscv-gcc/gcc/passes.c:2667
+#11 0x0000000000b6f617 in cgraph_node::expand (this=0x7ffff7780000) at ../.././riscv-gcc/gcc/cgraphunit.c:1830
+#12 0x0000000000b6fd15 in cgraph_order_sort::process (this=0x2333788) at ../.././riscv-gcc/gcc/cgraphunit.c:2069
+#13 0x0000000000b6ffce in output_in_order () at ../.././riscv-gcc/gcc/cgraphunit.c:2137
+#14 0x0000000000b705a6 in symbol_table::compile (this=0x7ffff7670000) at ../.././riscv-gcc/gcc/cgraphunit.c:2355
+#15 0x0000000000b709d2 in symbol_table::finalize_compilation_unit (this=0x7ffff7670000) at ../.././riscv-gcc/gcc/cgraphunit.c:2539
+#16 0x000000000110d05f in compile_file () at ../.././riscv-gcc/gcc/toplev.c:482
+#17 0x00000000011100c6 in do_compile () at ../.././riscv-gcc/gcc/toplev.c:2201
+#18 0x00000000011103e8 in toplev::main (this=0x7fffffffc176, argc=14, argv=0x7fffffffc288) at ../.././riscv-gcc/gcc/toplev.c:2340
+#19 0x0000000001bf4bf5 in main (argc=14, argv=0x7fffffffc288) at ../.././riscv-gcc/gcc/main.c:39
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org0000018" class="outline-2 references">
+<h2 id="org0000018">Backlinks</h2>
+<div class="outline-text-2" id="text-org0000018">
+<p>
+<a href="retargeting_gcc_to_riscv.html#ID-303d0f7f-03c2-4f31-ad7e-064162e3af10">Retargeting GCC To RISC-V</a>
+(<i>Retargeting GCC To RISC-V &gt; gcc &gt; machine description &gt; md 模板</i>):  <a href="gcc_machine_description.html#ID-02e7f924-9cf7-4e3d-8ceb-1765fd3a2bed">GCC Machine Description</a>
+</p>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway (sunwayforever@gmail.com)<br />
+Date: 2022-03-24 Thu 12:17<br />
+Last updated: 2022-03-25 Fri 18:34</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
+<br />
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>
