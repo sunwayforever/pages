@@ -44,7 +44,7 @@
 <ul>
 <li><a href="#org0000004">1.1. optab</a>
 <ul>
-<li><a href="#org0000084">1.1.1. overview</a></li>
+<li><a href="#org0000083">1.1.1. overview</a></li>
 <li><a href="#ID-c1ff5b55-a6cd-41c5-aab9-248f52262030">1.1.2. optab_libfunc</a></li>
 </ul>
 </li>
@@ -93,8 +93,8 @@
 <h3 id="org0000004"><span class="section-number-3">1.1</span> optab</h3>
 <div class="outline-text-3" id="text-1-1">
 </div>
-<div id="outline-container-org0000084" class="outline-4">
-<h4 id="org0000084"><span class="section-number-4">1.1.1</span> overview</h4>
+<div id="outline-container-org0000083" class="outline-4">
+<h4 id="org0000083"><span class="section-number-4">1.1.1</span> overview</h4>
 <div class="outline-text-4" id="text-1-1-1">
 <p>
 optab 的定义在 optabs.def, 主要是作用是记录了 optab (例如 add_optab) 与 rtl insn
@@ -660,8 +660,8 @@ FIXED_REGISTERS. FIXED_REGISTERS 不会被 ira 分配, 也不会被 prologue 保
 </div>
 </div>
 
-<div id="outline-container-org0000081" class="outline-6">
-<h6 id="org0000081"><span class="section-number-6">1.4.2.1.3</span> backtrace</h6>
+<div id="outline-container-org0000080" class="outline-6">
+<h6 id="org0000080"><span class="section-number-6">1.4.2.1.3</span> backtrace</h6>
 <div class="outline-text-6" id="text-1-4-2-1-3">
 <div class="org-src-container">
 <pre class="src src-rust">#0  riscv_save_reg_p (regno=0) at ../.././riscv-gcc/gcc/config/riscv/riscv.<span class="org-variable-name">c</span>:3636
@@ -897,9 +897,10 @@ CODE_FOR_addsf3 的对应关系由 genopinit 根据 optabs.def 生成
 <li>用 insn_code 做索引在 insn_data 中查找到 `gen_addsf3` 函数. insn_data 由
 genoutput 扫描 md 生成. gen_addsf3 由 genemit 生成</li>
 
-<li>gen_addsf3 生成 addsf3 对应的 rtl expression</li>
+<li>gen_addsf3 生成 addsf3 对应的 rtl expression (rtx)</li>
 
-<li>rtl.def 定义了 rtl expression 使用的 expression code, 例如 SET, PLUS, &#x2026;</li>
+<li>rtl.def 定义了 rtx 使用的 expression code, 例如 INSN, CODE_LABEL, SET, PLUS,
+&#x2026;</li>
 </ol>
 </div>
 
@@ -1081,8 +1082,8 @@ bb4 的第一个 stmt `_3 = 0.0` 的处理过程:
 <h4 id="org000001c"><span class="section-number-4">1.5.2</span> rtl to assembly</h4>
 <div class="outline-text-4" id="text-1-5-2">
 </div>
-<div id="outline-container-org0000083" class="outline-5">
-<h5 id="org0000083"><span class="section-number-5">1.5.2.1</span> overview</h5>
+<div id="outline-container-org0000084" class="outline-5">
+<h5 id="org0000084"><span class="section-number-5">1.5.2.1</span> overview</h5>
 <div class="outline-text-5" id="text-1-5-2-1">
 <p>
 rtl 通过一些 rtl pass 后最终由 rtl 的 `pass_final` 生成 assembly
@@ -1096,8 +1097,8 @@ rtl 通过一些 rtl pass 后最终由 rtl 的 `pass_final` 生成 assembly
 </ol>
 </div>
 
-<div id="outline-container-org0000080" class="outline-6">
-<h6 id="org0000080"><span class="section-number-6">1.5.2.1.1</span> backtrace</h6>
+<div id="outline-container-org0000081" class="outline-6">
+<h6 id="org0000081"><span class="section-number-6">1.5.2.1.1</span> backtrace</h6>
 <div class="outline-text-6" id="text-1-5-2-1-1">
 <div class="org-src-container">
 <pre class="src src-rust">#0  get_insn_template (code=0, insn=0x7fffffffbc00) at ../.././riscv-gcc/gcc/final.<span class="org-variable-name">c</span>:2063
@@ -1150,6 +1151,248 @@ rtl 通过一些 rtl pass 后最终由 rtl 的 `pass_final` 生成 assembly
 </div>
 </div>
 </div>
+
+<div id="outline-container-org000008b" class="outline-5">
+<h5 id="org000008b"><span class="section-number-5">1.5.2.3</span> recog_memoized</h5>
+<div class="outline-text-5" id="text-1-5-2-3">
+<p>
+以 insn_code 135 为例:
+</p>
+
+<p>
+要匹配的 insn 为:
+</p>
+
+<pre class="example" id="org0000089">
+(insn/f 40 39 41 (set (mem/c:DI (plus:DI (reg/f:DI 2 sp)
+                (const_int 24 [0x18])) [2  S8 A64])
+        (reg/f:DI 8 s0)) "test.c":1:21 
+)
+</pre>
+
+<p>
+recog 的过程为:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-keyword">inline</span> <span class="org-type">int</span> <span class="org-function-name">recog_memoized</span>(<span class="org-type">rtx_insn</span> *<span class="org-variable-name">insn</span>) {
+    <span class="org-keyword">if</span> (INSN_CODE(insn) &lt; 0) INSN_CODE(insn) = recog(PATTERN(insn), insn, 0);
+    <span class="org-keyword">return</span> INSN_CODE(insn);
+}
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">x1 &#20026; PATTERN(insn):</span>
+<span class="org-comment"> * </span>
+<span class="org-comment"> * (set (mem/c:DI (plus:DI (reg/f:DI 2 sp)</span>
+<span class="org-comment"> *             (const_int 24 [0x18])) [2  S8 A64])</span>
+<span class="org-comment"> *     (reg/f:DI 8 s0))</span>
+<span class="org-comment"> *     </span>
+<span class="org-comment-delimiter"> */</span>
+<span class="org-function-name">recog</span>(x1, insn):
+    <span class="org-keyword">switch</span> (GET_CODE (x1)):
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">x1-&gt;code=SET</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">case</span> SET:
+            <span class="org-keyword">return</span> recog_19 (x1, insn, pnum_clobbers);
+
+<span class="org-keyword">static</span> <span class="org-type">int</span> <span class="org-function-name">recog_19</span>(
+    rtx <span class="org-type">x1</span> <span class="org-variable-name">ATTRIBUTE_UNUSED</span>, <span class="org-type">rtx_insn</span> *<span class="org-variable-name">insn</span> ATTRIBUTE_UNUSED,
+    <span class="org-type">int</span> *<span class="org-variable-name">pnum_clobbers</span> ATTRIBUTE_UNUSED) {
+    rtx *<span class="org-keyword">const</span> operands ATTRIBUTE_UNUSED = &amp;recog_data.operand[0];
+    <span class="org-type">rtx</span> <span class="org-variable-name">x2</span>, <span class="org-variable-name">x3</span>, <span class="org-variable-name">x4</span>, <span class="org-variable-name">x5</span>, <span class="org-variable-name">x6</span>, <span class="org-variable-name">x7</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">res</span> ATTRIBUTE_UNUSED;
+    x2 = XEXP(x1, 1);
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: x2 &#20026; (reg/f:DI 8 s0)</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">switch</span> (GET_CODE(x2)) {
+        <span class="org-keyword">case</span> REG:
+        <span class="org-keyword">case</span> SUBREG:
+        <span class="org-keyword">case</span> MEM:
+        <span class="org-keyword">case</span> LABEL_REF:
+        <span class="org-keyword">case</span> SYMBOL_REF:
+        <span class="org-keyword">case</span> HIGH:
+            <span class="org-keyword">return</span> recog_7(x1, insn, pnum_clobbers);
+
+    }
+
+
+<span class="org-keyword">static</span> <span class="org-type">int</span> <span class="org-function-name">recog_7</span> (<span class="org-type">rtx</span> <span class="org-type">x1</span> <span class="org-variable-name">ATTRIBUTE_UNUSED</span>, <span class="org-type">rtx_insn</span> *<span class="org-variable-name">insn</span> ATTRIBUTE_UNUSED, <span class="org-type">int</span> *<span class="org-variable-name">pnum_clobbers</span> ATTRIBUTE_UNUSED):
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: x2 &#20026;</span>
+<span class="org-comment">     *  (mem/c:DI (plus:DI (reg/f:DI 2 sp)</span>
+<span class="org-comment">     *   (const_int 24 [0x18])) [2  S8 A64])</span>
+<span class="org-comment">     *</span><span class="org-comment-delimiter"> */</span>
+    x2 = XEXP (x1, 0);
+    <span class="org-keyword">switch</span> (GET_CODE (x2)) {
+        <span class="org-keyword">case</span> MEM:
+            res = recog_2 (x1, insn, pnum_clobbers);
+    }
+
+<span class="org-keyword">static</span> <span class="org-type">int</span> <span class="org-function-name">recog_2</span> (<span class="org-type">rtx</span> <span class="org-type">x1</span> <span class="org-variable-name">ATTRIBUTE_UNUSED</span>, <span class="org-type">rtx_insn</span> *<span class="org-variable-name">insn</span> ATTRIBUTE_UNUSED, <span class="org-type">int</span> *<span class="org-variable-name">pnum_clobbers</span> ATTRIBUTE_UNUSED):
+    x2 = XEXP (x1, 0);
+    operands[0] = x2;
+    x3 = XEXP (x1, 1);
+    operands[1] = x3;
+    <span class="org-keyword">switch</span> (GET_MODE (operands[0])):
+        <span class="org-keyword">case</span> E_DImode:
+            <span class="org-keyword">if</span> ((TARGET_64BIT
+                   &amp;&amp; (register_operand (operands[0], DImode)
+                      || reg_or_0_operand (operands[1], DImode))))
+                <span class="org-keyword">return</span> 135; <span class="org-comment-delimiter">/* </span><span class="org-comment">*movdi_64bit</span><span class="org-comment-delimiter"> */</span>
+            <span class="org-keyword">break</span>;
+
+</pre>
+</div>
+
+<p>
+最终匹配的 insn_code 为 135, 对应 riscv.md 中的:
+</p>
+
+<pre class="example" id="org000008a">
+(define_insn "*movdi_64bit"
+  [(set (match_operand:DI 0 "nonimmediate_operand" "=r,r,r, m,  *f,*f,*r,*f,*m")
+    (match_operand:DI 1 "move_operand"         " r,T,m,rJ,*r*J,*m,*f,*f,*f"))]
+  "TARGET_64BIT
+   &amp;&amp; (register_operand (operands[0], DImode)
+       || reg_or_0_operand (operands[1], DImode))"
+  { return riscv_output_move (operands[0], operands[1]); }
+  [(set_attr "move_type" "move,const,load,store,mtc,fpload,mfc,fmove,fpstore")
+   (set_attr "mode" "DI")])
+</pre>
+
+<p>
+recog 函数中各种判断实际是 genrecog 根据这个 movdi_64bit 的 match_xxx 自动生成的.而且在匹配过程中, template 与 insn 并不需要完全相同, 粗粒度的 template 可以匹配细粒度的 insn (例如 template 中的 match_operand 可以匹配 (mem/c:DI (plus &#x2026;.)))
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000008e" class="outline-5">
+<h5 id="org000008e"><span class="section-number-5">1.5.2.4</span> get_insn_template</h5>
+<div class="outline-text-5" id="text-1-5-2-4">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-function-name">get_insn_template</span>(<span class="org-type">int</span> <span class="org-variable-name">code</span>, <span class="org-type">rtx_insn</span> *<span class="org-variable-name">insn</span>) {
+    <span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">ret</span>;
+    <span class="org-keyword">switch</span> (insn_data[code].output_format) {
+        <span class="org-keyword">case</span> INSN_OUTPUT_FORMAT_SINGLE:
+            ret = insn_data[code].output.single;
+            <span class="org-keyword">break</span>;
+        <span class="org-keyword">case</span> INSN_OUTPUT_FORMAT_MULTI:
+            ret = insn_data[code].output.multi[which_alternative];
+            <span class="org-keyword">break</span>;
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: 135 &#23545;&#24212;&#30340; insn_data &#30340; output_format &#20026; INSN_OUTPUT_FORMAT_FUNCTION, &#22240;&#20026; md &#25991;&#20214;&#20013;&#25351;&#23450;&#20102;</span>
+<span class="org-comment">         *   { return riscv_output_move (operands[0], operands[1]); }</span>
+<span class="org-comment">         *</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">case</span> INSN_OUTPUT_FORMAT_FUNCTION:
+            gcc_assert(insn);
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#36825;&#37324;&#30340; output.function &#23601;&#26159;  riscv_output_move</span><span class="org-comment-delimiter"> */</span>
+            ret = (*insn_data[code].output.function)(recog_data.operand, insn);
+            <span class="org-keyword">break</span>;
+    }
+    <span class="org-keyword">return</span> ret;
+}
+
+<span class="org-constant">riscv_output_move</span>:
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">dest_code &#20026; MEM</span><span class="org-comment-delimiter"> */</span>
+    dest_code = GET_CODE (dest);
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">src_code &#20026; REG</span><span class="org-comment-delimiter"> */</span>
+    src_code = GET_CODE (src);
+    <span class="org-keyword">if</span> ((src_code == REG &amp;&amp; GP_REG_P (REGNO (src))) || (src == CONST0_RTX (mode))):
+        <span class="org-keyword">if</span> (dest_code == MEM):
+            <span class="org-keyword">switch</span> (GET_MODE_SIZE (mode))
+            {
+                <span class="org-keyword">case</span> 1: <span class="org-keyword">return</span> <span class="org-string">"sb\t%z1,%0"</span>;
+                <span class="org-keyword">case</span> 2: <span class="org-keyword">return</span> <span class="org-string">"sh\t%z1,%0"</span>;
+                <span class="org-keyword">case</span> 4: <span class="org-keyword">return</span> <span class="org-string">"sw\t%z1,%0"</span>;
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#26368;&#21518; match &#30340;&#26159;&#36825;&#19968;&#21477;:</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-keyword">case</span> 8: <span class="org-keyword">return</span> <span class="org-string">"sd\t%z1,%0"</span>;
+            }
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000092" class="outline-5">
+<h5 id="org0000092"><span class="section-number-5">1.5.2.5</span> output_asm_insn</h5>
+<div class="outline-text-5" id="text-1-5-2-5">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">void</span> <span class="org-function-name">output_asm_insn</span> (<span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">templ</span>, <span class="org-type">rtx</span> *<span class="org-variable-name">operands</span>):
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: templ &#20026; sd\t%z1,%0</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">output_asm_insn &#20250;&#36941;&#21382;&#24182;&#25171;&#21360;&#20986; templ, &#30896;&#21040; % &#20250;&#29305;&#27530;&#22788;&#29702;, </span>
+<span class="org-comment">     * % &#21518;&#38754;&#30340;&#29305;&#27530;&#23383;&#31526;&#20363;&#22914; z &#20915;&#23450;&#20102; operand &#20363;&#22914; 1 &#22914;&#20309;&#22788;&#29702;</span>
+<span class="org-comment">     * gcc &#26412;&#36523;&#25903;&#25345;&#30340;&#29305;&#27530;&#23383;&#31526;&#21253;&#25324;:</span>
+<span class="org-comment">     * a : address</span>
+<span class="org-comment">     * c : const address</span>
+<span class="org-comment">     * l : label</span>
+<span class="org-comment">     * n : int</span>
+<span class="org-comment">     * &#38500;&#27492;&#20197;&#22806;, target &#21487;&#20197;&#23454;&#29616;&#33258;&#24049;&#30340; TARGET_PRINT_OPERAND &#26469;&#23450;&#20041;</span>
+<span class="org-comment">     * &#33258;&#24049;&#30340;&#29305;&#27530;&#23383;&#31526;, &#20363;&#22914;&#36825;&#37324;&#30340; c &#23601;&#26159; riscv &#33258;&#24049;&#23450;&#20041;&#30340;&#23383;&#31526;</span>
+<span class="org-comment">     * %0 &#36825;&#31181;&#27809;&#26377;&#25351;&#23450;&#29305;&#27530;&#23383;&#31526;&#30340; operand &#20250;&#20351;&#29992;&#40664;&#35748;&#30340;&#26041;&#24335;&#22788;&#29702;</span>
+<span class="org-comment">     *</span><span class="org-comment-delimiter"> */</span>
+
+     <span class="org-comment-delimiter">/* </span><span class="org-comment">%z1 &#36890;&#36807; riscv_print_operand &#26469;&#22788;&#29702;, &#36820;&#22238; s0</span><span class="org-comment-delimiter"> */</span>
+     <span class="org-comment-delimiter">/* </span><span class="org-comment">%0 &#36890;&#36807; output_operand &#22788;&#29702;</span><span class="org-comment-delimiter">*/</span> 
+     output_operand (operands[opnum], letter);
+         <span class="org-comment-delimiter">/* </span><span class="org-comment">x &#26159; (mem (plus ...)) &#36825;&#20010; rtx, code &#20026; 0, &#22240;&#20026;&#27809;&#26377; format letter</span><span class="org-comment-delimiter">*/</span>
+         targetm.asm_out.print_operand (asm_out_file, x, code);
+
+<span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">riscv_print_operand</span> (<span class="org-type">FILE</span> *<span class="org-variable-name">file</span>, <span class="org-type">rtx</span> <span class="org-variable-name">op</span>, <span class="org-type">int</span> <span class="org-variable-name">letter</span>):
+    machine_mode mode = GET_MODE (op);
+    <span class="org-keyword">enum</span> <span class="org-type">rtx_code</span> <span class="org-variable-name">code</span> = GET_CODE (op);
+
+    <span class="org-keyword">switch</span> (letter):
+        <span class="org-comment-delimiter">/*</span>
+<span class="org-comment">         * ...</span>
+<span class="org-comment-delimiter">         */</span>
+        <span class="org-keyword">default</span>:
+
+        <span class="org-keyword">switch</span> (code):
+          <span class="org-keyword">case</span> MEM:
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">XEXP(op,0) &#20026;</span>
+<span class="org-comment">             * (plus:DI (reg/f:DI 2 sp)</span>
+<span class="org-comment">             *   (const_int 24 [0x18]))</span>
+<span class="org-comment">             *</span><span class="org-comment-delimiter"> */</span>
+            output_address (mode, XEXP (op, 0));
+          <span class="org-keyword">break</span>;
+
+<span class="org-type">void</span> <span class="org-function-name">output_address</span> (<span class="org-type">machine_mode</span> <span class="org-variable-name">mode</span>, <span class="org-type">rtx</span> <span class="org-variable-name">x</span>) {
+  <span class="org-type">bool</span> <span class="org-variable-name">changed</span> = <span class="org-constant">false</span>;
+  walk_alter_subreg (&amp;x, &amp;changed);
+  <span class="org-comment-delimiter">/* </span><span class="org-comment">TARGET_PRINT_OPERAND_ADDRESS</span><span class="org-comment-delimiter"> */</span>
+  targetm.asm_out.print_operand_address (asm_out_file, mode, x);
+}
+
+<span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">riscv_print_operand_address</span> (<span class="org-type">FILE</span> *<span class="org-variable-name">file</span>, <span class="org-type">machine_mode</span> <span class="org-type">mode</span> <span class="org-variable-name">ATTRIBUTE_UNUSED</span>, <span class="org-type">rtx</span> <span class="org-variable-name">x</span>):
+    <span class="org-keyword">struct</span> riscv_address_info addr;        
+    <span class="org-keyword">if</span> (riscv_classify_address (&amp;addr, x, word_mode, <span class="org-constant">true</span>))
+        <span class="org-keyword">switch</span> (addr.type) {
+            <span class="org-keyword">case</span> ADDRESS_REG:
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#36825;&#37324;&#20250;&#36755;&#20986; 24</span><span class="org-comment-delimiter"> */</span>
+                riscv_print_operand (file, addr.offset, 0);
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#36825;&#37324;&#20250;&#25509;&#30528;&#36755;&#20986; (sp), &#25152;&#20197; (mem ...) &#26368;&#32456;&#25171;&#21360;&#20986; `24(sp)`</span><span class="org-comment-delimiter"> */</span>
+                fprintf (file, <span class="org-string">"(%s)"</span>, reg_names[REGNO (addr.reg)]);
+                <span class="org-keyword">return</span>;
+
+
+</pre>
+</div>
+
+<p>
+所以下面的 rtl 
+</p>
+
+<pre class="example" id="org0000091">
+(insn/f 40 39 41 (set (mem/c:DI (plus:DI (reg/f:DI 2 sp)
+                (const_int 24 [0x18])) [2  S8 A64])
+        (reg/f:DI 8 s0)) "test.c":1:21 
+)
+</pre>
+
+<p>
+对应的 assembly 为
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">sd</span>  <span class="org-keyword">s0</span>,24(sp)
+</pre>
+</div>
+</div>
+</div>
 </div>
 </div>
 </div>
@@ -1158,7 +1401,7 @@ rtl 通过一些 rtl pass 后最终由 rtl 的 `pass_final` 生成 assembly
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-03-24 Thu 12:17<br />
-Last updated: 2022-04-01 Fri 12:28</p>
+Last updated: 2022-04-01 Fri 20:04</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
