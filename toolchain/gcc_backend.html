@@ -44,7 +44,8 @@
 <ul>
 <li><a href="#org0000004">1.1. optab</a>
 <ul>
-<li><a href="#ID-c1ff5b55-a6cd-41c5-aab9-248f52262030">1.1.1. optab_libfunc</a></li>
+<li><a href="#org0000003">1.1.1. optab_handler</a></li>
+<li><a href="#ID-c1ff5b55-a6cd-41c5-aab9-248f52262030">1.1.2. optab_libfunc</a></li>
 </ul>
 </li>
 <li><a href="#ID-a354364f-e048-4d6f-b780-0271f16dfd6a">1.2. rtl</a>
@@ -70,7 +71,7 @@
 <li><a href="#org00000a8">1.5. example</a>
 <ul>
 <li><a href="#org0000089">1.5.1. gimple to rtl</a></li>
-<li><a href="#org000001c">1.5.2. rtl to assembly</a></li>
+<li><a href="#org0000075">1.5.2. rtl to assembly</a></li>
 </ul>
 </li>
 </ul>
@@ -93,13 +94,173 @@ optab 的定义在 optabs.def, 它是 gimple 与 rtl 之间的桥梁:
 <ul class="org-ul">
 <li>gimple 的 tree code (例如 PLUS_EXPR) 映射到 optab (例如 add_optab)</li>
 
-<li>optab 再映射到 rtl 的 insn_code (例如 CODE_FOR_addsf3)</li>
+<li>通过 optab_handler 映射到 rtl 的 insn_code (例如 CODE_FOR_addsf3)</li>
 </ul>
 </div>
 
-<div id="outline-container-ID-c1ff5b55-a6cd-41c5-aab9-248f52262030" class="outline-4">
-<h4 id="ID-c1ff5b55-a6cd-41c5-aab9-248f52262030"><span class="section-number-4">1.1.1</span> optab_libfunc</h4>
+<div id="outline-container-org0000003" class="outline-4">
+<h4 id="org0000003"><span class="section-number-4">1.1.1</span> optab_handler</h4>
 <div class="outline-text-4" id="text-1-1-1">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">inline</span> <span class="org-keyword">enum</span> <span class="org-type">insn_code</span> <span class="org-function-name">optab_handler</span>(<span class="org-type">optab</span> <span class="org-variable-name">op</span>, <span class="org-type">machine_mode</span> <span class="org-variable-name">mode</span>) {
+    <span class="org-type">unsigned</span> <span class="org-variable-name">scode</span> = (op &lt;&lt; 16) | mode;
+    <span class="org-keyword">return</span> raw_optab_handler(scode);
+}
+
+<span class="org-keyword">enum</span> <span class="org-type">insn_code</span> <span class="org-function-name">raw_optab_handler</span>(<span class="org-type">unsigned</span> <span class="org-variable-name">scode</span>) {
+    <span class="org-type">int</span> <span class="org-variable-name">i</span> = lookup_handler(scode);
+    <span class="org-keyword">return</span> (
+        i &gt;= 0 &amp;&amp; this_fn_optabs-&gt;pat_enable[i] ? pats[i].icode
+                                                : CODE_FOR_nothing);
+}
+
+<span class="org-keyword">static</span> <span class="org-keyword">const</span> <span class="org-keyword">struct</span> <span class="org-type">optab_pat</span> <span class="org-variable-name">pats</span>[NUM_OPTAB_PATTERNS] = {
+  { 0x010405, CODE_FOR_extendqihi2 },
+  { 0x010406, CODE_FOR_extendqisi2 },
+  { 0x010407, CODE_FOR_extendqidi2 },
+  { 0x010505, CODE_FOR_extendhihi2 },
+  { 0x010506, CODE_FOR_extendhisi2 },
+  { 0x010507, CODE_FOR_extendhidi2 },
+  <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+}
+</pre>
+</div>
+
+<p>
+其中 pats 是通过 genopinit.c 通过扫描 optab.def 和 md 生成的
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C">genopinit.<span class="org-constant">c</span>:
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">read_md_rtx &#26159;&#20174; md &#20013;&#20381;&#27425;&#35835;&#20837; rtx, &#20363;&#22914;</span>
+<span class="org-comment"> * addsf3, adddf3, addsi3, ...</span>
+<span class="org-comment"> * &#38656;&#35201;&#27880;&#24847;&#30340;&#26159; md &#20013;&#36890;&#36807; define_mode_iterator &#23450;&#20041;&#30340; insn (&#20363;&#22914; add&lt;mode&gt;3)</span>
+<span class="org-comment"> * &#20250;&#34987;&#23637;&#24320;&#25104;&#22810;&#20010; rtx: addsf3 &#21644; adddf3</span>
+<span class="org-comment"> *</span><span class="org-comment-delimiter"> */</span>
+<span class="org-keyword">while</span> (read_md_rtx(&amp;info)):
+    <span class="org-keyword">switch</span> (GET_CODE(info.def)):
+        <span class="org-keyword">case</span> DEFINE_INSN:
+        <span class="org-keyword">case</span> DEFINE_EXPAND:
+            gen_insn(&amp;info);
+            <span class="org-keyword">break</span>;
+
+<span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">gen_insn</span> (<span class="org-type">md_rtx_info</span> *<span class="org-variable-name">info</span>) {
+  <span class="org-type">optab_pattern</span> <span class="org-variable-name">p</span>;
+  <span class="org-keyword">if</span> (find_optab (&amp;p, XSTR (info-&gt;def, 0))) {
+      patterns.safe_push (p);
+  }
+}
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000000" class="outline-5">
+<h5 id="org0000000"><span class="section-number-5">1.1.1.1</span> find_optab</h5>
+<div class="outline-text-5" id="text-1-1-1-1">
+<p>
+find_optab 是针对每一个 rtx (例如 addsf3) 去查找 optab.def 中是否有对应的 optab
+(例如 add_optab), 目的是为了给 optab 找到底层的 rtx 实现.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">bool</span> <span class="org-function-name">find_optab</span>(<span class="org-type">optab_pattern</span> *<span class="org-variable-name">p</span>, <span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">name</span>) {
+    <span class="org-keyword">if</span> (*name == 0 || *name == <span class="org-string">'*'</span>) <span class="org-keyword">return</span> <span class="org-constant">false</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#38024;&#23545; name &#36941;&#21382;&#25152;&#26377;&#30340; optab</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">for</span> (<span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">pindex</span> = 0; pindex &lt; ARRAY_SIZE(optabs); pindex++) {
+        p-&gt;m1 = 0;
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">&#25152;&#35859;&#30340; match_pattern, &#26159;&#25351; rtx &#33021;&#21542;&#28385;&#36275; optab pattern &#30340;&#35201;&#27714;</span>
+<span class="org-comment">         * &#20363;&#22914; add_optab &#26377;&#19968;&#20010; patten &#26159; `add$F$a3`, &#34920;&#31034;&#19977;&#20010;&#25805;&#20316;&#25968;&#30340;&#28014;&#28857;&#21152;&#27861;,</span>
+<span class="org-comment">         * &#21017; addsf3 &#21644; adddf3 &#37117;&#20250;&#21644; add_optab match. &#21363; add_optab &#38024;&#23545;&#28014;&#28857;&#27169;&#24335; sf/df &#25214;&#21040;&#20102; rtx &#23454;&#29616;</span>
+<span class="org-comment">         * &#23454;&#38469;&#19978;, &#19978;&#23618;&#20195;&#30721;&#20363;&#22914;&#29983;&#25104; gimple &#26102;&#20063;&#20250;&#36890;&#36807; optab_handler &#21435;&#30830;&#35748;&#30456;&#24212;&#30340; optab &#22312;&#24213;&#23618;&#26159;&#21542;&#25903;&#25345;.</span>
+<span class="org-comment">         *</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">if</span> (match_pattern(p, name, optabs[pindex].pattern)) {
+            p-&gt;name = name;
+            p-&gt;op = optabs[pindex].op;
+            p-&gt;sort_num = (p-&gt;op &lt;&lt; 16) | p-&gt;m1;
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">p-&gt;sort_num &#21363;&#26159; pats &#20013;&#21069;&#38754;&#30340;&#25968;:</span>
+<span class="org-comment">             * { 0x010405, CODE_FOR_extendqihi2 },</span>
+<span class="org-comment">             *</span><span class="org-comment-delimiter"> */</span>
+            <span class="org-keyword">return</span> <span class="org-constant">true</span>;
+        }
+    }
+    <span class="org-keyword">return</span> <span class="org-constant">false</span>;
+}
+
+<span class="org-keyword">static</span> <span class="org-type">bool</span> <span class="org-function-name">match_pattern</span>(<span class="org-type">optab_pattern</span> *<span class="org-variable-name">p</span>, <span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">name</span>, <span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">pat</span>) {
+    <span class="org-type">bool</span> <span class="org-variable-name">force_float</span> = <span class="org-constant">false</span>;
+    <span class="org-type">bool</span> <span class="org-variable-name">force_int</span> = <span class="org-constant">false</span>;
+    <span class="org-type">bool</span> <span class="org-variable-name">force_partial_int</span> = <span class="org-constant">false</span>;
+    <span class="org-type">bool</span> <span class="org-variable-name">force_fixed</span> = <span class="org-constant">false</span>;
+
+    <span class="org-keyword">if</span> (pat == <span class="org-constant">NULL</span>) <span class="org-keyword">return</span> <span class="org-constant">false</span>;
+    <span class="org-keyword">for</span> (;; ++pat) {
+        <span class="org-keyword">if</span> (*pat != <span class="org-string">'$'</span>) {
+            <span class="org-keyword">if</span> (*pat != *name++) <span class="org-keyword">return</span> <span class="org-constant">false</span>;
+            <span class="org-keyword">if</span> (*pat == <span class="org-string">'\0'</span>) <span class="org-keyword">return</span> <span class="org-constant">true</span>;
+            <span class="org-keyword">continue</span>;
+        }
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">IPFQ &#26159; optab.def &#20013;&#34920;&#31034;&#26684;&#24335;&#30340;&#29305;&#27530;&#23383;&#31526;</span>
+<span class="org-comment">         * I &#34920;&#31034; int</span>
+<span class="org-comment">         * F &#34920;&#31034; float</span>
+<span class="org-comment">         * ...</span>
+<span class="org-comment">         *</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">switch</span> (*++pat) {
+            <span class="org-keyword">case</span> <span class="org-string">'I'</span>:
+                force_int = 1;
+                <span class="org-keyword">break</span>;
+            <span class="org-keyword">case</span> <span class="org-string">'P'</span>:
+                force_partial_int = 1;
+                <span class="org-keyword">break</span>;
+            <span class="org-keyword">case</span> <span class="org-string">'F'</span>:
+                force_float = 1;
+                <span class="org-keyword">break</span>;
+            <span class="org-keyword">case</span> <span class="org-string">'Q'</span>:
+                force_fixed = 1;
+                <span class="org-keyword">break</span>;
+
+            <span class="org-keyword">case</span> <span class="org-string">'a'</span>:
+            <span class="org-keyword">case</span> <span class="org-string">'b'</span>: {
+                <span class="org-type">int</span> <span class="org-variable-name">i</span>;
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#36941;&#21382; target &#25903;&#25345;&#30340;&#25152;&#26377;&#30340; machine_mode: sf, df, si, di,</span>
+<span class="org-comment">                 * ...</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-keyword">for</span> (i = (MAX_MACHINE_MODE)-1; i &gt;= 0; i--) {
+                    <span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">p</span>, *<span class="org-variable-name">q</span>;
+                    <span class="org-keyword">for</span> (p = GET_MODE_NAME(i), q = name; *p; p++, q++)
+                        <span class="org-keyword">if</span> (TOLOWER(*p) != *q) <span class="org-keyword">break</span>;
+                    <span class="org-keyword">if</span> (*p == 0 &amp;&amp;
+                        (<span class="org-negation-char">!</span>force_int || mode_class[i] == MODE_INT ||
+                         mode_class[i] == MODE_VECTOR_INT) &amp;&amp;
+                        (<span class="org-negation-char">!</span>force_float || mode_class[i] == MODE_FLOAT ||
+                         mode_class[i] == MODE_DECIMAL_FLOAT ||
+                         mode_class[i] == MODE_COMPLEX_FLOAT ||
+                         mode_class[i] == MODE_VECTOR_FLOAT) &amp;&amp;
+                        ) || (...);
+                        <span class="org-keyword">break</span>;
+                }
+
+                <span class="org-keyword">if</span> (i &lt; 0) <span class="org-keyword">return</span> <span class="org-constant">false</span>;
+
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">&#20197; optab.def &#20013;&#30340; OPTAB_NX(add_optab, "add$F$a3") &#20026;&#20363;</span>
+<span class="org-comment">                 * addsf3 &#20250; match &#21040; "add$F$a3" &#36825;&#20010; pat</span>
+<span class="org-comment-delimiter">                 */</span>
+                name += strlen(GET_MODE_NAME(i));
+                p-&gt;m1 = i;                
+            } <span class="org-keyword">break</span>;
+        }
+    }
+}
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-ID-c1ff5b55-a6cd-41c5-aab9-248f52262030" class="outline-4">
+<h4 id="ID-c1ff5b55-a6cd-41c5-aab9-248f52262030"><span class="section-number-4">1.1.2</span> optab_libfunc</h4>
+<div class="outline-text-4" id="text-1-1-2">
 <p>
 gcc 通过 optab_handler 查找 optab 对应的 insn_code, 当它找不到 `optab+machmode`
 对应的 insn 时, 会通过 optab_libfunc 生成对某个外部函数的调用, 例如 __divsf3. 这些函数是在 <a href="bare_metal.html#ID-27a07646-18c6-4504-b36e-a5d63871a0d2">libgcc</a> 中实现的.
@@ -140,7 +301,7 @@ gcc 通过 optab_handler 查找 optab 对应的 insn_code, 当它找不到 `opta
 实际上 soft-float 与 hard-float 的区别就是是通过 optab_libfunc 机制来体现的:
 </p>
 
-<pre class="example" id="org0000000">
+<pre class="example" id="org0000006">
 (define_insn "div&lt;mode&gt;3"
   [(set (match_operand:ANYF           0 "register_operand" "=f")
     (div:ANYF (match_operand:ANYF 1 "register_operand" " f")
@@ -170,7 +331,7 @@ insn. 否则就会通过 optab_libfunc 产生对 __divsf3/__divdf3 的调用
 rtl (register transfer language) 包含许多不同的 rtx (rtl expression), 例如:
 </p>
 
-<pre class="example" id="org0000005">
+<pre class="example" id="org000000a">
 DEF_RTL_EXPR(PLUS, "plus", "ee", RTX_COMM_ARITH)
 </pre>
 
@@ -235,7 +396,7 @@ gen_rtx_PLUS), 然后通过 c 代码来构造 rtx, 例如 md 中 `define_expand`
 label_ref
 </p>
 
-<pre class="example" id="org0000009">
+<pre class="example" id="org000000e">
 (define_insn "*branch&lt;mode&gt;"
   [(set (pc)
     (if_then_else
@@ -302,7 +463,7 @@ float_truncate
 把 df truncate 成 sf:
 </p>
 
-<pre class="example" id="org0000013">
+<pre class="example" id="org0000018">
 (define_insn "truncdfsf2"
   [(set (match_operand:SF     0 "register_operand" "=f")
     (float_truncate:SF
@@ -332,7 +493,7 @@ clobber
 clobber 是指 rtl 会隐式的修改这个寄存器, 例如:
 </p>
 
-<pre class="example" id="org0000017">
+<pre class="example" id="org000001c">
 (define_insn "call_internal"
   [(call (mem:SI (match_operand 0 "call_insn_operand" "l,S,U"))
      (match_operand 1 "" ""))
@@ -361,7 +522,7 @@ use
 use 是指 rtl 会隐式的读取这个寄存器, 防止前面针对这个寄存器的写操作被优化掉,例如:
 </p>
 
-<pre class="example" id="org0000017">
+<pre class="example" id="org000001d">
 (define_insn "simple_return_internal"
   [(simple_return)
    (use (match_operand 0 "pmode_register_operand" ""))]
@@ -402,7 +563,7 @@ insn 是一种特殊的 rtx, 它封装了其它的 rtx (通过 PATTERN(insn) 可
 insn 用来表示一个完整的函数, 例如 pass_final dump 的结果:
 </p>
 
-<pre class="example" id="org000001b">
+<pre class="example" id="org0000021">
 (insn 13 11 14 (set (reg:SI 15 a5 [74])
         (plus:SI (reg:SI 15 a5 [75])
             (const_int 1 [0x1]))) "test.c":5:10 3 {addsi3}
@@ -697,6 +858,10 @@ riscv_expand_prologue 负责生成函数开头的:
 </pre>
 </div>
 
+<p>
+对应的 rtx
+</p>
+
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#36825;&#27573;&#20195;&#30721;&#36127;&#36131;&#29983;&#25104;&#20989;&#25968;&#24320;&#22836;&#30340;</span>
 <span class="org-comment"> * addi sp, sp , xxx</span>
@@ -769,8 +934,8 @@ riscv_expand_prologue 负责生成函数开头的:
 <h5 id="org0000067"><span class="section-number-5">1.4.3.2</span> epilogue</h5>
 </div>
 
-<div id="outline-container-org0000037" class="outline-5">
-<h5 id="org0000037"><span class="section-number-5">1.4.3.3</span> backtrace</h5>
+<div id="outline-container-org000003d" class="outline-5">
+<h5 id="org000003d"><span class="section-number-5">1.4.3.3</span> backtrace</h5>
 <div class="outline-text-5" id="text-1-4-3-3">
 <div class="org-src-container">
 <pre class="src src-rust">#0  gen_prologue () at ../.././riscv-gcc/gcc/config/riscv/riscv.<span class="org-variable-name">md</span>:2202
@@ -852,9 +1017,9 @@ genoutput 扫描 md 生成. gen_addsf3 由 genemit 生成</li>
 </ol>
 </div>
 
-<div id="outline-container-org0000043" class="outline-6">
-<h6 id="org0000043"><span class="section-number-6">1.5.1.0.1</span> backtrace</h6>
-<div class="outline-text-6" id="text-1-5-1-0-1">
+<div id="outline-container-org0000049" class="outline-5">
+<h5 id="org0000049"><span class="section-number-5">1.5.1.1</span> backtrace</h5>
+<div class="outline-text-5" id="text-1-5-1-1">
 <div class="org-src-container">
 <pre class="src src-rust">#0  gen_addsf3 (operand0=0x7fffffffb250, operand1=0x7ffff7786bb8, 
     operand2=0xf8360d &lt;maybe_legitimize_operands(insn_code, unsigned int, unsigned int, expand_operand*)+46&gt;) at insn-emit.<span class="org-variable-name">c</span>:45
@@ -888,9 +1053,9 @@ genoutput 扫描 md 生成. gen_addsf3 由 genemit 生成</li>
 </div>
 
 <div id="outline-container-org0000071" class="outline-5">
-<h5 id="org0000071"><span class="section-number-5">1.5.1.1</span> gimple code</h5>
-<div class="outline-text-5" id="text-1-5-1-1">
-<pre class="example" id="org0000046">
+<h5 id="org0000071"><span class="section-number-5">1.5.1.2</span> gimple code</h5>
+<div class="outline-text-5" id="text-1-5-1-2">
+<pre class="example" id="org000004c">
 float foo (float x)
 { 
   float D.1491;
@@ -923,8 +1088,8 @@ float foo (float x)
 </div>
 
 <div id="outline-container-org0000074" class="outline-5">
-<h5 id="org0000074"><span class="section-number-5">1.5.1.2</span> bb2</h5>
-<div class="outline-text-5" id="text-1-5-1-2">
+<h5 id="org0000074"><span class="section-number-5">1.5.1.3</span> bb2</h5>
+<div class="outline-text-5" id="text-1-5-1-3">
 <p>
 bb2 的第一个 stmt `if (x_2(D) &gt; 0.0)` 的处理过程:
 </p>
@@ -971,8 +1136,8 @@ bb2 的第一个 stmt `if (x_2(D) &gt; 0.0)` 的处理过程:
 </div>
 
 <div id="outline-container-org0000083" class="outline-5">
-<h5 id="org0000083"><span class="section-number-5">1.5.1.3</span> bb3</h5>
-<div class="outline-text-5" id="text-1-5-1-3">
+<h5 id="org0000083"><span class="section-number-5">1.5.1.4</span> bb3</h5>
+<div class="outline-text-5" id="text-1-5-1-4">
 <p>
 bb3 的第一个 stmt `_4 = x_2(D) + 1.0e+0` 的处理过程:
 </p>
@@ -1001,8 +1166,8 @@ bb3 的第一个 stmt `_4 = x_2(D) + 1.0e+0` 的处理过程:
 </div>
 
 <div id="outline-container-org000007a" class="outline-5">
-<h5 id="org000007a"><span class="section-number-5">1.5.1.4</span> bb4</h5>
-<div class="outline-text-5" id="text-1-5-1-4">
+<h5 id="org000007a"><span class="section-number-5">1.5.1.5</span> bb4</h5>
+<div class="outline-text-5" id="text-1-5-1-5">
 <p>
 bb4 的第一个 stmt `_3 = 0.0` 的处理过程:
 </p>
@@ -1025,8 +1190,8 @@ bb4 的第一个 stmt `_3 = 0.0` 的处理过程:
 </div>
 </div>
 
-<div id="outline-container-org000001c" class="outline-4">
-<h4 id="org000001c"><span class="section-number-4">1.5.2</span> rtl to assembly</h4>
+<div id="outline-container-org0000075" class="outline-4">
+<h4 id="org0000075"><span class="section-number-4">1.5.2</span> rtl to assembly</h4>
 <div class="outline-text-4" id="text-1-5-2">
 <p>
 rtl 通过一些 rtl pass 后最终由 rtl 的 `pass_final` 生成 assembly
@@ -1040,8 +1205,8 @@ rtl 通过一些 rtl pass 后最终由 rtl 的 `pass_final` 生成 assembly
 </ol>
 </div>
 
-<div id="outline-container-org0000057" class="outline-5">
-<h5 id="org0000057"><span class="section-number-5">1.5.2.1</span> backtrace</h5>
+<div id="outline-container-org000005c" class="outline-5">
+<h5 id="org000005c"><span class="section-number-5">1.5.2.1</span> backtrace</h5>
 <div class="outline-text-5" id="text-1-5-2-1">
 <div class="org-src-container">
 <pre class="src src-rust">#0  get_insn_template (code=0, insn=0x7fffffffbc00) at ../.././riscv-gcc/gcc/final.<span class="org-variable-name">c</span>:2063
@@ -1109,7 +1274,7 @@ rtl 通过一些 rtl pass 后最终由 rtl 的 `pass_final` 生成 assembly
 要匹配的 insn 为:
 </p>
 
-<pre class="example" id="org000005c">
+<pre class="example" id="org0000062">
 (insn/f 40 39 41 (set (mem/c:DI (plus:DI (reg/f:DI 2 sp)
                 (const_int 24 [0x18])) [2  S8 A64])
         (reg/f:DI 8 s0)) "test.c":1:21 
@@ -1190,7 +1355,7 @@ recog 的过程为:
 最终匹配的 insn_code 为 135, 对应 riscv.md 中的:
 </p>
 
-<pre class="example" id="org000005d">
+<pre class="example" id="org0000063">
 (define_insn "*movdi_64bit"
   [(set (match_operand:DI 0 "nonimmediate_operand" "=r,r,r, m,  *f,*f,*r,*f,*m")
     (match_operand:DI 1 "move_operand"         " r,T,m,rJ,*r*J,*m,*f,*f,*f"))]
@@ -1216,7 +1381,7 @@ rtx 本身就是树形结构, 而 recog 可以看做是一个相同形状的决�
 addi3 为例:
 </p>
 
-<pre class="example" id="org0000062">
+<pre class="example" id="org0000068">
 (define_insn "addsf3"
   [(set (match_operand:SF            0 "register_operand" "=f")
     (plus:SF (match_operand:SF 1 "register_operand" " f")
@@ -1384,7 +1549,7 @@ recog 针对 adddi3 的决策树是: set-&gt;plus-&gt;GET_MODE(operand[0])==DI
   targetm.asm_out.print_operand_address (asm_out_file, mode, x);
 }
 
-<span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">riscv_print_operand_address</span> (<span class="org-type">FILE</span> *<span class="org-variable-name">file</span>, <span class="org-type">machine_mode</span> <span class="org-type">mode</span> <span class="org-variable-name">ATTRIBUTE_UNUSED</span>, <span class="org-type">rtx</span> <span class="org-variable-name">x</span>):
+<span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">riscv_print_operand_address</span> (<span class="org-type">FILE</span> *<span class="org-variable-name">file</span>, <span class="org-type">machine_mode</span> <span class="org-variable-name">mode</span>, <span class="org-type">rtx</span> <span class="org-variable-name">x</span>):
     <span class="org-keyword">struct</span> riscv_address_info addr;        
     <span class="org-keyword">if</span> (riscv_classify_address (&amp;addr, x, word_mode, <span class="org-constant">true</span>))
         <span class="org-keyword">switch</span> (addr.type) {
@@ -1403,7 +1568,7 @@ recog 针对 adddi3 的决策树是: set-&gt;plus-&gt;GET_MODE(operand[0])==DI
 所以下面的 rtl 
 </p>
 
-<pre class="example" id="org000006b">
+<pre class="example" id="org0000072">
 (insn/f 40 39 41 (set (mem/c:DI (plus:DI (reg/f:DI 2 sp)
                 (const_int 24 [0x18])) [2  S8 A64])
         (reg/f:DI 8 s0)) "test.c":1:21 
@@ -1428,7 +1593,7 @@ recog 针对 adddi3 的决策树是: set-&gt;plus-&gt;GET_MODE(operand[0])==DI
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-03-24 Thu 12:17<br />
-Last updated: 2022-04-02 Sat 16:45</p>
+Last updated: 2022-04-02 Sat 21:52</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
