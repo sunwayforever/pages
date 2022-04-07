@@ -46,6 +46,7 @@
 <ul>
 <li><a href="#org0000001">1.1.1. jalr</a></li>
 <li><a href="#org0000008">1.1.2. gp</a></li>
+<li><a href="#org000000c">1.1.3. align</a></li>
 </ul>
 </li>
 <li><a href="#org000000d">1.2. impls</a>
@@ -81,14 +82,16 @@ gcc 编译和优化是以单个 object file 为单位, 导致两个问题:
 
 <ol class="org-ol">
 <li>symbol 的地址在 object file 中无法确定, gcc 必须通过 `auipc/lui` +
-`add/load/store/jalr` 多条指令的方式确保 symbol 在最 `远` 的情况下也能访问.</li>
+`add/load/store/jalr` 多条指令的方式确保 symbol 在最 `远` 的情况下也能访问.
+另外, 由于 object file 各个 section 的起始地址都是 0, 导致 object file 中因为
+align 产生的 nop 在 link 之后并不一定仍然满足 align 要求.</li>
 
 <li>跨 object file 的优化无法实现</li>
 </ol>
 
+
 <p>
-为了解决这两个问题, 需要 <a href="static_linker.html#ID-ea089718-c0fc-4484-8da4-e44d5e1007ac">Static Linker</a> 去优化, 前者是 linker relaxation, 后者是
-<a href="lto.html#ID-5b11f0d7-9689-4b4c-99ec-86e4a8599921">LTO</a>
+为了解决这两个问题, 需要 <a href="static_linker.html#ID-ea089718-c0fc-4484-8da4-e44d5e1007ac">Static Linker</a> 去优化/修改, 前者是 linker relaxation, 后者是 <a href="lto.html#ID-5b11f0d7-9689-4b4c-99ec-86e4a8599921">LTO</a>
 </p>
 
 <p>
@@ -103,6 +106,8 @@ riscv 中的 linker relaxation 主要有几种方式:
 <li>auipc+(addi,ld,sw&#x2026;) 替换为 addi,ld,sw&#x2026;</li>
 
 <li>如果 symbol 在 __global_pointer\$ 附近, 则可以用 gp 做为基址寄存器</li>
+
+<li>根据 reloc 中的 align 信息重新调整 align</li>
 </ol>
 </div>
 
@@ -312,6 +317,89 @@ __global_pointer$ = MIN(__SDATA_BEGIN__ + 0x800,
 </p>
 </div>
 </div>
+
+<div id="outline-container-org000000c" class="outline-4">
+<h4 id="org000000c"><span class="section-number-4">1.1.3</span> align</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<p>
+test.S:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm">    <span class="org-keyword">.global</span> _start
+    <span class="org-keyword">.section</span> .text
+
+<span class="org-function-name">_start</span>:
+    <span class="org-keyword">call</span> here
+    <span class="org-keyword">.balign</span> 16
+    <span class="org-keyword">move</span> a0,a0
+<span class="org-function-name">here</span>:
+    <span class="org-keyword">ret</span>
+</pre>
+</div>
+
+<pre class="example" id="org000000b">
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc test.S  -O0   -march=rv64g -c
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -D test.o -r
+
+Disassembly of section .text:
+
+0000000000000000 &lt;_start&gt;:
+   0:   00000097                auipc   ra,0x0
+                        0: R_RISCV_CALL here
+                        0: R_RISCV_RELAX        *ABS*
+   4:   000080e7                jalr    ra # 0 &lt;_start&gt;
+   # 插入了 3 个 nop, 且 reloc 中有 R_RISCV_ALIGN=0xc, 表示 16 字节对齐
+   # 为啥是 3 个 nop 可能关系不大, 因为 link 时到底多少个 nop 要取决于 _start 的起
+   # 始地址以及前面 R_RISCV_CALL 的 relaxation 的结果
+   8:   00000013                nop
+                        8: R_RISCV_ALIGN        *ABS*+0xc
+   c:   00000013                nop
+  10:   00000013                nop
+  14:   00050513                mv      a0,a0
+
+0000000000000018 &lt;here&gt;:
+  18:   00008067                ret
+  1c:   0000                    unimp
+
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc test.S  -O0   -march=rv64g  -nostdlib
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -D a.out
+
+Disassembly of section .text:
+
+0000000000010080 &lt;_start&gt;:
+   10080:       014000ef                jal     ra,10094 &lt;here&gt;
+   10084:       00000013                nop
+   10088:       00000013                nop
+   1008c:       00000013                nop
+   # mv a0,a0 确实是 16 bytes 对齐
+   10090:       00050513                mv      a0,a0
+
+0000000000010094 &lt;here&gt;:
+   10094:       00008067                ret
+   10098:       0000                    unimp
+        ...
+
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc test.S  -O0   -march=rv64g  -nostdlib -mno-relax
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -D a.out
+
+Disassembly of section .text:
+
+0000000000010080 &lt;_start&gt;:
+   10080:       00000097                auipc   ra,0x0
+   10084:       014080e7                jalr    20(ra) # 10094 &lt;here&gt;
+   10088:       00000013                nop
+   1008c:       00000013                nop
+   # -mno-relax 时针对 align 的 relaxation 还是会工作
+   10090:       00050513                mv      a0,a0
+
+0000000000010094 &lt;here&gt;:
+   10094:       00008067                ret
+   10098:       0000                    unimp
+        ...
+</pre>
+</div>
+</div>
 </div>
 
 <div id="outline-container-org000000d" class="outline-3">
@@ -404,7 +492,7 @@ TBD
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-04-06 Wed 19:22<br />
-Last updated: 2022-04-07 Thu 11:28</p>
+Last updated: 2022-04-07 Thu 14:11</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
