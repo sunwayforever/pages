@@ -44,11 +44,18 @@
 <ul>
 <li><a href="#org000000a">1.1. example</a>
 <ul>
-<li><a href="#org0000000">1.1.1. jalr</a></li>
-<li><a href="#org0000007">1.1.2. gp</a></li>
+<li><a href="#org0000001">1.1.1. jalr</a></li>
+<li><a href="#org0000008">1.1.2. gp</a></li>
 </ul>
 </li>
-<li><a href="#org000000d">1.2. impls</a></li>
+<li><a href="#org000000d">1.2. impls</a>
+<ul>
+<li><a href="#org000000e">1.2.1. _bfd_riscv_relax_call</a></li>
+<li><a href="#org0000011">1.2.2. _bfd_riscv_relax_lui</a></li>
+<li><a href="#org0000014">1.2.3. _bfd_riscv_relax_pc</a></li>
+<li><a href="#org0000017">1.2.4. _bfd_riscv_relax_align</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
@@ -103,12 +110,78 @@ riscv 中的 linker relaxation 主要有几种方式:
 <h3 id="org000000a"><span class="section-number-3">1.1</span> example</h3>
 <div class="outline-text-3" id="text-1-1">
 </div>
-<div id="outline-container-org0000000" class="outline-4">
-<h4 id="org0000000"><span class="section-number-4">1.1.1</span> jalr</h4>
+<div id="outline-container-org0000001" class="outline-4">
+<h4 id="org0000001"><span class="section-number-4">1.1.1</span> jalr</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+test.S:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm">    <span class="org-keyword">.global</span> _start
+    <span class="org-keyword">.section</span> .text
+
+<span class="org-function-name">_start</span>:
+    <span class="org-keyword">call</span> near
+    <span class="org-keyword">call</span> far
+
+    <span class="org-keyword">.rept</span>   (1&lt;&lt;18)-8
+    <span class="org-keyword">.word</span>   0
+    <span class="org-keyword">.endr</span>
+
+<span class="org-function-name">near</span>:
+    <span class="org-keyword">ret</span>
+    <span class="org-keyword">.rept</span> 10
+    <span class="org-keyword">.word</span>   0
+    <span class="org-keyword">.endr</span>
+<span class="org-function-name">far</span>:
+    <span class="org-keyword">ret</span>
+</pre>
 </div>
 
-<div id="outline-container-org0000007" class="outline-4">
-<h4 id="org0000007"><span class="section-number-4">1.1.2</span> gp</h4>
+<pre class="example" id="org0000000">
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc test.S  -O0  -c
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -D test.o
+
+Disassembly of section .text:
+
+0000000000000000 &lt;_start&gt;:
+       0:       00000097                auipc   ra,0x0
+       4:       000080e7                jalr    ra # 0 &lt;_start&gt;
+       8:       00000097                auipc   ra,0x0
+       c:       000080e7                jalr    ra # 8 &lt;_start+0x8&gt;
+        ...
+
+00000000000ffff0 &lt;near&gt;:
+   ffff0:       8082                    ret
+        ...
+
+000000000010001a &lt;far&gt;:
+  10001a:       8082                    ret
+
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc test.S  -O0  -nostdlib -march=rv64g
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -D a.out
+
+Disassembly of section .text:
+
+0000000000010078 &lt;_start&gt;:
+   10078:       7edff0ef                jal     ra,110064 &lt;near&gt;
+   1007c:       00100097                auipc   ra,0x100
+   10080:       014080e7                jalr    20(ra) # 110090 &lt;far&gt;
+        ...
+
+0000000000110064 &lt;near&gt;:
+  110064:       00008067                ret
+        ...
+
+0000000000110090 &lt;far&gt;:
+  110090:       00008067                ret
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000008" class="outline-4">
+<h4 id="org0000008"><span class="section-number-4">1.1.2</span> gp</h4>
 <div class="outline-text-4" id="text-1-1-2">
 <p>
 test.S:
@@ -136,7 +209,7 @@ test.S:
 test.lds:
 </p>
 
-<pre class="example" id="org0000003">
+<pre class="example" id="org0000004">
 SECTIONS
 {
 .text : { *(.text) }
@@ -150,7 +223,7 @@ SECTIONS
 没有经过 linker relaxation 的 obj 文件:
 </p>
 
-<pre class="example" id="org0000004">
+<pre class="example" id="org0000005">
 $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc test.S  -O0 -c
 $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -D ./test.o
 
@@ -200,7 +273,7 @@ Disassembly of section .sdata:
 linker relaxation 的结果:
 </p>
 
-<pre class="example" id="org0000005">
+<pre class="example" id="org0000006">
 $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc test.S  -O0  -nostdlib -T test.lds
 $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -D ./a.out
 
@@ -225,7 +298,7 @@ lds 中必须有定义 __global_pointer\$ 才可以使用基于 gp 的 relaxatio
 linker script 里 __global_pointer\$ 定义为:
 </p>
 
-<pre class="example" id="org0000006">
+<pre class="example" id="org0000007">
 __global_pointer$ = MIN(__SDATA_BEGIN__ + 0x800,
                          MAX(__DATA_BEGIN__ + 0x800, __BSS_END__ - 0x800));
 </pre>
@@ -243,6 +316,71 @@ __global_pointer$ = MIN(__SDATA_BEGIN__ + 0x800,
 
 <div id="outline-container-org000000d" class="outline-3">
 <h3 id="org000000d"><span class="section-number-3">1.2</span> impls</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+linker relaxation 的实现在 <a href="bfd.html#ID-7569396e-eef7-485b-a1eb-8a545dec44ba">BFD</a> 中, 以 riscv 为例, 在 elfnn-riscv.c 中, 具体的:
+</p>
+
+<ol class="org-ol">
+<li>_bfd_riscv_relax_call, 对应 `auipc+jalr -&gt; jal`</li>
+
+<li>_bfd_riscv_relax_lui, 对应 `lui+addi&#x2026; -&gt; addi&#x2026;`</li>
+
+<li>_bfd_riscv_relax_pc, 对应 `auipc+addi&#x2026; -&gt; addi&#x2026;`</li>
+
+<li>_bfd_riscv_relax_tls_le</li>
+
+<li>_bfd_riscv_relax_align</li>
+</ol>
+
+<p>
+linker relaxation 的实现非常复杂, 它会修改删除指令, 从而导致:
+</p>
+
+<ol class="org-ol">
+<li>其它指令的 branch offset 需要调整</li>
+
+<li><a href="dwarf.html#ID-618badba-9110-4ffa-8ac0-2514c27acf28">DWARF</a> 的 debug 信息需要调整</li>
+
+<li>align 需要调整</li>
+</ol>
+</div>
+
+<div id="outline-container-org000000e" class="outline-4">
+<h4 id="org000000e"><span class="section-number-4">1.2.1</span> _bfd_riscv_relax_call</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+TBD
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000011" class="outline-4">
+<h4 id="org0000011"><span class="section-number-4">1.2.2</span> _bfd_riscv_relax_lui</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<p>
+TBD
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000014" class="outline-4">
+<h4 id="org0000014"><span class="section-number-4">1.2.3</span> _bfd_riscv_relax_pc</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<p>
+TBD
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000017" class="outline-4">
+<h4 id="org0000017"><span class="section-number-4">1.2.4</span> _bfd_riscv_relax_align</h4>
+<div class="outline-text-4" id="text-1-2-4">
+<p>
+TBD
+</p>
+</div>
+</div>
 </div>
 </div>
 
@@ -266,7 +404,7 @@ __global_pointer$ = MIN(__SDATA_BEGIN__ + 0x800,
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-04-06 Wed 19:22<br />
-Last updated: 2022-04-07 Thu 10:18</p>
+Last updated: 2022-04-07 Thu 11:28</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
