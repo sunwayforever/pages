@@ -40,7 +40,7 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#org000002d">1. Thread Local Storage</a>
+<li><a href="#org0000037">1. Thread Local Storage</a>
 <ul>
 <li><a href="#org0000011">1.1. android tls</a>
 <ul>
@@ -54,63 +54,53 @@
 <ul>
 <li><a href="#org000000f">1.2.1. arm</a></li>
 <li><a href="#org0000013">1.2.2. riscv</a></li>
-<li><a href="#org000001c">1.2.3. elf_tls vs. pthread_tls</a></li>
+<li><a href="#org000001c">1.2.3. elf_tls and pthread_tls</a></li>
+<li><a href="#org0000020">1.2.4. elf_tls and dso</a></li>
 </ul>
 </li>
 <li><a href="#org0000027">1.3. emutls 的实现</a>
 <ul>
 <li><a href="#org000001d">1.3.1. __emutls_v</a></li>
-<li><a href="#org0000020">1.3.2. __emutls_t</a></li>
+<li><a href="#org000002a">1.3.2. __emutls_t</a></li>
 <li><a href="#org0000024">1.3.3. example</a></li>
 </ul>
 </li>
-<li><a href="#org000002a">1.4. elf_tls 的实现</a></li>
+<li><a href="#org0000034">1.4. elf_tls 的实现</a></li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-org000002d" class="outline-2">
-<h2 id="org000002d"><span class="section-number-2">1</span> Thread Local Storage</h2>
+<div id="outline-container-org0000037" class="outline-2">
+<h2 id="org0000037"><span class="section-number-2">1</span> Thread Local Storage</h2>
 <div class="outline-text-2" id="text-1">
 <p>
 使用 tls 有两种方式:
 </p>
 
 <ol class="org-ol">
-<li><p>
-使用 __thread (gcc 扩展) 或 thread_local (c++11) 关键字
-</p>
+<li>使用 __thread (gcc 扩展) 或 thread_local (c++11) 关键字. __thread 有两种不同的实现方式:
 
-<p>
-__thread 关键字需要 gcc, crt 以及 ld 配合来支持 tls.
-</p>
-
-<p>
-__thread 有两种不同的实现方式:
-</p>
-
-<ol class="org-ol">
+<ul class="org-ul">
 <li>emutls</li>
-
 <li>elf_tls</li>
-</ol></li>
+</ul></li>
 
 <li>使用 pthread</li>
 </ol>
-</div>
 
+<p>
+不论哪种方式, tls 数据都要通过 thread_pointer 访问, 区别在于如何确定 tls 数据相对于 thread_pointer 保存在哪里.
+</p>
+</div>
 
 <div id="outline-container-org0000011" class="outline-3">
 <h3 id="org0000011"><span class="section-number-3">1.1</span> android tls</h3>
 <div class="outline-text-3" id="text-1-1">
 <p>
-<a href="https://android.googlesource.com/platform/bionic/+/HEAD/docs/elf-tls.md">https://android.googlesource.com/platform/bionic/+/HEAD/docs/elf-tls.md</a>
-</p>
-
-<p>
-android 支持 emutls 和 pthread_tls
+android 支持 emutls 和 pthread_tls, 但不支持 elf_tls. 因为 android 使用 bionic,
+所以 tls 相关的代码与 glibc 都不太一样.
 </p>
 
 <pre class="example" id="org0000000">
@@ -313,8 +303,7 @@ error 是使用 tls 实现的: 它使用一个单独的 pthread_tls slot
 </p>
 
 <p>
-elf 会利用嵌入在 elf 中的 tls 相关信息 (例如 .tdata, PT_TLS phdr, &#x2026;) 来设置
-tls. gcc 会直接生成使用 thread_pointer 的代码
+gcc 会生成 tls 相关信息 (例如 .tdata, .tbss, PT_TLS phdr, &#x2026;) 保存在 elf 中，后续还需要 static linker, libc, pthread, runtime linker 等配合来使用 tls.
 </p>
 </div>
 
@@ -418,7 +407,7 @@ riscv 使用 tp 做为 thread pointer, 直接通过 `0(tp), 4(tp)` 访问 `x, y`
 </div>
 
 <div id="outline-container-org000001c" class="outline-4">
-<h4 id="org000001c"><span class="section-number-4">1.2.3</span> elf_tls vs. pthread_tls</h4>
+<h4 id="org000001c"><span class="section-number-4">1.2.3</span> elf_tls and pthread_tls</h4>
 <div class="outline-text-4" id="text-1-2-3">
 <p>
 由于 elf_tls 和 pthread_tls 都需要使用 thread_pointer, 为了避免两者冲突, 需要分配一下 tp 指向的内存, 一部分给 elf_tls, 一部分给 pthread_tls. 
@@ -447,10 +436,48 @@ ps. arm 的 xxx 在 tp[0x10] 而 riscv 的 x 在 tp[0], 这个 offset 取决于 
 </div>
 </div>
 
+<div id="outline-container-org0000020" class="outline-4">
+<h4 id="org0000020"><span class="section-number-4">1.2.4</span> elf_tls and dso</h4>
+<div class="outline-text-4" id="text-1-2-4">
+<p>
+当 dso 中使用了 __thread 时， 情况会变得复杂, 因为链接 dso 时无法确定变量相对 tp
+的 offset.
+</p>
 
-<div id="outline-container-org0000037" class="outline-4 references">
-<h4 id="org0000037">Backlinks</h4>
-<div class="outline-text-4" id="text-org0000037">
+<p>
+实际上, 动态链接的 executable 会包含两类 elf_tls 信息：
+</p>
+
+<ol class="org-ol">
+<li>executable 本身使用的称为 static tls block</li>
+
+<li>dso 中使用的称为 dynamic thread vector (dtv)</li>
+</ol>
+
+<p>
+两者最终都会通过 tp 访问, 但 dso 需要一些额外的代码例如 __tls_get_addr 才能访问.
+</p>
+
+<p>
+以 arm 为例:
+</p>
+
+
+<div id="org000001f" class="figure">
+<p><img src="../extra/tls.png" alt="tls.png" />
+</p>
+</div>
+
+<p>
+<a href="https://android.googlesource.com/platform/bionic/+/HEAD/docs/elf-tls.md">https://android.googlesource.com/platform/bionic/+/HEAD/docs/elf-tls.md</a>
+</p>
+</div>
+</div>
+
+
+<div id="outline-container-org0000036" class="outline-4 references">
+<h4 id="org0000036">Backlinks</h4>
+<div class="outline-text-4" id="text-org0000036">
 <p>
 <a href="linker_relaxation.html#ID-b861e156-7ced-4e25-b047-455b5b075c1e">Linker Relaxation</a>
 (<i>Linker Relaxation</i>):  5. 如果 symbol 在 .tdata 中, 使用 tp 做基址寄存器, 以支持 <a href="#ID-feaec5ac-bf34-486a-a5e3-a981b75f55e8">elf_tls</a>
@@ -486,7 +513,7 @@ gcc 编译以上代码时, 会生成几个特殊的符号:
 __emutls_get_address 拿到 tls 数据
 </p>
 
-<pre class="example" id="org0000022">
+<pre class="example" id="org0000026">
 $&gt; aarch64-linux-android-gcc foo.c -fPIC -shared -o libfoo.so -O0 -g3
 $&gt; nm libfoo.so|grep xxx
 0000000000000d24 r __emutls_t.xxx
@@ -545,8 +572,8 @@ emutls array 中找到 xxx 真正的 tls 地址
 </div>
 
 
-<div id="outline-container-org0000020" class="outline-4">
-<h4 id="org0000020"><span class="section-number-4">1.3.2</span> __emutls_t</h4>
+<div id="outline-container-org000002a" class="outline-4">
+<h4 id="org000002a"><span class="section-number-4">1.3.2</span> __emutls_t</h4>
 <div class="outline-text-4" id="text-1-3-2">
 <p>
 __emutls_t.xxx 保存着 xxx 的初值
@@ -557,7 +584,7 @@ __emutls_t.xxx 保存着 xxx 的初值
 <div id="outline-container-org0000024" class="outline-4">
 <h4 id="org0000024"><span class="section-number-4">1.3.3</span> example</h4>
 <div class="outline-text-4" id="text-1-3-3">
-<pre class="example" id="org0000029">
+<pre class="example" id="org000002d">
 $&gt; objdump -D libfoo.so
 
 0000000000000a4c &lt;foo&gt;:
@@ -606,8 +633,8 @@ Disassembly of section .rodata:
 </div>
 </div>
 
-<div id="outline-container-org000002a" class="outline-3">
-<h3 id="org000002a"><span class="section-number-3">1.4</span> elf_tls 的实现</h3>
+<div id="outline-container-org0000034" class="outline-3">
+<h3 id="org0000034"><span class="section-number-3">1.4</span> elf_tls 的实现</h3>
 <div class="outline-text-3" id="text-1-4">
 <p>
 TBD
@@ -617,9 +644,9 @@ TBD
 </div>
 
 
-<div id="outline-container-org0000036" class="outline-2 references">
-<h2 id="org0000036">Backlinks</h2>
-<div class="outline-text-2" id="text-org0000036">
+<div id="outline-container-org000003a" class="outline-2 references">
+<h2 id="org000003a">Backlinks</h2>
+<div class="outline-text-2" id="text-org000003a">
 <p>
 <a href="riscv_tutorial.html#ID-653c6b58-7ee1-4e07-bf3f-d5eea450748e">RISC-V Tutorial</a>
 (<i>RISC-V Tutorial &gt; RISC-V Assembly &gt; Register</i>):  - tp 是 thread pointer, 用来实现 <a href="thread_local_storage.html#ID-aee24416-b9d0-4295-9511-7dcf4b29468d">Thread Local Storage</a>
@@ -636,7 +663,7 @@ TBD
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2017-04-01 Sat 00:00<br />
-Last updated: 2022-04-07 Thu 20:21</p>
+Last updated: 2022-04-08 Fri 09:57</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
