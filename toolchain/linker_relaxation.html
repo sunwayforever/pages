@@ -42,12 +42,13 @@
 <ul>
 <li><a href="#org0000026">1. Linker Relaxation</a>
 <ul>
-<li><a href="#org000000a">1.1. example</a>
+<li><a href="#org0000015">1.1. example</a>
 <ul>
-<li><a href="#org0000001">1.1.1. jalr relaxation</a></li>
-<li><a href="#ID-d1c81ee1-c5ca-41ad-a3fc-c3cc1b8f5dbf">1.1.2. gp relaxation</a></li>
-<li><a href="#ID-c030e316-c0e3-41e1-adf3-4be152dd4b53">1.1.3. align relaxation</a></li>
-<li><a href="#ID-376f9771-7419-48a1-bb83-4e10db90c297">1.1.4. tls relaxation</a></li>
+<li><a href="#org0000001">1.1.1. lui relaxation</a></li>
+<li><a href="#org0000005">1.1.2. jalr relaxation</a></li>
+<li><a href="#ID-d1c81ee1-c5ca-41ad-a3fc-c3cc1b8f5dbf">1.1.3. gp relaxation</a></li>
+<li><a href="#ID-c030e316-c0e3-41e1-adf3-4be152dd4b53">1.1.4. align relaxation</a></li>
+<li><a href="#ID-376f9771-7419-48a1-bb83-4e10db90c297">1.1.5. tls relaxation</a></li>
 </ul>
 </li>
 <li><a href="#org000001f">1.2. impls</a>
@@ -103,27 +104,78 @@ riscv 中的 linker relaxation 主要有几种方式:
 </p>
 
 <ol class="org-ol">
-<li>lui+(addi,ld,sw&#x2026;) 替换为 addi,ld,sw&#x2026;</li>
+<li>lui+(addi,ld,sw&#x2026;) 替换为 gp/tp+addi,ld,sw&#x2026;</li>
+
+<li>auipc+(addi,ld,sw&#x2026;) 替换为 gp/tp+addi,ld,sw&#x2026;</li>
 
 <li>auipc+jalr 替换为 jal</li>
 
-<li>auipc+(addi,ld,sw&#x2026;) 替换为 addi,ld,sw&#x2026;</li>
+<li>根据 reloc 中的 align 信息重新调整 align</li>
+</ol>
 
-<li>如果 symbol 在 __global_pointer$ 附近, 则可以用 gp 做为基址寄存器</li>
+<p>
+另外, 是否能使用 gp/tp 也取决于符号的位置, 例如:
+</p>
 
+<ol class="org-ol">
 <li>如果 symbol 在 .tdata 中, 使用 tp 做基址寄存器, 以支持 <a href="thread_local_storage.html#ID-feaec5ac-bf34-486a-a5e3-a981b75f55e8">elf_tls</a></li>
 
-<li>根据 reloc 中的 align 信息重新调整 align</li>
+<li>如果 symbol 在 __global_pointer$ 附近, 则可以用 gp 做为基址寄存器</li>
 </ol>
 </div>
 
-<div id="outline-container-org000000a" class="outline-3">
-<h3 id="org000000a"><span class="section-number-3">1.1</span> example</h3>
+<div id="outline-container-org0000015" class="outline-3">
+<h3 id="org0000015"><span class="section-number-3">1.1</span> example</h3>
 <div class="outline-text-3" id="text-1-1">
 </div>
 <div id="outline-container-org0000001" class="outline-4">
-<h4 id="org0000001"><span class="section-number-4">1.1.1</span> jalr relaxation</h4>
+<h4 id="org0000001"><span class="section-number-4">1.1.1</span> lui relaxation</h4>
 <div class="outline-text-4" id="text-1-1-1">
+<p>
+test.S:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm">    <span class="org-keyword">.global</span> _start
+    <span class="org-keyword">.section</span> .text
+
+<span class="org-function-name">_start</span>:
+    <span class="org-keyword">lui</span> a1,<span class="org-variable-name">%hi</span>(here)
+    <span class="org-keyword">addi</span> a1, a1, <span class="org-variable-name">%lo</span>(here)
+
+    <span class="org-keyword">.section</span> .data
+    <span class="org-keyword">.rept</span>   (1&lt;&lt;10)
+    <span class="org-keyword">.byte</span>   0
+    <span class="org-keyword">.endr</span>
+
+<span class="org-function-name">here</span>:
+    <span class="org-keyword">ret</span>
+</pre>
+</div>
+
+<pre class="example" id="org0000000">
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc test.S  -O0  -nostdlib
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -D a.out
+
+Disassembly of section .text:
+
+00000000000100b0 &lt;_start&gt;:
+   100b0:       c0018593                addi    a1,gp,-1024 # 114b4 &lt;here&gt;
+
+Disassembly of section .data:
+
+00000000000110b4 &lt;__DATA_BEGIN__&gt;:
+        ...
+
+00000000000114b4 &lt;here&gt;:
+   114b4:       8082                    ret
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000005" class="outline-4">
+<h4 id="org0000005"><span class="section-number-4">1.1.2</span> jalr relaxation</h4>
+<div class="outline-text-4" id="text-1-1-2">
 <p>
 test.S:
 </p>
@@ -150,7 +202,7 @@ test.S:
 </pre>
 </div>
 
-<pre class="example" id="org0000000">
+<pre class="example" id="org0000004">
 $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc test.S  -O0  -c
 $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -D test.o
 
@@ -192,8 +244,8 @@ Disassembly of section .text:
 </div>
 
 <div id="outline-container-ID-d1c81ee1-c5ca-41ad-a3fc-c3cc1b8f5dbf" class="outline-4">
-<h4 id="ID-d1c81ee1-c5ca-41ad-a3fc-c3cc1b8f5dbf"><span class="section-number-4">1.1.2</span> gp relaxation</h4>
-<div class="outline-text-4" id="text-1-1-2">
+<h4 id="ID-d1c81ee1-c5ca-41ad-a3fc-c3cc1b8f5dbf"><span class="section-number-4">1.1.3</span> gp relaxation</h4>
+<div class="outline-text-4" id="text-1-1-3">
 <p>
 test.S:
 </p>
@@ -220,7 +272,7 @@ test.S:
 test.lds:
 </p>
 
-<pre class="example" id="org0000004">
+<pre class="example" id="org0000008">
 SECTIONS
 {
 .text : { *(.text) }
@@ -234,7 +286,7 @@ SECTIONS
 没有经过 linker relaxation 的 obj 文件:
 </p>
 
-<pre class="example" id="org0000005">
+<pre class="example" id="org0000009">
 $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc test.S  -O0 -c
 $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -D ./test.o
 
@@ -284,7 +336,7 @@ Disassembly of section .sdata:
 linker relaxation 的结果:
 </p>
 
-<pre class="example" id="org0000006">
+<pre class="example" id="org000000a">
 $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc test.S  -O0  -nostdlib -T test.lds
 $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -D ./a.out
 
@@ -309,7 +361,7 @@ lds 中必须有定义 __global_pointer$ 才可以使用基于 gp 的 relaxation
 linker script 里 __global_pointer$ 定义为:
 </p>
 
-<pre class="example" id="org0000007">
+<pre class="example" id="org000000b">
 __global_pointer$ = MIN(__SDATA_BEGIN__ + 0x800,
                          MAX(__DATA_BEGIN__ + 0x800, __BSS_END__ - 0x800));
 </pre>
@@ -324,9 +376,9 @@ __global_pointer$ = MIN(__SDATA_BEGIN__ + 0x800,
 </div>
 
 
-<div id="outline-container-org0000027" class="outline-5 references">
-<h5 id="org0000027">Backlinks</h5>
-<div class="outline-text-5" id="text-org0000027">
+<div id="outline-container-org0000028" class="outline-5 references">
+<h5 id="org0000028">Backlinks</h5>
+<div class="outline-text-5" id="text-org0000028">
 <p>
 <a href="linker_relocation.html#ID-4fabbae2-594b-4f7d-bcb9-756212cfbe9f">Linker Relocation</a>
 (<i>Linker Relocation</i>):    和 <a href="#ID-d1c81ee1-c5ca-41ad-a3fc-c3cc1b8f5dbf">gp relaxation</a> 有关   
@@ -337,8 +389,8 @@ __global_pointer$ = MIN(__SDATA_BEGIN__ + 0x800,
 
 
 <div id="outline-container-ID-c030e316-c0e3-41e1-adf3-4be152dd4b53" class="outline-4">
-<h4 id="ID-c030e316-c0e3-41e1-adf3-4be152dd4b53"><span class="section-number-4">1.1.3</span> align relaxation</h4>
-<div class="outline-text-4" id="text-1-1-3">
+<h4 id="ID-c030e316-c0e3-41e1-adf3-4be152dd4b53"><span class="section-number-4">1.1.4</span> align relaxation</h4>
+<div class="outline-text-4" id="text-1-1-4">
 <p>
 test.S:
 </p>
@@ -360,7 +412,7 @@ test.S:
 没有经过 linker relaxation 的 obj:
 </p>
 
-<pre class="example" id="org000000b">
+<pre class="example" id="org000000f">
 $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc test.S  -O0   -march=rv64g -c
 $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -D test.o -r
 
@@ -393,7 +445,7 @@ nop. 对于 n 个 word 的 align, 需要插入的最多的 nop 是 n-1
 relaxation 的结果:
 </p>
 
-<pre class="example" id="org000000c">
+<pre class="example" id="org0000010">
 $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc test.S  -O0   -march=rv64g  -nostdlib
 $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -D a.out
 
@@ -434,8 +486,8 @@ Disassembly of section .text:
 </div>
 
 <div id="outline-container-ID-376f9771-7419-48a1-bb83-4e10db90c297" class="outline-4">
-<h4 id="ID-376f9771-7419-48a1-bb83-4e10db90c297"><span class="section-number-4">1.1.4</span> tls relaxation</h4>
-<div class="outline-text-4" id="text-1-1-4">
+<h4 id="ID-376f9771-7419-48a1-bb83-4e10db90c297"><span class="section-number-4">1.1.5</span> tls relaxation</h4>
+<div class="outline-text-4" id="text-1-1-5">
 <p>
 tls relaxation 是为了支持 <a href="thread_local_storage.html#ID-feaec5ac-bf34-486a-a5e3-a981b75f55e8">elf_tls</a>
 </p>
@@ -457,7 +509,7 @@ tls relaxation 是为了支持 <a href="thread_local_storage.html#ID-feaec5ac-bf
 </pre>
 </div>
 
-<pre class="example" id="org000000d">
+<pre class="example" id="org0000011">
 $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc test.S  -O0   -march=rv64g  -c
 $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./test.o
 
@@ -478,9 +530,9 @@ $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./a.out
 </div>
 
 
-<div id="outline-container-org000000e" class="outline-5 references">
-<h5 id="org000000e">Backlinks</h5>
-<div class="outline-text-5" id="text-org000000e">
+<div id="outline-container-org0000012" class="outline-5 references">
+<h5 id="org0000012">Backlinks</h5>
+<div class="outline-text-5" id="text-org0000012">
 <p>
 <a href="linker_relocation.html#ID-4fabbae2-594b-4f7d-bcb9-756212cfbe9f">Linker Relocation</a>
 (<i>Linker Relocation</i>):    和 <a href="#ID-376f9771-7419-48a1-bb83-4e10db90c297">tls relaxation</a> 有关
@@ -562,9 +614,9 @@ TBD
 </div>
 
 
-<div id="outline-container-org0000028" class="outline-2 references">
-<h2 id="org0000028">Backlinks</h2>
-<div class="outline-text-2" id="text-org0000028">
+<div id="outline-container-org000002a" class="outline-2 references">
+<h2 id="org000002a">Backlinks</h2>
+<div class="outline-text-2" id="text-org000002a">
 <p>
 <a href="linker_relocation.html#ID-4fabbae2-594b-4f7d-bcb9-756212cfbe9f">Linker Relocation</a>
 (<i>Linker Relocation &gt; riscv relocation &gt; R_RISCV_RELAX</i>):  这个和 <a href="linker_relaxation.html#ID-b861e156-7ced-4e25-b047-455b5b075c1e">Linker Relaxation</a> 有关
@@ -586,7 +638,7 @@ TBD
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-04-06 Wed 19:22<br />
-Last updated: 2022-04-08 Fri 14:41</p>
+Last updated: 2022-04-11 Mon 10:46</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
