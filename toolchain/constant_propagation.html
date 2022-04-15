@@ -80,7 +80,8 @@
 <li><a href="#ID-0569f50b-c2ec-4385-b102-ea8ca53262ae">1.3. bitwise constant propagation</a>
 <ul>
 <li><a href="#org0000021">1.3.1. example</a></li>
-<li><a href="#org0000023">1.3.2. evrp</a></li>
+<li><a href="#org0000023">1.3.2. evrp pass</a></li>
+<li><a href="#org0000026">1.3.3. pre pass</a></li>
 </ul>
 </li>
 </ul>
@@ -610,8 +611,8 @@ conditional stmt 会被 eval, 根据 eval 的结果决定哪些 stmt 会被加�
 </p>
 
 <p>
-gcc 的 ccp 算法支持这种 bitwise cp: 除了维护 lattice 和 value, 它还有一个 mask,
-表示 `value&amp;(~mask)` 是 constant.
+gcc 的 ccp 算法支持这种 bitwise cp (-ftree-bit-ccp): 除了维护 lattice 和 value,
+它还有一个 mask, 表示 `value&amp;(~mask)` 是 constant.
 </p>
 </div>
 
@@ -721,7 +722,7 @@ Lattice value changed to VARYING.  Adding SSA edges to worklist.
 </div>
 
 <div id="outline-container-org0000023" class="outline-4">
-<h4 id="org0000023"><span class="section-number-4">1.3.2</span> evrp</h4>
+<h4 id="org0000023"><span class="section-number-4">1.3.2</span> evrp pass</h4>
 <div class="outline-text-4" id="text-1-3-2">
 <p>
 对于 `_42 = _34 + 2139062143`, 为什么它的 lattice value 是 `CONSTANT 0x0
@@ -730,7 +731,13 @@ Lattice value changed to VARYING.  Adding SSA edges to worklist.
 
 <p>
 通过跟踪 tree-ssa-ccp.c::evaluate_stmt, 能够确认 0x7fffffff 来自 _42 的
-nonzero_bits, 而这个值是 evrp (early value range propagation) 这个 pass 通过分析每个 ssa 的值的范围决定的 (set_range_info), 看起来 evrp 的加法是 saturating (饱和) 的.
+nonzero_bits, 而这个值是 evrp pass (early value range propagation) 通过分析每个
+ssa 的 value range 决定的 (set_range_info), 例如, 假设 evrp 分析后认为 x 的
+value range 是 [0, 255], 则 x 的高 24 位可以确认全都是 0.
+</p>
+
+<p>
+看起来 evrp 的加法是 saturating (饱和) 的.
 </p>
 
 <p>
@@ -777,6 +784,33 @@ represented by the resulting type.
 </div>
 </div>
 
+<div id="outline-container-org0000026" class="outline-4">
+<h4 id="org0000026"><span class="section-number-4">1.3.3</span> pre pass</h4>
+<div class="outline-text-4" id="text-1-3-3">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">int</span> <span class="org-variable-name">x</span> = 0;
+<span class="org-type">int</span> <span class="org-variable-name">y</span> = 0;
+<span class="org-keyword">if</span> (argc &gt; 0) {
+    x = 1;
+    y = 2;
+} <span class="org-keyword">else</span> {
+    x = 2;
+    y = 1;
+}
+<span class="org-type">int</span> <span class="org-variable-name">z</span> = x + y;
+</pre>
+</div>
+
+<p>
+ccp 无法发现 z 是常量 3.
+</p>
+
+<p>
+但 gcc 的 pre pass (partial redundancy elimination) 可以发现 `z=3`
+</p>
+</div>
+</div>
+
 
 <div id="outline-container-org000002c" class="outline-4 references">
 <h4 id="org000002c">Backlinks</h4>
@@ -792,9 +826,9 @@ represented by the resulting type.
 
 
 
-<div id="outline-container-org000002d" class="outline-2 references">
-<h2 id="org000002d">Backlinks</h2>
-<div class="outline-text-2" id="text-org000002d">
+<div id="outline-container-org000002f" class="outline-2 references">
+<h2 id="org000002f">Backlinks</h2>
+<div class="outline-text-2" id="text-org000002f">
 <p>
 <a href="gcc.html#ID-19df5597-4fd4-47a1-9534-f6e0c327e8d5">GCC</a>
 (<i>GCC &gt; cc1 &gt; Constant Propagation</i>):   <a href="constant_propagation.html#ID-74f4bdf4-8f9d-4e60-9d4c-4fceb7b63e0c">Constant Propagation</a>
@@ -806,7 +840,7 @@ represented by the resulting type.
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-04-13 Wed 15:21<br />
-Last updated: 2022-04-14 Thu 20:17</p>
+Last updated: 2022-04-15 Fri 14:03</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
