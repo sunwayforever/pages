@@ -1,0 +1,357 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>GCC Named Return Value</title>
+
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">GCC Named Return Value</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org0000008">1. GCC Named Return Value</a>
+<ul>
+<li><a href="#org0000002">1.1. impls</a></li>
+<li><a href="#org0000005">1.2. 无法应用 nvr 的场景</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000008" class="outline-2">
+<h2 id="org0000008"><span class="section-number-2">1</span> GCC Named Return Value</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+named return value (nrv) 是指返回 struct 的函数使用隐式传入的 retval 指令直接修改返回值, 而不是先修改局部变量然后在函数返回时再复制给 retval.
+</p>
+
+<p>
+例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-comment-delimiter">// </span><span class="org-comment">2022-04-19 11:57</span>
+<span class="org-keyword">struct</span> <span class="org-type">X</span> {
+    <span class="org-type">int</span> <span class="org-variable-name">x</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">y</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">z</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">a</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">b</span>;
+};
+
+<span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-function-name">foo</span>() {
+    <span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-variable-name">ret</span>;
+    ret.x = 0xff;
+    <span class="org-keyword">return</span> ret;
+}
+</pre>
+</div>
+
+<p>
+不使用 nrv:
+</p>
+
+<pre class="example" id="org0000000">
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc $PWD/test.c -O0 -c -fdump-tree-optimized
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./test.o
+
+0000000000000000 &lt;foo&gt;:
+   0:   7139                    addi    sp,sp,-64
+   2:   fc22                    sd      s0,56(sp)
+   4:   0080                    addi    s0,sp,64
+
+   # a0 是返回址的指针
+   6:   fca43423                sd      a0,-56(s0)
+
+   # ret 的数据在栈上
+
+   a:   0ff00793                li      a5,255
+   e:   fcf42c23                sw      a5,-40(s0)
+  12:   fc843783                ld      a5,-56(s0)
+  16:   fd842703                lw      a4,-40(s0)
+  1a:   853a                    mv      a0,a4
+  1c:   fdc42703                lw      a4,-36(s0)
+  20:   85ba                    mv      a1,a4
+  22:   fe042703                lw      a4,-32(s0)
+  26:   863a                    mv      a2,a4
+  28:   fe442703                lw      a4,-28(s0)
+  2c:   86ba                    mv      a3,a4
+  2e:   fe842703                lw      a4,-24(s0)
+
+   # 复制栈上的 ret 对 a0 指向的 retval
+
+  32:   c388                    sw      a0,0(a5)
+  34:   c3cc                    sw      a1,4(a5)
+  36:   c790                    sw      a2,8(a5)
+  38:   c7d4                    sw      a3,12(a5)
+  3a:   cb98                    sw      a4,16(a5)
+
+  3c:   fc843503                ld      a0,-56(s0)
+  40:   7462                    ld      s0,56(sp)
+  42:   6121                    addi    sp,sp,64
+  44:   8082                    ret
+
+$&gt; cat test.c.244t.optimized
+
+struct X foo ()
+{
+  struct X ret;
+
+  &lt;bb 2&gt; :
+  ret.x = 255;
+  &lt;retval&gt; = ret;
+  ret ={v} {CLOBBER};
+
+  &lt;bb 3&gt; :
+&lt;L1&gt;:
+  return &lt;retval&gt;;
+
+}
+
+</pre>
+
+<p>
+使用 nrv:
+</p>
+
+<pre class="example" id="org0000001">
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc $PWD/test.c -O0 -c  -fenable-tree-nrv -fdump-tree-nrv
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./test.o
+
+0000000000000000 &lt;foo&gt;:
+   0:   1101                    addi    sp,sp,-32
+   2:   ec22                    sd      s0,24(sp)
+   4:   1000                    addi    s0,sp,32
+   6:   fea43423                sd      a0,-24(s0)
+   a:   fe843783                ld      a5,-24(s0)
+   e:   0ff00713                li      a4,255
+
+   # 把 0xff 直接写到了 a0 指向的 reval
+
+  12:   c398                    sw      a4,0(a5)
+  14:   0001                    nop
+  16:   fe843503                ld      a0,-24(s0)
+  1a:   6462                    ld      s0,24(sp)
+  1c:   6105                    addi    sp,sp,32
+
+$&gt; cat test.c.242t.nrv
+
+struct X foo ()
+{
+  struct X ret [value-expr: &lt;retval&gt;];
+
+  &lt;bb 2&gt; :
+  &lt;retval&gt;.x = 255;
+  &lt;retval&gt; ={v} {CLOBBER};
+
+  &lt;bb 3&gt; :
+&lt;L1&gt;:
+  return &lt;retval&gt;;
+
+}
+</pre>
+</div>
+
+<div id="outline-container-org0000002" class="outline-3">
+<h3 id="org0000002"><span class="section-number-3">1.1</span> impls</h3>
+<div class="outline-text-3" id="text-1-1">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-function-name">pass_nrv</span>::execute(<span class="org-type">function</span> *<span class="org-variable-name">fun</span>) {
+    <span class="org-type">tree</span> <span class="org-variable-name">result</span> = DECL_RESULT(current_function_decl);
+    <span class="org-type">tree</span> <span class="org-variable-name">result_type</span> = TREE_TYPE(result);
+    <span class="org-type">tree</span> <span class="org-variable-name">found</span> = <span class="org-constant">NULL</span>;
+    <span class="org-type">basic_block</span> <span class="org-variable-name">bb</span>;
+    <span class="org-type">gimple_stmt_iterator</span> <span class="org-variable-name">gsi</span>;
+    <span class="org-keyword">struct</span> <span class="org-type">nrv_data_t</span> <span class="org-variable-name">data</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#36820;&#22238;&#20540;&#38656;&#35201;&#26159;&#19968;&#20010;&#32467;&#26500;&#20307;</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>aggregate_value_p(result, current_function_decl)) <span class="org-keyword">return</span> 0;
+
+    <span class="org-keyword">if</span> (is_gimple_reg_type(result_type)) <span class="org-keyword">return</span> 0;
+
+    <span class="org-keyword">if</span> (TREE_ADDRESSABLE(result)) <span class="org-keyword">return</span> 0;
+
+    FOR_EACH_BB_FN(bb, fun) {
+        <span class="org-keyword">for</span> (gsi = gsi_start_bb(bb); <span class="org-negation-char">!</span>gsi_end_p(gsi); gsi_next(&amp;gsi)) {
+            <span class="org-type">gimple</span> *<span class="org-variable-name">stmt</span> = gsi_stmt(gsi);
+
+            <span class="org-keyword">if</span> (gimple_has_lhs(stmt) &amp;&amp; gimple_get_lhs(stmt) == result) {
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &lt;retval&gt;=xxx &#24418;&#24335;</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-type">tree</span> <span class="org-variable-name">rhs</span>;
+                rhs = gimple_assign_rhs1(stmt);
+
+                <span class="org-keyword">if</span> (found != <span class="org-constant">NULL</span>) {
+                    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#25152;&#26377; `return xxx` &#38656;&#35201;&#36820;&#22238;&#21516;&#19968;&#20010;&#21464;&#37327;</span><span class="org-comment-delimiter"> */</span>
+                    <span class="org-keyword">if</span> (found != rhs) <span class="org-keyword">return</span> 0;
+                } <span class="org-keyword">else</span>
+                    found = rhs;
+
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: return &#30340;&#21464;&#37327;&#19981;&#33021;&#26159; volatile &#25110; addressable</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>VAR_P(found) || TREE_THIS_VOLATILE(found) ||
+                    <span class="org-negation-char">!</span>auto_var_in_fn_p(found, current_function_decl) ||
+                    TREE_ADDRESSABLE(found) ||
+                    <span class="org-negation-char">!</span>useless_type_conversion_p(result_type, TREE_TYPE(found)))
+                    <span class="org-keyword">return</span> 0;
+            } <span class="org-keyword">else</span> <span class="org-keyword">if</span> (gimple_has_lhs(stmt)) {
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+            }
+        }
+    }
+
+    <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>found) <span class="org-keyword">return</span> 0;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">Now walk through the function changing all references to VAR to be</span>
+<span class="org-comment">       RESULT.</span><span class="org-comment-delimiter">  */</span>
+    data.var = found;
+    data.result = result;
+    FOR_EACH_BB_FN(bb, fun) {
+        <span class="org-keyword">for</span> (gsi = gsi_start_bb(bb); <span class="org-negation-char">!</span>gsi_end_p(gsi);) {
+            <span class="org-type">gimple</span> *<span class="org-variable-name">stmt</span> = gsi_stmt(gsi);
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &lt;retval&gt;=ret &#24418;&#24335;&#30340;&#30452;&#25509;&#21024;&#38500;</span><span class="org-comment-delimiter"> */</span>            
+            <span class="org-keyword">if</span> (gimple_assign_copy_p(stmt) &amp;&amp;
+                gimple_assign_lhs(stmt) == result &amp;&amp;
+                gimple_assign_rhs1(stmt) == found) {
+                unlink_stmt_vdef(stmt);
+                gsi_remove(&amp;gsi, <span class="org-constant">true</span>);
+                release_defs(stmt);
+            } <span class="org-keyword">else</span> {
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: ret.x=xxx &#24418;&#24335;&#30340;&#20462;&#25913;&#20026; &lt;retval&gt;.x=xxx</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-keyword">struct</span> <span class="org-type">walk_stmt_info</span> <span class="org-variable-name">wi</span>;
+                memset(&amp;wi, 0, <span class="org-keyword">sizeof</span>(wi));
+                wi.info = &amp;data;
+                data.modified = 0;
+                walk_gimple_op(stmt, finalize_nrv_r, &amp;wi);
+                <span class="org-keyword">if</span> (data.modified) update_stmt(stmt);
+                gsi_next(&amp;gsi);
+            }
+        }
+    }
+    <span class="org-keyword">return</span> 0;
+}
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000005" class="outline-3">
+<h3 id="org0000005"><span class="section-number-3">1.2</span> 无法应用 nvr 的场景</h3>
+<div class="outline-text-3" id="text-1-2">
+<ol class="org-ol">
+<li><p>
+返回不同的变量
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-function-name">foo</span>(<span class="org-type">int</span> <span class="org-variable-name">x</span>) {
+    <span class="org-keyword">if</span> (x &gt; 0) {
+        <span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-variable-name">ret</span>;
+        ret.x = 0xff;
+        <span class="org-keyword">return</span> ret;
+    } <span class="org-keyword">else</span> {
+        <span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-variable-name">ret</span>;
+        <span class="org-keyword">return</span> ret;
+    }
+}
+</pre>
+</div></li>
+
+<li><p>
+volatile
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-function-name">foo</span>() {
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">volatile &#23548;&#33268; nrv &#26080;&#25928;</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">volatile</span> <span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-variable-name">ret</span>;
+    ret.x = 0xff;
+    <span class="org-keyword">return</span> ret;
+}
+
+</pre>
+</div></li>
+
+<li><p>
+addressable
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-function-name">foo</span>() {
+    <span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-variable-name">ret</span>;
+    ret.x = 0xff;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">px &#20250;&#23548;&#33268; nrv &#26080;&#25928;</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">struct</span> <span class="org-type">X</span>* <span class="org-variable-name">px</span> = &amp;ret;
+
+    <span class="org-keyword">return</span> ret;
+}
+</pre>
+</div></li>
+</ol>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org000000b" class="outline-2 references">
+<h2 id="org000000b">Backlinks</h2>
+<div class="outline-text-2" id="text-org000000b">
+<p>
+<a href="gcc_pass.html#ID-17957249-95aa-4d26-8d2b-48ece73cd8cd">GCC Pass</a>
+(<i>GCC Pass &gt; tree pass &gt; pass_nrv</i>):   <a href="gcc_named_return_value.html#ID-e53c6711-2a42-473c-af42-a27179f8c22b">pass_nrv</a>
+</p>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway (sunwayforever@gmail.com)<br />
+Date: 2022-04-19 Tue 17:50<br />
+Last updated: 2022-04-19 Tue 19:12</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
+<br />
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

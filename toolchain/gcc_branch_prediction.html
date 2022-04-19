@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>GCC Branch Prediction</title>
+
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">GCC Branch Prediction</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org000000b">1. GCC Branch Prediction</a>
+<ul>
+<li><a href="#org0000002">1.1. __builtin_expect</a></li>
+<li><a href="#org0000008">1.2. profile</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000000b" class="outline-2">
+<h2 id="org000000b"><span class="section-number-2">1</span> GCC Branch Prediction</h2>
+<div class="outline-text-2" id="text-1">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-preprocessor">#define</span> <span class="org-function-name">likely</span>(<span class="org-variable-name">x</span>) __builtin_expect(<span class="org-negation-char">!</span>!(x), 1)
+<span class="org-preprocessor">#define</span> <span class="org-function-name">unlikely</span>(<span class="org-variable-name">x</span>) __builtin_expect(<span class="org-negation-char">!</span>!(x), 0)
+
+<span class="org-type">int</span> <span class="org-function-name">foo</span>(<span class="org-type">int</span> <span class="org-variable-name">x</span>) {
+    <span class="org-keyword">if</span> (unlikely(x &gt; 0)) {
+        <span class="org-keyword">return</span> x + 1;
+    } <span class="org-keyword">else</span> {
+        <span class="org-keyword">return</span> -x + 1;
+    }
+}
+
+<span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]) {
+    <span class="org-type">int</span> <span class="org-variable-name">ret</span> = 0;
+    <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; 1000; i++) {
+        ret += foo(argc);
+    }
+    printf(<span class="org-string">"%d\n"</span>, ret);
+    <span class="org-keyword">return</span> 0;
+}
+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000002" class="outline-3">
+<h3 id="org0000002"><span class="section-number-3">1.1</span> __builtin_expect</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+使用 __builtin_expect 时 gcc 编译出来的 foo 是:
+</p>
+
+<pre class="example" id="org0000000">
+$&gt; gdb-multiarch ./a.out -ex "disass foo" --batch
+
+Dump of assembler code for function foo:
+   0x0000000000010464 &lt;+0&gt;:     bgtz    a0,0x10470 &lt;foo+12&gt;
+   0x0000000000010468 &lt;+4&gt;:     li      a5,1
+   0x000000000001046a &lt;+6&gt;:     subw    a0,a5,a0
+   0x000000000001046e &lt;+10&gt;:    ret
+   0x0000000000010470 &lt;+12&gt;:    addiw   a0,a0,1
+   0x0000000000010472 &lt;+14&gt;:    ret
+End of assembler dump.
+</pre>
+
+<p>
+去掉 unlikely:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">int</span> <span class="org-function-name">foo</span>(<span class="org-type">int</span> <span class="org-variable-name">x</span>) {
+    <span class="org-keyword">if</span> (x &gt; 0) {
+        <span class="org-keyword">return</span> x + 1;
+    } <span class="org-keyword">else</span> {
+        <span class="org-keyword">return</span> -x + 1;
+    }
+}
+</pre>
+</div>
+
+<p>
+以后, foo 变成:
+</p>
+
+<pre class="example" id="org0000001">
+Dump of assembler code for function foo:
+   0x0000000000010464 &lt;+0&gt;:     blez    a0,0x1046c &lt;foo+8&gt;
+   0x0000000000010468 &lt;+4&gt;:     addiw   a0,a0,1
+   0x000000000001046a &lt;+6&gt;:     ret
+   0x000000000001046c &lt;+8&gt;:     li      a5,1
+   0x000000000001046e &lt;+10&gt;:    subw    a0,a5,a0
+   0x0000000000010472 &lt;+14&gt;:    ret
+End of assembler dump.
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000008" class="outline-3">
+<h3 id="org0000008"><span class="section-number-3">1.2</span> profile</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+__builtin_expect 只是一个 hint, gcc 可以根据 profile 来决定 predict 的结果.
+</p>
+
+<p>
+首先需要用 `-fprofile-generate` 编译出一个可以记录 profile 的 binary
+</p>
+
+<pre class="example" id="org0000005">
+$&gt; riscv64-linux-gnu-gcc test.c -O2 -fprofile-generate -static
+</pre>
+
+<p>
+然后执行生成的 bin, 会生成 profile 数据 test.gcda, 可以执行多次以收集更多的
+profile 数据
+</p>
+
+<pre class="example" id="org0000006">
+$&gt; ./a.out
+$&gt; ./a.out
+$&gt; ls
+a.out  test.c  test.gcda
+</pre>
+
+<p>
+最后用 `fprofile-use` 重新编译, gcc 会使用 test.gcda 记录的 profile 数据来做
+branch prediction
+</p>
+
+<pre class="example" id="org0000007">
+$&gt; riscv64-linux-gnu-gcc test.c -O2 -fprofile-use -static
+$&gt; gdb-multiarch ./a.out -ex "disass foo" --batch
+
+Dump of assembler code for function foo:
+   0x00000000000101d4 &lt;+0&gt;:     blez    a0,0x101dc &lt;foo+8&gt;
+   0x00000000000101d8 &lt;+4&gt;:     addiw   a0,a0,1
+   0x00000000000101da &lt;+6&gt;:     ret
+   0x00000000000101dc &lt;+8&gt;:     li      a5,1
+   0x00000000000101de &lt;+10&gt;:    subw    a0,a5,a0
+   0x00000000000101e2 &lt;+14&gt;:    ret
+End of assembler dump.
+</pre>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway (sunwayforever@gmail.com)<br />
+Date: 2022-04-15 Fri 18:44<br />
+Last updated: 2022-04-15 Fri 19:42</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
+<br />
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>
