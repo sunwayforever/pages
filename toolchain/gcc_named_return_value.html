@@ -239,7 +239,7 @@ struct X foo ()
     FOR_EACH_BB_FN(bb, fun) {
         <span class="org-keyword">for</span> (gsi = gsi_start_bb(bb); <span class="org-negation-char">!</span>gsi_end_p(gsi);) {
             <span class="org-type">gimple</span> *<span class="org-variable-name">stmt</span> = gsi_stmt(gsi);
-            <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &lt;retval&gt;=ret &#24418;&#24335;&#30340;&#30452;&#25509;&#21024;&#38500;</span><span class="org-comment-delimiter"> */</span>            
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &lt;retval&gt;=ret &#24418;&#24335;&#30340;&#30452;&#25509;&#21024;&#38500;</span><span class="org-comment-delimiter"> */</span>
             <span class="org-keyword">if</span> (gimple_assign_copy_p(stmt) &amp;&amp;
                 gimple_assign_lhs(stmt) == result &amp;&amp;
                 gimple_assign_rhs1(stmt) == found) {
@@ -259,6 +259,19 @@ struct X foo ()
         }
     }
     <span class="org-keyword">return</span> 0;
+}
+
+<span class="org-type">bool</span> <span class="org-function-name">auto_var_in_fn_p</span>(<span class="org-type">const_tree</span> <span class="org-variable-name">var</span>, <span class="org-type">const_tree</span> <span class="org-variable-name">fn</span>) {
+    <span class="org-keyword">return</span> (
+        DECL_P(var) &amp;&amp; DECL_CONTEXT(var) == fn &amp;&amp;
+        (auto_var_p(var) || TREE_CODE(var) == LABEL_DECL));
+}
+
+<span class="org-type">bool</span> <span class="org-function-name">auto_var_p</span>(<span class="org-type">const_tree</span> <span class="org-variable-name">var</span>) {
+    <span class="org-keyword">return</span> (
+        (((VAR_P(var) &amp;&amp; <span class="org-negation-char">!</span>DECL_EXTERNAL(var)) || TREE_CODE(var) == PARM_DECL) &amp;&amp;
+         <span class="org-negation-char">!</span>TREE_STATIC(var)) ||
+        TREE_CODE(var) == RESULT_DECL);
 }
 </pre>
 </div>
@@ -318,6 +331,31 @@ addressable
 }
 </pre>
 </div></li>
+
+<li><p>
+ret 不是 auto_var
+</p>
+
+<p>
+ret 不是 auto_var, 所以对 ret 的修改会有`副作用`, 因此不能省略
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-comment-delimiter">/* </span><span class="org-comment">ret &#26159; external</span><span class="org-comment-delimiter"> */</span>
+<span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-variable-name">ret</span>;
+<span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-function-name">foo</span>() {
+    ret.x = 0xff;
+    <span class="org-keyword">return</span> ret;
+}
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">ret &#26159; static</span><span class="org-comment-delimiter"> */</span>
+<span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-function-name">foo</span>() {
+    <span class="org-keyword">static</span> <span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-variable-name">ret</span>;
+    ret.x = 0xff;
+    <span class="org-keyword">return</span> ret;
+}
+</pre>
+</div></li>
 </ol>
 </div>
 </div>
@@ -338,7 +376,7 @@ addressable
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-04-19 Tue 17:50<br />
-Last updated: 2022-04-19 Tue 19:12</p>
+Last updated: 2022-04-19 Tue 19:57</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
