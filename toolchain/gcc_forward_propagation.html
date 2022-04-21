@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>GCC Forward Propagation</title>
+
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">GCC Forward Propagation</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org0000003">1. GCC Forward Propagation</a>
+<ul>
+<li><a href="#org0000000">1.1. impls</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000003" class="outline-2">
+<h2 id="org0000003"><span class="section-number-2">1</span> GCC Forward Propagation</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+forward propagation (pass_forwprop) <a href="gcc_constant_propagation.html#ID-74f4bdf4-8f9d-4e60-9d4c-4fceb7b63e0c">GCC Constant Propagation</a> 类似, 但它的功能不是替换表达式为常量, 而是替换多个表达式为一个表达式, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">int</span> <span class="org-function-name">foo</span>(<span class="org-type">int</span> <span class="org-variable-name">x</span>) {
+    <span class="org-type">int</span> <span class="org-variable-name">y</span> = 2 * x;
+    <span class="org-type">int</span> <span class="org-variable-name">z</span> = y + 3;
+
+    <span class="org-keyword">if</span> (x &gt; 0) {
+        z = y * 3;
+    } <span class="org-keyword">else</span> {
+        z = y * 4;
+    }
+    <span class="org-keyword">return</span> z;
+}
+</pre>
+</div>
+
+<p>
+经过 forwprop 后大约会变成类似下面的代码:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">int</span> <span class="org-function-name">foo</span>(<span class="org-type">int</span> <span class="org-variable-name">x</span>) {
+    <span class="org-type">int</span> <span class="org-variable-name">y</span> = 2 * x;
+    <span class="org-type">int</span> <span class="org-variable-name">z</span> = y + 3;
+
+    <span class="org-keyword">if</span> (x &gt; 0) {
+        z = x * 6;
+    } <span class="org-keyword">else</span> {
+        z = x * 8;
+    }
+    <span class="org-keyword">return</span> z;
+}
+</pre>
+</div>
+
+<p>
+后续的 pass 在 forwprop 基础上可以进一步优化成:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">int</span> <span class="org-function-name">foo</span>(<span class="org-type">int</span> <span class="org-variable-name">x</span>) {
+    <span class="org-keyword">if</span> (x &gt; 0) {
+        z = x * 6;
+    } <span class="org-keyword">else</span> {
+        z = x * 8;
+    }
+    <span class="org-keyword">return</span> z;
+}
+</pre>
+</div>
+
+<p>
+与 ccp 类似: 如果某个变量 x 通过所有的 path 到达代码 u 处时都是同一个表达式, 则
+u 处的 x 可以替换为该表达式
+</p>
+</div>
+
+<div id="outline-container-org0000000" class="outline-3">
+<h3 id="org0000000"><span class="section-number-3">1.1</span> impls</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+forwprop 实际时需要考虑两个东西:
+</p>
+
+<ol class="org-ol">
+<li>哪些变量是不变的可能被 fold, 例如前面的 y 是可以被替换的</li>
+
+<li>什么样的操作可以被 fold, 例如 y*3 可以被替换成 x*6, 但 y+3 并不会被替换成
+x*2+3</li>
+</ol>
+
+<p>
+对于前者, 使用类似于 ccp 的 lattice 实现.
+</p>
+
+<p>
+对于后者, gcc 在 `match.pd` 中定义了许多可以被 fold 的 pattern (看不懂 Orz&#x2026;)
+</p>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org0000006" class="outline-2 references">
+<h2 id="org0000006">Backlinks</h2>
+<div class="outline-text-2" id="text-org0000006">
+<p>
+<a href="gcc_pass.html#ID-17957249-95aa-4d26-8d2b-48ece73cd8cd">GCC Pass</a>
+(<i>GCC Pass &gt; tree pass &gt; pass_fowrprop</i>):   <a href="gcc_forward_propagation.html#ID-97b15196-d8e8-4b9d-a06b-c9328234776d">pass_fowrprop</a>
+</p>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway (sunwayforever@gmail.com)<br />
+Date: 2022-04-20 Wed 19:25<br />
+Last updated: 2022-04-21 Thu 17:10</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
+<br />
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

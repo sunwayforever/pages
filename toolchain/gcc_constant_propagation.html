@@ -1,0 +1,864 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>GCC Constant Propagation</title>
+
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">GCC Constant Propagation</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org000002c">1. GCC Constant Propagation</a>
+<ul>
+<li><a href="#org0000013">1.1. kildall algorithm</a>
+<ul>
+<li><a href="#org0000000">1.1.1. lattice</a></li>
+<li><a href="#org0000003">1.1.2. flow function</a></li>
+<li><a href="#org0000007">1.1.3. algorithm</a></li>
+<li><a href="#org0000010">1.1.4. example</a></li>
+</ul>
+</li>
+<li><a href="#org0000019">1.2. wegbreit algorithm</a>
+<ul>
+<li><a href="#org0000016">1.2.1. example</a></li>
+</ul>
+</li>
+<li><a href="#ID-0569f50b-c2ec-4385-b102-ea8ca53262ae">1.3. bitwise constant propagation</a>
+<ul>
+<li><a href="#org0000020">1.3.1. example</a></li>
+<li><a href="#org0000023">1.3.2. evrp pass</a></li>
+<li><a href="#org0000026">1.3.3. pre pass</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000002c" class="outline-2">
+<h2 id="org000002c"><span class="section-number-2">1</span> GCC Constant Propagation</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="http://www.cse.iitm.ac.in/~rupesh/teaching/pa/jan17/scribes/0-cp.pdf">http://www.cse.iitm.ac.in/~rupesh/teaching/pa/jan17/scribes/0-cp.pdf</a> (<a href="../extra/0-cp.pdf">local archive</a>)
+</p>
+
+<p>
+常量传播需要解决的问题是: 一个变量 x 在某个代码处 u 是否是一个常量.
+</p>
+
+<p>
+解决方案是: 确认代码通过所有可能的 path 到达 u 时 x 都是同一个常量. 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"> 1 x = 1;
+ 2 z = 3;
+ 3 <span class="org-keyword">while</span> (x &gt; 0) {
+ 4     <span class="org-keyword">if</span> (x = 1) {
+ 5         y = 7;
+ 6     } <span class="org-keyword">else</span> {
+ 7         y = z + 4;
+ 8         x = 3;
+ 9     }
+10     print y;
+11 }
+</pre>
+</div>
+
+<p>
+y 在 line 10 的位置可以确认是 7
+</p>
+</div>
+
+<div id="outline-container-org0000013" class="outline-3">
+<h3 id="org0000013"><span class="section-number-3">1.1</span> kildall algorithm</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+kildall algorithm 是最简单的 cp 算法, 它把 condition stmt 看做是普通的 stmt, 不会通过 evaluate 获得更精确的 cp 结果, 所以 kildall 算法无法发现所有的常量.
+</p>
+</div>
+
+<div id="outline-container-org0000000" class="outline-4">
+<h4 id="org0000000"><span class="section-number-4">1.1.1</span> lattice</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+维护一个 mapping M[n_stmt][n_var], 表示每个 var 在每个 stmt 处的状态, 这个状态称为 lattice, 有三种不同的值:
+</p>
+
+<ol class="org-ol">
+<li>\(\top\), 表示 `可能是常量`</li>
+
+<li>\(N\), 表示 `是常量 N`</li>
+
+<li>\(\bot\), bottom, 表示 `不是常量`</li>
+</ol>
+
+<p>
+初始时 M 中都是 \(\top\)
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000003" class="outline-4">
+<h4 id="org0000003"><span class="section-number-4">1.1.2</span> flow function</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+每个 stmt 都有一个 flow function, 代表 stmt 会如何改变 M, flow function 的定义为:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-function-name">flow_function</span>(stmt):
+    <span class="org-keyword">if</span> stmt.type != assign:
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">stmt &#26377;&#22810;&#20010; predecessor</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">if</span> stmt is a merge_point:
+            stmt1, stmt2 = predecessors
+            M[stmt] = meet(stmt1, stmt2);
+        <span class="org-keyword">return</span>
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">stmt &#26159;&#38024;&#23545; v &#30340;&#36171;&#20540;</span><span class="org-comment-delimiter"> */</span>
+    v = stmt.lhs
+    <span class="org-keyword">if</span> stmt.rhs.type == constant:
+        M[stmt][v].latice=CONSTANT
+        M[stmt][v].value=stmt.rhs.val
+    <span class="org-keyword">else</span>:
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">rhs &#26159; x op y &#30340;&#24418;&#24335;</span><span class="org-comment-delimiter"> */</span>
+        x = expr.lhs
+        y = expr.rhs
+        <span class="org-keyword">if</span> M[stmt][x].latice = CONSTANT &amp;&amp; M[stmt][y].latice = CONSTANT:
+            M[stmt][v].lattice = CONSTANT
+            M[stmt][v].value = expr.op(x, y);
+            <span class="org-keyword">return</span>
+        <span class="org-keyword">if</span> M[stmt][x].latice == BOTTOM || M[stmt][y].latice == BOTTOM:
+            M[stmt][v].lattice = BOTTOM
+            <span class="org-keyword">return</span>
+        M[stmt][v].lattice = TOP
+
+meet(stmt1, stmt2);
+    m1 = M[stmt1]
+    m2 = M[stmt2]
+    <span class="org-keyword">for</span> v in V:
+        <span class="org-keyword">if</span> m1[v].lattice == CONSTANT &amp;&amp; m2[v].lattice == CONSTANT:
+            <span class="org-keyword">if</span> m1[v].value == m2[v].value:
+                ret[v].lattice = CONSTANT
+                ret[v].value = m1[v].value
+            <span class="org-keyword">else</span>:
+                ret[v].lattice = BOTTOM
+            <span class="org-keyword">continue</span>                     
+        <span class="org-keyword">if</span> m1[v].lattice == BOTTOM || m2[v].lattice == BOTTOM:
+            ret[v].lattice = BOTTOM
+            <span class="org-keyword">continue</span>                 
+        <span class="org-keyword">if</span> m1[v].lattice == TOP:
+            ret[v] = m2[v]
+        <span class="org-keyword">else</span>:
+            ret[v] = m1[v]
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000007" class="outline-4">
+<h4 id="org0000007"><span class="section-number-4">1.1.3</span> algorithm</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<pre class="example" id="org0000006">
+# M 初始化为 TOP
+init(M)
+do
+    changed=false
+    worklist=(entry)
+
+    while worklist is not empty do
+        stmt=worklist.pop()
+        visited[stmt]=true
+        flow_function(stmt)
+        foreach successor s of stmt:
+            if visited[s]:
+                continue
+            M[s]=meet(M[s], M[stmt])
+            if M[s] changes:
+                changed=true
+            worklist.add(s)    
+        end
+    end
+while (changed)
+</pre>
+
+<p>
+一个简化的描述是:
+</p>
+
+<ol class="org-ol">
+<li>针对每个 stmt 用 flow_function 更新 M
+
+<ol class="org-ol">
+<li>如果 stmt 是 merge, 需要通过 meet 来更新 M</li>
+</ol></li>
+
+<li>把 M propagate 给 stmt 的所有 successor</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000010" class="outline-4">
+<h4 id="org0000010"><span class="section-number-4">1.1.4</span> example</h4>
+<div class="outline-text-4" id="text-1-1-4">
+<div class="org-src-container">
+<pre class="src src-C">1 x = 10;
+2 y = 1;
+3 z = 1;
+4 <span class="org-keyword">while</span> (x &gt; 1):
+5     y = x&#8727;y;
+6     x = x&#8722;1;
+7     z = z &#8727; z;
+8 p = x + y + z;
+</pre>
+</div>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-right" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-right">&#xa0;</th>
+<th scope="col" class="org-left">iter_1</th>
+<th scope="col" class="org-left">iter_2</th>
+<th scope="col" class="org-left">iter_3</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-right">0</td>
+<td class="org-left">T,T,T,T</td>
+<td class="org-left">T,T,T,T</td>
+<td class="org-left">T,T,T,T</td>
+</tr>
+
+<tr>
+<td class="org-right">1</td>
+<td class="org-left">10,T,T,T</td>
+<td class="org-left">10,T,T,T</td>
+<td class="org-left">10,T,T,T</td>
+</tr>
+
+<tr>
+<td class="org-right">2</td>
+<td class="org-left">10,1,T,T</td>
+<td class="org-left">10,1,T,T</td>
+<td class="org-left">10,1,T,T</td>
+</tr>
+
+<tr>
+<td class="org-right">3</td>
+<td class="org-left">10,1,1,T</td>
+<td class="org-left">10,1,1,T</td>
+<td class="org-left">10,1,1,T</td>
+</tr>
+
+<tr>
+<td class="org-right">4</td>
+<td class="org-left">10,1,1,T</td>
+<td class="org-left">B,B,1,T</td>
+<td class="org-left">B,B,1,T</td>
+</tr>
+
+<tr>
+<td class="org-right">5</td>
+<td class="org-left">10,10,1,T</td>
+<td class="org-left">B,B,1,T</td>
+<td class="org-left">B,B,1,T</td>
+</tr>
+
+<tr>
+<td class="org-right">6</td>
+<td class="org-left">9,10,1,T</td>
+<td class="org-left">B,B,1,T</td>
+<td class="org-left">B,B,1,T</td>
+</tr>
+
+<tr>
+<td class="org-right">7</td>
+<td class="org-left">9,10,1,T</td>
+<td class="org-left">B,B,1,T</td>
+<td class="org-left">B,B,1,T</td>
+</tr>
+
+<tr>
+<td class="org-right">8</td>
+<td class="org-left">10,1,1,12</td>
+<td class="org-left">B,B,1,B</td>
+<td class="org-left">B,B,1,B</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+
+<div id="outline-container-org000000a" class="outline-5">
+<h5 id="org000000a"><span class="section-number-5">1.1.4.1</span> iter_1</h5>
+<div class="outline-text-5" id="text-1-1-4-1">
+<ol class="org-ol">
+<li>x=10, M[1]={10,T,T,T}, meet: M[2]={10,T,T,T}</li>
+
+<li>y=1, M[2]={10,1,T,T}, meet: M[3]={10,1,T,T}</li>
+
+<li>z=1, M[3]={10,1,1,T}, meet: M[4]={10,1,1,T}</li>
+
+<li>while, merge (3,7): M[4]=meet(3,7)={10,1,1,T},
+meet: M[5]={10,1,1,T}, M[8]={10,1,1,T}</li>
+
+<li>y=x*y, M[5]={10,10,1,T}, meet: M[6]={10,10,1,T}</li>
+
+<li>x=x-1, M[6]={9,10,1,T}, meet: M[7]={9,10,1,T}</li>
+
+<li>z=z*z, M[7]={9,10,1,T}</li>
+
+<li>p=x+y+z, M[8]={10,1,1,12}</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org000000d" class="outline-5">
+<h5 id="org000000d"><span class="section-number-5">1.1.4.2</span> iter_2</h5>
+<div class="outline-text-5" id="text-1-1-4-2">
+<ul class="org-ul">
+<li>line 4, merge(3,7): M[4]= {B,B,1,T}, meet: M[8]={B,B,1,12}</li>
+
+<li>line 8, p=x+y+z, 因为 x,y 均为 B, 导致 p 也为 B, 最终 M[8]={B,B,1,B}</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000019" class="outline-3">
+<h3 id="org0000019"><span class="section-number-3">1.2</span> wegbreit algorithm</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+wegbreit algorithm 是 conditional constant propagation (ccp) 算法: 它会通过对 condition 进行
+evaluate 获得更准确的常量信息.
+</p>
+
+<p>
+wegbreit 与 kildal 类似, 但有个不同的地方:
+</p>
+
+<p>
+conditional stmt 会被 eval, 根据 eval 的结果决定哪些 stmt 会被加入 worklist, 如果 eval 结果为 BOTTOM, 则与 kildal 相同, 如果 eval 结果为常量, 则根据常量的值决定哪个分支加入 worklist
+</p>
+</div>
+
+<div id="outline-container-org0000016" class="outline-4">
+<h4 id="org0000016"><span class="section-number-4">1.2.1</span> example</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<div class="org-src-container">
+<pre class="src src-C"> 1 i = 1;
+ 2 <span class="org-keyword">if</span> (i == 1) {
+ 3     j = 2;
+ 4 } <span class="org-keyword">else</span> {
+ 5     j = 3;
+ 6 }
+ 7 <span class="org-keyword">if</span> (j != 2) {
+ 8     k = 3;
+ 9 } <span class="org-keyword">else</span> {
+10     k = 4;
+11 }
+12 print (i,j, k);
+</pre>
+</div>
+
+<p>
+使用 kildal 的结果:
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-right" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-right">&#xa0;</th>
+<th scope="col" class="org-left">iter_1</th>
+<th scope="col" class="org-left">iter_2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-right">0</td>
+<td class="org-left">T,T,T</td>
+<td class="org-left">&#x2026;</td>
+</tr>
+
+<tr>
+<td class="org-right">1</td>
+<td class="org-left">1,T,T</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-right">2</td>
+<td class="org-left">1,T,T</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-right">3</td>
+<td class="org-left">1,2,T</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-right">5</td>
+<td class="org-left">1,3,T</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-right">7</td>
+<td class="org-left">1,B,T</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-right">8</td>
+<td class="org-left">1,B,3</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-right">10</td>
+<td class="org-left">1,B,4</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-right">12</td>
+<td class="org-left">1,B,B</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+使用 wegbreit 的结果:
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-right" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-right">&#xa0;</th>
+<th scope="col" class="org-left">iter_1</th>
+<th scope="col" class="org-left">iter_2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-right">0</td>
+<td class="org-left">T,T,T</td>
+<td class="org-left">&#x2026;</td>
+</tr>
+
+<tr>
+<td class="org-right">1</td>
+<td class="org-left">1,T,T</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-right">2</td>
+<td class="org-left">1,T,T</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-right">3</td>
+<td class="org-left">1,2,T</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-right">5</td>
+<td class="org-left">&#xa0;</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-right">7</td>
+<td class="org-left">1,2,T</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-right">8</td>
+<td class="org-left">&#xa0;</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-right">10</td>
+<td class="org-left">1,2,4</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+
+<tr>
+<td class="org-right">12</td>
+<td class="org-left">1,2,4</td>
+<td class="org-left">&#xa0;</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+
+<div id="outline-container-ID-0569f50b-c2ec-4385-b102-ea8ca53262ae" class="outline-3">
+<h3 id="ID-0569f50b-c2ec-4385-b102-ea8ca53262ae"><span class="section-number-3">1.3</span> bitwise constant propagation</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+考虑下面的代码:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">if</span> (x &gt; 0) {
+    x |= 0x11;
+} <span class="org-keyword">else</span> {
+    x |= 0x111;
+}
+<span class="org-type">uint32_t</span> <span class="org-variable-name">y</span> = x &amp; 0x11;
+</pre>
+</div>
+
+<p>
+普通的 cp 算法无法发现 y 是常量 0x11
+</p>
+
+<p>
+gcc 的 ccp 算法支持这种 bitwise cp (-ftree-bit-ccp): 除了维护 lattice 和 value,
+它还有一个 mask, 表示 `value&amp;(~mask)` 是 constant.
+</p>
+</div>
+
+<div id="outline-container-org0000020" class="outline-4">
+<h4 id="org0000020"><span class="section-number-4">1.3.1</span> example</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<p>
+以 <a href="../lang/c/strlen.html#ID-4158ce32-f9c5-42b7-acce-f6032e9dbeb6">strlen</a> 为例,
+</p>
+
+<p>
+check_null 使用 int 时:
+</p>
+
+<pre class="example" id="org000001c">
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc test.c -O2 -fdump-tree-ccp1-details
+$&gt; cat ./a-test.c.032t.ccp1
+
+Visiting statement:
+_7 = MEM[(int *)data_27];
+which is likely CONSTANT
+Lattice value changed to VARYING.  Adding SSA edges to worklist.
+
+Visiting statement:
+_34 = _7 &amp; 2139062143;
+which is likely CONSTANT
+Lattice value changed to CONSTANT 0x0 (0x7f7f7f7f).  Adding SSA edges to worklist.
+marking stmt to be not simulated again
+
+Visiting statement:
+_42 = _34 + 2139062143;
+which is likely CONSTANT
+Lattice value changed to CONSTANT 0x0 (0x7fffffff).  Adding SSA edges to worklist.
+marking stmt to be not simulated again
+
+Visiting statement:
+_43 = _42 | 2139062143;
+which is likely CONSTANT
+Lattice value changed to CONSTANT 0x7f7f7f7f (0x808080).  Adding SSA edges to worklist.
+marking stmt to be not simulated again
+
+Visiting statement:
+_44 = ~_43;
+which is likely CONSTANT
+Lattice value changed to CONSTANT 0xffffffffffffffffffffffffffffffffffffffff80000000 (0x808080).  Adding SSA edges to worklist.
+marking stmt to be not simulated again
+
+</pre>
+
+<p>
+以下面的输出为例:
+</p>
+
+<pre class="example" id="org000001d">
+Visiting statement:
+_34 = _7 &amp; 2139062143;
+which is likely CONSTANT
+Lattice value changed to CONSTANT 0x0 (0x7f7f7f7f).  Adding SSA edges to worklist.
+marking stmt to be not simulated again
+</pre>
+
+<p>
+`CONSTANT 0x0 (0x7f7f7f7f)` 表示 gcc 认为 `_34 &amp; ~(0x7f7f7f7f) == 0x0`, 即 _34
+是 `0b0xxxxxxx0xxxxxxx0xxxxxxx0xxxxxxx` 的形式, 这个是正确的结论, 因为 `_34 = _7
+&amp; 0x7f7f7f7f`
+</p>
+
+<p>
+出现问题的是下面一句:
+</p>
+
+<pre class="example" id="org000001e">
+Visiting statement:
+_42 = _34 + 2139062143;
+which is likely CONSTANT
+Lattice value changed to CONSTANT 0x0 (0x7fffffff).  Adding SSA edges to worklist.
+marking stmt to be not simulated again
+</pre>
+
+<p>
+gcc 认为 _34+0x7f7f7f7f 的最高位一定是 0 (_42 &amp; ~0x7fffffff == 0x0), 即
+0b0xxxxxxx&#x2026;.+0x7f7f7f7f 不会是负数
+</p>
+
+<p>
+比较使用 uint 时 gcc 的输出:
+</p>
+
+<pre class="example" id="org000001f">
+Visiting statement:
+_35 = _8 &amp; 2139062143;
+which is likely CONSTANT
+Lattice value changed to CONSTANT 0x0 (0x7f7f7f7f).  Adding SSA edges to worklist.
+marking stmt to be not simulated again
+
+Visiting statement:
+_43 = _35 + 2139062143;
+which is likely CONSTANT
+Lattice value changed to VARYING.  Adding SSA edges to worklist.
+</pre>
+
+<p>
+上面关于 `_42 = _34 + 2139062143` 的问题最终导致使用 int 时 gcc 认为 check_null
+是常数
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000023" class="outline-4">
+<h4 id="org0000023"><span class="section-number-4">1.3.2</span> evrp pass</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<p>
+对于 `_42 = _34 + 2139062143`, 为什么它的 lattice value 是 `CONSTANT 0x0
+(0x7fffffff)` ?
+</p>
+
+<p>
+通过跟踪 tree-ssa-ccp.c::evaluate_stmt, 能够确认 0x7fffffff 来自 _42 的
+nonzero_bits, 而这个值是 evrp pass (early value range propagation) 通过分析每个
+ssa 的 value range 决定的 (set_range_info), 例如, 假设 evrp 分析后认为 x 的
+value range 是 [0, 255], 则 x 的高 24 位可以确认全都是 0.
+</p>
+
+<p>
+看起来 evrp 的加法是 saturating (饱和) 的.
+</p>
+
+<p>
+所以这个 check_null 的 bug 是应用代码的 bug, 根本原因是 <code>int 加法 overflow</code> 是
+undefined behavior:
+</p>
+
+<blockquote>
+<p>
+
+</p>
+
+<p>
+C99 6.5/5:
+</p>
+
+<p>
+If an exceptional condition occurs during the evaluation of an expression (that
+is, if the result is not mathematically defined or not in the range of
+representable values for its type), the behavior is undefined.
+</p>
+</blockquote>
+
+<p>
+ps. uint 加法不会 overflow:
+</p>
+
+<blockquote>
+<p>
+
+</p>
+
+<p>
+C99 6.5/9:
+</p>
+
+<p>
+A computation involving unsigned operands can never overflow, because a result
+that cannot be represented by the resulting unsigned integer type is reduced
+modulo the number that is one greater than the largest value that can be
+represented by the resulting type.
+</p>
+</blockquote>
+</div>
+</div>
+
+<div id="outline-container-org0000026" class="outline-4">
+<h4 id="org0000026"><span class="section-number-4">1.3.3</span> pre pass</h4>
+<div class="outline-text-4" id="text-1-3-3">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">int</span> <span class="org-variable-name">x</span> = 0;
+<span class="org-type">int</span> <span class="org-variable-name">y</span> = 0;
+<span class="org-keyword">if</span> (argc &gt; 0) {
+    x = 1;
+    y = 2;
+} <span class="org-keyword">else</span> {
+    x = 2;
+    y = 1;
+}
+<span class="org-type">int</span> <span class="org-variable-name">z</span> = x + y;
+</pre>
+</div>
+
+<p>
+ccp 无法发现 z 是常量 3.
+</p>
+
+<p>
+但 gcc 的 pre pass (partial redundancy elimination) 可以发现 `z=3`
+</p>
+</div>
+</div>
+
+
+<div id="outline-container-org0000029" class="outline-4 references">
+<h4 id="org0000029">Backlinks</h4>
+<div class="outline-text-4" id="text-org0000029">
+<p>
+<a href="../lang/c/strlen.html#ID-4158ce32-f9c5-42b7-acce-f6032e9dbeb6">strlen</a>
+(<i>strlen &gt; GCC O2 的一个 `bug`?</i>):  这个问题的 root cause 参考 <a href="#ID-0569f50b-c2ec-4385-b102-ea8ca53262ae">bitwise constant propagation</a>
+</p>
+</div>
+</div>
+</div>
+</div>
+
+
+
+<div id="outline-container-org000002f" class="outline-2 references">
+<h2 id="org000002f">Backlinks</h2>
+<div class="outline-text-2" id="text-org000002f">
+<p>
+<a href="gcc_forward_propagation.html#ID-97b15196-d8e8-4b9d-a06b-c9328234776d">GCC Forward Propagation</a>
+(<i>GCC Forward Propagation</i>):  forward propagation (pass_forwprop) <a href="gcc_constant_propagation.html#ID-74f4bdf4-8f9d-4e60-9d4c-4fceb7b63e0c">GCC Constant Propagation</a> 类似, 但它的功能不 是替换表达式为常量, 而是替换多个表达式为一个表达式, 例如:
+</p>
+
+<p>
+<a href="gcc_pass.html#ID-17957249-95aa-4d26-8d2b-48ece73cd8cd">GCC Pass</a>
+(<i>GCC Pass &gt; tree pass &gt; pass_ccp</i>):   <a href="gcc_constant_propagation.html#ID-74f4bdf4-8f9d-4e60-9d4c-4fceb7b63e0c">pass_ccp</a>
+</p>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway (sunwayforever@gmail.com)<br />
+Date: 2022-04-13 Wed 15:21<br />
+Last updated: 2022-04-20 Wed 19:26</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
+<br />
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>
