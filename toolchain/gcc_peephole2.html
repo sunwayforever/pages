@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>Gcc Peephole2</title>
+
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Gcc Peephole2</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org0000011">1. GCC Peephole2</a>
+<ul>
+<li><a href="#ID-ce833dca-50ab-44fc-bdc7-357c729cd4ab">1.1. define_peephole2</a></li>
+<li><a href="#org000000e">1.2. example</a>
+<ul>
+<li><a href="#org0000008">1.2.1. 使用物理寄存器</a></li>
+<li><a href="#org000000b">1.2.2. 使用 match_scratch</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000011" class="outline-2">
+<h2 id="org0000011"><span class="section-number-2">1</span> GCC Peephole2</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+peephole 优化是一种和 arch 相关的 rtl 优化, 它相当于针对 insn patten 的查找替换过程. 例如,假设 arch 支持 inc 指令, 则可以通过一个 peephole 把 `add a0, a0, 1`
+替换成 `inc a0`
+</p>
+</div>
+
+<div id="outline-container-ID-ce833dca-50ab-44fc-bdc7-357c729cd4ab" class="outline-3">
+<h3 id="ID-ce833dca-50ab-44fc-bdc7-357c729cd4ab"><span class="section-number-3">1.1</span> define_peephole2</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+define_peephole2 的格式大约是:
+</p>
+
+<pre class="example" id="org0000000">
+(define_peephole2
+       [insn-pattern-1
+        insn-pattern-2
+        ...]
+       "condition"
+       [new-insn-pattern-1
+        new-insn-pattern-2
+        ...]
+       "preparation-statements")
+</pre>
+
+<p>
+即扫描一个原始的 insn-pattern, 满足一定 condition 后替换成 new-insn, 替换时可以通过 `preparation-statements` 中的 c 代码对原来的数据做一些处理.
+</p>
+</div>
+
+
+<div id="outline-container-org0000001" class="outline-4 references">
+<h4 id="org0000001">Backlinks</h4>
+<div class="outline-text-4" id="text-org0000001">
+<p>
+<a href="gcc_backend.html#ID-5304f835-9c6a-49bc-89a5-ca01e2520167">machine description</a>
+(<i>GCC Backend &gt; machine description &gt; md 语法 &gt; define_peephole2</i>):   <a href="#ID-ce833dca-50ab-44fc-bdc7-357c729cd4ab">define_peephole2</a>
+</p>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org000000e" class="outline-3">
+<h3 id="org000000e"><span class="section-number-3">1.2</span> example</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+假设希望把 `x&lt;&lt;2` 通过 peephole 修改成 `x*4`
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">int</span> <span class="org-function-name">foo</span>(<span class="org-type">int</span> <span class="org-variable-name">x</span>) {
+    <span class="org-type">int</span> <span class="org-variable-name">y</span> = 8 * x;
+    <span class="org-keyword">return</span> y;
+}
+</pre>
+</div>
+
+<p>
+编译后其 rtl 为:
+</p>
+
+<pre class="example" id="org0000004">
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc  $PWD/test.c -O2 -c -fdump-rtl-peephole2
+$&gt; cat test.c.304r.peephole2
+
+...
+(insn 6 7 13 2 (set (reg:DI 10 a0)
+        (sign_extend:DI (ashift:SI (reg:SI 10 a0 [76])
+                (const_int 3 [0x3])))) "/home/sunway/download/b/test.c":3:9 168 {*ashlsi3_extend}
+     (nil))
+...
+</pre>
+
+<p>
+希望通过 peephole 把这个 `ashift 3` 修改成 `mult 8`.
+</p>
+
+<p>
+但有一个问题:
+</p>
+
+<p>
+riscv 的 mul 是 r 指令, 即两个参数都是 reg, 所以 peephole 感觉应该需要写成类似这样:
+</p>
+
+<pre class="example" id="org0000005">
+(define_peephole2
+[
+    (set (match_operand:DI 0 "register_operand") 
+    (sign_extend:DI (ashift:SI (match_operand:SI 1 "register_operand") 
+    (match_operand 2 "const_int_operand"))))
+]
+
+"" 
+[
+    (set (match_operand:DI 3 "register_operand") (sign_extend:DI (match_operand 1)))
+    (set (match_operand:DI 4 "register_operand") (match_operand 2)) 
+    (set (match_dup 0) (mult:DI (match_dup 3) (match_dup 4)))
+]
+
+{
+    operands[2] = GEN_INT (1&lt;&lt;(INTVAL (operands[2]))); 
+})
+</pre>
+
+<p>
+但是 define_peephole2 并不支持在 new-insn 部分通过 match_operand `分配` 新的
+register, 因为 pass_peephole2 发生成 pass_reload 之后, 即已经完成了 RA (reg
+allocation), 不能再 `分配` 新的 pseudo register.
+</p>
+</div>
+
+<div id="outline-container-org0000008" class="outline-4">
+<h4 id="org0000008"><span class="section-number-4">1.2.1</span> 使用物理寄存器</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+虽然无法通过 match_operand 分配 pseudo register, 但通过 `(reg:DI &#x2026;)` 直接使用物理寄存器是可以工作的:
+</p>
+
+<pre class="example" id="org0000006">
+(define_peephole2
+[
+    (set (match_operand:DI 0 "register_operand") 
+    (sign_extend:DI (ashift:SI (match_operand:SI 1 "register_operand") 
+    (match_operand 2 "const_int_operand"))))
+]
+
+"" 
+[
+    (set (reg:DI 28) (sign_extend:DI (match_operand 1)))
+    (set (reg:DI 29) (match_operand 2)) 
+    (set (match_dup 0) (mult:DI (reg:DI 28) (reg:DI 29)))]
+
+{
+    operands[2] = GEN_INT (1&lt;&lt;(INTVAL (operands[2]))); 
+})
+</pre>
+
+<p>
+转换后的结果为:
+</p>
+
+<pre class="example" id="org0000007">
+$&gt; cat test.c.304r.peephole2
+
+...
+(insn 24 7 25 2 (set (reg:DI 28 t3)
+        (sign_extend:DI (reg:SI 10 a0 [76]))) "/home/sunway/download/b/test.c":3:9 -1
+     (nil))
+(insn 25 24 26 2 (set (reg:DI 29 t4)
+        (const_int 8 [0x8])) "/home/sunway/download/b/test.c":3:9 -1
+     (nil))
+(insn 26 25 13 2 (set (reg:DI 10 a0)
+        (mult:DI (reg:DI 28 t3)
+            (reg:DI 29 t4))) "/home/sunway/download/b/test.c":3:9 -1
+     (nil))
+...
+
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./test.o
+
+0000000000000000 &lt;foo&gt;:
+   0:   00050e1b                sext.w  t3,a0
+   4:   4ea1                    li      t4,8
+   6:   03de0533                mul     a0,t3,t4
+   a:   8082                    ret
+</pre>
+
+<p>
+但这个方案实际上并不可行, 因为不能在代码中 hardcode 物理寄存器 (t3, t4)
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000000b" class="outline-4">
+<h4 id="org000000b"><span class="section-number-4">1.2.2</span> 使用 match_scratch</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<p>
+使用 match_scratch, 但指修改原来的 `define_insn`, 让它生成 ashift 时通过
+`match_scratch` 预留一个 scratch register 给 peephole 来用 
+</p>
+
+<p>
+TBD
+</p>
+</div>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org0000014" class="outline-2 references">
+<h2 id="org0000014">Backlinks</h2>
+<div class="outline-text-2" id="text-org0000014">
+<p>
+<a href="gcc_pass.html#ID-17957249-95aa-4d26-8d2b-48ece73cd8cd">GCC Pass</a>
+(<i>GCC Pass &gt; rtl pass &gt; pass_peephole2</i>):   <a href="gcc_peephole2.html#ID-5f849222-e2fa-426b-ad5d-bce729e0605e">pass_peephole2</a>
+</p>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway (sunwayforever@gmail.com)<br />
+Date: 2022-04-22 Fri 19:58<br />
+Last updated: 2022-04-22 Fri 20:42</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
+<br />
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>
