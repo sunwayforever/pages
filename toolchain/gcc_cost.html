@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>GCC Cost</title>
+
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">GCC Cost</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org000000f">1. GCC Cost</a>
+<ul>
+<li><a href="#org0000006">1.1. 定义 cost</a>
+<ul>
+<li><a href="#ID-50a2267b-7dd0-4a07-997f-9dcc76933ba3">1.1.1. TARGET_RTX_COSTS</a></li>
+<li><a href="#org0000003">1.1.2. mtune</a></li>
+</ul>
+</li>
+<li><a href="#org000000c">1.2. 使用 cost</a>
+<ul>
+<li><a href="#org0000009">1.2.1. GCC Expand Mult</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000000f" class="outline-2">
+<h2 id="org000000f"><span class="section-number-2">1</span> GCC Cost</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="https://kristerw.blogspot.com/2018/01/gcc-back-end-performance-tuning.html">https://kristerw.blogspot.com/2018/01/gcc-back-end-performance-tuning.html</a>
+</p>
+
+<p>
+gcc cost model 是指 gcc 会考虑 arch 执行不同指令的代价, 以决定是否执行某些优化
+</p>
+</div>
+
+<div id="outline-container-org0000006" class="outline-3">
+<h3 id="org0000006"><span class="section-number-3">1.1</span> 定义 cost</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+<a href="https://gcc.gnu.org/onlinedocs/gcc-3.4.6/gccint/Costs.html">https://gcc.gnu.org/onlinedocs/gcc-3.4.6/gccint/Costs.html</a>
+</p>
+</div>
+
+<div id="outline-container-ID-50a2267b-7dd0-4a07-997f-9dcc76933ba3" class="outline-4">
+<h4 id="ID-50a2267b-7dd0-4a07-997f-9dcc76933ba3"><span class="section-number-4">1.1.1</span> TARGET_RTX_COSTS</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+gcc 决定 mul 是否 expand 成 shift 时, 需要通过 TARGET_RTX_COSTS 这个 <a href="gcc_backend.html#ID-c5c23657-59a8-4dc0-9987-6912638a6faf">gcc target
+hook</a> 来决定, 例如, 如果 `x*12` 的 cost 大于 `(x&lt;&lt;1+x)&lt;&lt;2` 的 cost, 则这个 expand
+不会进行. target 需要提供这个 hook 来告诉 gcc 各个 rtx 的 cost 有多大.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-type">bool</span> <span class="org-function-name">riscv_rtx_costs</span>(
+    <span class="org-type">rtx</span> <span class="org-variable-name">x</span>, <span class="org-type">machine_mode</span> <span class="org-variable-name">mode</span>, <span class="org-type">int</span> <span class="org-variable-name">outer_code</span>, <span class="org-type">int</span> <span class="org-variable-name">opno</span> ATTRIBUTE_UNUSED,
+    <span class="org-type">int</span> *<span class="org-variable-name">total</span>, <span class="org-type">bool</span> <span class="org-variable-name">speed</span>) {
+    <span class="org-type">bool</span> <span class="org-variable-name">float_mode_p</span> = FLOAT_MODE_P(mode);
+    <span class="org-type">int</span> <span class="org-variable-name">cost</span>;
+
+    <span class="org-keyword">switch</span> (GET_CODE(x)) {
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">case</span> ASHIFT:
+        <span class="org-keyword">case</span> ASHIFTRT:
+        <span class="org-keyword">case</span> LSHIFTRT:
+            *total = riscv_binary_cost(
+                x, SINGLE_SHIFT_COST, CONSTANT_P(XEXP(x, 1)) ? 4 : 9);
+            <span class="org-keyword">return</span> <span class="org-constant">false</span>;
+
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">case</span> MINUS:
+        <span class="org-keyword">case</span> PLUS:
+            <span class="org-keyword">if</span> (float_mode_p)
+                *total = tune_param-&gt;fp_add[mode == DFmode];
+            <span class="org-keyword">else</span>
+                *total = riscv_binary_cost(x, 1, 4);
+            <span class="org-keyword">return</span> <span class="org-constant">false</span>;
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">case</span> MULT:
+            <span class="org-keyword">if</span> (float_mode_p)
+                *total = tune_param-&gt;fp_mul[mode == DFmode];
+            <span class="org-keyword">else</span> <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>TARGET_MUL)
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">Estimate the cost of a library call.</span><span class="org-comment-delimiter">  */</span>
+                *total = COSTS_N_INSNS(speed ? 32 : 6);
+            <span class="org-keyword">else</span> <span class="org-keyword">if</span> (GET_MODE_SIZE(mode) &gt; UNITS_PER_WORD)
+                *total = 3 * tune_param-&gt;int_mul[0] + COSTS_N_INSNS(2);
+            <span class="org-keyword">else</span> <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>speed)
+                *total = COSTS_N_INSNS(1);
+            <span class="org-keyword">else</span>
+                *total = tune_param-&gt;int_mul[mode == DImode];
+            <span class="org-keyword">return</span> <span class="org-constant">false</span>;
+
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">default</span>:
+            <span class="org-keyword">return</span> <span class="org-constant">false</span>;
+    }
+}
+</pre>
+</div>
+</div>
+
+
+<div id="outline-container-org0000000" class="outline-5 references">
+<h5 id="org0000000">Backlinks</h5>
+<div class="outline-text-5" id="text-org0000000">
+<p>
+<a href="gcc_expand_mult.html#ID-5cd7feb7-6e6c-47b5-b63c-6465c8354c1a">GCC Expand Mult</a>
+(<i>GCC Expand Mult &gt; impls &gt; set_src_cost</i>):  set_src_cost 最终会调用到 <a href="#ID-50a2267b-7dd0-4a07-997f-9dcc76933ba3">TARGET_RTX_COSTS</a> 这个 target hook
+</p>
+
+<p>
+<a href="gcc_backend.html#ID-c5c23657-59a8-4dc0-9987-6912638a6faf">gcc target hook</a>
+(<i>GCC Backend &gt; gcc target hook</i>):      4. <a href="#ID-50a2267b-7dd0-4a07-997f-9dcc76933ba3">TARGET_RTX_COSTS</a>   
+</p>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org0000003" class="outline-4">
+<h4 id="org0000003"><span class="section-number-4">1.1.2</span> mtune</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+<a href="https://gcc.gnu.org/onlinedocs/gcc/RISC-V-Options.html">https://gcc.gnu.org/onlinedocs/gcc/RISC-V-Options.html</a>
+</p>
+
+<p>
+以 `-mtune=sifive-7-series` 为例
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000000c" class="outline-3">
+<h3 id="org000000c"><span class="section-number-3">1.2</span> 使用 cost</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-org0000009" class="outline-4">
+<h4 id="org0000009"><span class="section-number-4">1.2.1</span> <a href="gcc_expand_mult.html#ID-5cd7feb7-6e6c-47b5-b63c-6465c8354c1a">GCC Expand Mult</a></h4>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org0000012" class="outline-2 references">
+<h2 id="org0000012">Backlinks</h2>
+<div class="outline-text-2" id="text-org0000012">
+<p>
+<a href="gcc.html#ID-19df5597-4fd4-47a1-9534-f6e0c327e8d5">GCC</a>
+(<i>GCC &gt; GCC Cost</i>):   <a href="gcc_cost.html#ID-2599fa0b-be86-4b12-a480-ee638a440b1d">GCC Cost</a>
+</p>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway (sunwayforever@gmail.com)<br />
+Date: 2022-04-24 Sun 15:49<br />
+Last updated: 2022-04-24 Sun 16:12</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
+<br />
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>
