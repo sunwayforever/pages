@@ -40,7 +40,7 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#org000008e">1. GCC Backend</a>
+<li><a href="#org00000e8">1. GCC Backend</a>
 <ul>
 <li><a href="#org0000007">1.1. optab</a>
 <ul>
@@ -59,31 +59,44 @@
 <li><a href="#org0000022">1.2.7. misc</a></li>
 </ul>
 </li>
-<li><a href="#ID-5304f835-9c6a-49bc-89a5-ca01e2520167">1.3. machine description</a></li>
-<li><a href="#org0000046">1.4. rtl pass</a>
+<li><a href="#ID-5304f835-9c6a-49bc-89a5-ca01e2520167">1.3. machine description</a>
 <ul>
-<li><a href="#org0000025">1.4.1. pass_expand</a></li>
+<li><a href="#org0000060">1.3.1. md 语法</a></li>
+</ul>
+</li>
+<li><a href="#org0000084">1.4. rtl pass</a>
+<ul>
+<li><a href="#org0000063">1.4.1. pass_expand</a></li>
 <li><a href="#org0000034">1.4.2. pass_ira</a></li>
 <li><a href="#org0000040">1.4.3. pass_thread_prologue_and_epilogue</a></li>
 <li><a href="#org0000043">1.4.4. pass_final</a></li>
 </ul>
 </li>
-<li><a href="#org000007c">1.5. example</a>
+<li><a href="#org000007d">1.5. example</a>
 <ul>
 <li><a href="#org0000059">1.5.1. gimple to rtl</a></li>
 <li><a href="#org0000075">1.5.2. rtl to assembly</a></li>
 </ul>
 </li>
 <li><a href="#org0000088">1.6. march vs. mabi</a></li>
-<li><a href="#ID-c5c23657-59a8-4dc0-9987-6912638a6faf">1.7. gcc target hook</a></li>
+<li><a href="#ID-c5c23657-59a8-4dc0-9987-6912638a6faf">1.7. gcc target hook</a>
+<ul>
+<li><a href="#org00000c9">1.7.1. TARGET_PRINT_OPERAND</a></li>
+<li><a href="#org00000cc">1.7.2. TARGET_PRINT_OPERAND_ADDRESS</a></li>
+<li><a href="#org00000cf">1.7.3. TARGET_CONDITIONAL_REGISTER_USAGE</a></li>
+<li><a href="#org00000d3">1.7.4. TARGET_STRUCT_VALUE_RTX</a></li>
+<li><a href="#org00000dc">1.7.5. cost</a></li>
+<li><a href="#org00000e2">1.7.6. schedule</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-org000008e" class="outline-2">
-<h2 id="org000008e"><span class="section-number-2">1</span> GCC Backend</h2>
+<div id="outline-container-org00000e8" class="outline-2">
+<h2 id="org00000e8"><span class="section-number-2">1</span> GCC Backend</h2>
 <div class="outline-text-2" id="text-1">
 </div>
 <div id="outline-container-org0000007" class="outline-3">
@@ -593,18 +606,217 @@ machine description 有两个作用:
 <li>rtl to assembly 时根据 rtx 找到 md 中对应的 assembly (匹配 rtl)</li>
 </ol>
 </div>
+
+<div id="outline-container-org0000060" class="outline-4">
+<h4 id="org0000060"><span class="section-number-4">1.3.1</span> md 语法</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<p>
+md 的关键字本身也是 rtx, 且 rtl class 为 RTX_EXTRA, 所以扫描 md 的各种 genxxx 可以用 rtx 相关的代码来解析 md.
+</p>
 </div>
 
-<div id="outline-container-org0000046" class="outline-3">
-<h3 id="org0000046"><span class="section-number-3">1.4</span> rtl pass</h3>
+<div id="outline-container-org0000025" class="outline-5">
+<h5 id="org0000025"><span class="section-number-5">1.3.1.1</span> <a href="retargeting_gcc_to_riscv.html#ID-52268324-f3d4-43c2-bfe7-8f284bde1ce9">define_insn</a></h5>
+</div>
+
+<div id="outline-container-org0000029" class="outline-5">
+<h5 id="org0000029"><span class="section-number-5">1.3.1.2</span> define_expand</h5>
+<div class="outline-text-5" id="text-1-3-1-2">
+<p>
+与 define_insn 不同, 有些 insn 的功能是通过组合其它 insn 来完成的.
+</p>
+
+<pre class="example" id="org0000028">
+(define_expand "addsi3"
+       [(match_operand:SI 0 "register_operand" "")
+        (match_operand:SI 1 "register_operand" "")
+        (match_operand:SI 2 "register_operand" "")]
+       ""
+       "
+     {
+       handle_add (operands[0], operands[1], operands[2]);
+       DONE;
+     }")
+</pre>
+
+<p>
+define_expand 的 templte 部分只需要声明 operand, 后面嵌入的 c 代码 (preparation
+statement) 负责通过 rtx 的 api (例如 emit_insn, gen_xxx) 生成 rtx
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000002c" class="outline-5">
+<h5 id="org000002c"><span class="section-number-5">1.3.1.3</span> define_split</h5>
+</div>
+
+<div id="outline-container-org000002f" class="outline-5">
+<h5 id="org000002f"><span class="section-number-5">1.3.1.4</span> define_mode_iterator</h5>
+</div>
+
+<div id="outline-container-org0000032" class="outline-5">
+<h5 id="org0000032"><span class="section-number-5">1.3.1.5</span> define_mode_attr</h5>
+</div>
+
+<div id="outline-container-org0000035" class="outline-5">
+<h5 id="org0000035"><span class="section-number-5">1.3.1.6</span> define_code_iterator</h5>
+</div>
+
+<div id="outline-container-org0000038" class="outline-5">
+<h5 id="org0000038"><span class="section-number-5">1.3.1.7</span> define_code_attr</h5>
+</div>
+
+<div id="outline-container-org000003b" class="outline-5">
+<h5 id="org000003b"><span class="section-number-5">1.3.1.8</span> define_c_enum</h5>
+</div>
+
+<div id="outline-container-org000003e" class="outline-5">
+<h5 id="org000003e"><span class="section-number-5">1.3.1.9</span> define_constants</h5>
+</div>
+
+<div id="outline-container-org0000041" class="outline-5">
+<h5 id="org0000041"><span class="section-number-5">1.3.1.10</span> define_attr</h5>
+</div>
+
+<div id="outline-container-org0000046" class="outline-5">
+<h5 id="org0000046"><span class="section-number-5">1.3.1.11</span> define_predicate</h5>
+<div class="outline-text-5" id="text-1-3-1-11">
+<p>
+predicate 是指 match_operand/match_operator 时可以指定的条件, 例如
+</p>
+
+<pre class="example" id="org0000044">
+(define_insn "adddi3"
+  [(set (match_operand:DI 0 "register_operand" "=r,r")
+    (plus:DI (match_operand:DI 1 "register_operand" " r,r")
+         (match_operand:DI 2 "arith_operand"    " r,I")))]
+  ...         
+)
+</pre>
+
+<p>
+arith_operand 就是通过 define_predicate 指定的 predicate:
+</p>
+
+<pre class="example" id="org0000045">
+(define_predicate "arith_operand"
+  (ior (match_operand 0 "const_arith_operand")
+       (match_operand 0 "register_operand")))
+</pre>
+
+<p>
+另外, register_operand 是 gcc 自带的 predicate, 定义在 recog.c 中, 除了
+register_operand, gcc 还定义了:
+</p>
+
+<ol class="org-ol">
+<li>address_operand</li>
+<li>immediate_operand</li>
+<li>scratch_operand</li>
+<li>const_int_operand</li>
+<li>const_double_operand</li>
+<li>memory_operand</li>
+<li>&#x2026;</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000049" class="outline-5">
+<h5 id="org0000049"><span class="section-number-5">1.3.1.12</span> <a href="gcc_peephole2.html#ID-ce833dca-50ab-44fc-bdc7-357c729cd4ab">define_peephole2</a></h5>
+</div>
+
+<div id="outline-container-org000005d" class="outline-5">
+<h5 id="org000005d"><span class="section-number-5">1.3.1.13</span> match</h5>
+<div class="outline-text-5" id="text-1-3-1-13">
+<p>
+rtl to assembly 时通过 recog 来找到 rtl 匹配的 insn_code, genrecog 通过扫描
+match_xxx 生成各种 pattern 函数, 用来检测 rtl 是否 define_insn 匹配
+</p>
+
+<p>
+<a href="https://splichal.eu/scripts/sphinx/gccint/_build/html/machine-descriptions/predicates.html">https://splichal.eu/scripts/sphinx/gccint/_build/html/machine-descriptions/predicates.html</a>
+</p>
+</div>
+
+<div id="outline-container-org000004d" class="outline-6">
+<h6 id="org000004d"><span class="section-number-6">1.3.1.13.1</span> match_operand</h6>
+<div class="outline-text-6" id="text-1-3-1-13-1">
+<p>
+match_operand 用来 match operand, 例如:
+</p>
+
+<pre class="example" id="org000004c">
+(match_operand:SI      0           "register_operand"    "r")
+----------------------------------------------------------------------
+               &lt;mode&gt;  &lt;operand&gt;   &lt;predicate&gt;           &lt;constraints&gt;
+</pre>
+
+<p>
+其中 constraints 是针对 predicate 的补充, 例如 r 表示寄存器, m 表示 memory, &#x2026;
+</p>
+
+<p>
+<a href="https://splichal.eu/scripts/sphinx/gccint/_build/html/machine-descriptions/operand-constraints.html">https://splichal.eu/scripts/sphinx/gccint/_build/html/machine-descriptions/operand-constraints.html</a>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000050" class="outline-6">
+<h6 id="org0000050"><span class="section-number-6">1.3.1.13.2</span> match_operator</h6>
+</div>
+
+<div id="outline-container-org0000054" class="outline-6">
+<h6 id="org0000054"><span class="section-number-6">1.3.1.13.3</span> match_scratch</h6>
+<div class="outline-text-6" id="text-1-3-1-13-3">
+<p>
+match_scratch 在生成 rtl 时可以用来分配一个 scratch 寄存器, 在匹配 rtl 时和
+`(match_operand &#x2026; "register_operand")` 差不多.
+</p>
+
+<p>
+match_scratch 的典型用法类似这样:
+</p>
+
+<pre class="example" id="org0000053">
+(define_insn "swapsi3"
+[
+ (swap (match_operand:si 1 "register_operand")
+   (match_operand:si 2 "register_operand"))
+ (clobber (match_scratch:si 0 "=r")
+]
+""
+mov %0, %1\nmov %1, %2\nmov %2, %0
+""
+)
+</pre>
+
+<p>
+即通过 match_scratch 给 swap 分配一个临时寄存器
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000057" class="outline-6">
+<h6 id="org0000057"><span class="section-number-6">1.3.1.13.4</span> match_code</h6>
+</div>
+
+<div id="outline-container-org000005a" class="outline-6">
+<h6 id="org000005a"><span class="section-number-6">1.3.1.13.5</span> match_test</h6>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000084" class="outline-3">
+<h3 id="org0000084"><span class="section-number-3">1.4</span> rtl pass</h3>
 <div class="outline-text-3" id="text-1-4">
 <p>
 所有的 pass 及其执行的顺序都在 passes.def 中指定.
 </p>
 </div>
 
-<div id="outline-container-org0000025" class="outline-4">
-<h4 id="org0000025"><span class="section-number-4">1.4.1</span> pass_expand</h4>
+<div id="outline-container-org0000063" class="outline-4">
+<h4 id="org0000063"><span class="section-number-4">1.4.1</span> pass_expand</h4>
 <div class="outline-text-4" id="text-1-4-1">
 <p>
 gimple 转换为 rtl
@@ -689,8 +901,8 @@ naked function, 是指不需要 gcc 生成 prolog 和 epilogue 的函数, 例如
 
 
 <ul class="org-ul">
-<li><a id="org0000091"></a>Backlinks<br />
-<div class="outline-text-7" id="text-org0000091">
+<li><a id="org0000092"></a>Backlinks<br />
+<div class="outline-text-7" id="text-org0000092">
 <p>
 <a href="gcc_attribute.html#ID-463c82be-a55d-43c3-a8f2-cba1c1cd7599">GCC Attribute</a>
 (<i>GCC Attribute &gt; naked</i>):   <a href="#ID-6bd2709c-1c3e-4e22-98d3-4e9edc4aec33">naked</a>
@@ -775,8 +987,8 @@ FIXED_REGISTERS. FIXED_REGISTERS 不会被 ira 分配, 也不会被 prologue 保
 </div>
 </div>
 
-<div id="outline-container-org000005c" class="outline-6">
-<h6 id="org000005c"><span class="section-number-6">1.4.2.1.3</span> backtrace</h6>
+<div id="outline-container-org000006c" class="outline-6">
+<h6 id="org000006c"><span class="section-number-6">1.4.2.1.3</span> backtrace</h6>
 <div class="outline-text-6" id="text-1-4-2-1-3">
 <div class="org-src-container">
 <pre class="src src-rust">#0  riscv_save_reg_p (regno=0) at ../.././riscv-gcc/gcc/config/riscv/riscv.<span class="org-variable-name">c</span>:3636
@@ -936,8 +1148,8 @@ riscv_expand_prologue 负责生成函数开头的:
 <h5 id="org000003a"><span class="section-number-5">1.4.3.2</span> epilogue</h5>
 </div>
 
-<div id="outline-container-org000003d" class="outline-5">
-<h5 id="org000003d"><span class="section-number-5">1.4.3.3</span> backtrace</h5>
+<div id="outline-container-org000007b" class="outline-5">
+<h5 id="org000007b"><span class="section-number-5">1.4.3.3</span> backtrace</h5>
 <div class="outline-text-5" id="text-1-4-3-3">
 <div class="org-src-container">
 <pre class="src src-rust">#0  gen_prologue () at ../.././riscv-gcc/gcc/config/riscv/riscv.<span class="org-variable-name">md</span>:2202
@@ -976,8 +1188,8 @@ riscv_expand_prologue 负责生成函数开头的:
 </div>
 </div>
 
-<div id="outline-container-org000007c" class="outline-3">
-<h3 id="org000007c"><span class="section-number-3">1.5</span> example</h3>
+<div id="outline-container-org000007d" class="outline-3">
+<h3 id="org000007d"><span class="section-number-3">1.5</span> example</h3>
 <div class="outline-text-3" id="text-1-5">
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-type">float</span> <span class="org-function-name">foo</span>(<span class="org-type">float</span> <span class="org-variable-name">x</span>) {
@@ -1019,8 +1231,8 @@ genoutput 扫描 md 生成. gen_addsf3 由 genemit 生成</li>
 </ol>
 </div>
 
-<div id="outline-container-org0000049" class="outline-5">
-<h5 id="org0000049"><span class="section-number-5">1.5.1.1</span> backtrace</h5>
+<div id="outline-container-org0000087" class="outline-5">
+<h5 id="org0000087"><span class="section-number-5">1.5.1.1</span> backtrace</h5>
 <div class="outline-text-5" id="text-1-5-1-1">
 <div class="org-src-container">
 <pre class="src src-rust">#0  gen_addsf3 (operand0=0x7fffffffb250, operand1=0x7ffff7786bb8, 
@@ -1054,10 +1266,10 @@ genoutput 扫描 md 生成. gen_addsf3 由 genemit 生成</li>
 </div>
 </div>
 
-<div id="outline-container-org000004d" class="outline-5">
-<h5 id="org000004d"><span class="section-number-5">1.5.1.2</span> gimple code</h5>
+<div id="outline-container-org000008b" class="outline-5">
+<h5 id="org000008b"><span class="section-number-5">1.5.1.2</span> gimple code</h5>
 <div class="outline-text-5" id="text-1-5-1-2">
-<pre class="example" id="org000004c">
+<pre class="example" id="org000008a">
 float foo (float x)
 { 
   float D.1491;
@@ -1089,8 +1301,8 @@ float foo (float x)
 </div>
 </div>
 
-<div id="outline-container-org0000050" class="outline-5">
-<h5 id="org0000050"><span class="section-number-5">1.5.1.3</span> bb2</h5>
+<div id="outline-container-org000008e" class="outline-5">
+<h5 id="org000008e"><span class="section-number-5">1.5.1.3</span> bb2</h5>
 <div class="outline-text-5" id="text-1-5-1-3">
 <p>
 bb2 的第一个 stmt `if (x_2(D) &gt; 0.0)` 的处理过程:
@@ -1137,8 +1349,8 @@ bb2 的第一个 stmt `if (x_2(D) &gt; 0.0)` 的处理过程:
 </div>
 </div>
 
-<div id="outline-container-org0000053" class="outline-5">
-<h5 id="org0000053"><span class="section-number-5">1.5.1.4</span> bb3</h5>
+<div id="outline-container-org0000091" class="outline-5">
+<h5 id="org0000091"><span class="section-number-5">1.5.1.4</span> bb3</h5>
 <div class="outline-text-5" id="text-1-5-1-4">
 <p>
 bb3 的第一个 stmt `_4 = x_2(D) + 1.0e+0` 的处理过程:
@@ -1207,8 +1419,8 @@ rtl 通过一些 rtl pass 后最终由 rtl 的 `pass_final` 生成 assembly
 </ol>
 </div>
 
-<div id="outline-container-org000005d" class="outline-5">
-<h5 id="org000005d"><span class="section-number-5">1.5.2.1</span> backtrace</h5>
+<div id="outline-container-org000009a" class="outline-5">
+<h5 id="org000009a"><span class="section-number-5">1.5.2.1</span> backtrace</h5>
 <div class="outline-text-5" id="text-1-5-2-1">
 <div class="org-src-container">
 <pre class="src src-rust">#0  get_insn_template (code=0, insn=0x7fffffffbc00) at ../.././riscv-gcc/gcc/final.<span class="org-variable-name">c</span>:2063
@@ -1276,7 +1488,7 @@ rtl 通过一些 rtl pass 后最终由 rtl 的 `pass_final` 生成 assembly
 要匹配的 insn 为:
 </p>
 
-<pre class="example" id="org0000062">
+<pre class="example" id="org00000a0">
 (insn/f 40 39 41 (set (mem/c:DI (plus:DI (reg/f:DI 2 sp)
                 (const_int 24 [0x18])) [2  S8 A64])
         (reg/f:DI 8 s0)) "test.c":1:21 
@@ -1357,7 +1569,7 @@ recog 的过程为:
 最终匹配的 insn_code 为 135, 对应 riscv.md 中的:
 </p>
 
-<pre class="example" id="org0000063">
+<pre class="example" id="org00000a1">
 (define_insn "*movdi_64bit"
   [(set (match_operand:DI 0 "nonimmediate_operand" "=r,r,r, m,  *f,*f,*r,*f,*m")
     (match_operand:DI 1 "move_operand"         " r,T,m,rJ,*r*J,*m,*f,*f,*f"))]
@@ -1383,7 +1595,7 @@ rtx 本身就是树形结构, 而 recog 可以看做是一个相同形状的决�
 addi3 为例:
 </p>
 
-<pre class="example" id="org0000067">
+<pre class="example" id="org00000a5">
 (define_insn "addsf3"
   [(set (match_operand:SF            0 "register_operand" "=f")
     (plus:SF (match_operand:SF 1 "register_operand" " f")
@@ -1570,7 +1782,7 @@ recog 针对 adddi3 的决策树是: set-&gt;plus-&gt;GET_MODE(operand[0])==DI
 所以下面的 rtl 
 </p>
 
-<pre class="example" id="org0000071">
+<pre class="example" id="org00000af">
 (insn/f 40 39 41 (set (mem/c:DI (plus:DI (reg/f:DI 2 sp)
                 (const_int 24 [0x18])) [2  S8 A64])
         (reg/f:DI 8 s0)) "test.c":1:21 
@@ -1618,10 +1830,10 @@ hard double float
 </ul>
 </div>
 
-<div id="outline-container-org000007d" class="outline-5">
-<h5 id="org000007d"><span class="section-number-5">1.6.0.1</span> example</h5>
+<div id="outline-container-org00000ba" class="outline-5">
+<h5 id="org00000ba"><span class="section-number-5">1.6.0.1</span> example</h5>
 <div class="outline-text-5" id="text-1-6-0-1">
-<pre class="example" id="org000007b">
+<pre class="example" id="org00000b9">
 $&gt; cat test.c
 
 extern float hello(float x);
@@ -1803,6 +2015,10 @@ cc1: error: ABI requires '-march=rv64'
 <h3 id="ID-c5c23657-59a8-4dc0-9987-6912638a6faf"><span class="section-number-3">1.7</span> gcc target hook</h3>
 <div class="outline-text-3" id="text-1-7">
 <p>
+<a href="https://gcc.gnu.org/onlinedocs/gccint/Target-Macros.html#Target-Macros">https://gcc.gnu.org/onlinedocs/gccint/Target-Macros.html#Target-Macros</a>
+</p>
+
+<p>
 前面看到的
 </p>
 
@@ -1836,23 +2052,106 @@ riscv 通过 TARGET_CONDITIONAL_REGISTER_USAGE 定义一个 hook 的实现
 <p>
 常用的 hook 有:
 </p>
+</div>
 
-<ol class="org-ol">
-<li>TARGET_PRINT_OPERAND</li>
+<div id="outline-container-org00000c9" class="outline-4">
+<h4 id="org00000c9"><span class="section-number-4">1.7.1</span> TARGET_PRINT_OPERAND</h4>
+</div>
 
-<li>TARGET_PRINT_OPERAND_ADDRESS</li>
+<div id="outline-container-org00000cc" class="outline-4">
+<h4 id="org00000cc"><span class="section-number-4">1.7.2</span> TARGET_PRINT_OPERAND_ADDRESS</h4>
+</div>
 
-<li>TARGET_CONDITIONAL_REGISTER_USAGE</li>
+<div id="outline-container-org00000cf" class="outline-4">
+<h4 id="org00000cf"><span class="section-number-4">1.7.3</span> TARGET_CONDITIONAL_REGISTER_USAGE</h4>
+</div>
 
-<li><a href="gcc_cost.html#ID-50a2267b-7dd0-4a07-997f-9dcc76933ba3">TARGET_RTX_COSTS</a></li>
-</ol>
+<div id="outline-container-org00000d3" class="outline-4">
+<h4 id="org00000d3"><span class="section-number-4">1.7.4</span> TARGET_STRUCT_VALUE_RTX</h4>
+<div class="outline-text-4" id="text-1-7-4">
+<p>
+用来设置 <a href="gcc_named_return_value.html#ID-e53c6711-2a42-473c-af42-a27179f8c22b">GCC Named Return Value</a> 如何把 nrv 传递给 callee
+</p>
+
+<p>
+例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-preprocessor">#define</span> <span class="org-variable-name">TARGET_STRUCT_VALUE_RTX</span> my_struct_value_rtx
+
+<span class="org-keyword">static</span> <span class="org-type">rtx</span> <span class="org-function-name">my_struct_value_rtx</span>(
+    tree <span class="org-type">fntype</span> <span class="org-variable-name">ATTRIBUTE_UNUSED</span>, <span class="org-type">int</span> <span class="org-variable-name">incoming</span> ATTRIBUTE_UNUSED) {
+    <span class="org-keyword">return</span> gen_rtx_REG(Pmode, 13);
+}
+</pre>
+</div>
+
+<p>
+表示用 reg 13 (riscv 的 a3) 传递 nrv. 若该宏没有定义, 则会把 nrv 看做 callee 的第一个参数来处理
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">struct</span> <span class="org-type">X</span> {
+    <span class="org-type">int</span> <span class="org-variable-name">a</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">b</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">c</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">d</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">e</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">f</span>;
+};
+
+<span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-function-name">foo</span>(<span class="org-type">int</span> <span class="org-variable-name">a</span>) {
+    <span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-variable-name">x</span> = {0};
+    x.a = a;
+    <span class="org-keyword">return</span> x;
+}
+</pre>
+</div>
+
+<pre class="example" id="org00000d2">
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc  test.c -O1 -c
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./test.o
+
+0000000000000000 &lt;foo&gt;:
+   0:   c288                    sw      a0,0(a3)
+   2:   0006a223                sw      zero,4(a3)
+   6:   0006a423                sw      zero,8(a3)
+   a:   0006a623                sw      zero,12(a3)
+   e:   0006a823                sw      zero,16(a3)
+  12:   0006aa23                sw      zero,20(a3)
+  16:   8536                    mv      a0,a3
+  18:   8082                    ret
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org00000dc" class="outline-4">
+<h4 id="org00000dc"><span class="section-number-4">1.7.5</span> cost</h4>
+<div class="outline-text-4" id="text-1-7-5">
+</div>
+<div id="outline-container-org00000d6" class="outline-5">
+<h5 id="org00000d6"><span class="section-number-5">1.7.5.1</span> <a href="gcc_cost.html#ID-50a2267b-7dd0-4a07-997f-9dcc76933ba3">TARGET_RTX_COSTS</a></h5>
+</div>
+
+<div id="outline-container-org00000d9" class="outline-5">
+<h5 id="org00000d9"><span class="section-number-5">1.7.5.2</span> <a href="gcc_cost.html#ID-98f35525-3f8c-4f76-8478-6cab3f3182be">TARGET_SLOW_UNALIGNED_ACCESS</a></h5>
+</div>
+</div>
+
+<div id="outline-container-org00000e2" class="outline-4">
+<h4 id="org00000e2"><span class="section-number-4">1.7.6</span> schedule</h4>
+<div class="outline-text-4" id="text-1-7-6">
+</div>
+<div id="outline-container-org00000df" class="outline-5">
+<h5 id="org00000df"><span class="section-number-5">1.7.6.1</span> <a href="gcc_scheduler.html#ID-38916ef6-f300-47db-8c70-41e3256af352">TARGET_SCHED_ISSUE_RATE</a></h5>
+</div>
 </div>
 
 
-
-<div id="outline-container-org000008b" class="outline-4 references">
-<h4 id="org000008b">Backlinks</h4>
-<div class="outline-text-4" id="text-org000008b">
+<div id="outline-container-org00000e5" class="outline-4 references">
+<h4 id="org00000e5">Backlinks</h4>
+<div class="outline-text-4" id="text-org00000e5">
 <p>
 <a href="gcc_cost.html#ID-50a2267b-7dd0-4a07-997f-9dcc76933ba3">TARGET_RTX_COSTS</a>
 (<i>GCC Cost &gt; 定义 cost &gt; TARGET_RTX_COSTS</i>):  gcc 决定 mul 是否 expand 成 shift 时, 需要通过 TARGET_RTX_COSTS 这个 <a href="#ID-c5c23657-59a8-4dc0-9987-6912638a6faf">gcc target hook</a> 来决定, 例如, 如果 `x*12` 的 cost 大于 `(x&lt;&lt;1+x)&lt;&lt;2` 的 cost, 则这个 expand 不会进行. target 需要提供这个 hook 来告诉 gcc 各个 rtx 的 cost 有多大.
@@ -1864,9 +2163,9 @@ riscv 通过 TARGET_CONDITIONAL_REGISTER_USAGE 定义一个 hook 的实现
 
 
 
-<div id="outline-container-org0000092" class="outline-2 references">
-<h2 id="org0000092">Backlinks</h2>
-<div class="outline-text-2" id="text-org0000092">
+<div id="outline-container-org00000eb" class="outline-2 references">
+<h2 id="org00000eb">Backlinks</h2>
+<div class="outline-text-2" id="text-org00000eb">
 <p>
 <a href="gcc.html#ID-19df5597-4fd4-47a1-9534-f6e0c327e8d5">GCC</a>
 (<i>GCC &gt; GCC Backend</i>):   <a href="gcc_backend.html#ID-02e7f924-9cf7-4e3d-8ceb-1765fd3a2bed">GCC Backend</a>
@@ -1878,7 +2177,7 @@ riscv 通过 TARGET_CONDITIONAL_REGISTER_USAGE 定义一个 hook 的实现
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-03-24 Thu 12:17<br />
-Last updated: 2022-04-24 Sun 15:24</p>
+Last updated: 2022-04-25 Mon 19:09</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
