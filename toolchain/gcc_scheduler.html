@@ -40,18 +40,23 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#org0000008">1. GCC Scheduler</a>
+<li><a href="#org0000012">1. GCC Scheduler</a>
 <ul>
 <li><a href="#org0000002">1.1. example</a></li>
 <li><a href="#ID-38916ef6-f300-47db-8c70-41e3256af352">1.2. TARGET_SCHED_ISSUE_RATE</a></li>
+<li><a href="#ID-83e0d370-1b5f-49c6-b151-46a9e108d076">1.3. microarchitecture</a>
+<ul>
+<li><a href="#org000000c">1.3.1. example</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-org0000008" class="outline-2">
-<h2 id="org0000008"><span class="section-number-2">1</span> GCC Scheduler</h2>
+<div id="outline-container-org0000012" class="outline-2">
+<h2 id="org0000012"><span class="section-number-2">1</span> GCC Scheduler</h2>
 <div class="outline-text-2" id="text-1">
 <p>
 <a href="https://en.wikipedia.org/wiki/Instruction_scheduling">https://en.wikipedia.org/wiki/Instruction_scheduling</a>
@@ -86,6 +91,17 @@
 <p>
 由于 cpu 本身支持乱序执行, 所以 gcc 的 scheduler 可能并不是特别重要, 但由于
 scheduler 可以根据 schedule 结果修改指令本身(而不仅仅是调整位置, 例如调整寄存器分配), 所以 scheduler与硬件的乱序执行还是会有些不同.
+</p>
+
+<p>
+scheduler 算法包括 haifa-sched, modulo-sched, sel-sched, 默认应该使用的是 haifa,
+scheduler 的入口是 pass_sched
+</p>
+
+<p>
+scheduler 工作时和硬件的 pipeline, issue_rate 是紧密相关的, 需要 backend 去定义,
+例如 target hook 中的 TARGET_SCHED_ISSUE_RATE 以及 riscv_tune_info 中
+microarchitecture.
 </p>
 </div>
 
@@ -168,33 +184,174 @@ $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./test.o
 <div id="outline-container-ID-38916ef6-f300-47db-8c70-41e3256af352" class="outline-3">
 <h3 id="ID-38916ef6-f300-47db-8c70-41e3256af352"><span class="section-number-3">1.2</span> TARGET_SCHED_ISSUE_RATE</h3>
 <div class="outline-text-3" id="text-1-2">
+<p>
+单个 cycle 可以发射的指令数量, 默认为 1
+</p>
+
+<p>
+TBD 找一个能显示 issue_rate 区别的例子
+</p>
 </div>
 
 
-<div id="outline-container-org0000005" class="outline-4 references">
-<h4 id="org0000005">Backlinks</h4>
-<div class="outline-text-4" id="text-org0000005">
+<div id="outline-container-org000000b" class="outline-4 references">
+<h4 id="org000000b">Backlinks</h4>
+<div class="outline-text-4" id="text-org000000b">
 <p>
 <a href="gcc_backend.html#ID-c5c23657-59a8-4dc0-9987-6912638a6faf">gcc target hook</a>
 (<i>GCC Backend &gt; gcc target hook &gt; schedule &gt; TARGET_SCHED_ISSUE_RATE</i>):   <a href="#ID-38916ef6-f300-47db-8c70-41e3256af352">TARGET_SCHED_ISSUE_RATE</a>
 </p>
-</div>
-</div>
-</div>
-</div>
 
-
-
-<div id="outline-container-org000000b" class="outline-2 references">
-<h2 id="org000000b">Backlinks</h2>
-<div class="outline-text-2" id="text-org000000b">
 <p>
-<a href="gcc_cost.html#ID-2599fa0b-be86-4b12-a480-ee638a440b1d">GCC Cost</a>
-(<i>GCC Cost &gt; 定义 cost &gt; mtune &gt; issue_rate</i>):  issue_rate 和<a href="gcc_scheduler.html#ID-aa30d0cc-966e-407b-9ad3-a0b0fbad7c49">指令调度</a>有关.
+<a href="gcc_cost.html#ID-2c365cee-bb91-4b01-a9b2-e2aff0c3e475">mtune</a>
+(<i>GCC Cost &gt; 定义 cost &gt; mtune &gt; riscv_tune_param &gt; issue_rate</i>):  <a href="#ID-38916ef6-f300-47db-8c70-41e3256af352">TARGET_SCHED_ISSUE_RATE</a> 会使用这个 tune_param
+</p>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-ID-83e0d370-1b5f-49c6-b151-46a9e108d076" class="outline-3">
+<h3 id="ID-83e0d370-1b5f-49c6-b151-46a9e108d076"><span class="section-number-3">1.3</span> microarchitecture</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+scheduler 工作时需要一个关键信息是指令的 latency, 例如 `sqrtsf2` 的 latency 在
+sifive-3 是 25, 在 sifive-7 是 27, 这个值看起来和 <a href="gcc_cost.html#ID-2599fa0b-be86-4b12-a480-ee638a440b1d">GCC Cost</a> 有点类似?
 </p>
 
 <p>
-<a href="gcc_pass.html#ID-17957249-95aa-4d26-8d2b-48ece73cd8cd">GCC Pass</a>
+gcc 定义 microarchitecture 的机制称为 automaton.
+</p>
+
+<p>
+以 adddf3 为例:
+</p>
+
+<p>
+riscv.md:
+</p>
+
+<pre class="example" id="org0000008">
+(define_insn "adddf3"
+  [(set (match_operand:ANYF            0 "register_operand" "=f")
+    (plus:ANYF (match_operand:ANYF 1 "register_operand" " f")
+           (match_operand:ANYF 2 "register_operand" " f")))]
+  "TARGET_HARD_FLOAT"
+  "fadd.&lt;fmt&gt;\t%0,%1,%2"
+  [(set_attr "type" "fadd")
+   (set_attr "mode" "DF")])
+</pre>
+
+<p>
+sifive-7.md:
+</p>
+
+<p>
+通过 `fadd` type, `DF` mode 匹配到下面一条:
+</p>
+
+<pre class="example" id="org0000009">
+(define_insn_reservation "sifive_7_dfma" 7
+  (and (eq_attr "tune" "sifive_7")
+       (and (eq_attr "type" "fadd,fmul,fmadd")
+        (eq_attr "mode" "DF")))
+  "sifive_7_B")
+</pre>
+
+<p>
+最后通过 genattrtab 生成 insn-latencytab.c:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">int</span> <span class="org-function-name">insn_default_latency</span>(<span class="org-type">rtx_insn</span> *<span class="org-variable-name">insn</span> ATTRIBUTE_UNUSED) {
+    <span class="org-keyword">enum</span> <span class="org-type">attr_type</span> <span class="org-type">cached_type</span> <span class="org-variable-name">ATTRIBUTE_UNUSED</span>;
+    <span class="org-keyword">enum</span> <span class="org-type">attr_mode</span> <span class="org-type">cached_mode</span> <span class="org-variable-name">ATTRIBUTE_UNUSED</span>;
+
+    <span class="org-keyword">switch</span> (recog_memoized(insn)) {
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">case</span> 2: <span class="org-comment-delimiter">/* </span><span class="org-comment">adddf3</span><span class="org-comment-delimiter"> */</span>
+            <span class="org-keyword">if</span> (((<span class="org-keyword">enum</span> <span class="org-type">attr_tune</span>)riscv_microarchitecture) == (TUNE_SIFIVE_7)) {
+                <span class="org-keyword">return</span> 7;
+            }
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    }
+}
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org000000c" class="outline-4">
+<h4 id="org000000c"><span class="section-number-4">1.3.1</span> example</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<p>
+以上面的 example 为例, 但把 generic.md 中 `li` 的 latency 从 1 修改为 10:
+</p>
+
+<pre class="example" id="org000000a">
+(define_insn_reservation "generic_alu" 10
+  (and (eq_attr "tune" "generic")
+       (eq_attr "type" "unknown,const,arith,shift,slt,multi,auipc,nop,logical,move"))
+  "alu")
+</pre>
+
+<p>
+scheduler 产生的代码变成:
+</p>
+
+<pre class="example" id="org000000c">
+0000000000000000 &lt;foo&gt;:
+   0:   7179                    addi    sp,sp,-48
+   2:   f422                    sd      s0,40(sp)
+   4:   1800                    addi    s0,sp,48
+   6:   862a                    mv      a2,a0
+   8:   4685                    li      a3,1
+   a:   4705                    li      a4,1
+   c:   4785                    li      a5,1
+   e:   fe042623                sw      zero,-20(s0)
+  12:   fe042423                sw      zero,-24(s0)
+  16:   fe042223                sw      zero,-28(s0)
+  1a:   fed42623                sw      a3,-20(s0)
+  1e:   fee42423                sw      a4,-24(s0)
+  22:   fef42223                sw      a5,-28(s0)
+  26:   fcc42e23                sw      a2,-36(s0)
+  2a:   0001                    nop
+  2c:   7422                    ld      s0,40(sp)
+  2e:   6145                    addi    sp,sp,48
+  30:   8082                    ret
+</pre>
+
+<p>
+由于 li 的 latency 很大, 所以 `li a3,1` 与 `sw a3, -20(s0)` 之间被插入了多条 `sw
+zero, &#x2026;`
+</p>
+</div>
+</div>
+
+
+<div id="outline-container-org000000f" class="outline-4 references">
+<h4 id="org000000f">Backlinks</h4>
+<div class="outline-text-4" id="text-org000000f">
+<p>
+<a href="gcc_cost.html#ID-2c365cee-bb91-4b01-a9b2-e2aff0c3e475">mtune</a>
+(<i>GCC Cost &gt; 定义 cost &gt; mtune &gt; microarchitecture</i>):  <a href="#ID-83e0d370-1b5f-49c6-b151-46a9e108d076">microarchitecture</a> 主要是在 md 中定义 insn-latency 供 scheduler 使用
+</p>
+</div>
+</div>
+</div>
+</div>
+
+
+
+<div id="outline-container-org0000015" class="outline-2 references">
+<h2 id="org0000015">Backlinks</h2>
+<div class="outline-text-2" id="text-org0000015">
+<p>
+<a href="gcc_backend.html#ID-02e7f924-9cf7-4e3d-8ceb-1765fd3a2bed">GCC Backend</a>
+(<i>GCC Backend &gt; gcc scheduler</i>):   <a href="gcc_scheduler.html#ID-aa30d0cc-966e-407b-9ad3-a0b0fbad7c49">gcc scheduler</a>
+</p>
+
+<p>
+<a href="gcc_pass.html#ID-59094f94-ca0a-47eb-b9f5-1b3004a18716">rtl pass</a>
 (<i>GCC Pass &gt; rtl pass &gt; pass_sched</i>):   <a href="gcc_scheduler.html#ID-aa30d0cc-966e-407b-9ad3-a0b0fbad7c49">pass_sched</a>
 </p>
 </div>
@@ -204,7 +361,7 @@ $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./test.o
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-04-25 Mon 17:56<br />
-Last updated: 2022-04-25 Mon 19:09</p>
+Last updated: 2022-04-26 Tue 14:19</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 

@@ -64,29 +64,29 @@
 <li><a href="#org0000060">1.3.1. md 语法</a></li>
 </ul>
 </li>
-<li><a href="#org0000084">1.4. rtl pass</a>
-<ul>
-<li><a href="#org0000063">1.4.1. pass_expand</a></li>
-<li><a href="#org0000034">1.4.2. pass_ira</a></li>
-<li><a href="#org0000040">1.4.3. pass_thread_prologue_and_epilogue</a></li>
-<li><a href="#org0000043">1.4.4. pass_final</a></li>
-</ul>
-</li>
-<li><a href="#org000007d">1.5. example</a>
+<li><a href="#org0000065">1.4. rtl pass</a></li>
+<li><a href="#org00000ba">1.5. example</a>
 <ul>
 <li><a href="#org0000059">1.5.1. gimple to rtl</a></li>
 <li><a href="#org0000075">1.5.2. rtl to assembly</a></li>
 </ul>
 </li>
-<li><a href="#org0000088">1.6. march vs. mabi</a></li>
-<li><a href="#ID-c5c23657-59a8-4dc0-9987-6912638a6faf">1.7. gcc target hook</a>
+<li><a href="#ID-c5c23657-59a8-4dc0-9987-6912638a6faf">1.6. gcc target hook</a>
 <ul>
-<li><a href="#org00000c9">1.7.1. TARGET_PRINT_OPERAND</a></li>
-<li><a href="#org00000cc">1.7.2. TARGET_PRINT_OPERAND_ADDRESS</a></li>
-<li><a href="#org00000cf">1.7.3. TARGET_CONDITIONAL_REGISTER_USAGE</a></li>
-<li><a href="#org00000d3">1.7.4. TARGET_STRUCT_VALUE_RTX</a></li>
-<li><a href="#org00000dc">1.7.5. cost</a></li>
-<li><a href="#org00000e2">1.7.6. schedule</a></li>
+<li><a href="#org00000c9">1.6.1. TARGET_PRINT_OPERAND</a></li>
+<li><a href="#org00000cc">1.6.2. TARGET_PRINT_OPERAND_ADDRESS</a></li>
+<li><a href="#org00000cf">1.6.3. TARGET_CONDITIONAL_REGISTER_USAGE</a></li>
+<li><a href="#org00000d3">1.6.4. TARGET_STRUCT_VALUE_RTX</a></li>
+<li><a href="#org00000dc">1.6.5. cost</a></li>
+<li><a href="#org00000e2">1.6.6. schedule</a></li>
+</ul>
+</li>
+<li><a href="#org00000b9">1.7. gcc cost</a></li>
+<li><a href="#org00000bc">1.8. gcc scheduler</a></li>
+<li><a href="#org00000d2">1.9. misc</a>
+<ul>
+<li><a href="#org00000bf">1.9.1. mtune</a></li>
+<li><a href="#org0000088">1.9.2. march vs. mabi</a></li>
 </ul>
 </li>
 </ul>
@@ -98,7 +98,11 @@
 <div id="outline-container-org00000e8" class="outline-2">
 <h2 id="org00000e8"><span class="section-number-2">1</span> GCC Backend</h2>
 <div class="outline-text-2" id="text-1">
+<p>
+<a href="https://splichal.eu/scripts/sphinx/gccint/_build/html/index.html">GNU Compiler Collection (GCC) Internals</a>
+</p>
 </div>
+
 <div id="outline-container-org0000007" class="outline-3">
 <h3 id="org0000007"><span class="section-number-3">1.1</span> optab</h3>
 <div class="outline-text-3" id="text-1-1">
@@ -343,7 +347,11 @@ insn. 否则就会通过 optab_libfunc 产生对 __divsf3/__divdf3 的调用
 </p>
 
 <p>
-rtl (register transfer language) 包含许多不同的 rtx (rtl expression), 例如:
+rtl (Register Transfer Language) 相当于 gcc LIR, 主要涉及到寄存器分配, 汇编代码生成和底层优化.
+</p>
+
+<p>
+例如:
 </p>
 
 <pre class="example" id="org000000a">
@@ -593,6 +601,10 @@ insn 用来表示一个完整的函数, 例如 pass_final dump 的结果:
 <h3 id="ID-5304f835-9c6a-49bc-89a5-ca01e2520167"><span class="section-number-3">1.3</span> machine description</h3>
 <div class="outline-text-3" id="text-1-3">
 <p>
+<a href="https://www.cse.iitb.ac.in/grc/slides/cgotut-gcc/topic5-md-intro.pdf">https://www.cse.iitb.ac.in/grc/slides/cgotut-gcc/topic5-md-intro.pdf</a>
+</p>
+
+<p>
 <a href="https://splichal.eu/scripts/sphinx/gccint/_build/html/machine-descriptions.html">https://splichal.eu/scripts/sphinx/gccint/_build/html/machine-descriptions.html</a>
 </p>
 
@@ -615,8 +627,68 @@ md 的关键字本身也是 rtx, 且 rtl class 为 RTX_EXTRA, 所以扫描 md �
 </p>
 </div>
 
-<div id="outline-container-org0000025" class="outline-5">
-<h5 id="org0000025"><span class="section-number-5">1.3.1.1</span> <a href="retargeting_gcc_to_riscv.html#ID-52268324-f3d4-43c2-bfe7-8f284bde1ce9">define_insn</a></h5>
+<div id="outline-container-org0000027" class="outline-5">
+<h5 id="org0000027"><span class="section-number-5">1.3.1.1</span> define_insn</h5>
+<div class="outline-text-5" id="text-1-3-1-1">
+<p>
+md 模板在 riscv.md 中, 是 rtl 翻译成汇编的核心部分, 其中最重要的部分是
+define_insn, 例如:
+</p>
+
+<pre class="example" id="org0000025">
+(define_insn "add&lt;mode&gt;3"
+  [
+  ;; rtl 模板
+  ;; 这个模板会匹配 (set rd (plus rs1 rs2) 形式的 rtl expression
+  ;; 其中 register_operand 是指参数的形式 (predicate) 是一个寄存器, 在
+  ;; predicates.md 中有定义
+  (set (match_operand:ANYF 0 "register_operand" "=f")
+    (plus:ANYF (match_operand:ANYF 1 "register_operand" "f")
+           (match_operand:ANYF 2 "register_operand" "f")))]
+  ;; 匹配该模板需要的额外条件, 这里为空
+  ""
+  ;; 汇编模板
+  ;; 表示 rtl 模板匹配后输出的汇编, 可以是一个汇编的 string,
+  ;; 也可以是一段产生 string 的 C 代码  
+  "fadd.&lt;fmt&gt;\t%0,%1,%2"
+  [(set_attr "type" "fadd")
+   (set_attr "mode" "&lt;UNITMODE&gt;")])
+
+</pre>
+
+<p>
+由于 ANYF 是一个包含 `sf`, `df` 的 mode_iterator, 所以上面的模板实际上会被展开成两个: addsf3, adddf3
+</p>
+
+<p>
+define_insn 有两个用法:
+</p>
+
+<ol class="org-ol">
+<li>从 gimple 生成 rtl 时会直接根据名字 (例如 addsf3) 选择 rtl 模板来生成
+rtl. addsf3 这个名字是 gcc 提前定义好的标准名字, 表示一个标准的操作, 例如
+addsf3是指 add single float (3 operand) (更多的标准操作:
+<a href="https://gcc.gnu.org/onlinedocs/gccint/Standard-Names.html#Standard-Names">https://gcc.gnu.org/onlinedocs/gccint/Standard-Names.html#Standard-Names</a>)</li>
+
+<li>经过各种 rtl pass 之后, 最后的 rtl 代码会通过与 rtl 模板匹配确定对应的汇编</li>
+</ol>
+
+
+<p>
+例如 test.c 中的 `float y = x + x` 会先通过 addsf3 转换为下面的 rtl 代码:
+</p>
+
+<pre class="example" id="org0000026">
+(insn# 0 0 (set (reg:SF 48 f16)
+        (plus:SF (reg:SF 48 f16)
+            (reg:SF 49 f17))) test.c:5# {addsf3}
+     (nil))
+</pre>
+
+<p>
+假设这段代码没有被优化修改, 最终在 final 阶段会匹配前面的 `addsf3` 模板, 最终输出汇编 `fadd.s f16,f16,f17`
+</p>
+</div>
 </div>
 
 <div id="outline-container-org0000029" class="outline-5">
@@ -626,7 +698,7 @@ md 的关键字本身也是 rtx, 且 rtl class 为 RTX_EXTRA, 所以扫描 md �
 与 define_insn 不同, 有些 insn 的功能是通过组合其它 insn 来完成的.
 </p>
 
-<pre class="example" id="org0000028">
+<pre class="example" id="org000002a">
 (define_expand "addsi3"
        [(match_operand:SI 0 "register_operand" "")
         (match_operand:SI 1 "register_operand" "")
@@ -678,14 +750,14 @@ statement) 负责通过 rtx 的 api (例如 emit_insn, gen_xxx) 生成 rtx
 <h5 id="org0000041"><span class="section-number-5">1.3.1.10</span> define_attr</h5>
 </div>
 
-<div id="outline-container-org0000046" class="outline-5">
-<h5 id="org0000046"><span class="section-number-5">1.3.1.11</span> define_predicate</h5>
+<div id="outline-container-org0000048" class="outline-5">
+<h5 id="org0000048"><span class="section-number-5">1.3.1.11</span> define_predicate</h5>
 <div class="outline-text-5" id="text-1-3-1-11">
 <p>
 predicate 是指 match_operand/match_operator 时可以指定的条件, 例如
 </p>
 
-<pre class="example" id="org0000044">
+<pre class="example" id="org0000046">
 (define_insn "adddi3"
   [(set (match_operand:DI 0 "register_operand" "=r,r")
     (plus:DI (match_operand:DI 1 "register_operand" " r,r")
@@ -698,7 +770,7 @@ predicate 是指 match_operand/match_operator 时可以指定的条件, 例如
 arith_operand 就是通过 define_predicate 指定的 predicate:
 </p>
 
-<pre class="example" id="org0000045">
+<pre class="example" id="org0000047">
 (define_predicate "arith_operand"
   (ior (match_operand 0 "const_arith_operand")
        (match_operand 0 "register_operand")))
@@ -745,7 +817,7 @@ match_xxx 生成各种 pattern 函数, 用来检测 rtl 是否 define_insn 匹�
 match_operand 用来 match operand, 例如:
 </p>
 
-<pre class="example" id="org000004c">
+<pre class="example" id="org000004e">
 (match_operand:SI      0           "register_operand"    "r")
 ----------------------------------------------------------------------
                &lt;mode&gt;  &lt;operand&gt;   &lt;predicate&gt;           &lt;constraints&gt;
@@ -777,7 +849,7 @@ match_scratch 在生成 rtl 时可以用来分配一个 scratch 寄存器, 在�
 match_scratch 的典型用法类似这样:
 </p>
 
-<pre class="example" id="org0000053">
+<pre class="example" id="org0000055">
 (define_insn "swapsi3"
 [
  (swap (match_operand:si 1 "register_operand")
@@ -807,389 +879,12 @@ mov %0, %1\nmov %1, %2\nmov %2, %0
 </div>
 </div>
 
-<div id="outline-container-org0000084" class="outline-3">
-<h3 id="org0000084"><span class="section-number-3">1.4</span> rtl pass</h3>
-<div class="outline-text-3" id="text-1-4">
-<p>
-所有的 pass 及其执行的顺序都在 passes.def 中指定.
-</p>
+<div id="outline-container-org0000065" class="outline-3">
+<h3 id="org0000065"><span class="section-number-3">1.4</span> <a href="gcc_pass.html#ID-59094f94-ca0a-47eb-b9f5-1b3004a18716">rtl pass</a></h3>
 </div>
 
-<div id="outline-container-org0000063" class="outline-4">
-<h4 id="org0000063"><span class="section-number-4">1.4.1</span> pass_expand</h4>
-<div class="outline-text-4" id="text-1-4-1">
-<p>
-gimple 转换为 rtl
-</p>
-</div>
-</div>
-
-<div id="outline-container-org0000034" class="outline-4">
-<h4 id="org0000034"><span class="section-number-4">1.4.2</span> pass_ira</h4>
-<div class="outline-text-4" id="text-1-4-2">
-<ol class="org-ol">
-<li>寄存器分配</li>
-<li>计算 frame_info, 例如计算 frame size 和需要保存和恢复的寄存器 (mask)</li>
-</ol>
-</div>
-
-
-<div id="outline-container-org0000031" class="outline-5">
-<h5 id="org0000031"><span class="section-number-5">1.4.2.1</span> frame_info</h5>
-<div class="outline-text-5" id="text-1-4-2-1">
-<p>
-taget 需要定义 INITIAL_ELIMINATION_OFFSET 这个宏, 用来计算 frame info.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">riscv_compute_frame_info</span>(<span class="org-type">void</span>) {
-    <span class="org-keyword">struct</span> <span class="org-type">riscv_frame_info</span> *<span class="org-variable-name">frame</span>;
-    <span class="org-type">HOST_WIDE_INT</span> <span class="org-variable-name">offset</span>;
-    <span class="org-type">bool</span> <span class="org-variable-name">interrupt_save_prologue_temp</span> = <span class="org-constant">false</span>;
-    <span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">regno</span>, <span class="org-variable-name">i</span>, <span class="org-variable-name">num_x_saved</span> = 0, <span class="org-variable-name">num_f_saved</span> = 0;
-
-    frame = &amp;cfun-&gt;machine-&gt;frame;
-    memset(frame, 0, <span class="org-keyword">sizeof</span>(*frame));
-
-    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: naked function</span><span class="org-comment-delimiter"> */</span>
-    <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>cfun-&gt;machine-&gt;naked_p) {
-        <span class="org-keyword">for</span> (regno = GP_REG_FIRST; regno &lt;= GP_REG_LAST; regno++)
-            <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: riscv_save_reg_p &#29992;&#26469;&#30830;&#23450;&#23492;&#23384;&#22120;&#26159;&#21542;&#38656;&#35201;&#20445;&#23384;, &#20363;&#22914;:</span>
-<span class="org-comment">             * &#22914;&#26524; regno &#26159; s0~</span><span class="org-comment-delimiter"> */</span>
-            <span class="org-keyword">if</span> (riscv_save_reg_p(regno))
-                frame-&gt;mask |= 1 &lt;&lt; (regno - GP_REG_FIRST), num_x_saved++;
-
-        <span class="org-comment-delimiter">/* </span><span class="org-comment">Find out which FPRs we need to save.  This loop must iterate over</span>
-<span class="org-comment">           the same space as its companion in riscv_for_each_saved_reg.</span><span class="org-comment-delimiter">  */</span>
-        <span class="org-keyword">if</span> (TARGET_HARD_FLOAT)
-            <span class="org-keyword">for</span> (regno = FP_REG_FIRST; regno &lt;= FP_REG_LAST; regno++)
-                <span class="org-keyword">if</span> (riscv_save_reg_p(regno))
-                    frame-&gt;fmask |= 1 &lt;&lt; (regno - FP_REG_FIRST), num_f_saved++;
-    }
-
-    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#35745;&#31639; offset &#26102;&#26159;&#25353;&#29031; stack &#20174;&#20302;&#21040;&#39640;&#30340;&#39034;&#24207;</span><span class="org-comment-delimiter"> */</span>
-    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: 1. &#26632;&#39030;&#26159; outgoing args, &#21363; spill &#21040;&#26632;&#19978;&#30340; args</span><span class="org-comment-delimiter"> */</span>
-    offset = RISCV_STACK_ALIGN(crtl-&gt;outgoing_args_size);
-    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: 2. &#28982;&#21518;&#26159; local variable</span><span class="org-comment-delimiter"> */</span>
-    offset += RISCV_STACK_ALIGN(get_frame_size());
-    <span class="org-comment-delimiter">/* </span><span class="org-comment">The virtual frame pointer points above the local variables.</span><span class="org-comment-delimiter"> */</span>
-    frame-&gt;frame_pointer_offset = offset;
-    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: 3. &#38656;&#35201;&#20445;&#23384;&#30340; fp</span><span class="org-comment-delimiter"> */</span>
-    <span class="org-keyword">if</span> (frame-&gt;fmask)
-        offset += RISCV_STACK_ALIGN(num_f_saved * UNITS_PER_FP_REG);
-    frame-&gt;fp_sp_offset = offset - UNITS_PER_FP_REG;
-    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: 4. &#38656;&#35201;&#20445;&#23384;&#30340; gp</span><span class="org-comment-delimiter"> */</span>
-    <span class="org-keyword">if</span> (frame-&gt;mask) {
-        <span class="org-type">unsigned</span> <span class="org-variable-name">x_save_size</span> = RISCV_STACK_ALIGN(num_x_saved * UNITS_PER_WORD);
-        offset += x_save_size;
-    }
-    frame-&gt;gp_sp_offset = offset - UNITS_PER_WORD;
-    frame-&gt;hard_frame_pointer_offset = offset;
-    frame-&gt;total_size = offset;
-}
-</pre>
-</div>
-</div>
-
-<div id="outline-container-ID-6bd2709c-1c3e-4e22-98d3-4e9edc4aec33" class="outline-6">
-<h6 id="ID-6bd2709c-1c3e-4e22-98d3-4e9edc4aec33"><span class="section-number-6">1.4.2.1.1</span> naked</h6>
-<div class="outline-text-6" id="text-1-4-2-1-1">
-<p>
-naked function, 是指不需要 gcc 生成 prolog 和 epilogue 的函数, 例如一些完全用内联汇编写的函数.
-</p>
-</div>
-
-
-<ul class="org-ul">
-<li><a id="org0000092"></a>Backlinks<br />
-<div class="outline-text-7" id="text-org0000092">
-<p>
-<a href="gcc_attribute.html#ID-463c82be-a55d-43c3-a8f2-cba1c1cd7599">GCC Attribute</a>
-(<i>GCC Attribute &gt; naked</i>):   <a href="#ID-6bd2709c-1c3e-4e22-98d3-4e9edc4aec33">naked</a>
-</p>
-</div>
-</li>
-</ul>
-</div>
-
-
-<div id="outline-container-org000002b" class="outline-6">
-<h6 id="org000002b"><span class="section-number-6">1.4.2.1.2</span> riscv_save_reg_p</h6>
-<div class="outline-text-6" id="text-1-4-2-1-2">
-<div class="org-src-container">
-<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-type">bool</span> <span class="org-function-name">riscv_save_reg_p</span>(<span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">regno</span>) {
-    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: global_regs &#26159;&#25351; global regizer variable</span>
-<span class="org-comment">     * https://gcc.gnu.org/onlinedocs/gcc/Global-Register-Variables.html</span>
-<span class="org-comment">     *</span><span class="org-comment-delimiter"> */</span>
-    <span class="org-type">bool</span> <span class="org-variable-name">call_saved</span> = <span class="org-negation-char">!</span>global_regs[regno] &amp;&amp; <span class="org-negation-char">!</span>call_used_or_fixed_reg_p(regno);
-    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: df_regs_ever_live_p &#25351;&#35813; reg &#22312;&#24403;&#21069;&#20989;&#25968;&#20462;&#25913;&#36807;, &#20363;&#22914;, &#33509;&#20989;&#25968;&#26159; leaf</span>
-<span class="org-comment">     * function, ra &#20250;&#22240;&#20026;&#27809;&#26377;&#20462;&#25913;&#36807;&#32780;&#19981;&#38656;&#35201;&#20445;&#23384;</span><span class="org-comment-delimiter"> */</span>
-    <span class="org-type">bool</span> <span class="org-variable-name">might_clobber</span> =
-        crtl-&gt;saves_all_registers || df_regs_ever_live_p(regno);
-
-    <span class="org-keyword">if</span> (call_saved &amp;&amp; might_clobber) <span class="org-keyword">return</span> <span class="org-constant">true</span>;
-
-    <span class="org-keyword">if</span> (regno == HARD_FRAME_POINTER_REGNUM &amp;&amp; frame_pointer_needed) <span class="org-keyword">return</span> <span class="org-constant">true</span>;
-
-    <span class="org-keyword">if</span> (regno == RETURN_ADDR_REGNUM &amp;&amp; crtl-&gt;calls_eh_return) <span class="org-keyword">return</span> <span class="org-constant">true</span>;
-
-    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
-    <span class="org-keyword">return</span> <span class="org-constant">false</span>;
-}
-
-<span class="org-keyword">inline</span> <span class="org-type">bool</span> <span class="org-function-name">call_used_or_fixed_reg_p</span>(<span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">regno</span>) {
-    <span class="org-keyword">return</span> fixed_regs[regno] || this_target_hard_regs-&gt;x_call_used_regs[regno];
-}
-</pre>
-</div>
-
-<p>
-FIXED_REGISTER 和 CALL_USED_REGISTERS 为 target 定义的, 例如:
-</p>
-
-<div class="org-src-container">
-<pre class="src src-C"><span class="org-preprocessor">#define</span> <span class="org-variable-name">FIXED_REGISTERS</span>                                                       \
-    { <span class="org-comment-delimiter">/* </span><span class="org-comment">General registers.</span><span class="org-comment-delimiter">  */</span>                                               \
-        1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  \
-            0, 0, 0, 0, 0, 0, 0, 0, 0, <span class="org-comment-delimiter">/* </span><span class="org-comment">Floating-point registers.</span><span class="org-comment-delimiter">  */</span>       \
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, \
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, <span class="org-comment-delimiter">/* </span><span class="org-comment">Others.</span><span class="org-comment-delimiter">  */</span>                      \
-            1, 1                                                              \
-    }
-
-<span class="org-comment-delimiter">/* </span><span class="org-comment">a0-a7, t0-t6, fa0-fa7, and ft0-ft11 are volatile across calls.</span>
-<span class="org-comment">   The call RTLs themselves clobber ra.</span><span class="org-comment-delimiter">  */</span>
-
-<span class="org-preprocessor">#define</span> <span class="org-variable-name">CALL_USED_REGISTERS</span>                                                   \
-    { <span class="org-comment-delimiter">/* </span><span class="org-comment">General registers.</span><span class="org-comment-delimiter">  */</span>                                               \
-        1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0,  \
-            0, 0, 0, 0, 0, 1, 1, 1, 1, <span class="org-comment-delimiter">/* </span><span class="org-comment">Floating-point registers.</span><span class="org-comment-delimiter">  */</span>       \
-            1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, \
-            0, 0, 0, 0, 0, 0, 1, 1, 1, 1, <span class="org-comment-delimiter">/* </span><span class="org-comment">Others.</span><span class="org-comment-delimiter">  */</span>                      \
-            1, 1                                                              \
-    }
-</pre>
-</div>
-
-<p>
-FIXED_REGISTERS 是有特殊意义的 reg, 任何时候不能被随便修改, 例如 zero, sp, gp, tp
-</p>
-
-<p>
-CALL_USED_REGISTERS 包含 FIXED_REGISTERS, 以及其它在函数调用时可能被 caller 修改的 reg, 基本上 (CALL_USED_REGISTERS - FIXED_REGISTERS) 即 caller saved reg, 而
-~CALL_USED_REGISTERS 即 callee saved reg.
-</p>
-
-<p>
-另外 gcc 可以通过运行时参数 `-ffixed-reg` 控制哪些 reg 属于
-FIXED_REGISTERS. FIXED_REGISTERS 不会被 ira 分配, 也不会被 prologue 保存
-</p>
-</div>
-</div>
-
-<div id="outline-container-org000006c" class="outline-6">
-<h6 id="org000006c"><span class="section-number-6">1.4.2.1.3</span> backtrace</h6>
-<div class="outline-text-6" id="text-1-4-2-1-3">
-<div class="org-src-container">
-<pre class="src src-rust">#0  riscv_save_reg_p (regno=0) at ../.././riscv-gcc/gcc/config/riscv/riscv.<span class="org-variable-name">c</span>:3636
-#1  0x0000000001544432 <span class="org-keyword">in</span> riscv_compute_frame_info () at ../.././riscv-gcc/gcc/config/riscv/riscv.<span class="org-variable-name">c</span>:3766
-#2  0x000000000154483f <span class="org-keyword">in</span> riscv_initial_elimination_offset (from=64, to=2) at ../.././riscv-gcc/gcc/config/riscv/riscv.<span class="org-variable-name">c</span>:3850
-#3  0x0000000001062641 <span class="org-keyword">in</span> set_initial_elim_offsets () at ../.././riscv-gcc/gcc/reload1.<span class="org-variable-name">c</span>:3769
-#4  0x000000000105c432 <span class="org-keyword">in</span> calculate_elim_costs_all_insns () at ../.././riscv-gcc/gcc/reload1.<span class="org-variable-name">c</span>:1559
-#5  0x0000000000e8eee5 <span class="org-keyword">in</span> ira_costs () at ../.././riscv-gcc/gcc/ira-costs.<span class="org-variable-name">c</span>:2296
-#6  0x0000000000e85524 <span class="org-keyword">in</span> ira_build () at ../.././riscv-gcc/gcc/ira-build.<span class="org-variable-name">c</span>:3426
-#7  0x0000000000e7b6ae <span class="org-keyword">in</span> ira (f=0x0) at ../.././riscv-gcc/gcc/ira.<span class="org-variable-name">c</span>:5655
-#8  0x0000000000e7bf6b <span class="org-keyword">in</span> (anonymous namespace)::<span class="org-constant">pass_ira</span>::execute (this=0x23413c0) at ../.././riscv-gcc/gcc/ira.<span class="org-variable-name">c</span>:5978
-#9  0x0000000000fdd7d1 <span class="org-keyword">in</span> execute_one_pass (pass=0x23413c0) at ../.././riscv-gcc/gcc/passes.<span class="org-variable-name">c</span>:2567
-#10 0x0000000000fddb1e <span class="org-keyword">in</span> execute_pass_list_1 (pass=0x23413c0) at ../.././riscv-gcc/gcc/passes.<span class="org-variable-name">c</span>:2656
-#11 0x0000000000fddb4f <span class="org-keyword">in</span> execute_pass_list_1 (pass=0x2340220) at ../.././riscv-gcc/gcc/passes.<span class="org-variable-name">c</span>:2657
-#12 0x0000000000fddbab <span class="org-keyword">in</span> execute_pass_list (fn=0x7ffff777e000, pass=0x233c270) at ../.././riscv-gcc/gcc/passes.<span class="org-variable-name">c</span>:2667
-#13 0x0000000000b6f617 <span class="org-keyword">in</span> <span class="org-constant">cgraph_node</span>::expand (this=0x7ffff7780000) at ../.././riscv-gcc/gcc/cgraphunit.<span class="org-variable-name">c</span>:1830
-#14 0x0000000000b6fd15 <span class="org-keyword">in</span> <span class="org-constant">cgraph_order_sort</span>::process (this=0x2333788) at ../.././riscv-gcc/gcc/cgraphunit.<span class="org-variable-name">c</span>:2069
-#15 0x0000000000b6ffce <span class="org-keyword">in</span> output_in_order () at ../.././riscv-gcc/gcc/cgraphunit.<span class="org-variable-name">c</span>:2137
-#16 0x0000000000b705a6 <span class="org-keyword">in</span> <span class="org-constant">symbol_table</span>::compile (this=0x7ffff7670000) at ../.././riscv-gcc/gcc/cgraphunit.<span class="org-variable-name">c</span>:2355
-#17 0x0000000000b709d2 <span class="org-keyword">in</span> <span class="org-constant">symbol_table</span>::finalize_compilation_unit (this=0x7ffff7670000) at ../.././riscv-gcc/gcc/cgraphunit.<span class="org-variable-name">c</span>:2539
-#18 0x000000000110d05f <span class="org-keyword">in</span> compile_file () at ../.././riscv-gcc/gcc/toplev.<span class="org-variable-name">c</span>:482
-#19 0x00000000011100c6 <span class="org-keyword">in</span> do_compile () at ../.././riscv-gcc/gcc/toplev.<span class="org-variable-name">c</span>:2201
-#20 0x00000000011103e8 <span class="org-keyword">in</span> <span class="org-constant">toplev</span>::main (this=0x7fffffffc176, argc=14, argv=0x7fffffffc288) at ../.././riscv-gcc/gcc/toplev.<span class="org-variable-name">c</span>:2340
-#21 0x0000000001bf4bf5 <span class="org-keyword">in</span> main (argc=14, argv=0x7fffffffc288) at ../.././riscv-gcc/gcc/main.<span class="org-variable-name">c</span>:39
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-
-<div id="outline-container-org0000040" class="outline-4">
-<h4 id="org0000040"><span class="section-number-4">1.4.3</span> pass_thread_prologue_and_epilogue</h4>
-<div class="outline-text-4" id="text-1-4-3">
-<p>
-在函数中插入的 prologue 和 epilogue. prologue 是指函数开头需要插入的一些指令, 例如分配 stack frame, 保存寄存器. epilogue 是函数返回前需要插入指令, 例如释放
-stack frame, 恢复寄存器.
-</p>
-</div>
-
-<div id="outline-container-org0000037" class="outline-5">
-<h5 id="org0000037"><span class="section-number-5">1.4.3.1</span> prologue</h5>
-<div class="outline-text-5" id="text-1-4-3-1">
-<p>
-prologue 对应的 rtl 是由 md 中的通过 define_expand 定义的 prologue 决定的.
-</p>
-<div class="org-src-container">
-<pre class="src src-C"><span class="org-type">rtx</span>
-<span class="org-function-name">gen_prologue</span> (<span class="org-type">void</span>)
-{
-  <span class="org-type">rtx_insn</span> *<span class="org-variable-name">_val</span> = 0;
-  start_sequence ();
-  {
-<span class="org-preprocessor">#define</span> <span class="org-variable-name">FAIL</span> <span class="org-keyword">return</span> (end_sequence (), _val)
-<span class="org-preprocessor">#define</span> <span class="org-variable-name">DONE</span> <span class="org-keyword">return</span> (_val = get_insns (), end_sequence (), _val)
-<span class="org-preprocessor">#line</span> 2202 <span class="org-string">"../.././riscv-gcc/gcc/config/riscv/riscv.md"</span>
-{
-  riscv_expand_prologue ();
-  DONE;
-}
-<span class="org-preprocessor">#undef</span> DONE
-<span class="org-preprocessor">#undef</span> FAIL
-  }
-  emit_insn (const1_rtx);
-  _val = get_insns ();
-  end_sequence ();
-  <span class="org-keyword">return</span> _val;
-}
-</pre>
-</div>
-
-<p>
-riscv_expand_prologue 负责生成函数开头的:
-</p>
-
-<div class="org-src-container">
-<pre class="src src-asm"><span class="org-function-name">addi</span> <span class="org-keyword">sp</span>, sp , xxx
-<span class="org-function-name">sw</span> <span class="org-keyword">ra</span>, (4)sp
-<span class="org-function-name">sw</span> <span class="org-keyword">s0</span>, (8)sp
-## ...
-</pre>
-</div>
-
-<p>
-对应的 rtx
-</p>
-
-<div class="org-src-container">
-<pre class="src src-C"><span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#36825;&#27573;&#20195;&#30721;&#36127;&#36131;&#29983;&#25104;&#20989;&#25968;&#24320;&#22836;&#30340;</span>
-<span class="org-comment"> * addi sp, sp , xxx</span>
-<span class="org-comment"> * sw ra, (4)sp</span>
-<span class="org-comment"> * sw s0, (8)sp</span>
-<span class="org-comment"> * ...</span>
-<span class="org-comment"> *</span><span class="org-comment-delimiter"> */</span>
-<span class="org-type">void</span> <span class="org-function-name">riscv_expand_prologue</span>(<span class="org-type">void</span>) {
-    <span class="org-keyword">struct</span> <span class="org-type">riscv_frame_info</span> *<span class="org-variable-name">frame</span> = &amp;cfun-&gt;machine-&gt;frame;
-    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: frame-&gt;total_size &#22312; pass_ira &#26102;&#30830;&#23450;&#19979;&#26469;</span><span class="org-comment-delimiter"> */</span>
-    <span class="org-type">HOST_WIDE_INT</span> <span class="org-variable-name">size</span> = frame-&gt;total_size;
-    <span class="org-type">unsigned</span> <span class="org-variable-name">mask</span> = frame-&gt;mask;
-    <span class="org-type">rtx</span> <span class="org-variable-name">insn</span>;
-
-    <span class="org-keyword">if</span> (flag_stack_usage_info) current_function_static_stack_size = size;
-
-    <span class="org-comment-delimiter">/* </span><span class="org-comment">Save the registers.</span><span class="org-comment-delimiter">  */</span>
-    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: frame-&gt;mask &#25351;&#21738;&#20123;&#23492;&#23384;&#22120;&#38656;&#35201;&#20445;&#23384;, &#20063;&#26159; pass_ira &#26102;&#30830;&#23450;&#30340;</span><span class="org-comment-delimiter"> */</span>
-    <span class="org-keyword">if</span> ((frame-&gt;mask | frame-&gt;fmask) != 0) {
-        <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#36825;&#37324;&#24182;&#27809;&#26377;&#30452;&#25509;&#20351;&#29992; frame-&gt;total_size, &#26159;&#22240;&#20026; total_size &#24456;&#22823;&#26102;</span>
-<span class="org-comment">         * &#20250;&#26080;&#27861;&#36890;&#36807;&#19968;&#20010; addi &#23436;&#25104;, &#25152;&#20197;&#21487;&#20197;&#20808;&#20998;&#37197;&#36275;&#22815;&#23384;&#25918; saved reg &#30340;&#23567;&#19968;&#28857;&#30340;</span>
-<span class="org-comment">         * `step`</span><span class="org-comment-delimiter">*/</span>
-        <span class="org-type">HOST_WIDE_INT</span> <span class="org-variable-name">step1</span> = MIN(size, riscv_first_stack_step(frame));
-
-        <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: addi sp, sp, -step1</span><span class="org-comment-delimiter"> */</span>
-        insn = gen_add3_insn(
-            stack_pointer_rtx, stack_pointer_rtx, GEN_INT(-step1));
-        size -= step1;
-        riscv_for_each_saved_reg(size, riscv_save_reg, <span class="org-constant">false</span>, <span class="org-constant">false</span>);
-    }
-
-    frame-&gt;mask = mask; <span class="org-comment-delimiter">/* </span><span class="org-comment">Undo the above fib.</span><span class="org-comment-delimiter">  */</span>
-
-    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#38656;&#35201;&#20445;&#23384; fp, &#20363;&#22914;&#23384;&#22312; alloca</span><span class="org-comment-delimiter">  */</span>
-    <span class="org-keyword">if</span> (frame_pointer_needed) {
-        insn = gen_add3_insn(
-            hard_frame_pointer_rtx, stack_pointer_rtx,
-            GEN_INT(frame-&gt;hard_frame_pointer_offset - size));
-        RTX_FRAME_RELATED_P(emit_insn(insn)) = 1;
-
-        riscv_emit_stack_tie();
-    }
-
-    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: frame-&gt;total_size &#21097;&#19979;&#30340;&#37096;&#20998;</span><span class="org-comment-delimiter"> */</span>
-    <span class="org-keyword">if</span> (size &gt; 0) {
-        <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: SMALL_OPERAND &#26159;&#25351; 12 bit &#33021;&#34920;&#31034;&#30340;&#31435;&#21363;&#25968;</span><span class="org-comment-delimiter"> */</span>
-        <span class="org-keyword">if</span> (SMALL_OPERAND(-size)) {
-            insn = gen_add3_insn(
-                stack_pointer_rtx, stack_pointer_rtx, GEN_INT(-size));
-            RTX_FRAME_RELATED_P(emit_insn(insn)) = 1;
-        } <span class="org-keyword">else</span> {
-            riscv_emit_move(RISCV_PROLOGUE_TEMP(Pmode), GEN_INT(-size));
-            emit_insn(gen_add3_insn(
-                stack_pointer_rtx, stack_pointer_rtx,
-                RISCV_PROLOGUE_TEMP(Pmode)));
-
-            <span class="org-comment-delimiter">/* </span><span class="org-comment">Describe the effect of the previous instructions.</span><span class="org-comment-delimiter">  */</span>
-            insn = plus_constant(Pmode, stack_pointer_rtx, -size);
-            insn = gen_rtx_SET(stack_pointer_rtx, insn);
-            riscv_set_frame_expr(insn);
-        }
-    }
-}
-</pre>
-</div>
-</div>
-</div>
-
-<div id="outline-container-org000003a" class="outline-5">
-<h5 id="org000003a"><span class="section-number-5">1.4.3.2</span> epilogue</h5>
-</div>
-
-<div id="outline-container-org000007b" class="outline-5">
-<h5 id="org000007b"><span class="section-number-5">1.4.3.3</span> backtrace</h5>
-<div class="outline-text-5" id="text-1-4-3-3">
-<div class="org-src-container">
-<pre class="src src-rust">#0  gen_prologue () at ../.././riscv-gcc/gcc/config/riscv/riscv.<span class="org-variable-name">md</span>:2202
-#1  0x000000000153aada <span class="org-keyword">in</span> target_gen_prologue () at ../.././riscv-gcc/gcc/config/riscv/sync.<span class="org-variable-name">md</span>:558
-#2  0x0000000000d017d6 <span class="org-keyword">in</span> make_prologue_seq () at ../.././riscv-gcc/gcc/function.<span class="org-variable-name">c</span>:5801
-#3  0x0000000000d01d8b <span class="org-keyword">in</span> thread_prologue_and_epilogue_insns () at ../.././riscv-gcc/gcc/function.<span class="org-variable-name">c</span>:6019
-#4  0x0000000000d02cbb <span class="org-keyword">in</span> rest_of_handle_thread_prologue_and_epilogue () at ../.././riscv-gcc/gcc/function.<span class="org-variable-name">c</span>:6510
-#5  0x0000000000d02ecf <span class="org-keyword">in</span> (anonymous namespace)::<span class="org-constant">pass_thread_prologue_and_epilogue</span>::execute (this=0x23416c0) at ../.././riscv-gcc/gcc/function.<span class="org-variable-name">c</span>:6586
-#6  0x0000000000fdd7d1 <span class="org-keyword">in</span> execute_one_pass (pass=0x23416c0) at ../.././riscv-gcc/gcc/passes.<span class="org-variable-name">c</span>:2567
-#7  0x0000000000fddb1e <span class="org-keyword">in</span> execute_pass_list_1 (pass=0x23416c0) at ../.././riscv-gcc/gcc/passes.<span class="org-variable-name">c</span>:2656
-#8  0x0000000000fddb4f <span class="org-keyword">in</span> execute_pass_list_1 (pass=0x2341480) at ../.././riscv-gcc/gcc/passes.<span class="org-variable-name">c</span>:2657
-#9  0x0000000000fddb4f <span class="org-keyword">in</span> execute_pass_list_1 (pass=0x2340220) at ../.././riscv-gcc/gcc/passes.<span class="org-variable-name">c</span>:2657
-#10 0x0000000000fddbab <span class="org-keyword">in</span> execute_pass_list (fn=0x7ffff777e000, pass=0x233c270) at ../.././riscv-gcc/gcc/passes.<span class="org-variable-name">c</span>:2667
-#11 0x0000000000b6f617 <span class="org-keyword">in</span> <span class="org-constant">cgraph_node</span>::expand (this=0x7ffff7780000) at ../.././riscv-gcc/gcc/cgraphunit.<span class="org-variable-name">c</span>:1830
-#12 0x0000000000b6fd15 <span class="org-keyword">in</span> <span class="org-constant">cgraph_order_sort</span>::process (this=0x2333788) at ../.././riscv-gcc/gcc/cgraphunit.<span class="org-variable-name">c</span>:2069
-#13 0x0000000000b6ffce <span class="org-keyword">in</span> output_in_order () at ../.././riscv-gcc/gcc/cgraphunit.<span class="org-variable-name">c</span>:2137
-#14 0x0000000000b705a6 <span class="org-keyword">in</span> <span class="org-constant">symbol_table</span>::compile (this=0x7ffff7670000) at ../.././riscv-gcc/gcc/cgraphunit.<span class="org-variable-name">c</span>:2355
-#15 0x0000000000b709d2 <span class="org-keyword">in</span> <span class="org-constant">symbol_table</span>::finalize_compilation_unit (this=0x7ffff7670000) at ../.././riscv-gcc/gcc/cgraphunit.<span class="org-variable-name">c</span>:2539
-#16 0x000000000110d05f <span class="org-keyword">in</span> compile_file () at ../.././riscv-gcc/gcc/toplev.<span class="org-variable-name">c</span>:482
-#17 0x00000000011100c6 <span class="org-keyword">in</span> do_compile () at ../.././riscv-gcc/gcc/toplev.<span class="org-variable-name">c</span>:2201
-#18 0x00000000011103e8 <span class="org-keyword">in</span> <span class="org-constant">toplev</span>::main (this=0x7fffffffc176, argc=14, argv=0x7fffffffc288) at ../.././riscv-gcc/gcc/toplev.<span class="org-variable-name">c</span>:2340
-#19 0x0000000001bf4bf5 <span class="org-keyword">in</span> main (argc=14, argv=0x7fffffffc288) at ../.././riscv-gcc/gcc/main.<span class="org-variable-name">c</span>:39
-</pre>
-</div>
-</div>
-</div>
-</div>
-
-<div id="outline-container-org0000043" class="outline-4">
-<h4 id="org0000043"><span class="section-number-4">1.4.4</span> pass_final</h4>
-<div class="outline-text-4" id="text-1-4-4">
-<p>
-生成汇编
-</p>
-</div>
-</div>
-</div>
-
-<div id="outline-container-org000007d" class="outline-3">
-<h3 id="org000007d"><span class="section-number-3">1.5</span> example</h3>
+<div id="outline-container-org00000ba" class="outline-3">
+<h3 id="org00000ba"><span class="section-number-3">1.5</span> example</h3>
 <div class="outline-text-3" id="text-1-5">
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-type">float</span> <span class="org-function-name">foo</span>(<span class="org-type">float</span> <span class="org-variable-name">x</span>) {
@@ -1231,8 +926,8 @@ genoutput 扫描 md 生成. gen_addsf3 由 genemit 生成</li>
 </ol>
 </div>
 
-<div id="outline-container-org0000087" class="outline-5">
-<h5 id="org0000087"><span class="section-number-5">1.5.1.1</span> backtrace</h5>
+<div id="outline-container-org000009a" class="outline-5">
+<h5 id="org000009a"><span class="section-number-5">1.5.1.1</span> backtrace</h5>
 <div class="outline-text-5" id="text-1-5-1-1">
 <div class="org-src-container">
 <pre class="src src-rust">#0  gen_addsf3 (operand0=0x7fffffffb250, operand1=0x7ffff7786bb8, 
@@ -1269,7 +964,7 @@ genoutput 扫描 md 生成. gen_addsf3 由 genemit 生成</li>
 <div id="outline-container-org000008b" class="outline-5">
 <h5 id="org000008b"><span class="section-number-5">1.5.1.2</span> gimple code</h5>
 <div class="outline-text-5" id="text-1-5-1-2">
-<pre class="example" id="org000008a">
+<pre class="example" id="org000006b">
 float foo (float x)
 { 
   float D.1491;
@@ -1419,8 +1114,8 @@ rtl 通过一些 rtl pass 后最终由 rtl 的 `pass_final` 生成 assembly
 </ol>
 </div>
 
-<div id="outline-container-org000009a" class="outline-5">
-<h5 id="org000009a"><span class="section-number-5">1.5.2.1</span> backtrace</h5>
+<div id="outline-container-org000007b" class="outline-5">
+<h5 id="org000007b"><span class="section-number-5">1.5.2.1</span> backtrace</h5>
 <div class="outline-text-5" id="text-1-5-2-1">
 <div class="org-src-container">
 <pre class="src src-rust">#0  get_insn_template (code=0, insn=0x7fffffffbc00) at ../.././riscv-gcc/gcc/final.<span class="org-variable-name">c</span>:2063
@@ -1473,8 +1168,8 @@ rtl 通过一些 rtl pass 后最终由 rtl 的 `pass_final` 生成 assembly
 </div>
 </div>
 
-<div id="outline-container-org000006b" class="outline-5">
-<h5 id="org000006b"><span class="section-number-5">1.5.2.3</span> recog_memoized</h5>
+<div id="outline-container-org000008a" class="outline-5">
+<h5 id="org000008a"><span class="section-number-5">1.5.2.3</span> recog_memoized</h5>
 <div class="outline-text-5" id="text-1-5-2-3">
 </div>
 <div id="outline-container-org0000064" class="outline-6">
@@ -1488,7 +1183,7 @@ rtl 通过一些 rtl pass 后最终由 rtl 的 `pass_final` 生成 assembly
 要匹配的 insn 为:
 </p>
 
-<pre class="example" id="org00000a0">
+<pre class="example" id="org0000081">
 (insn/f 40 39 41 (set (mem/c:DI (plus:DI (reg/f:DI 2 sp)
                 (const_int 24 [0x18])) [2  S8 A64])
         (reg/f:DI 8 s0)) "test.c":1:21 
@@ -1569,7 +1264,7 @@ recog 的过程为:
 最终匹配的 insn_code 为 135, 对应 riscv.md 中的:
 </p>
 
-<pre class="example" id="org00000a1">
+<pre class="example" id="org0000082">
 (define_insn "*movdi_64bit"
   [(set (match_operand:DI 0 "nonimmediate_operand" "=r,r,r, m,  *f,*f,*r,*f,*m")
     (match_operand:DI 1 "move_operand"         " r,T,m,rJ,*r*J,*m,*f,*f,*f"))]
@@ -1595,7 +1290,7 @@ rtx 本身就是树形结构, 而 recog 可以看做是一个相同形状的决�
 addi3 为例:
 </p>
 
-<pre class="example" id="org00000a5">
+<pre class="example" id="org0000086">
 (define_insn "addsf3"
   [(set (match_operand:SF            0 "register_operand" "=f")
     (plus:SF (match_operand:SF 1 "register_operand" " f")
@@ -1782,7 +1477,7 @@ recog 针对 adddi3 的决策树是: set-&gt;plus-&gt;GET_MODE(operand[0])==DI
 所以下面的 rtl 
 </p>
 
-<pre class="example" id="org00000af">
+<pre class="example" id="org0000090">
 (insn/f 40 39 41 (set (mem/c:DI (plus:DI (reg/f:DI 2 sp)
                 (const_int 24 [0x18])) [2  S8 A64])
         (reg/f:DI 8 s0)) "test.c":1:21 
@@ -1802,9 +1497,175 @@ recog 针对 adddi3 的决策树是: set-&gt;plus-&gt;GET_MODE(operand[0])==DI
 </div>
 </div>
 
-<div id="outline-container-org0000088" class="outline-3">
-<h3 id="org0000088"><span class="section-number-3">1.6</span> march vs. mabi</h3>
+<div id="outline-container-ID-c5c23657-59a8-4dc0-9987-6912638a6faf" class="outline-3">
+<h3 id="ID-c5c23657-59a8-4dc0-9987-6912638a6faf"><span class="section-number-3">1.6</span> gcc target hook</h3>
 <div class="outline-text-3" id="text-1-6">
+<p>
+<a href="https://gcc.gnu.org/onlinedocs/gccint/Target-Macros.html#Target-Macros">https://gcc.gnu.org/onlinedocs/gccint/Target-Macros.html#Target-Macros</a>
+</p>
+
+<p>
+前面看到的
+</p>
+
+<ul class="org-ul">
+<li>riscv_print_operand</li>
+<li>riscv_print_operand_address</li>
+<li>riscv_conditional_register_usage</li>
+</ul>
+
+<p>
+都是 target hook.
+</p>
+
+<p>
+target hook 定义在 target.def 中, 以 conditional_register_usage 为例:
+</p>
+
+<ul class="org-ul">
+<li><p>
+riscv 通过 TARGET_CONDITIONAL_REGISTER_USAGE 定义一个 hook 的实现
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-preprocessor">#define</span> <span class="org-variable-name">TARGET_CONDITIONAL_REGISTER_USAGE</span> riscv_conditional_register_usage
+</pre>
+</div></li>
+
+<li>代码中通过 targetm.conditional_register_usage () 调用到 target hook</li>
+</ul>
+
+<p>
+常用的 hook 有:
+</p>
+</div>
+
+<div id="outline-container-org00000c9" class="outline-4">
+<h4 id="org00000c9"><span class="section-number-4">1.6.1</span> TARGET_PRINT_OPERAND</h4>
+</div>
+
+<div id="outline-container-org00000cc" class="outline-4">
+<h4 id="org00000cc"><span class="section-number-4">1.6.2</span> TARGET_PRINT_OPERAND_ADDRESS</h4>
+</div>
+
+<div id="outline-container-org00000cf" class="outline-4">
+<h4 id="org00000cf"><span class="section-number-4">1.6.3</span> TARGET_CONDITIONAL_REGISTER_USAGE</h4>
+</div>
+
+<div id="outline-container-org00000d3" class="outline-4">
+<h4 id="org00000d3"><span class="section-number-4">1.6.4</span> TARGET_STRUCT_VALUE_RTX</h4>
+<div class="outline-text-4" id="text-1-6-4">
+<p>
+用来设置 <a href="gcc_named_return_value.html#ID-e53c6711-2a42-473c-af42-a27179f8c22b">GCC Named Return Value</a> 如何把 nrv 传递给 callee
+</p>
+
+<p>
+例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-preprocessor">#define</span> <span class="org-variable-name">TARGET_STRUCT_VALUE_RTX</span> my_struct_value_rtx
+
+<span class="org-keyword">static</span> <span class="org-type">rtx</span> <span class="org-function-name">my_struct_value_rtx</span>(
+    tree <span class="org-type">fntype</span> <span class="org-variable-name">ATTRIBUTE_UNUSED</span>, <span class="org-type">int</span> <span class="org-variable-name">incoming</span> ATTRIBUTE_UNUSED) {
+    <span class="org-keyword">return</span> gen_rtx_REG(Pmode, 13);
+}
+</pre>
+</div>
+
+<p>
+表示用 reg 13 (riscv 的 a3) 传递 nrv. 若该宏没有定义, 则会把 nrv 看做 callee 的第一个参数来处理
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">struct</span> <span class="org-type">X</span> {
+    <span class="org-type">int</span> <span class="org-variable-name">a</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">b</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">c</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">d</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">e</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">f</span>;
+};
+
+<span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-function-name">foo</span>(<span class="org-type">int</span> <span class="org-variable-name">a</span>) {
+    <span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-variable-name">x</span> = {0};
+    x.a = a;
+    <span class="org-keyword">return</span> x;
+}
+</pre>
+</div>
+
+<pre class="example" id="org00000a3">
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc  test.c -O1 -c
+$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./test.o
+
+0000000000000000 &lt;foo&gt;:
+   0:   c288                    sw      a0,0(a3)
+   2:   0006a223                sw      zero,4(a3)
+   6:   0006a423                sw      zero,8(a3)
+   a:   0006a623                sw      zero,12(a3)
+   e:   0006a823                sw      zero,16(a3)
+  12:   0006aa23                sw      zero,20(a3)
+  16:   8536                    mv      a0,a3
+  18:   8082                    ret
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org00000dc" class="outline-4">
+<h4 id="org00000dc"><span class="section-number-4">1.6.5</span> cost</h4>
+<div class="outline-text-4" id="text-1-6-5">
+</div>
+<div id="outline-container-org00000d6" class="outline-5">
+<h5 id="org00000d6"><span class="section-number-5">1.6.5.1</span> <a href="gcc_cost.html#ID-50a2267b-7dd0-4a07-997f-9dcc76933ba3">TARGET_RTX_COSTS</a></h5>
+</div>
+
+<div id="outline-container-org00000d9" class="outline-5">
+<h5 id="org00000d9"><span class="section-number-5">1.6.5.2</span> <a href="gcc_cost.html#ID-98f35525-3f8c-4f76-8478-6cab3f3182be">TARGET_SLOW_UNALIGNED_ACCESS</a></h5>
+</div>
+</div>
+
+<div id="outline-container-org00000e2" class="outline-4">
+<h4 id="org00000e2"><span class="section-number-4">1.6.6</span> schedule</h4>
+<div class="outline-text-4" id="text-1-6-6">
+</div>
+<div id="outline-container-org00000df" class="outline-5">
+<h5 id="org00000df"><span class="section-number-5">1.6.6.1</span> <a href="gcc_scheduler.html#ID-38916ef6-f300-47db-8c70-41e3256af352">TARGET_SCHED_ISSUE_RATE</a></h5>
+</div>
+</div>
+
+
+<div id="outline-container-org00000eb" class="outline-4 references">
+<h4 id="org00000eb">Backlinks</h4>
+<div class="outline-text-4" id="text-org00000eb">
+<p>
+<a href="gcc_cost.html#ID-50a2267b-7dd0-4a07-997f-9dcc76933ba3">TARGET_RTX_COSTS</a>
+(<i>GCC Cost &gt; 定义 cost &gt; TARGET_RTX_COSTS</i>):  gcc 决定 mul 是否 expand 成 shift 时, 需要通过 TARGET_RTX_COSTS 这个 <a href="#ID-c5c23657-59a8-4dc0-9987-6912638a6faf">gcc target hook</a> 来决定, 例如, 如果 `x*12` 的 cost 大于 `(x&lt;&lt;1+x)&lt;&lt;2` 的 cost, 则这个 expand 不会进行. target 需要提供这个 hook 来告诉 gcc 各个 rtx 的 cost 有多大.
+</p>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org00000b9" class="outline-3">
+<h3 id="org00000b9"><span class="section-number-3">1.7</span> <a href="gcc_cost.html#ID-2599fa0b-be86-4b12-a480-ee638a440b1d">gcc cost</a></h3>
+</div>
+
+<div id="outline-container-org00000bc" class="outline-3">
+<h3 id="org00000bc"><span class="section-number-3">1.8</span> <a href="gcc_scheduler.html#ID-aa30d0cc-966e-407b-9ad3-a0b0fbad7c49">gcc scheduler</a></h3>
+</div>
+
+<div id="outline-container-org00000d2" class="outline-3">
+<h3 id="org00000d2"><span class="section-number-3">1.9</span> misc</h3>
+<div class="outline-text-3" id="text-1-9">
+</div>
+<div id="outline-container-org00000bf" class="outline-4">
+<h4 id="org00000bf"><span class="section-number-4">1.9.1</span> <a href="gcc_cost.html#ID-2c365cee-bb91-4b01-a9b2-e2aff0c3e475">mtune</a></h4>
+</div>
+
+<div id="outline-container-org0000088" class="outline-4">
+<h4 id="org0000088"><span class="section-number-4">1.9.2</span> march vs. mabi</h4>
+<div class="outline-text-4" id="text-1-9-2">
 <p>
 <a href="https://www.sifive.com/blog/all-aboard-part-1-compiler-args">https://www.sifive.com/blog/all-aboard-part-1-compiler-args</a>
 </p>
@@ -1830,10 +1691,10 @@ hard double float
 </ul>
 </div>
 
-<div id="outline-container-org00000ba" class="outline-5">
-<h5 id="org00000ba"><span class="section-number-5">1.6.0.1</span> example</h5>
-<div class="outline-text-5" id="text-1-6-0-1">
-<pre class="example" id="org00000b9">
+<div id="outline-container-org00000c3" class="outline-6">
+<h6 id="org00000c3"><span class="section-number-6">1.9.2.0.1</span> example</h6>
+<div class="outline-text-6" id="text-1-9-2-0-1">
+<pre class="example" id="org00000c2">
 $&gt; cat test.c
 
 extern float hello(float x);
@@ -1918,13 +1779,13 @@ cc1: error: ABI requires '-march=rv64'
 </div>
 </div>
 
-<div id="outline-container-org0000085" class="outline-5">
-<h5 id="org0000085"><span class="section-number-5">1.6.0.2</span> impls</h5>
-<div class="outline-text-5" id="text-1-6-0-2">
+<div id="outline-container-org0000085" class="outline-6">
+<h6 id="org0000085"><span class="section-number-6">1.9.2.0.2</span> impls</h6>
+<div class="outline-text-6" id="text-1-9-2-0-2">
 </div>
-<div id="outline-container-org000007f" class="outline-6">
-<h6 id="org000007f"><span class="section-number-6">1.6.0.2.1</span> march</h6>
-<div class="outline-text-6" id="text-1-6-0-2-1">
+<ol class="org-ol">
+<li><a id="org000007f"></a>march<br />
+<div class="outline-text-7" id="text-1-9-2-0-2-1">
 <p>
 解析 march 的函数主要是 riscv_parse_arch_string, 通过一些宏可以访问解析的结果:
 </p>
@@ -1984,12 +1845,11 @@ cc1: error: ABI requires '-march=rv64'
 </pre>
 </div>
 </div>
-</div>
+</li>
 
 
-<div id="outline-container-org0000082" class="outline-6">
-<h6 id="org0000082"><span class="section-number-6">1.6.0.2.2</span> mabi</h6>
-<div class="outline-text-6" id="text-1-6-0-2-2">
+<li><a id="org00000ca"></a>mabi<br />
+<div class="outline-text-7" id="text-1-9-2-0-2-2">
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-keyword">static</span> <span class="org-keyword">const</span> <span class="org-keyword">struct</span> <span class="org-type">cl_enum_arg</span> <span class="org-variable-name">cl_enum_abi_type_data</span>[] = {
     {<span class="org-string">"ilp32"</span>, ABI_ILP32, 0},   {<span class="org-string">"ilp32d"</span>, ABI_ILP32D, 0},
@@ -2007,155 +1867,8 @@ cc1: error: ABI requires '-march=rv64'
 </pre>
 </div>
 </div>
-</div>
-</div>
-</div>
-
-<div id="outline-container-ID-c5c23657-59a8-4dc0-9987-6912638a6faf" class="outline-3">
-<h3 id="ID-c5c23657-59a8-4dc0-9987-6912638a6faf"><span class="section-number-3">1.7</span> gcc target hook</h3>
-<div class="outline-text-3" id="text-1-7">
-<p>
-<a href="https://gcc.gnu.org/onlinedocs/gccint/Target-Macros.html#Target-Macros">https://gcc.gnu.org/onlinedocs/gccint/Target-Macros.html#Target-Macros</a>
-</p>
-
-<p>
-前面看到的
-</p>
-
-<ul class="org-ul">
-<li>riscv_print_operand</li>
-<li>riscv_print_operand_address</li>
-<li>riscv_conditional_register_usage</li>
-</ul>
-
-<p>
-都是 target hook.
-</p>
-
-<p>
-target hook 定义在 target.def 中, 以 conditional_register_usage 为例:
-</p>
-
-<ul class="org-ul">
-<li><p>
-riscv 通过 TARGET_CONDITIONAL_REGISTER_USAGE 定义一个 hook 的实现
-</p>
-
-<div class="org-src-container">
-<pre class="src src-C"><span class="org-preprocessor">#define</span> <span class="org-variable-name">TARGET_CONDITIONAL_REGISTER_USAGE</span> riscv_conditional_register_usage
-</pre>
-</div></li>
-
-<li>代码中通过 targetm.conditional_register_usage () 调用到 target hook</li>
-</ul>
-
-<p>
-常用的 hook 有:
-</p>
-</div>
-
-<div id="outline-container-org00000c9" class="outline-4">
-<h4 id="org00000c9"><span class="section-number-4">1.7.1</span> TARGET_PRINT_OPERAND</h4>
-</div>
-
-<div id="outline-container-org00000cc" class="outline-4">
-<h4 id="org00000cc"><span class="section-number-4">1.7.2</span> TARGET_PRINT_OPERAND_ADDRESS</h4>
-</div>
-
-<div id="outline-container-org00000cf" class="outline-4">
-<h4 id="org00000cf"><span class="section-number-4">1.7.3</span> TARGET_CONDITIONAL_REGISTER_USAGE</h4>
-</div>
-
-<div id="outline-container-org00000d3" class="outline-4">
-<h4 id="org00000d3"><span class="section-number-4">1.7.4</span> TARGET_STRUCT_VALUE_RTX</h4>
-<div class="outline-text-4" id="text-1-7-4">
-<p>
-用来设置 <a href="gcc_named_return_value.html#ID-e53c6711-2a42-473c-af42-a27179f8c22b">GCC Named Return Value</a> 如何把 nrv 传递给 callee
-</p>
-
-<p>
-例如:
-</p>
-
-<div class="org-src-container">
-<pre class="src src-C"><span class="org-preprocessor">#define</span> <span class="org-variable-name">TARGET_STRUCT_VALUE_RTX</span> my_struct_value_rtx
-
-<span class="org-keyword">static</span> <span class="org-type">rtx</span> <span class="org-function-name">my_struct_value_rtx</span>(
-    tree <span class="org-type">fntype</span> <span class="org-variable-name">ATTRIBUTE_UNUSED</span>, <span class="org-type">int</span> <span class="org-variable-name">incoming</span> ATTRIBUTE_UNUSED) {
-    <span class="org-keyword">return</span> gen_rtx_REG(Pmode, 13);
-}
-</pre>
-</div>
-
-<p>
-表示用 reg 13 (riscv 的 a3) 传递 nrv. 若该宏没有定义, 则会把 nrv 看做 callee 的第一个参数来处理
-</p>
-
-<div class="org-src-container">
-<pre class="src src-C"><span class="org-keyword">struct</span> <span class="org-type">X</span> {
-    <span class="org-type">int</span> <span class="org-variable-name">a</span>;
-    <span class="org-type">int</span> <span class="org-variable-name">b</span>;
-    <span class="org-type">int</span> <span class="org-variable-name">c</span>;
-    <span class="org-type">int</span> <span class="org-variable-name">d</span>;
-    <span class="org-type">int</span> <span class="org-variable-name">e</span>;
-    <span class="org-type">int</span> <span class="org-variable-name">f</span>;
-};
-
-<span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-function-name">foo</span>(<span class="org-type">int</span> <span class="org-variable-name">a</span>) {
-    <span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-variable-name">x</span> = {0};
-    x.a = a;
-    <span class="org-keyword">return</span> x;
-}
-</pre>
-</div>
-
-<pre class="example" id="org00000d2">
-$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc  test.c -O1 -c
-$&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./test.o
-
-0000000000000000 &lt;foo&gt;:
-   0:   c288                    sw      a0,0(a3)
-   2:   0006a223                sw      zero,4(a3)
-   6:   0006a423                sw      zero,8(a3)
-   a:   0006a623                sw      zero,12(a3)
-   e:   0006a823                sw      zero,16(a3)
-  12:   0006aa23                sw      zero,20(a3)
-  16:   8536                    mv      a0,a3
-  18:   8082                    ret
-</pre>
-</div>
-</div>
-
-<div id="outline-container-org00000dc" class="outline-4">
-<h4 id="org00000dc"><span class="section-number-4">1.7.5</span> cost</h4>
-<div class="outline-text-4" id="text-1-7-5">
-</div>
-<div id="outline-container-org00000d6" class="outline-5">
-<h5 id="org00000d6"><span class="section-number-5">1.7.5.1</span> <a href="gcc_cost.html#ID-50a2267b-7dd0-4a07-997f-9dcc76933ba3">TARGET_RTX_COSTS</a></h5>
-</div>
-
-<div id="outline-container-org00000d9" class="outline-5">
-<h5 id="org00000d9"><span class="section-number-5">1.7.5.2</span> <a href="gcc_cost.html#ID-98f35525-3f8c-4f76-8478-6cab3f3182be">TARGET_SLOW_UNALIGNED_ACCESS</a></h5>
-</div>
-</div>
-
-<div id="outline-container-org00000e2" class="outline-4">
-<h4 id="org00000e2"><span class="section-number-4">1.7.6</span> schedule</h4>
-<div class="outline-text-4" id="text-1-7-6">
-</div>
-<div id="outline-container-org00000df" class="outline-5">
-<h5 id="org00000df"><span class="section-number-5">1.7.6.1</span> <a href="gcc_scheduler.html#ID-38916ef6-f300-47db-8c70-41e3256af352">TARGET_SCHED_ISSUE_RATE</a></h5>
-</div>
-</div>
-
-
-<div id="outline-container-org00000e5" class="outline-4 references">
-<h4 id="org00000e5">Backlinks</h4>
-<div class="outline-text-4" id="text-org00000e5">
-<p>
-<a href="gcc_cost.html#ID-50a2267b-7dd0-4a07-997f-9dcc76933ba3">TARGET_RTX_COSTS</a>
-(<i>GCC Cost &gt; 定义 cost &gt; TARGET_RTX_COSTS</i>):  gcc 决定 mul 是否 expand 成 shift 时, 需要通过 TARGET_RTX_COSTS 这个 <a href="#ID-c5c23657-59a8-4dc0-9987-6912638a6faf">gcc target hook</a> 来决定, 例如, 如果 `x*12` 的 cost 大于 `(x&lt;&lt;1+x)&lt;&lt;2` 的 cost, 则这个 expand 不会进行. target 需要提供这个 hook 来告诉 gcc 各个 rtx 的 cost 有多大.
-</p>
+</li>
+</ol>
 </div>
 </div>
 </div>
@@ -2163,12 +1876,17 @@ $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./test.o
 
 
 
-<div id="outline-container-org00000eb" class="outline-2 references">
-<h2 id="org00000eb">Backlinks</h2>
-<div class="outline-text-2" id="text-org00000eb">
+<div id="outline-container-org00000d8" class="outline-2 references">
+<h2 id="org00000d8">Backlinks</h2>
+<div class="outline-text-2" id="text-org00000d8">
 <p>
 <a href="gcc.html#ID-19df5597-4fd4-47a1-9534-f6e0c327e8d5">GCC</a>
 (<i>GCC &gt; GCC Backend</i>):   <a href="gcc_backend.html#ID-02e7f924-9cf7-4e3d-8ceb-1765fd3a2bed">GCC Backend</a>
+</p>
+
+<p>
+<a href="retargeting_gcc_to_riscv.html#ID-303d0f7f-03c2-4f31-ad7e-064162e3af10">Retargeting GCC To RISC-V</a>
+(<i>Retargeting GCC To RISC-V &gt; gcc &gt; gcc backend</i>):   <a href="gcc_backend.html#ID-02e7f924-9cf7-4e3d-8ceb-1765fd3a2bed">gcc backend</a>
 </p>
 </div>
 </div>
@@ -2177,7 +1895,7 @@ $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./test.o
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-03-24 Thu 12:17<br />
-Last updated: 2022-04-25 Mon 19:09</p>
+Last updated: 2022-04-26 Tue 13:55</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
