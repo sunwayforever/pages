@@ -42,11 +42,13 @@
 <ul>
 <li><a href="#org0000012">1. GCC Scheduler</a>
 <ul>
-<li><a href="#org0000002">1.1. example</a></li>
+<li><a href="#org000000c">1.1. example</a></li>
 <li><a href="#ID-38916ef6-f300-47db-8c70-41e3256af352">1.2. TARGET_SCHED_ISSUE_RATE</a></li>
 <li><a href="#ID-83e0d370-1b5f-49c6-b151-46a9e108d076">1.3. microarchitecture</a>
 <ul>
-<li><a href="#org000000c">1.3.1. example</a></li>
+<li><a href="#org000000d">1.3.1. example</a></li>
+<li><a href="#ID-d4860186-25a5-4f42-931d-335dff58a84d">1.3.2. define_insn_reservation</a></li>
+<li><a href="#ID-0326b3de-673f-403c-a927-d38c7eaf3b9c">1.3.3. define_bypass</a></li>
 </ul>
 </li>
 </ul>
@@ -105,8 +107,8 @@ microarchitecture.
 </p>
 </div>
 
-<div id="outline-container-org0000002" class="outline-3">
-<h3 id="org0000002"><span class="section-number-3">1.1</span> example</h3>
+<div id="outline-container-org000000c" class="outline-3">
+<h3 id="org000000c"><span class="section-number-3">1.1</span> example</h3>
 <div class="outline-text-3" id="text-1-1">
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-type">void</span> <span class="org-function-name">foo</span>(<span class="org-type">int</span> <span class="org-variable-name">k</span>) {
@@ -189,14 +191,14 @@ $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./test.o
 </p>
 
 <p>
-TBD 找一个能显示 issue_rate 区别的例子
+TODO 找一个能显示 issue_rate 区别的例子
 </p>
 </div>
 
 
-<div id="outline-container-org000000b" class="outline-4 references">
-<h4 id="org000000b">Backlinks</h4>
-<div class="outline-text-4" id="text-org000000b">
+<div id="outline-container-org0000015" class="outline-4 references">
+<h4 id="org0000015">Backlinks</h4>
+<div class="outline-text-4" id="text-org0000015">
 <p>
 <a href="gcc_backend.html#ID-c5c23657-59a8-4dc0-9987-6912638a6faf">gcc target hook</a>
 (<i>GCC Backend &gt; gcc target hook &gt; schedule &gt; TARGET_SCHED_ISSUE_RATE</i>):   <a href="#ID-38916ef6-f300-47db-8c70-41e3256af352">TARGET_SCHED_ISSUE_RATE</a>
@@ -204,7 +206,7 @@ TBD 找一个能显示 issue_rate 区别的例子
 
 <p>
 <a href="gcc_cost.html#ID-2c365cee-bb91-4b01-a9b2-e2aff0c3e475">mtune</a>
-(<i>GCC Cost &gt; 定义 cost &gt; mtune &gt; riscv_tune_param &gt; issue_rate</i>):  <a href="#ID-38916ef6-f300-47db-8c70-41e3256af352">TARGET_SCHED_ISSUE_RATE</a> 会使用这个 tune_param
+(<i>GCC Cost &gt; mtune &gt; riscv_tune_param &gt; issue_rate</i>):  <a href="#ID-38916ef6-f300-47db-8c70-41e3256af352">TARGET_SCHED_ISSUE_RATE</a> 会使用这个 tune_param
 </p>
 </div>
 </div>
@@ -220,7 +222,7 @@ sifive-3 是 25, 在 sifive-7 是 27, 这个值看起来和 <a href="gcc_cost.ht
 </p>
 
 <p>
-gcc 定义 microarchitecture 的机制称为 automaton.
+gcc 定义 microarchitecture 的机制称为 <a href="https://gcc.gnu.org/onlinedocs/gcc-3.3.1/gccint/Automaton-pipeline-description.html#Automaton%20pipeline%20description">automaton</a>
 </p>
 
 <p>
@@ -280,8 +282,8 @@ sifive-7.md:
 </div>
 </div>
 
-<div id="outline-container-org000000c" class="outline-4">
-<h4 id="org000000c"><span class="section-number-4">1.3.1</span> example</h4>
+<div id="outline-container-org000000d" class="outline-4">
+<h4 id="org000000d"><span class="section-number-4">1.3.1</span> example</h4>
 <div class="outline-text-4" id="text-1-3-1">
 <p>
 以上面的 example 为例, 但把 generic.md 中 `li` 的 latency 从 1 修改为 10:
@@ -298,7 +300,7 @@ sifive-7.md:
 scheduler 产生的代码变成:
 </p>
 
-<pre class="example" id="org000000c">
+<pre class="example" id="org000000b">
 0000000000000000 &lt;foo&gt;:
    0:   7179                    addi    sp,sp,-48
    2:   f422                    sd      s0,40(sp)
@@ -327,24 +329,131 @@ zero, &#x2026;`
 </div>
 </div>
 
+<div id="outline-container-ID-d4860186-25a5-4f42-931d-335dff58a84d" class="outline-4">
+<h4 id="ID-d4860186-25a5-4f42-931d-335dff58a84d"><span class="section-number-4">1.3.2</span> define_insn_reservation</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<pre class="example" id="org000000f">
+(define_insn_reservation insn-name default_latency
+     condition regexp)
+</pre>
 
-<div id="outline-container-org000000f" class="outline-4 references">
-<h4 id="org000000f">Backlinks</h4>
-<div class="outline-text-4" id="text-org000000f">
+<p>
+例如:
+</p>
+
+<pre class="example" id="org0000010">
+(define_insn_reservation "sifive_7_dfma" 7
+  (and (eq_attr "tune" "sifive_7")
+       (and (eq_attr "type" "fadd,fmul,fmadd")
+        (eq_attr "mode" "DF")))
+  "sifive_7_B")
+</pre>
+
+<p>
+表示:
+</p>
+
+<ol class="org-ol">
+<li>condtion 为:
+
+<ul class="org-ul">
+<li>mtune 使用 `sifive_7` 的 microarchitecture</li>
+<li>define_insn 的 type 是 `fadd, fmul 或 fmadd`</li>
+<li>define_insn 的 mode 是 `DF`</li>
+</ul></li>
+
+<li>default_latency 为 7</li>
+
+<li><p>
+regexp 为 sifive_7_B, 表示使用 `sifive_7_B` 这条流水线, 利用它可以分析 insn
+之间的 structural hazard (data hazard 则需要分析 insn 本身对数据的使用情况)
+</p>
+
+<p>
+sifive_7_B 是通过 define_cpu_unit 定义的 functional unit, 例如流水线, fpu 等
+</p>
+
+<p>
+regexp 可以使用 `,+*|` 等符号表示各种复杂的 functional unit 占用需求:
+</p>
+
+<ul class="org-ul">
+<li>`先使用 a 再使用 b`</li>
+
+<li>`a, b 同时使用`</li>
+
+<li>`前 3 个 cycle 用 a, 后 10 个 cycle 用 b`</li>
+
+<li>&#x2026;</li>
+</ul></li>
+</ol>
+</div>
+
+
+<div id="outline-container-org0000011" class="outline-5 references">
+<h5 id="org0000011">Backlinks</h5>
+<div class="outline-text-5" id="text-org0000011">
+<p>
+<a href="gcc_backend.html#ID-5304f835-9c6a-49bc-89a5-ca01e2520167">machine description</a>
+(<i>GCC Backend &gt; machine description &gt; md 语法 &gt; define_insn_reservation</i>):   <a href="#ID-d4860186-25a5-4f42-931d-335dff58a84d">define_insn_reservation</a>
+</p>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-ID-0326b3de-673f-403c-a927-d38c7eaf3b9c" class="outline-4">
+<h4 id="ID-0326b3de-673f-403c-a927-d38c7eaf3b9c"><span class="section-number-4">1.3.3</span> define_bypass</h4>
+<div class="outline-text-4" id="text-1-3-3">
+<p>
+<a href="https://gcc.gnu.org/legacy-ml/gcc/2004-05/msg01189.html">https://gcc.gnu.org/legacy-ml/gcc/2004-05/msg01189.html</a>
+</p>
+
+<p>
+通过定义下面的 define_bypass, 可以使 generic_store 前面的 generic_alu 的 latency
+变成 10, 达到和前面的 microarchitecture example 相同的效果.
+</p>
+
+<pre class="example" id="org0000014">
+(define_bypass 10 "generic_alu" "generic_store")
+</pre>
+
+<p>
+TODO 为什么 a 后面接着 b 会导致 a 的 latency 变化?
+</p>
+</div>
+</div>
+
+
+<div id="outline-container-org0000016" class="outline-4 references">
+<h4 id="org0000016">Backlinks</h4>
+<div class="outline-text-4" id="text-org0000016">
 <p>
 <a href="gcc_cost.html#ID-2c365cee-bb91-4b01-a9b2-e2aff0c3e475">mtune</a>
-(<i>GCC Cost &gt; 定义 cost &gt; mtune &gt; microarchitecture</i>):  <a href="#ID-83e0d370-1b5f-49c6-b151-46a9e108d076">microarchitecture</a> 主要是在 md 中定义 insn-latency 供 scheduler 使用
+(<i>GCC Cost &gt; mtune &gt; microarchitecture</i>):  <a href="#ID-83e0d370-1b5f-49c6-b151-46a9e108d076">microarchitecture</a> 主要是在 md 中定义 insn-latency 供 scheduler 使用
+</p>
+</div>
+
+
+
+<div id="outline-container-org0000018" class="outline-5 references">
+<h5 id="org0000018">Backlinks</h5>
+<div class="outline-text-5" id="text-org0000018">
+<p>
+<a href="gcc_backend.html#ID-5304f835-9c6a-49bc-89a5-ca01e2520167">machine description</a>
+(<i>GCC Backend &gt; machine description &gt; md 语法 &gt; define_bypass</i>):   <a href="#ID-0326b3de-673f-403c-a927-d38c7eaf3b9c">define_bypass</a>
 </p>
 </div>
 </div>
 </div>
 </div>
+</div>
 
 
 
-<div id="outline-container-org0000015" class="outline-2 references">
-<h2 id="org0000015">Backlinks</h2>
-<div class="outline-text-2" id="text-org0000015">
+<div id="outline-container-org000001e" class="outline-2 references">
+<h2 id="org000001e">Backlinks</h2>
+<div class="outline-text-2" id="text-org000001e">
 <p>
 <a href="gcc_backend.html#ID-02e7f924-9cf7-4e3d-8ceb-1765fd3a2bed">GCC Backend</a>
 (<i>GCC Backend &gt; gcc scheduler</i>):   <a href="gcc_scheduler.html#ID-aa30d0cc-966e-407b-9ad3-a0b0fbad7c49">gcc scheduler</a>
@@ -361,7 +470,7 @@ zero, &#x2026;`
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-04-25 Mon 17:56<br />
-Last updated: 2022-04-26 Tue 14:19</p>
+Last updated: 2022-04-26 Tue 19:23</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
