@@ -45,8 +45,9 @@
 <li><a href="#org0000000">1.1. builtin_define</a></li>
 <li><a href="#org0000009">1.2. builtins</a>
 <ul>
-<li><a href="#ID-bd8d117c-f958-4411-a010-830ebab7b21d">1.2.1. __builtin_frame_address</a></li>
-<li><a href="#ID-ee9eaf96-77aa-4b80-a9c1-201ac0f01417">1.2.2. __builtin_return_address</a></li>
+<li><a href="#ID-42c2d562-efef-41ad-8674-7366e42de19c">1.2.1. __builtin_expect</a></li>
+<li><a href="#ID-bd8d117c-f958-4411-a010-830ebab7b21d">1.2.2. __builtin_frame_address</a></li>
+<li><a href="#ID-ee9eaf96-77aa-4b80-a9c1-201ac0f01417">1.2.3. __builtin_return_address</a></li>
 </ul>
 </li>
 </ul>
@@ -63,7 +64,8 @@
 <h3 id="org0000000"><span class="section-number-3">1.1</span> builtin_define</h3>
 <div class="outline-text-3" id="text-1-1">
 <p>
-gcc 通过 builtin_define 来定义 runtime builtin macro (例如 __riscv_mul), 它的典型应用是 <a href="gcc_target_hook.html#ID-348daca9-594f-412e-ade1-cb27386a7bcc">TARGET_CPU_CPP_BUILTINS</a>
+<a href="gcc_target_hook.html#ID-348daca9-594f-412e-ade1-cb27386a7bcc">TARGET_CPU_CPP_BUILTINS</a> 通过 builtin_define 来定义 runtime builtin macro (例如
+__riscv_mul)
 </p>
 </div>
 </div>
@@ -71,16 +73,132 @@ gcc 通过 builtin_define 来定义 runtime builtin macro (例如 __riscv_mul), 
 <div id="outline-container-org0000009" class="outline-3">
 <h3 id="org0000009"><span class="section-number-3">1.2</span> builtins</h3>
 <div class="outline-text-3" id="text-1-2">
+<p>
+通用的 builtin 定义在 builtins.def 中, 实现在 builtins.c 的 expand_builtin 中.
+</p>
+
+<p>
+target 自定义的 builtin 由 <a href="gcc_target_hook.html#ID-adb8ed04-4b61-487c-8b74-b043df441b74">TARGET_INIT_BUILTINS</a> 和 <a href="gcc_target_hook.html#ID-950e3222-5851-4dfb-8ea0-7c44c1bd157d">TARGET_EXPAND_BUILTIN</a> 定义和实现.
+</p>
+
+<p>
+builtin 总的来说可以分成两大类:
+</p>
+
+<ol class="org-ol">
+<li>lib builtin, 即在标准库中有对应的实现, 例如 strcmp</li>
+
+<li>gcc builtin, 即在标准库中没有实现, 例如 __builtin_expect</li>
+</ol>
+
+<p>
+前者通过 __builtin_xxx 和 xxx 都可以使用, 后者必须通过 __builtin_xxx 的方式使用.
+</p>
+
+<p>
+通过 `-fno-builtin` 可以强制 `strcmp` fallback 到标准库的实现, 但对
+`__builtin_xxx` 形式的调用没有作用.
+</p>
 </div>
-<div id="outline-container-ID-bd8d117c-f958-4411-a010-830ebab7b21d" class="outline-4">
-<h4 id="ID-bd8d117c-f958-4411-a010-830ebab7b21d"><span class="section-number-4">1.2.1</span> __builtin_frame_address</h4>
+
+<div id="outline-container-ID-42c2d562-efef-41ad-8674-7366e42de19c" class="outline-4">
+<h4 id="ID-42c2d562-efef-41ad-8674-7366e42de19c"><span class="section-number-4">1.2.1</span> __builtin_expect</h4>
 <div class="outline-text-4" id="text-1-2-1">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-preprocessor">#define</span> <span class="org-function-name">likely</span>(<span class="org-variable-name">x</span>) __builtin_expect(<span class="org-negation-char">!</span>!(x), 1)
+<span class="org-preprocessor">#define</span> <span class="org-function-name">unlikely</span>(<span class="org-variable-name">x</span>) __builtin_expect(<span class="org-negation-char">!</span>!(x), 0)
+
+<span class="org-type">int</span> <span class="org-function-name">foo</span>(<span class="org-type">int</span> <span class="org-variable-name">x</span>) {
+    <span class="org-keyword">if</span> (unlikely(x &gt; 0)) {
+        <span class="org-keyword">return</span> x + 1;
+    } <span class="org-keyword">else</span> {
+        <span class="org-keyword">return</span> -x + 1;
+    }
+}
+
+<span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]) {
+    <span class="org-type">int</span> <span class="org-variable-name">ret</span> = 0;
+    <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; 1000; i++) {
+        ret += foo(argc);
+    }
+    printf(<span class="org-string">"%d\n"</span>, ret);
+    <span class="org-keyword">return</span> 0;
+}
+
+</pre>
+</div>
+
+<p>
+使用 __builtin_expect 时 gcc 编译出来的 foo 是:
+</p>
+
+<pre class="example" id="org0000003">
+$&gt; gdb-multiarch ./a.out -ex "disass foo" --batch
+
+Dump of assembler code for function foo:
+   0x0000000000010464 &lt;+0&gt;:     bgtz    a0,0x10470 &lt;foo+12&gt;
+   0x0000000000010468 &lt;+4&gt;:     li      a5,1
+   0x000000000001046a &lt;+6&gt;:     subw    a0,a5,a0
+   0x000000000001046e &lt;+10&gt;:    ret
+   0x0000000000010470 &lt;+12&gt;:    addiw   a0,a0,1
+   0x0000000000010472 &lt;+14&gt;:    ret
+End of assembler dump.
+</pre>
+
+<p>
+去掉 unlikely:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">int</span> <span class="org-function-name">foo</span>(<span class="org-type">int</span> <span class="org-variable-name">x</span>) {
+    <span class="org-keyword">if</span> (x &gt; 0) {
+        <span class="org-keyword">return</span> x + 1;
+    } <span class="org-keyword">else</span> {
+        <span class="org-keyword">return</span> -x + 1;
+    }
+}
+</pre>
+</div>
+
+<p>
+以后, foo 变成:
+</p>
+
+<pre class="example" id="org0000004">
+Dump of assembler code for function foo:
+   0x0000000000010464 &lt;+0&gt;:     blez    a0,0x1046c &lt;foo+8&gt;
+   0x0000000000010468 &lt;+4&gt;:     addiw   a0,a0,1
+   0x000000000001046a &lt;+6&gt;:     ret
+   0x000000000001046c &lt;+8&gt;:     li      a5,1
+   0x000000000001046e &lt;+10&gt;:    subw    a0,a5,a0
+   0x0000000000010472 &lt;+14&gt;:    ret
+End of assembler dump.
+</pre>
 </div>
 
 
-<div id="outline-container-org0000003" class="outline-5 references">
-<h5 id="org0000003">Backlinks</h5>
-<div class="outline-text-5" id="text-org0000003">
+<div id="outline-container-org0000010" class="outline-5 references">
+<h5 id="org0000010">Backlinks</h5>
+<div class="outline-text-5" id="text-org0000010">
+<p>
+<a href="gcc_profile.html#ID-b679e100-573e-4625-87b4-06f810416a84">GCC Profile</a>
+(<i>GCC Profile &gt; profile</i>):  <a href="#ID-42c2d562-efef-41ad-8674-7366e42de19c">__builtin_expect</a> 只是一个 hint, gcc 可以根据 profile 来决定 predict 的结果.
+</p>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-ID-bd8d117c-f958-4411-a010-830ebab7b21d" class="outline-4">
+<h4 id="ID-bd8d117c-f958-4411-a010-830ebab7b21d"><span class="section-number-4">1.2.2</span> __builtin_frame_address</h4>
+<div class="outline-text-4" id="text-1-2-2">
+</div>
+
+
+<div id="outline-container-org0000008" class="outline-5 references">
+<h5 id="org0000008">Backlinks</h5>
+<div class="outline-text-5" id="text-org0000008">
 <p>
 <a href="gcc_target_hook.html#ID-ecd308f9-413b-467a-8d55-10bd7485a2bc">GCC Target Hook</a>
 (<i>GCC Target Hook &gt; stack 相关 &gt; FRAME_ADDR_RTX</i>):  <a href="#ID-bd8d117c-f958-4411-a010-830ebab7b21d">__builtin_frame_address</a>
@@ -91,14 +209,14 @@ gcc 通过 builtin_define 来定义 runtime builtin macro (例如 __riscv_mul), 
 
 
 <div id="outline-container-ID-ee9eaf96-77aa-4b80-a9c1-201ac0f01417" class="outline-4">
-<h4 id="ID-ee9eaf96-77aa-4b80-a9c1-201ac0f01417"><span class="section-number-4">1.2.2</span> __builtin_return_address</h4>
-<div class="outline-text-4" id="text-1-2-2">
+<h4 id="ID-ee9eaf96-77aa-4b80-a9c1-201ac0f01417"><span class="section-number-4">1.2.3</span> __builtin_return_address</h4>
+<div class="outline-text-4" id="text-1-2-3">
 </div>
 
 
-<div id="outline-container-org0000006" class="outline-5 references">
-<h5 id="org0000006">Backlinks</h5>
-<div class="outline-text-5" id="text-org0000006">
+<div id="outline-container-org000000b" class="outline-5 references">
+<h5 id="org000000b">Backlinks</h5>
+<div class="outline-text-5" id="text-org000000b">
 <p>
 <a href="gcc_target_hook.html#ID-ecd308f9-413b-467a-8d55-10bd7485a2bc">GCC Target Hook</a>
 (<i>GCC Target Hook &gt; stack 相关 &gt; RETURN_ADDR_RTX</i>):  <a href="#ID-ee9eaf96-77aa-4b80-a9c1-201ac0f01417">__builtin_return_address</a>
@@ -111,9 +229,9 @@ gcc 通过 builtin_define 来定义 runtime builtin macro (例如 __riscv_mul), 
 
 
 
-<div id="outline-container-org000000f" class="outline-2 references">
-<h2 id="org000000f">Backlinks</h2>
-<div class="outline-text-2" id="text-org000000f">
+<div id="outline-container-org0000014" class="outline-2 references">
+<h2 id="org0000014">Backlinks</h2>
+<div class="outline-text-2" id="text-org0000014">
 <p>
 <a href="gcc.html#ID-19df5597-4fd4-47a1-9534-f6e0c327e8d5">GCC</a>
 (<i>GCC &gt; Builtin</i>):   <a href="gcc_builtin.html#ID-b9dd7f04-f7f7-4a70-8f00-9e446df3339e">Builtin</a>
@@ -125,7 +243,7 @@ gcc 通过 builtin_define 来定义 runtime builtin macro (例如 __riscv_mul), 
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2017-08-04 Fri 00:00<br />
-Last updated: 2022-04-27 Wed 15:48</p>
+Last updated: 2022-04-27 Wed 16:21</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
