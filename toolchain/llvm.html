@@ -40,25 +40,28 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#org000001c">1. LLVM Backend</a>
+<li><a href="#org0000025">1. LLVM Backend</a>
 <ul>
 <li><a href="#org0000000">1.1. TableGen</a></li>
-<li><a href="#org0000019">1.2. instruct selection</a>
+<li><a href="#org0000003">1.2. instruction legalize</a></li>
+<li><a href="#org000001c">1.3. instruction selection</a>
 <ul>
-<li><a href="#org0000004">1.2.1. llir</a></li>
-<li><a href="#org0000009">1.2.2. SelectionDAG</a></li>
-<li><a href="#org000000e">1.2.3. target instruction DAG</a></li>
-<li><a href="#org0000016">1.2.4. isel</a></li>
+<li><a href="#org0000004">1.3.1. llir</a></li>
+<li><a href="#org0000009">1.3.2. SelectionDAG</a></li>
+<li><a href="#org0000011">1.3.3. MachineDAG</a></li>
+<li><a href="#org0000019">1.3.4. isel</a></li>
 </ul>
 </li>
+<li><a href="#org000001f">1.4. instruction scheduling</a></li>
+<li><a href="#org0000022">1.5. codegen</a></li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-org000001c" class="outline-2">
-<h2 id="org000001c"><span class="section-number-2">1</span> LLVM Backend</h2>
+<div id="outline-container-org0000025" class="outline-2">
+<h2 id="org0000025"><span class="section-number-2">1</span> LLVM Backend</h2>
 <div class="outline-text-2" id="text-1">
 <p>
 <a href="https://llvm.org/docs/WritingAnLLVMBackend.html">https://llvm.org/docs/WritingAnLLVMBackend.html</a>
@@ -91,17 +94,17 @@ llvm backend 的主要步骤是:
 </p>
 
 <ol class="org-ol">
-<li>instruct selection
+<li>instruction selection
 
 <ol class="org-ol">
 <li>llir -&gt; SelectionDAG</li>
 
 <li>SelectionDAG optimze &amp; legalize</li>
 
-<li>instruction selection, SelectionDAG -&gt; target instruction DAG</li>
+<li>instruction selection, SelectionDAG -&gt; MachineDAG</li>
 </ol></li>
 
-<li>instruct scheduling</li>
+<li>instruction scheduling</li>
 
 <li>register allocation</li>
 
@@ -117,9 +120,13 @@ llvm backend 的主要步骤是:
 <h3 id="org0000000"><span class="section-number-3">1.1</span> <a href="llvm_tablegen.html#ID-5e67daa8-ff56-4a3c-ac3c-de840f1abe46">TableGen</a></h3>
 </div>
 
-<div id="outline-container-org0000019" class="outline-3">
-<h3 id="org0000019"><span class="section-number-3">1.2</span> instruct selection</h3>
-<div class="outline-text-3" id="text-1-2">
+<div id="outline-container-org0000003" class="outline-3">
+<h3 id="org0000003"><span class="section-number-3">1.2</span> instruction legalize</h3>
+</div>
+
+<div id="outline-container-org000001c" class="outline-3">
+<h3 id="org000001c"><span class="section-number-3">1.3</span> instruction selection</h3>
+<div class="outline-text-3" id="text-1-3">
 <p>
 <a href="https://eli.thegreenplace.net/2013/02/25/a-deeper-look-into-the-llvm-code-generator-part-1">https://eli.thegreenplace.net/2013/02/25/a-deeper-look-into-the-llvm-code-generator-part-1</a>
 </p>
@@ -135,9 +142,9 @@ llvm backend 的主要步骤是:
 </div>
 
 <div id="outline-container-org0000004" class="outline-4">
-<h4 id="org0000004"><span class="section-number-4">1.2.1</span> llir</h4>
-<div class="outline-text-4" id="text-1-2-1">
-<pre class="example" id="org0000003">
+<h4 id="org0000004"><span class="section-number-4">1.3.1</span> llir</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<pre class="example" id="org0000006">
 $&gt; riscv-clang test.c -emit-llvm -c -O2
 $&gt; riscv-llvm-dis test.bc
 $&gt; cat test.ll
@@ -153,8 +160,8 @@ entry:
 </div>
 
 <div id="outline-container-org0000009" class="outline-4">
-<h4 id="org0000009"><span class="section-number-4">1.2.2</span> SelectionDAG</h4>
-<div class="outline-text-4" id="text-1-2-2">
+<h4 id="org0000009"><span class="section-number-4">1.3.2</span> SelectionDAG</h4>
+<div class="outline-text-4" id="text-1-3-2">
 <p>
 llc 接受几个参数, 可以显示不同阶段的 dag:
 </p>
@@ -166,65 +173,64 @@ llc 接受几个参数, 可以显示不同阶段的 dag:
 
 <li>`-view-isel-dags`, 生成 instruct selection 之前的 SelectioDAG</li>
 
-<li>`-view-sched-dags`, 生成 instruct scheduling 之前的 target instruct DAG</li>
+<li>`-view-sched-dags`, 生成 instruct scheduling 之前的 MachineDAG</li>
 </ul>
 
-<pre class="example" id="org0000007">
+<pre class="example" id="org000000a">
 $&gt; riscv-llc test.bc -view-dag-combine1-dags
 $&gt; dot -Tpng tmp/dag.MUL-cb5dd4.dot -o a.png
 </pre>
 
 
-<div id="org0000008" class="figure">
+<div id="org000000b" class="figure">
 <p><img src="../extra/llvm_selection_dag.png" alt="llvm_selection_dag.png" />
 </p>
 </div>
 </div>
 </div>
 
-<div id="outline-container-org000000e" class="outline-4">
-<h4 id="org000000e"><span class="section-number-4">1.2.3</span> target instruction DAG</h4>
-<div class="outline-text-4" id="text-1-2-3">
+<div id="outline-container-org0000011" class="outline-4">
+<h4 id="org0000011"><span class="section-number-4">1.3.3</span> MachineDAG</h4>
+<div class="outline-text-4" id="text-1-3-3">
 <p>
-instruction selection 的目的是根据 target 无关的 SelectionDAG 生成和 target 相关的 target instruction DAG
+instruction selection 的目的是根据 target 无关的 SelectionDAG 生成和 target 相关的 MachineDAG
 </p>
 
-<pre class="example" id="org000000c">
+<pre class="example" id="org000000f">
 $&gt; riscv-llc test.bc -view-sched-dags
 </pre>
 
 
-<div id="org000000d" class="figure">
+<div id="org0000010" class="figure">
 <p><img src="../extra/llvm_inst_dag.png" alt="llvm_inst_dag.png" />
 </p>
 </div>
 
 <p>
-fadd 被替换成为 FADD_S. 通过 `llc -debug` 可以看到 isel 是如何把 fadd 替换为
+fadd 被替换成为 FADD_S, 通过 `llc -debug` 可以看到 isel 是如何把 fadd 替换为
 FADD_S
 </p>
 </div>
 </div>
 
-<div id="outline-container-org0000016" class="outline-4">
-<h4 id="org0000016"><span class="section-number-4">1.2.4</span> isel</h4>
-<div class="outline-text-4" id="text-1-2-4">
+<div id="outline-container-org0000019" class="outline-4">
+<h4 id="org0000019"><span class="section-number-4">1.3.4</span> isel</h4>
+<div class="outline-text-4" id="text-1-3-4">
 <p>
-把 SelectionDAG 看做 gcc <a href="gcc_backend.html#ID-a354364f-e048-4d6f-b780-0271f16dfd6a">rtl</a>, 则 isel 和 gcc 的 recog 过程非常类似. isel 的作用是根据 target description (td) 中定义的 pattern 和 predicate 去匹配对应的 target
-instruction.
+把 SelectionDAG 看做 gcc <a href="gcc_backend.html#ID-a354364f-e048-4d6f-b780-0271f16dfd6a">rtl</a>, 则 isel 和 gcc 的 recog 过程非常类似. isel 的作用是根据 target description (td) 中定义的 pattern 和 predicate 去匹配对应的
+target instruction
 </p>
 
 <p>
 例如 RSICVInstInfoF.td 中定义的关于 FADD_S 的 pattern:
 </p>
 
-<pre class="example" id="org0000011">
+<pre class="example" id="org0000014">
 def : PatFprFprDynFrm&lt;any_fadd, FADD_S, FPR32&gt;;
 </pre>
 
 <p>
-是指 `fadd xxx` 这个 SelectionDAG 会匹配 `FADD_S` 这个 target instruction
-DAG. 具体的匹配过程为:
+是指 `fadd xxx` 会匹配 `FADD_S`, 具体的匹配过程为:
 </p>
 
 <ol class="org-ol">
@@ -232,7 +238,7 @@ DAG. 具体的匹配过程为:
 后者与 gcc 的 recog 类似, 是一个巨大的 switch-case</li>
 
 <li>SelectionDAGISel 会扫描 SelectionDAG, 根据 RISCVGenDAGISel.inc 中的 pattern
-找到 target instruction DAG</li>
+把 SelectionDAG 转换为 MachineDAG</li>
 </ol>
 
 <p>
@@ -243,7 +249,7 @@ DAG. 具体的匹配过程为:
 通过 `llc test.bc -debug` 生成 isel debug 信息:
 </p>
 
-<pre class="example" id="org0000012">
+<pre class="example" id="org0000015">
 ISEL: Starting selection on root node: t5: f32 = fadd t2, t4
 ISEL: Starting pattern match
   Initial Opcode index to 1373928
@@ -278,7 +284,7 @@ debug 中的 opcode index 是 RISCVGenDAGISel.inc 中 MatcherTable 中的偏移�
 RISCVGenDAGISel.inc:
 </p>
 
-<pre class="example" id="org0000013">
+<pre class="example" id="org0000016">
 /*1373923*/ /*SwitchOpcode*/ 1|128,11|128,1/*17793*/, TARGET_VAL(ISD::FADD),// -&gt;1391721
 /*1373928*/  OPC_Scope, 106, /*-&gt;1374036*/ // 9 children in Scope
 /*1373930*/   OPC_RecordChild0, // #0 = $rs1
@@ -299,7 +305,7 @@ RISCVGenDAGISel.inc:
 inc 中的 `OPC_Scope, 106` 和 `MVT:F32` 的 case 是通过 td 中的 pat 生成的:
 </p>
 
-<pre class="example" id="org0000014">
+<pre class="example" id="org0000017">
 def : PatFprFprDynFrm&lt;any_fadd, FADD_S, FPR32&gt;;
 </pre>
 
@@ -307,7 +313,7 @@ def : PatFprFprDynFrm&lt;any_fadd, FADD_S, FPR32&gt;;
 `OPC_CheckPatternPredicate, 35` 和  是根据 FADD_S 要求的 predicate 生成的:
 </p>
 
-<pre class="example" id="org0000015">
+<pre class="example" id="org0000018">
 defm FADD_S : FPALU_rr_frm_m&lt;0b0000000, "fadd.s", FINX&gt;;
 </pre>
 
@@ -321,13 +327,21 @@ defm FADD_S : FPALU_rr_frm_m&lt;0b0000000, "fadd.s", FINX&gt;;
 </div>
 </div>
 </div>
+
+<div id="outline-container-org000001f" class="outline-3">
+<h3 id="org000001f"><span class="section-number-3">1.4</span> instruction scheduling</h3>
+</div>
+
+<div id="outline-container-org0000022" class="outline-3">
+<h3 id="org0000022"><span class="section-number-3">1.5</span> codegen</h3>
+</div>
 </div>
 </div>
 <div id="postamble" class="status">
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-05-11 Wed 13:44<br />
-Last updated: 2022-05-11 Wed 15:20</p>
+Last updated: 2022-05-11 Wed 16:19</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
