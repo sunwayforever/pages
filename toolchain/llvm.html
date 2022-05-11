@@ -1,0 +1,346 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>LLVM Backend</title>
+
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">LLVM Backend</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org000001c">1. LLVM Backend</a>
+<ul>
+<li><a href="#org0000000">1.1. TableGen</a></li>
+<li><a href="#org0000019">1.2. instruct selection</a>
+<ul>
+<li><a href="#org0000004">1.2.1. llir</a></li>
+<li><a href="#org0000009">1.2.2. SelectionDAG</a></li>
+<li><a href="#org000000e">1.2.3. target instruction DAG</a></li>
+<li><a href="#org0000016">1.2.4. isel</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000001c" class="outline-2">
+<h2 id="org000001c"><span class="section-number-2">1</span> LLVM Backend</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="https://llvm.org/docs/WritingAnLLVMBackend.html">https://llvm.org/docs/WritingAnLLVMBackend.html</a>
+</p>
+
+<p>
+<a href="https://llvm.org/docs/CodeGenerator.html">https://llvm.org/docs/CodeGenerator.html</a>
+</p>
+
+<p>
+<a href="https://llvm.org/devmtg/2014-10/Slides/Cormack-BuildingAnLLVMBackend.pdf">https://llvm.org/devmtg/2014-10/Slides/Cormack-BuildingAnLLVMBackend.pdf</a>
+</p>
+
+<p>
+clang 编译 c 代码的过程大约为:
+</p>
+
+<ol class="org-ol">
+<li>通过 clang 生成 llir</li>
+<li>通过 opt 对 llir 进行优化</li>
+<li>通过 llc 根据 llir 生成 target 指令</li>
+</ol>
+
+<p>
+其中 llc 即是 llvm 的 backend 的入口
+</p>
+
+<p>
+llvm backend 的主要步骤是:
+</p>
+
+<ol class="org-ol">
+<li>instruct selection
+
+<ol class="org-ol">
+<li>llir -&gt; SelectionDAG</li>
+
+<li>SelectionDAG optimze &amp; legalize</li>
+
+<li>instruction selection, SelectionDAG -&gt; target instruction DAG</li>
+</ol></li>
+
+<li>instruct scheduling</li>
+
+<li>register allocation</li>
+
+<li>prolog/epilog insertion</li>
+
+<li>peephole optimization</li>
+
+<li>codegen</li>
+</ol>
+</div>
+
+<div id="outline-container-org0000000" class="outline-3">
+<h3 id="org0000000"><span class="section-number-3">1.1</span> <a href="llvm_tablegen.html#ID-5e67daa8-ff56-4a3c-ac3c-de840f1abe46">TableGen</a></h3>
+</div>
+
+<div id="outline-container-org0000019" class="outline-3">
+<h3 id="org0000019"><span class="section-number-3">1.2</span> instruct selection</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+<a href="https://eli.thegreenplace.net/2013/02/25/a-deeper-look-into-the-llvm-code-generator-part-1">https://eli.thegreenplace.net/2013/02/25/a-deeper-look-into-the-llvm-code-generator-part-1</a>
+</p>
+
+<p>
+以下面代码为例:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">float</span> <span class="org-function-name">MUL</span>(<span class="org-type">float</span> <span class="org-variable-name">x</span>, <span class="org-type">float</span> <span class="org-variable-name">y</span>) { <span class="org-keyword">return</span> x + y; }
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000004" class="outline-4">
+<h4 id="org0000004"><span class="section-number-4">1.2.1</span> llir</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<pre class="example" id="org0000003">
+$&gt; riscv-clang test.c -emit-llvm -c -O2
+$&gt; riscv-llvm-dis test.bc
+$&gt; cat test.ll
+...
+define dso_local float @MUL(float noundef %x, float noundef %y) local_unnamed_addr #0 {
+entry:
+  %add = fadd float %x, %y
+  ret float %add
+}
+...
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000009" class="outline-4">
+<h4 id="org0000009"><span class="section-number-4">1.2.2</span> SelectionDAG</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<p>
+llc 接受几个参数, 可以显示不同阶段的 dag:
+</p>
+
+<ul class="org-ul">
+<li>`-view-dag-combine1-dags`, 生成最初的 SelectionDAG</li>
+
+<li>`-view-legalize-dags`, 生成最初的 legalize 之前的 SelectionDAG</li>
+
+<li>`-view-isel-dags`, 生成 instruct selection 之前的 SelectioDAG</li>
+
+<li>`-view-sched-dags`, 生成 instruct scheduling 之前的 target instruct DAG</li>
+</ul>
+
+<pre class="example" id="org0000007">
+$&gt; riscv-llc test.bc -view-dag-combine1-dags
+$&gt; dot -Tpng tmp/dag.MUL-cb5dd4.dot -o a.png
+</pre>
+
+
+<div id="org0000008" class="figure">
+<p><img src="../extra/llvm_selection_dag.png" alt="llvm_selection_dag.png" />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000000e" class="outline-4">
+<h4 id="org000000e"><span class="section-number-4">1.2.3</span> target instruction DAG</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<p>
+instruction selection 的目的是根据 target 无关的 SelectionDAG 生成和 target 相关的 target instruction DAG
+</p>
+
+<pre class="example" id="org000000c">
+$&gt; riscv-llc test.bc -view-sched-dags
+</pre>
+
+
+<div id="org000000d" class="figure">
+<p><img src="../extra/llvm_inst_dag.png" alt="llvm_inst_dag.png" />
+</p>
+</div>
+
+<p>
+fadd 被替换成为 FADD_S. 通过 `llc -debug` 可以看到 isel 是如何把 fadd 替换为
+FADD_S
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000016" class="outline-4">
+<h4 id="org0000016"><span class="section-number-4">1.2.4</span> isel</h4>
+<div class="outline-text-4" id="text-1-2-4">
+<p>
+把 SelectionDAG 看做 gcc <a href="gcc_backend.html#ID-a354364f-e048-4d6f-b780-0271f16dfd6a">rtl</a>, 则 isel 和 gcc 的 recog 过程非常类似. isel 的作用是根据 target description (td) 中定义的 pattern 和 predicate 去匹配对应的 target
+instruction.
+</p>
+
+<p>
+例如 RSICVInstInfoF.td 中定义的关于 FADD_S 的 pattern:
+</p>
+
+<pre class="example" id="org0000011">
+def : PatFprFprDynFrm&lt;any_fadd, FADD_S, FPR32&gt;;
+</pre>
+
+<p>
+是指 `fadd xxx` 这个 SelectionDAG 会匹配 `FADD_S` 这个 target instruction
+DAG. 具体的匹配过程为:
+</p>
+
+<ol class="org-ol">
+<li>llvm-tblgen 通过 `-gen-dag-isel` 参数扫描 td 文件, 生成 RISCVGenDAGISel.inc,
+后者与 gcc 的 recog 类似, 是一个巨大的 switch-case</li>
+
+<li>SelectionDAGISel 会扫描 SelectionDAG, 根据 RISCVGenDAGISel.inc 中的 pattern
+找到 target instruction DAG</li>
+</ol>
+
+<p>
+例如:
+</p>
+
+<p>
+通过 `llc test.bc -debug` 生成 isel debug 信息:
+</p>
+
+<pre class="example" id="org0000012">
+ISEL: Starting selection on root node: t5: f32 = fadd t2, t4
+ISEL: Starting pattern match
+  Initial Opcode index to 1373928
+  TypeSwitch[f32] from 1373932 to 1373969
+Creating constant: t9: i64 = TargetConstant&lt;7&gt;
+  Morphed node: t5: f32 = FADD_S nofpexcept t2, t4, TargetConstant:i64&lt;7&gt;
+ISEL: Match complete!
+</pre>
+
+<p>
+debug 中的 opcode index 是 RISCVGenDAGISel.inc 中 MatcherTable 中的偏移量.
+</p>
+
+<p>
+下面的 RISCVGenDAGISel.inc, 相当于下面的 switch-case 代码:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">switch</span> (opcode):
+  <span class="org-keyword">case</span> `fadd`:
+    <span class="org-keyword">switch</span> (return_type):
+      <span class="org-keyword">case</span> f16:
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">break</span>;
+      <span class="org-keyword">case</span> f32:
+        <span class="org-keyword">if</span> check_pattern_predicate (35):
+          <span class="org-keyword">return</span> FADD_S
+</pre>
+</div>
+
+<p>
+RISCVGenDAGISel.inc:
+</p>
+
+<pre class="example" id="org0000013">
+/*1373923*/ /*SwitchOpcode*/ 1|128,11|128,1/*17793*/, TARGET_VAL(ISD::FADD),// -&gt;1391721
+/*1373928*/  OPC_Scope, 106, /*-&gt;1374036*/ // 9 children in Scope
+/*1373930*/   OPC_RecordChild0, // #0 = $rs1
+/*1373931*/   OPC_RecordChild1, // #1 = $rs2
+/*1373932*/   OPC_SwitchType /*3 cases */, 32, MVT::f16,// -&gt;1373967
+...
+/*1373967*/   /*SwitchType*/ 32, MVT::f32,// -&gt;1374001
+/*1373969*/    OPC_Scope, 14, /*-&gt;1373985*/ // 2 children in Scope
+/*1373971*/     OPC_CheckPatternPredicate, 35, // (Subtarget-&gt;hasStdExtF()) &amp;&amp; (MF-&gt;getSubtarget().checkFeatures("+64bit"))
+/*1373973*/     OPC_EmitInteger, MVT::i64, 14, 
+/*1373976*/     OPC_MorphNodeTo1, TARGET_VAL(RISCV::FADD_S), 0,
+                   MVT::f32, 3/*#Ops*/, 0, 1, 2, 
+               // Src: (fadd:{ *:[f32] } FPR32:{ *:[f32] }:$rs1, FPR32:{ *:[f32] }:$rs2) - Complexity = 3
+               // Dst: (FADD_S:{ *:[f32] } ?:{ *:[f32] }:$rs1, ?:{ *:[f32] }:$rs2, 7:{ *:[i64] })
+</pre>
+
+<p>
+inc 中的 `OPC_Scope, 106` 和 `MVT:F32` 的 case 是通过 td 中的 pat 生成的:
+</p>
+
+<pre class="example" id="org0000014">
+def : PatFprFprDynFrm&lt;any_fadd, FADD_S, FPR32&gt;;
+</pre>
+
+<p>
+`OPC_CheckPatternPredicate, 35` 和  是根据 FADD_S 要求的 predicate 生成的:
+</p>
+
+<pre class="example" id="org0000015">
+defm FADD_S : FPALU_rr_frm_m&lt;0b0000000, "fadd.s", FINX&gt;;
+</pre>
+
+<p>
+其中 FINX 通过 tablegen 展开后会包含 hasStdExtF 这个 predicate
+</p>
+
+<p>
+另外, td 文件除了包含 isel 需要的 pattern, 还包含 codegen 需要的汇编指令和机器指令信息, scheduler 需要的 sched 信息, disassembler 需要的汇编和机器指令信息以及寄存器信息等.
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway (sunwayforever@gmail.com)<br />
+Date: 2022-05-11 Wed 13:44<br />
+Last updated: 2022-05-11 Wed 15:20</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
+<br />
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>
