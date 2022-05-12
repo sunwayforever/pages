@@ -48,7 +48,7 @@
 <li><a href="#org0000005">1.2.1. example</a></li>
 </ul>
 </li>
-<li><a href="#org000000b">1.3. gen-dag-isel</a></li>
+<li><a href="#ID-2a21c6af-c430-4b55-852e-f4082aaa38d8">1.3. gen-dag-isel</a></li>
 <li><a href="#org000000f">1.4. gen-instr-info</a></li>
 </ul>
 </li>
@@ -171,15 +171,62 @@ class AB&lt;string n,int a, A x&gt;:A&lt;n&gt;,B&lt;a&gt; {
       let Bit=true;
       let List=[a,a];
       // 声明 AB 类自己的 field, 通过 Name 访问基类的 field
-      // # 用来拼接两个 string
+      // # 用来拼接
       string X=Name#Name;
       let ClassA=x;
 }
 
 // 使用 def 定义 concrete record 
-def a:A&lt;"a"&gt;{}
+def a:A&lt;"a"&gt;{
+}
 
-def ab0:AB&lt;"0",2, a&gt; {}
+def ab0:AB&lt;"0",2, a&gt; {
+    // def 可以使用通过 let 修改 class field
+    let Bits{4-2}=2;
+    // def 可以定义自己的 field
+    int AA=1;
+}
+
+// let 可以放在 class, def 外面, 通过 let xxx in {} 的形式给多个 record 的 field
+// 赋值, 这个和 lisp 的 (let ((a 1)) (xxx)) 很类似
+let Name="ab12",Bit=false in {
+    def ab1:AB&lt;"0",2,a&gt;;
+    def ab2:AB&lt;"0",2,a&gt;;    
+}
+
+// let 可以嵌套
+let Name="abc" in {
+    let Name="bcd" in {
+        class ABC:A&lt;""&gt;;
+    }
+}
+
+// multiclass/defm 的作用和 gcc md 的 mode iterator 类似
+multiclass ALU {
+    def rr {
+        string type="RR";
+    }
+    def ri {
+        string type="RI";
+    }
+}
+
+defm add:ALU;
+defm sub:ALU;
+
+// foreach, 相当于带循环的 let
+foreach i=[1,2,3] in {
+     def a_#i:A&lt;""&gt;{}   
+}
+
+// bang operators, 即预定义的 !xxx 形式的函数
+
+def aaa {
+    string x=!cast&lt;string&gt;(1);
+    int y=!add(1,2);
+    int z=!cond(!lt(y,2):0,true:1);
+    int a=!if(!eq(y,3),0,1);
+}
 </pre>
 
 <p>
@@ -187,54 +234,199 @@ llvm-tblgen test.td 展开的结果:
 </p>
 
 <pre class="example" id="org0000004">
-
+------------- Classes -----------------
+class A&lt;string A:n = ?&gt; {
+  string Name = A:n;
+}
+class AB&lt;string AB:n = ?, int AB:a = ?, A AB:x = ?&gt; {	// A B
+  string Name = AB:n;
+  int A = AB:a;
+  bit Bit = 1;
+  bits&lt;10&gt; Bits = { ?, ?, ?, ?, ?, ?, ?, !cast&lt;bits&lt;3&gt;&gt;(AB:a){2}, !cast&lt;bits&lt;3&gt;&gt;(AB:a){1}, !cast&lt;bits&lt;3&gt;&gt;(AB:a){0} };
+  list&lt;int&gt; List = [AB:a, AB:a];
+  A ClassA = AB:x;
+  string X = !strconcat(Name, Name);
+}
+class ABC {	// A
+  string Name = "bcd";
+}
+class B&lt;int B:a = ?&gt; {
+  int A = B:a;
+  bit Bit = ?;
+  bits&lt;10&gt; Bits = { ?, ?, ?, ?, ?, ?, ?, ?, ?, ? };
+  list&lt;int&gt; List = [B:a];
+  A ClassA = ?;
+}
+------------- Defs -----------------
+def a {	// A
+  string Name = "a";
+}
+def a_1 {	// A
+  string Name = "";
+}
+def a_2 {	// A
+  string Name = "";
+}
+def a_3 {	// A
+  string Name = "";
+}
+def aaa {
+  string x = "1";
+  int y = 3;
+  int z = 1;
+  int a = 0;
+}
+def ab0 {	// A B AB
+  string Name = "0";
+  int A = 2;
+  bit Bit = 1;
+  bits&lt;10&gt; Bits = { ?, ?, ?, ?, ?, 0, 1, 0, 1, 0 };
+  list&lt;int&gt; List = [2, 2];
+  A ClassA = a;
+  string X = "00";
+  int AA = 1;
+}
+def ab1 {	// A B AB
+  string Name = "ab12";
+  int A = 2;
+  bit Bit = 0;
+  bits&lt;10&gt; Bits = { ?, ?, ?, ?, ?, ?, ?, 0, 1, 0 };
+  list&lt;int&gt; List = [2, 2];
+  A ClassA = a;
+  string X = "ab12ab12";
+}
+def ab2 {	// A B AB
+  string Name = "ab12";
+  int A = 2;
+  bit Bit = 0;
+  bits&lt;10&gt; Bits = { ?, ?, ?, ?, ?, ?, ?, 0, 1, 0 };
+  list&lt;int&gt; List = [2, 2];
+  A ClassA = a;
+  string X = "ab12ab12";
+}
+def addri {
+  string type = "RI";
+}
+def addrr {
+  string type = "RR";
+}
+def subri {
+  string type = "RI";
+}
+def subrr {
+  string type = "RR";
+}
 </pre>
 </div>
 </div>
 </div>
 
-<div id="outline-container-org000000b" class="outline-3">
-<h3 id="org000000b"><span class="section-number-3">1.3</span> gen-dag-isel</h3>
+<div id="outline-container-ID-2a21c6af-c430-4b55-852e-f4082aaa38d8" class="outline-3">
+<h3 id="ID-2a21c6af-c430-4b55-852e-f4082aaa38d8"><span class="section-number-3">1.3</span> gen-dag-isel</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+和 isel 相关的 class 主要有:
+</p>
+
+<ol class="org-ol">
+<li>Instruction, 其中包含 Pattern, Predicates, Constraints, SchedRW, 在 Target.td
+中</li>
+
+<li>Pattern, 包含 PatternToMatch, Predicates, 在 TargetSelectionDAG.td 中</li>
+</ol>
+
+<p>
+以 FADD_S 为例:
+</p>
+
+<pre class="example" id="org000000b">
+// 通过 SchedRW 定义了 FADD_S Instruction 的 SchedReadWrite,
+// 这个相当于 gcc md 中的 (set-attr "type" ...).
+// 后续相应的 SchedMachineModel 会定义 WriteFALU32 在 machine (例如 sifive rocket)
+// 上的 Latency, ResourceCycles 和 ProcResourceKind
+// RISCVSchedRocket.td:
+// let Latency = 4 in {
+//     def : WriteRes&lt;WriteFALU32, [RocketUnitFPALU]&gt;;
+// }
+// 导致 Instruction 的 Latency 为 4
+let SchedRW = [WriteFALU32, ReadFALU32, ReadFALU32] in {
+    defm FADD_S : FPALU_rr_frm_m&lt;0b0000000, "fadd.s", FINX&gt;;
+    defm FSUB_S : FPALU_rr_frm_m&lt;0b0000100, "fsub.s", FINX&gt;;
+}
+
+// FINX 是一个 ext list, 展开后最终能看到 Instruction 会包含一个
+// hasExtF 的 predicate, 但并不包含 Pattern
+
+def : PatFprFprDynFrm&lt;any_fadd, FADD_S, FPR32&gt;;
+
+// PatFprFprDynFrm 展开为:
+// Pat&lt;(fadd FPR32:$rs1, FPR32:$rs2), (F_ADD_S $rs1, $rs2, 0b111)&gt;;
+// 后者再展开成一个 Pattern, 其中 (fadd FPR32:$rs1, FPR32:$rs2) 是 PatternToMatch
+// (F_ADD_S $rs1, $rs2, 0b111) 是 ResultInstrs, 没有额外的 Predicates
+</pre>
+
+<p>
+把 RISCV.td 完整整开后关于 FADD_S 的部分为:
+</p>
+
+<pre class="example" id="org000000c">
+$&gt; build/bin/llvm-tblgen -I llvm/lib/Target/RISCV -Ibuild/include \
+   -I/home/sunway/source/llvm-project/llvm/include -I llvm/lib/Target llvm/lib/Target/RISCV/RISCV.td
+
+def FADD_S {	// InstructionEncoding Instruction RVInst RVInstRFrm FPALU_rr_frm
+  ...
+  list&lt;Predicate&gt; Predicates = [HasStdExtF];
+  string AsmString = "fadd.s	$rd, $rs1, $rs2, $frm";
+  list&lt;dag&gt; Pattern = [];
+  int AddedComplexity = 0;
+  list&lt;SchedReadWrite&gt; SchedRW = [WriteFALU32, ReadFALU32, ReadFALU32];
+  RISCVVConstraint RVVConstraint = NoConstraint;
+  ...
+}
+
+def anonymous_5505 {	// Pattern Pat PatFprFprDynFrm
+  dag PatternToMatch = (any_fadd FPR32:$rs1, FPR32:$rs2);
+  list&lt;dag&gt; ResultInstrs = [(FADD_S ?:$rs1, ?:$rs2, { 1, 1, 1 })];
+  list&lt;Predicate&gt; Predicates = [HasStdExtF];
+  int AddedComplexity = 0;
+}
+
+def anonymous_45523 {	// ProcWriteResources WriteRes
+  list&lt;ProcResourceKind&gt; ProcResources = [RocketUnitFPALU];
+  list&lt;int&gt; ResourceCycles = [];
+  int Latency = 4;
+  int NumMicroOps = 1;
+  bit BeginGroup = 0;
+  bit EndGroup = 0;
+  bit Unsupported = 0;
+  bit SingleIssue = 0;
+  bit RetireOOO = 0;
+  SchedMachineModel SchedModel = RocketModel;
+  SchedWrite WriteType = WriteFALU32;
+}
+
+def anonymous_45659 {	// ProcWriteResources WriteRes
+  list&lt;ProcResourceKind&gt; ProcResources = [SiFive7PipeB];
+  list&lt;int&gt; ResourceCycles = [];
+  int Latency = 5;
+  int NumMicroOps = 1;
+  bit BeginGroup = 0;
+  bit EndGroup = 0;
+  bit Unsupported = 0;
+  bit SingleIssue = 0;
+  bit RetireOOO = 0;
+  SchedMachineModel SchedModel = SiFive7Model;
+  SchedWrite WriteType = WriteFALU32;
+}
+</pre>
+</div>
 </div>
 
 <div id="outline-container-org000000f" class="outline-3">
 <h3 id="org000000f"><span class="section-number-3">1.4</span> gen-instr-info</h3>
-<div class="outline-text-3" id="text-1-4">
-<pre class="example" id="org000000e">
-def ADDW  : ALUW_rr&lt;0b0000000, 0b000, "addw", /*Commutable*/1&gt;,
-            Sched&lt;[WriteIALU32, ReadIALU32, ReadIALU32]&gt;;
-
-class ALUW_rr&lt;bits&lt;7&gt; funct7, bits&lt;3&gt; funct3, string opcodestr,
-              bit Commutable = 0&gt;
-    : RVInstR&lt;funct7, funct3, OPC_OP_32, (outs GPR:$rd),
-              (ins GPR:$rs1, GPR:$rs2), opcodestr, "$rd, $rs1, $rs2"&gt; {
-    ...                        
-}
-
-class RVInstR&lt;bits&lt;7&gt; funct7, bits&lt;3&gt; funct3, RISCVOpcode opcode, dag outs,
-              dag ins, string opcodestr, string argstr&gt;
-    : RVInst&lt;outs, ins, opcodestr, argstr, [], InstFormatR&gt; {
-    ...
-}
-
-class RVInst&lt;dag outs, dag ins, string opcodestr, string argstr,
-             list&lt;dag&gt; pattern, InstFormat format&gt;
-    : Instruction {
-    ...
-
-}
-
-class Instruction : InstructionEncoding {
-      ...
-}
-
-class InstructionEncoding {
-      ...
-}
-</pre>
 </div>
 </div>
-</div>
+
 
 
 <div id="outline-container-org0000015" class="outline-2 references">
@@ -251,7 +443,7 @@ class InstructionEncoding {
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-05-11 Wed 14:53<br />
-Last updated: 2022-05-11 Wed 19:54</p>
+Last updated: 2022-05-12 Thu 15:14</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
