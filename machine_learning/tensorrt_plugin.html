@@ -1,0 +1,408 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>TensorRT Plugin</title>
+
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">TensorRT Plugin</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org0000009">1. TensorRT Plugin</a>
+<ul>
+<li><a href="#org0000000">1.1. patch tensorrt</a></li>
+<li><a href="#org0000003">1.2. plugin creator</a></li>
+<li><a href="#org0000006">1.3. plugin</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000009" class="outline-2">
+<h2 id="org0000009"><span class="section-number-2">1</span> TensorRT Plugin</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="https://github.com/sunwayforever/code/tree/master/hello_world/hello_tensorrt">https://github.com/sunwayforever/code/tree/master/hello_world/hello_tensorrt</a>
+</p>
+
+<p>
+通过 tensorrt caffe plugin 实现自定义算子 (以 convolution 为例)
+</p>
+</div>
+
+<div id="outline-container-org0000000" class="outline-3">
+<h3 id="org0000000"><span class="section-number-3">1.1</span> patch tensorrt</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+需要修改 tensorrt 的 caffeParser.cpp, 让它把 convolution 算子交给 plugin 去处理
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-keyword">const</span> <span class="org-type">IBlobNameToTensor</span>* <span class="org-constant">CaffeParser</span>::<span class="org-variable-name">parse</span>(INetworkDefinition&amp; network,...
+  ...                                            
+  <span class="org-keyword">else</span> <span class="org-keyword">if</span> (layerMsg.type() == <span class="org-string">"Convolution"</span>)
+  {
+      pluginName = <span class="org-string">"CONVOLUTION"</span>;
+      f = parseConvolutionParam(layerMsg, weights, *mBlobNameToTensor);
+  }                                            
+  ...
+</pre>
+</div>
+
+<p>
+其中 parseConvolutionParam 需要负责把 convolution 的参数 (kernel, stride,
+padding) 和 weights 封装成 std::vector&lt;nvinfer1::PluginField&gt;, 交给 plugin 的构造函数
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-constant">std</span>::<span class="org-type">vector</span>&lt;<span class="org-constant">nvinfer1</span>::PluginField&gt; <span class="org-constant">CaffeParser</span>::<span class="org-function-name">parseConvolutionParam</span>(
+    <span class="org-keyword">const</span> <span class="org-constant">trtcaffe</span>::<span class="org-type">LayerParameter</span>&amp; <span class="org-variable-name">msg</span>, <span class="org-type">CaffeWeightFactory</span>&amp; <span class="org-variable-name">weightFactory</span>,
+    <span class="org-type">BlobNameToTensor</span>&amp; <span class="org-variable-name">tensors</span>) {
+    <span class="org-constant">std</span>::<span class="org-type">vector</span>&lt;<span class="org-constant">nvinfer1</span>::PluginField&gt; <span class="org-variable-name">f</span>;
+    <span class="org-keyword">const</span> <span class="org-constant">trtcaffe</span>::<span class="org-type">ConvolutionParameter</span>&amp; <span class="org-variable-name">p</span> = msg.convolution_param();
+
+    <span class="org-type">int</span>* <span class="org-variable-name">num_output</span> = allocMemory&lt;<span class="org-type">int</span>&gt;();
+    *num_output = p.num_output();
+    f.emplace_back(<span class="org-string">"num_output"</span>, num_output, <span class="org-constant">PluginFieldType</span>::kINT32, 1);
+
+    <span class="org-type">int</span>* <span class="org-variable-name">kernel_h</span> = allocMemory&lt;<span class="org-type">int</span>&gt;();
+    <span class="org-type">int</span>* <span class="org-variable-name">kernel_w</span> = allocMemory&lt;<span class="org-type">int</span>&gt;();
+    *kernel_h = p.has_kernel_h() ? p.kernel_h() : p.kernel_size(0);
+    *kernel_w = p.has_kernel_w() ? p.kernel_w() : p.kernel_size(0);
+    f.emplace_back(<span class="org-string">"kernel_h"</span>, kernel_h, <span class="org-constant">PluginFieldType</span>::kINT32, 1);
+    f.emplace_back(<span class="org-string">"kernel_w"</span>, kernel_w, <span class="org-constant">PluginFieldType</span>::kINT32, 1);
+
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+    <span class="org-type">Weights</span> <span class="org-variable-name">kernelWeights</span> = weightFactory(msg.name(), <span class="org-constant">WeightType</span>::kGENERIC);
+    <span class="org-type">Weights</span>* <span class="org-variable-name">kernel</span> = allocMemory&lt;<span class="org-type">Weights</span>&gt;();
+    memcpy(kernel, &amp;kernelWeights, <span class="org-keyword">sizeof</span>(kernelWeights));
+    f.emplace_back(<span class="org-string">"kernel_weights"</span>, kernel, <span class="org-constant">PluginFieldType</span>::kUNKNOWN, 1);
+
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+    <span class="org-keyword">return</span> f;
+}
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000003" class="outline-3">
+<h3 id="org0000003"><span class="section-number-3">1.2</span> plugin creator</h3>
+<div class="outline-text-3" id="text-1-2">
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-keyword">class</span> <span class="org-type">ConvolutionPluginCreator</span> : <span class="org-keyword">public</span> <span class="org-type">IPluginCreator</span> {
+   <span class="org-keyword">public</span>:
+    <span class="org-keyword">const</span> <span class="org-type">char</span>* <span class="org-function-name">getPluginName</span>() <span class="org-keyword">const</span> <span class="org-keyword">noexcept</span> <span class="org-keyword">override</span> {
+        <span class="org-keyword">return</span> <span class="org-string">"CONVOLUTION"</span>;
+    }
+    <span class="org-keyword">const</span> <span class="org-type">char</span>* <span class="org-function-name">getPluginVersion</span>() <span class="org-keyword">const</span> <span class="org-keyword">noexcept</span> <span class="org-keyword">override</span> { <span class="org-keyword">return</span> <span class="org-string">"1"</span>; }
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+    <span class="org-type">IPluginV2</span>* <span class="org-function-name">createPlugin</span>(
+        <span class="org-keyword">const</span> <span class="org-type">char</span>* <span class="org-variable-name">name</span>, <span class="org-keyword">const</span> <span class="org-type">PluginFieldCollection</span>* <span class="org-variable-name">fc</span>) <span class="org-keyword">noexcept</span> <span class="org-keyword">override</span> {
+        <span class="org-keyword">auto</span>* <span class="org-variable-name">plugin</span> = <span class="org-keyword">new</span> <span class="org-type">ConvolutionPlugin</span>(*fc);
+        mFieldCollection = *fc;
+        mPluginName = name;
+        <span class="org-keyword">return</span> plugin;
+    }
+    <span class="org-type">IPluginV2</span>* <span class="org-function-name">deserializePlugin</span>(
+        <span class="org-keyword">const</span> <span class="org-type">char</span>* <span class="org-variable-name">name</span>, <span class="org-keyword">const</span> <span class="org-type">void</span>* <span class="org-variable-name">serialData</span>,
+        <span class="org-type">size_t</span> <span class="org-variable-name">serialLength</span>) <span class="org-keyword">noexcept</span> <span class="org-keyword">override</span> {
+        <span class="org-keyword">auto</span>* <span class="org-variable-name">plugin</span> = <span class="org-keyword">new</span> <span class="org-type">ConvolutionPlugin</span>(serialData, serialLength);
+        mPluginName = name;
+        <span class="org-keyword">return</span> plugin;
+    }
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+
+};
+
+REGISTER_TENSORRT_PLUGIN(ConvolutionPluginCreator);
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000006" class="outline-3">
+<h3 id="org0000006"><span class="section-number-3">1.3</span> plugin</h3>
+<div class="outline-text-3" id="text-1-3">
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-keyword">class</span> <span class="org-type">ConvolutionPlugin</span> : <span class="org-keyword">public</span> <span class="org-type">IPluginV2IOExt</span> {
+   <span class="org-keyword">public</span>:
+    <span class="org-function-name">ConvolutionPlugin</span>(<span class="org-keyword">const</span> <span class="org-type">PluginFieldCollection</span> <span class="org-variable-name">fc</span>) {
+        <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; fc.nbFields; i++) {
+            <span class="org-keyword">auto</span> <span class="org-variable-name">field</span> = fc.fields[i];
+            <span class="org-keyword">if</span> (<span class="org-constant">std</span>::string(field.name) == <span class="org-string">"num_output"</span>) {
+                <span class="org-keyword">this</span>-&gt;mOutputChannel = *((<span class="org-type">int</span>*)field.data);
+            }
+            <span class="org-keyword">if</span> (<span class="org-constant">std</span>::string(field.name) == <span class="org-string">"kernel_weights"</span>) {
+                <span class="org-keyword">this</span>-&gt;mKernelWeights = *(<span class="org-type">Weights</span>*)field.data;
+            }
+            <span class="org-keyword">if</span> (<span class="org-constant">std</span>::string(field.name) == <span class="org-string">"bias_weights"</span>) {
+                <span class="org-keyword">this</span>-&gt;mBiasWeights = *(<span class="org-type">Weights</span>*)field.data;
+            }
+            <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+        }
+    }
+
+    <span class="org-function-name">ConvolutionPlugin</span>(<span class="org-keyword">const</span> <span class="org-type">void</span>* <span class="org-variable-name">data</span>, <span class="org-type">size_t</span> <span class="org-variable-name">length</span>) {
+        mInputChannel = ((<span class="org-type">int</span>*)data)[0];
+        mOutputChannel = ((<span class="org-type">int</span>*)data)[1];
+        mH = ((<span class="org-type">int</span>*)data)[2];
+        mW = ((<span class="org-type">int</span>*)data)[3];
+        <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+        memcpy(kernel, ((<span class="org-type">int</span>*)data) + 15, kc * 4);
+        memcpy(bias, ((<span class="org-type">int</span>*)data) + 15 + kc, bc * 4);
+        mKernelWeights = Weights{
+            .type = <span class="org-constant">DataType</span>::kFLOAT,
+            .values = kernel,
+            .count = kc,
+        };
+        mBiasWeights = Weights{
+            .type = <span class="org-constant">DataType</span>::kFLOAT,
+            .values = bias,
+            .count = bc,
+        };
+    }
+
+   <span class="org-keyword">public</span>:
+    <span class="org-type">int</span> <span class="org-function-name">getNbOutputs</span>() <span class="org-keyword">const</span> <span class="org-keyword">noexcept</span> <span class="org-keyword">override</span> { <span class="org-keyword">return</span> 1; }
+
+    <span class="org-type">Dims</span> <span class="org-function-name">getOutputDimensions</span>(
+        <span class="org-type">int</span> <span class="org-variable-name">index</span>, <span class="org-keyword">const</span> <span class="org-type">Dims</span>* <span class="org-variable-name">inputs</span>, <span class="org-type">int</span> <span class="org-variable-name">nbInputDims</span>) <span class="org-keyword">noexcept</span> <span class="org-keyword">override</span> {
+        <span class="org-type">int</span> <span class="org-variable-name">channel</span> = inputs-&gt;d[0];
+        <span class="org-type">int</span> <span class="org-variable-name">h</span> = inputs-&gt;d[1];
+        <span class="org-type">int</span> <span class="org-variable-name">w</span> = inputs-&gt;d[2];
+
+        <span class="org-type">Dims3</span> <span class="org-variable-name">outputDims</span>;
+        outputDims.nbDims = 3;
+        outputDims.d[0] = mOutputChannel;
+        <span class="org-comment-delimiter">// </span><span class="org-comment">NOTE: `floor` for convolution</span>
+        outputDims.d[1] = floor(h + 2 * mPadH - mKernelH, mStrideH) + 1;
+        outputDims.d[2] = floor(w + 2 * mPadW - mKernelW, mStrideW) + 1;
+
+        <span class="org-keyword">return</span> outputDims;
+    }
+
+    <span class="org-type">int</span> <span class="org-function-name">enqueue</span>(
+        <span class="org-type">int</span> <span class="org-variable-name">batchSize</span>, <span class="org-keyword">const</span> <span class="org-type">void</span>* <span class="org-keyword">const</span>* <span class="org-variable-name">inputs</span>, <span class="org-type">void</span>* <span class="org-keyword">const</span>* <span class="org-variable-name">outputs</span>,
+        <span class="org-type">void</span>* <span class="org-variable-name">workspace</span>, <span class="org-type">cudaStream_t</span> <span class="org-variable-name">stream</span>) <span class="org-keyword">noexcept</span> <span class="org-keyword">override</span> {
+        <span class="org-keyword">if</span> (mType == (<span class="org-type">int</span>)<span class="org-constant">DataType</span>::kFLOAT) {
+            <span class="org-type">float</span>* <span class="org-variable-name">dst</span> = <span class="org-keyword">reinterpret_cast</span>&lt;<span class="org-type">float</span>*&gt;(outputs[0]);
+            <span class="org-keyword">const</span> <span class="org-type">float</span>* <span class="org-variable-name">src</span> = <span class="org-keyword">reinterpret_cast</span>&lt;<span class="org-keyword">const</span> <span class="org-type">float</span>*&gt;(inputs[0]);
+            Convolution(
+                dst, src, mInputChannel, mOutputChannel, mH, mW, mKernelH,
+                mKernelW, mStrideH, mStrideW, mPadH, mPadW,
+                (<span class="org-type">float</span>*)mKernelWeights.values, (<span class="org-type">float</span>*)mBiasWeights.values,
+                stream);
+        } <span class="org-keyword">else</span> {
+            <span class="org-type">int8_t</span>* <span class="org-variable-name">dst</span> = <span class="org-keyword">reinterpret_cast</span>&lt;<span class="org-type">int8_t</span>*&gt;(outputs[0]);
+            <span class="org-keyword">const</span> <span class="org-type">int8_t</span>* <span class="org-variable-name">src</span> = <span class="org-keyword">reinterpret_cast</span>&lt;<span class="org-keyword">const</span> <span class="org-type">int8_t</span>*&gt;(inputs[0]);
+            ConvolutionInt8(
+                dst, src, mInputScale, mOutputScale, mInputChannel,
+                mOutputChannel, mH, mW, mKernelH, mKernelW, mStrideH, mStrideW,
+                mPadH, mPadW, (<span class="org-type">float</span>*)mKernelWeights.values,
+                (<span class="org-type">float</span>*)mBiasWeights.values, stream);
+        }
+
+        <span class="org-keyword">return</span> 0;
+    }
+
+    <span class="org-type">size_t</span> <span class="org-function-name">getSerializationSize</span>() <span class="org-keyword">const</span> <span class="org-keyword">noexcept</span> <span class="org-keyword">override</span> {
+        <span class="org-keyword">return</span> (12 + 3 + mKernelWeights.count + mBiasWeights.count) * 4;
+    }
+
+    <span class="org-type">void</span> <span class="org-function-name">serialize</span>(<span class="org-type">void</span>* <span class="org-variable-name">buffer</span>) <span class="org-keyword">const</span> <span class="org-keyword">noexcept</span> <span class="org-keyword">override</span> {
+        ((<span class="org-type">int</span>*)buffer)[0] = mInputChannel;
+        ((<span class="org-type">int</span>*)buffer)[1] = mOutputChannel;
+        ((<span class="org-type">int</span>*)buffer)[2] = mH;
+        ((<span class="org-type">int</span>*)buffer)[3] = mW;
+        <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+        memcpy(
+            ((<span class="org-type">int</span>*)buffer) + 15, mKernelWeights.values,
+            mKernelWeights.count * 4);
+        memcpy(
+            ((<span class="org-type">int</span>*)buffer) + 15 + mKernelWeights.count, mBiasWeights.values,
+            mBiasWeights.count * 4);
+    }
+
+    <span class="org-type">void</span> <span class="org-function-name">configurePlugin</span>(
+        <span class="org-keyword">const</span> <span class="org-type">PluginTensorDesc</span>* <span class="org-variable-name">in</span>, <span class="org-type">int</span> <span class="org-variable-name">nbInput</span>, <span class="org-keyword">const</span> <span class="org-type">PluginTensorDesc</span>* <span class="org-variable-name">out</span>,
+        <span class="org-type">int</span> <span class="org-variable-name">nbOutput</span>) <span class="org-keyword">noexcept</span> <span class="org-keyword">override</span> {
+        mType = (<span class="org-type">int</span>)in[0].type;
+        mInputScale = in[0].scale;
+        mOutputScale = out[0].scale;
+        <span class="org-keyword">auto</span> <span class="org-variable-name">dims</span> = in[0].dims;
+        mInputChannel = dims.d[0];
+        mH = dims.d[1];
+        mW = dims.d[2];
+    }
+
+    <span class="org-type">bool</span> <span class="org-function-name">supportsFormatCombination</span>(
+        <span class="org-type">int</span> <span class="org-variable-name">pos</span>, <span class="org-keyword">const</span> <span class="org-type">PluginTensorDesc</span>* <span class="org-variable-name">inOut</span>, <span class="org-type">int</span> <span class="org-variable-name">nbInputs</span>,
+        <span class="org-type">int</span> <span class="org-variable-name">nbOutputs</span>) <span class="org-keyword">const</span> <span class="org-keyword">noexcept</span> <span class="org-keyword">override</span> {
+        <span class="org-keyword">return</span> inOut[pos].format == <span class="org-constant">TensorFormat</span>::kLINEAR &amp;&amp;
+               (inOut[pos].type == <span class="org-constant">DataType</span>::kFLOAT ||
+                inOut[pos].type == <span class="org-constant">DataType</span>::kINT8) &amp;&amp;
+               inOut[pos].type == inOut[0].type;
+    }
+    <span class="org-type">DataType</span> <span class="org-function-name">getOutputDataType</span>(
+        <span class="org-type">int</span> <span class="org-variable-name">index</span>, <span class="org-keyword">const</span> <span class="org-type">DataType</span>* <span class="org-variable-name">inputTypes</span>,
+        <span class="org-type">int</span> <span class="org-variable-name">nbInputs</span>) <span class="org-keyword">const</span> <span class="org-keyword">noexcept</span> <span class="org-keyword">override</span> {
+        (<span class="org-type">void</span>)index;
+        <span class="org-keyword">return</span> inputTypes[0];
+    }
+
+    <span class="org-keyword">const</span> <span class="org-type">char</span>* <span class="org-function-name">getPluginType</span>() <span class="org-keyword">const</span> <span class="org-keyword">noexcept</span> <span class="org-keyword">override</span> {
+        <span class="org-keyword">return</span> <span class="org-string">"CONVOLUTION"</span>;
+    }
+    <span class="org-keyword">const</span> <span class="org-type">char</span>* <span class="org-function-name">getPluginVersion</span>() <span class="org-keyword">const</span> <span class="org-keyword">noexcept</span> <span class="org-keyword">override</span> { <span class="org-keyword">return</span> <span class="org-string">"1"</span>; }
+
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+
+   <span class="org-keyword">private</span>:
+    <span class="org-type">int</span> <span class="org-variable-name">mOutputChannel</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">mInputChannel</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">mH</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">mW</span>;
+    <span class="org-type">Weights</span> <span class="org-variable-name">mKernelWeights</span>;
+    <span class="org-type">Weights</span> <span class="org-variable-name">mBiasWeights</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">mKernelH</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">mKernelW</span>;
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+};
+</pre>
+</div>
+
+<p>
+plugin 中需要定义的主要函数及其被调用的顺序::
+</p>
+
+<ol class="org-ol">
+<li><p>
+ConvolutionPlugin(const PluginFieldCollection fc)
+</p>
+
+<p>
+通过 tensorrt 传过来的参数来初始化 plugin
+</p></li>
+
+<li><p>
+getOutputDimensions
+</p>
+
+<p>
+根据 input dim 计算 output dim
+</p></li>
+
+<li><p>
+supportsFormatCombination
+</p>
+
+<p>
+plugin 需要通过这个函数告诉 tensorrt 它支持的 input/ouput 的 format (例如NCHW
+还是 NHWC) 和 data type (fp32, fp16, int32, int8, &#x2026;)
+</p>
+
+<p>
+这个函数是 plugin 中非常重要的函数, 因为 tensorrt 支持不同的 format 和 data
+type, 若 supportsFormatCombination 没有指明, 有可能会导致 tenssort 传递给
+plugin 不支持的 format 和 data type.
+</p>
+
+<p>
+例如, 当实现 softmax plugin 时, 虽然 softmax 算子本身并不需要关注
+input/output format, 但还是需要通过 supportsFormatCombination 要求
+input/output 有相同的 format, 以免自己做 format 的转换.
+</p></li>
+
+<li><p>
+configurePlugin
+</p>
+
+<p>
+通过这个函数可以知道 tenssort 根据 supportsFormatCombination 和
+getOutputDimensions 确定的算子最终的 input/output 的 format, data type 和
+ouptut dim
+</p></li>
+
+<li><p>
+serialize
+</p>
+
+<p>
+把前面获得的所有信息通过 serialize 转换为 tensorrt 自己的格式, 以便后续不需要再执行前面的步骤
+</p></li>
+
+<li><p>
+ConvolutionPlugin(const void* data, size_t length)
+</p>
+
+<p>
+通过 serialize data 重新构造 plugin
+</p></li>
+
+<li><p>
+enqueue
+</p>
+
+<p>
+执行最终的 infer
+</p></li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway (sunwayforever@gmail.com)<br />
+Date: 2022-06-26 Sun 18:13<br />
+Last updated: 2022-06-26 Sun 19:09</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
+<br />
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

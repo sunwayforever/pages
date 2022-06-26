@@ -40,27 +40,30 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#org0000025">1. LLVM Backend</a>
+<li><a href="#org000003a">1. LLVM Backend</a>
 <ul>
 <li><a href="#org0000000">1.1. TableGen</a></li>
-<li><a href="#org0000021">1.2. SelectionDAG</a>
+<li><a href="#org0000031">1.2. instruction selection</a>
 <ul>
 <li><a href="#org0000007">1.2.1. llir</a></li>
-<li><a href="#org0000009">1.2.2. build SelectionDAG</a></li>
-<li><a href="#org000000c">1.2.3. legalize</a></li>
-<li><a href="#org0000019">1.2.4. isel</a></li>
-<li><a href="#org000001e">1.2.5. scheduling</a></li>
+<li><a href="#org0000009">1.2.2. SelectionDAGBuilder</a></li>
+<li><a href="#org0000015">1.2.3. SelectionDAGLegalize</a></li>
+<li><a href="#org0000018">1.2.4. DAGCombiner</a></li>
+<li><a href="#org0000021">1.2.5. DoInstructionSelection</a></li>
+<li><a href="#org000002a">1.2.6. InstrEmitter</a></li>
+<li><a href="#org000002e">1.2.7. MachineInstrBuilder</a></li>
 </ul>
 </li>
-<li><a href="#org0000022">1.3. codegen</a></li>
+<li><a href="#org0000034">1.3. register allocation</a></li>
+<li><a href="#org0000022">1.4. codegen</a></li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-org0000025" class="outline-2">
-<h2 id="org0000025"><span class="section-number-2">1</span> LLVM Backend</h2>
+<div id="outline-container-org000003a" class="outline-2">
+<h2 id="org000003a"><span class="section-number-2">1</span> LLVM Backend</h2>
 <div class="outline-text-2" id="text-1">
 <p>
 <a href="https://llvm.org/docs/WritingAnLLVMBackend.html">https://llvm.org/docs/WritingAnLLVMBackend.html</a>
@@ -98,7 +101,7 @@ llvm backend 的主要步骤是:
 <ol class="org-ol">
 <li>llir -&gt; SelectionDAG</li>
 
-<li>optimze &amp; legalize</li>
+<li>legalize &amp; optimize</li>
 
 <li>instruction selection</li>
 
@@ -113,14 +116,26 @@ llvm backend 的主要步骤是:
 
 <li>codegen</li>
 </ol>
+
+<p>
+整个 backend 工作的过程都是通过各种 pass 驱动的, 例如:
+</p>
+
+<ul class="org-ul">
+<li>instruction selection 对应 addISelPasses()</li>
+
+<li>register allocation 对应 addMachinePasses()</li>
+
+<li>codegen 对应 addAsmPrinter()</li>
+</ul>
 </div>
 
 <div id="outline-container-org0000000" class="outline-3">
 <h3 id="org0000000"><span class="section-number-3">1.1</span> <a href="llvm_tablegen.html#ID-5e67daa8-ff56-4a3c-ac3c-de840f1abe46">TableGen</a></h3>
 </div>
 
-<div id="outline-container-org0000021" class="outline-3">
-<h3 id="org0000021"><span class="section-number-3">1.2</span> SelectionDAG</h3>
+<div id="outline-container-org0000031" class="outline-3">
+<h3 id="org0000031"><span class="section-number-3">1.2</span> instruction selection</h3>
 <div class="outline-text-3" id="text-1-2">
 <p>
 <a href="https://eli.thegreenplace.net/2013/02/25/a-deeper-look-into-the-llvm-code-generator-part-1">https://eli.thegreenplace.net/2013/02/25/a-deeper-look-into-the-llvm-code-generator-part-1</a>
@@ -151,14 +166,9 @@ entry:
 }
 ...
 </pre>
-</div>
-</div>
 
-<div id="outline-container-org0000009" class="outline-4">
-<h4 id="org0000009"><span class="section-number-4">1.2.2</span> build SelectionDAG</h4>
-<div class="outline-text-4" id="text-1-2-2">
 <p>
-llc 接受几个参数, 可以显示不同阶段的 dag:
+llc 接受几个参数, 可以显示 SelectionDAG 不同阶段的 dag:
 </p>
 
 <ul class="org-ul">
@@ -170,6 +180,15 @@ llc 接受几个参数, 可以显示不同阶段的 dag:
 
 <li>`-view-sched-dags`, 生成 instruct scheduling 之前的 MachineDAG</li>
 </ul>
+</div>
+</div>
+
+<div id="outline-container-org0000009" class="outline-4">
+<h4 id="org0000009"><span class="section-number-4">1.2.2</span> SelectionDAGBuilder</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<p>
+SelectionDAGBuilder 用来生成最初的 SDAG (SelectionDAG), 这个过程是 target 无关的.
+</p>
 
 <pre class="example" id="org0000008">
 $&gt; riscv-llc test.bc -view-dag-combine1-dags
@@ -181,26 +200,121 @@ $&gt; dot -Tpng tmp/dag.MUL-cb5dd4.dot -o a.png
 <p><img src="../extra/llvm_selection_dag.png" alt="llvm_selection_dag.png" />
 </p>
 </div>
+
+<p>
+其中 DAG 中 node 的类型例如 fadd 定义在 ISDOpcodes.h, 和 gcc <a href="gcc_backend.html#ID-cc581233-c9a4-47c9-b392-64e03af4b454">optab</a> 有些类似
+</p>
 </div>
 </div>
 
-<div id="outline-container-org000000c" class="outline-4">
-<h4 id="org000000c"><span class="section-number-4">1.2.3</span> legalize</h4>
+<div id="outline-container-org0000015" class="outline-4">
+<h4 id="org0000015"><span class="section-number-4">1.2.3</span> SelectionDAGLegalize</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<p>
+如果 target 不支持 DAG 的某个 node, 需要在 legalize 时转换成和 target 支持的
+node, 或者生成对 libcall 的调用 (类似于 gcc <a href="gcc_backend.html#ID-c1ff5b55-a6cd-41c5-aab9-248f52262030">optab_libfunc</a>), 这个过程是 target 相关的.
+</p>
+
+<p>
+legalize 有三种方式:
+</p>
+
+<ol class="org-ol">
+<li>expand</li>
+
+<li>promotion</li>
+
+<li>custom</li>
+</ol>
 </div>
 
-<div id="outline-container-org0000019" class="outline-4">
-<h4 id="org0000019"><span class="section-number-4">1.2.4</span> isel</h4>
+<div id="outline-container-org000000c" class="outline-5">
+<h5 id="org000000c"><span class="section-number-5">1.2.3.1</span> expand</h5>
+<div class="outline-text-5" id="text-1-2-3-1">
+<p>
+假设 target 不支持 SUB, 则可以通过 expand 把 SUB(A,B) 替换成 ADD(A,-B)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">bool</span> <span class="org-function-name">SelectionDAGLegalize</span>::ExpandNode(<span class="org-type">SDNode</span> *<span class="org-variable-name">Node</span>) {
+    <span class="org-keyword">switch</span> (Node-&gt;getOpcode()) {
+        <span class="org-keyword">case</span> ISD::SUB: {
+            <span class="org-type">EVT</span> <span class="org-variable-name">VT</span> = Node-&gt;getValueType(0);
+            assert(
+                TLI.isOperationLegalOrCustom(ISD::ADD, VT) &amp;&amp;
+                TLI.isOperationLegalOrCustom(ISD::XOR, VT) &amp;&amp;
+                <span class="org-string">"Don't know how to expand this subtraction!"</span>);
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">-A = (~A) + 1</span><span class="org-comment-delimiter"> */</span>
+            Tmp1 = DAG.getNOT(dl, Node-&gt;getOperand(1), VT);
+            Tmp1 =
+                DAG.getNode(ISD::ADD, dl, VT, Tmp1, DAG.getConstant(1, dl, VT));
+            Results.push_back(
+                DAG.getNode(ISD::ADD, dl, VT, Node-&gt;getOperand(0), Tmp1));
+            <span class="org-keyword">break</span>;
+        }
+    }
+}
+</pre>
+</div>
+
+<p>
+TBD
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000000f" class="outline-5">
+<h5 id="org000000f"><span class="section-number-5">1.2.3.2</span> promotion</h5>
+<div class="outline-text-5" id="text-1-2-3-2">
+<p>
+TBD
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000012" class="outline-5">
+<h5 id="org0000012"><span class="section-number-5">1.2.3.3</span> custom</h5>
+<div class="outline-text-5" id="text-1-2-3-3">
+<p>
+TBD
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000018" class="outline-4">
+<h4 id="org0000018"><span class="section-number-4">1.2.4</span> DAGCombiner</h4>
 <div class="outline-text-4" id="text-1-2-4">
 <p>
-把 SelectionDAG 看做 gcc <a href="gcc_backend.html#ID-a354364f-e048-4d6f-b780-0271f16dfd6a">rtl</a>, 则 isel 和 gcc 的 recog 过程非常类似. isel 的作用是根据 target description (td) 中定义的 pattern 和 predicate 去匹配对应的
-target instruction
+DAGCombiner 是在 SDAG 上做的 optimization, 这个过程是 target 相关的: 它会执行
+target 定义的 PerformDAGCombine, 例如 RISCVTargetLowering::PerformDAGCombine.
+</p>
+
+<p>
+例如, 通过 combineSelectAndUse 把 `(sub x, (select cond, 0, c))` 替换为 `(select
+cond, x, (sub x, c))`
+</p>
+
+<p>
+TBD
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000021" class="outline-4">
+<h4 id="org0000021"><span class="section-number-4">1.2.5</span> DoInstructionSelection</h4>
+<div class="outline-text-4" id="text-1-2-5">
+<p>
+把 SelectionDAG 看做 gcc <a href="gcc_backend.html#ID-a354364f-e048-4d6f-b780-0271f16dfd6a">rtl</a>, 则 isel 和 gcc 的 recog 过程非常类似.
+DoInstructionSelection 的作用是根据 target description (td) 中定义的 pattern 和
+predicate 去匹配对应的target instruction
 </p>
 
 <p>
 例如 RSICVInstInfoF.td 中定义的关于 FADD_S 的 pattern:
 </p>
 
-<pre class="example" id="org000000f">
+<pre class="example" id="org000001b">
 def : PatFprFprDynFrm&lt;any_fadd, FADD_S, FPR32&gt;;
 </pre>
 
@@ -221,7 +335,7 @@ def : PatFprFprDynFrm&lt;any_fadd, FADD_S, FPR32&gt;;
 </p>
 
 
-<div id="org0000010" class="figure">
+<div id="org000001c" class="figure">
 <p><img src="../extra/llvm_inst_dag.png" alt="llvm_inst_dag.png" />
 </p>
 </div>
@@ -230,7 +344,7 @@ def : PatFprFprDynFrm&lt;any_fadd, FADD_S, FPR32&gt;;
 通过 `llc test.bc -debug` 生成 isel debug 信息:
 </p>
 
-<pre class="example" id="org0000011">
+<pre class="example" id="org000001d">
 ISEL: Starting selection on root node: t5: f32 = fadd t2, t4
 ISEL: Starting pattern match
   Initial Opcode index to 1373928
@@ -265,7 +379,7 @@ debug 中的 opcode index 是 RISCVGenDAGISel.inc 中 MatcherTable 中的偏移�
 RISCVGenDAGISel.inc:
 </p>
 
-<pre class="example" id="org0000012">
+<pre class="example" id="org000001e">
 /*1373923*/ /*SwitchOpcode*/ 1|128,11|128,1/*17793*/, TARGET_VAL(ISD::FADD),// -&gt;1391721
 /*1373928*/  OPC_Scope, 106, /*-&gt;1374036*/ // 9 children in Scope
 /*1373930*/   OPC_RecordChild0, // #0 = $rs1
@@ -290,7 +404,7 @@ OPC_Scope 相当于 switch&#x2026;case 中当前 case 的大小.
 inc 中的 `SwitchOpcode` 和 `MVT:F32` 的 case 是通过 td 中的 pat 生成的:
 </p>
 
-<pre class="example" id="org0000013">
+<pre class="example" id="org000001f">
 def : PatFprFprDynFrm&lt;any_fadd, FADD_S, FPR32&gt;;
 </pre>
 
@@ -298,7 +412,7 @@ def : PatFprFprDynFrm&lt;any_fadd, FADD_S, FPR32&gt;;
 `OPC_CheckPatternPredicate, 35` 和  是根据 FADD_S 要求的 predicate 生成的:
 </p>
 
-<pre class="example" id="org0000014">
+<pre class="example" id="org0000020">
 defm FADD_S : FPALU_rr_frm_m&lt;0b0000000, "fadd.s", FINX&gt;;
 </pre>
 
@@ -312,11 +426,15 @@ defm FADD_S : FPALU_rr_frm_m&lt;0b0000000, "fadd.s", FINX&gt;;
 </div>
 </div>
 
-<div id="outline-container-org000001e" class="outline-4">
-<h4 id="org000001e"><span class="section-number-4">1.2.5</span> scheduling</h4>
-<div class="outline-text-4" id="text-1-2-5">
+<div id="outline-container-org000002a" class="outline-4">
+<h4 id="org000002a"><span class="section-number-4">1.2.6</span> InstrEmitter</h4>
+<div class="outline-text-4" id="text-1-2-6">
 <p>
-isel 时会同时生成 scheduling 相关的信息 (TargetSchedule.td):
+InstrEmmiter 和 scheduling 有关.
+</p>
+
+<p>
+DoInstructionSelection 时会同时生成 scheduling 相关的信息 (TargetSchedule.td):
 </p>
 
 <ul class="org-ul">
@@ -331,7 +449,7 @@ isel 时会同时生成 scheduling 相关的信息 (TargetSchedule.td):
 例如:
 </p>
 
-<pre class="example" id="org0000018">
+<pre class="example" id="org0000024">
 defm FSQRT_S : FPUnaryOp_r_frm_m&lt;0b0101100, 0b00000, FFINX, "fsqrt.s"&gt;,
                Sched&lt;[WriteFSqrt32, ReadFSqrt32]&gt;;
 
@@ -349,7 +467,7 @@ SiFive7FDiv, 指令的 latency 为 27, SiFive7PipeB 需要一个 cycle, SiFive7F
 这个定义与 gcc sifive7.md 中的定义是一致的:
 </p>
 
-<pre class="example" id="org000001a">
+<pre class="example" id="org0000025">
 (define_insn_reservation "sifive_7_fdiv_s" 27
   (and (eq_attr "tune" "sifive_7")
        (eq_attr "type" "fdiv,fsqrt")
@@ -358,14 +476,14 @@ SiFive7FDiv, 指令的 latency 为 27, SiFive7PipeB 需要一个 cycle, SiFive7F
 </pre>
 </div>
 
-<div id="outline-container-org000001b" class="outline-5">
-<h5 id="org000001b"><span class="section-number-5">1.2.5.1</span> mtune</h5>
-<div class="outline-text-5" id="text-1-2-5-1">
+<div id="outline-container-org0000027" class="outline-5">
+<h5 id="org0000027"><span class="section-number-5">1.2.6.1</span> mtune</h5>
+<div class="outline-text-5" id="text-1-2-6-1">
 <p>
 clang 与 gcc 一样, 支持 mtune 参数, 例如 `clang -mtune=rocket`, 不同的 tune 参数对应不同的 SchedMachineModel, 例如 rocket 对应 RocketModel:
 </p>
 
-<pre class="example" id="org000001a">
+<pre class="example" id="org0000026">
 def RocketModel : SchedMachineModel {
   let MicroOpBufferSize = 0; // Rocket is in-order.
   let IssueWidth = 1;        // 1 micro-op is dispatched per cycle.
@@ -382,10 +500,53 @@ memory_cost? MispredictPenalty 对应 branch_cost?
 </div>
 </div>
 </div>
+
+<div id="outline-container-org000002e" class="outline-4">
+<h4 id="org000002e"><span class="section-number-4">1.2.7</span> MachineInstrBuilder</h4>
+<div class="outline-text-4" id="text-1-2-7">
+<p>
+MachineInstrBuilder 把 schedule 后的 DAG 转换为 MachineInstr
+</p>
+
+<p>
+通过 `llc test.bc -print-after-all` 能看到生成的 MachineInstr:
+</p>
+
+<pre class="example" id="org000002d">
+# *** IR Dump After Finalize ISel and expand pseudo-instructions (finalize-isel) ***:
+# Machine code for function foo: IsSSA, TracksLiveness
+Frame Objects:
+  fi#0: size=8, align=8, at location [SP]
+  fi#1: size=8, align=8, at location [SP]
+Function Live Ins: $x10 in %0, $x11 in %1
+
+bb.0.entry:
+  liveins: $x10, $x11
+  %1:gpr = COPY $x11
+  %0:gpr = COPY $x10
+  SD %0:gpr, %stack.0.x.addr, 0 :: (store (s64) into %ir.x.addr)
+  SD %1:gpr, %stack.1.y.addr, 0 :: (store (s64) into %ir.y.addr)
+  %2:gpr = LD %stack.1.y.addr, 0 :: (dereferenceable load (s64) from %ir.y.addr)
+  %3:gpr = LD %stack.0.x.addr, 0 :: (dereferenceable load (s64) from %ir.x.addr)
+  %4:gpr = nsw SUB killed %3:gpr, killed %2:gpr
+  SD killed %4:gpr, %stack.0.x.addr, 0 :: (store (s64) into %ir.x.addr)
+  PseudoRET
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000034" class="outline-3">
+<h3 id="org0000034"><span class="section-number-3">1.3</span> register allocation</h3>
 </div>
 
 <div id="outline-container-org0000022" class="outline-3">
-<h3 id="org0000022"><span class="section-number-3">1.3</span> codegen</h3>
+<h3 id="org0000022"><span class="section-number-3">1.4</span> codegen</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+RISCVAsmPrinter
+</p>
+</div>
 </div>
 </div>
 </div>
@@ -393,7 +554,7 @@ memory_cost? MispredictPenalty 对应 branch_cost?
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2022-05-11 Wed 13:44<br />
-Last updated: 2022-05-12 Thu 18:40</p>
+Last updated: 2022-05-13 Fri 18:02</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 

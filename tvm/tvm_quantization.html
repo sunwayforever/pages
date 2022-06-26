@@ -32,14 +32,524 @@
     /*]]>*///-->
 // @license-end
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
 <h1 class="title">TVM Quantization</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org000002c">1. WAIT TVM Quantization</a>
+<ul>
+<li><a href="#org0000013">1.1. relay.quantize</a></li>
+<li><a href="#org0000023">1.2. relay.qnn</a>
+<ul>
+<li><a href="#org0000020">1.2.1. QnnMulCanonicalize</a></li>
+</ul>
+</li>
+<li><a href="#org0000029">1.3. WAIT Quantization and BYOC</a>
+<ul>
+<li><a href="#org0000026">1.3.1. cmsisnn</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
 
-<div id="outline-container-org0000000" class="outline-2 references">
-<h2 id="org0000000">Backlinks</h2>
-<div class="outline-text-2" id="text-org0000000">
+<div id="outline-container-org000002c" class="outline-2">
+<h2 id="org000002c"><span class="section-number-2">1</span> WAIT TVM Quantization</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="file:///home/sunway/Gitbox/code/hello_world/hello_tvm/graph_runner/run_model.py">file:///home/sunway/Gitbox/code/hello_world/hello_tvm/graph_runner/run_model.py</a>
+</p>
+
+<p>
+TVM 对量化的支持分为两种:
+</p>
+
+<ol class="org-ol">
+<li>通过 relay.quantize 完成浮点模型的量化</li>
+<li>通过一种称为 qnn 的 `relay方言` (relay.qnn.xxx) 直接执行已经量化过的模型</li>
+</ol>
+</div>
+
+<div id="outline-container-org0000013" class="outline-3">
+<h3 id="org0000013"><span class="section-number-3">1.1</span> relay.quantize</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+<a href="https://tvm.apache.org/docs/tutorials/frontend/deploy_quantized.html">https://tvm.apache.org/docs/tutorials/frontend/deploy_quantized.html</a>
+</p>
+
+<p>
+quantize 分为三步：
+</p>
+
+<ol class="org-ol">
+<li>annotate</li>
+<li>calibrate</li>
+<li>realize</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-python"><span class="org-variable-name">calibrate_pass</span> = tvm.transform.module_pass(
+    calibrate(dataset), opt_level=1, name=<span class="org-string">"QuantizeCalibrate"</span>
+)
+<span class="org-variable-name">quant_passes</span> = [
+    partition(),
+    annotate(),
+    calibrate_pass,
+    tvm.relay.transform.InferType(),
+    realize(),
+]
+
+<span class="org-variable-name">quantize_seq</span> = tvm.transform.Sequential(quant_passes)
+<span class="org-keyword">with</span> tvm.transform.PassContext(
+    opt_level=3,
+    required_pass=[<span class="org-string">"QuantizeAnnotate"</span>, <span class="org-string">"QuantizeCalibrate"</span>, <span class="org-string">"QuantizeRealize"</span>],
+):
+    <span class="org-keyword">with</span> quantize_context():
+        <span class="org-variable-name">mod</span> = quantize_seq(mod)
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org000000a" class="outline-5">
+<h5 id="org000000a"><span class="section-number-5">1.1.0.1</span> calibrate</h5>
+<div class="outline-text-5" id="text-1-1-0-1">
+<div class="org-src-container">
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">calibrate</span>(dataset=<span class="org-constant">None</span>):
+    <span class="org-keyword">def</span> <span class="org-function-name">wrapped_func</span>(mod, _):
+        <span class="org-variable-name">cfg</span> = quantize.current_qconfig()
+
+        <span class="org-keyword">if</span> cfg.calibrate_mode == <span class="org-string">"kl_divergence"</span>:
+            <span class="org-variable-name">input_scale_func</span> = _kl_scale(mod, dataset)
+        <span class="org-keyword">elif</span> cfg.calibrate_mode == <span class="org-string">"global_scale"</span>:
+            <span class="org-variable-name">input_scale_func</span> = _global_scale
+        <span class="org-keyword">elif</span> cfg.calibrate_mode == <span class="org-string">"percentile"</span>:
+            <span class="org-variable-name">input_scale_func</span> = _percentile_scale(mod, dataset)
+
+        <span class="org-keyword">if</span> cfg.weight_scale == <span class="org-string">"max"</span>:
+            <span class="org-variable-name">weight_scale_func</span> = _max_scale
+        <span class="org-keyword">elif</span> cfg.weight_scale == <span class="org-string">"power2"</span>:
+            <span class="org-variable-name">weight_scale_func</span> = _power2_scale
+
+        <span class="org-keyword">return</span> _set_params(mod, input_scale_func, weight_scale_func)
+
+    <span class="org-keyword">return</span> wrapped_func
+
+
+_set_params:
+    <span class="org-comment-delimiter"># </span><span class="org-comment">nbit &#40664;&#35748;&#30340;&#23450;&#20041;&#22312; ~/source/tvm/python/tvm/relay/quantize/quantize.py, &#20363;&#22914;</span>
+    <span class="org-comment-delimiter">#      </span><span class="org-comment">"nbit_input": 8,</span>
+    <span class="org-comment-delimiter">#      </span><span class="org-comment">"nbit_weight": 8,</span>
+    <span class="org-comment-delimiter">#      </span><span class="org-comment">"nbit_activation": 32,</span>
+    <span class="org-variable-name">nbit</span> = cfg.get_nbit_by_kind(kind)
+    <span class="org-variable-name">valid_bit</span> = nbit - attrs.sign
+    <span class="org-keyword">if</span> kind == quantize.QAnnotateKind.WEIGHT:
+        <span class="org-variable-name">scale</span> = weight_scale_func(expr)
+    <span class="org-keyword">else</span>:
+        <span class="org-variable-name">scale</span> = input_scale_func(expr)
+
+    <span class="org-comment-delimiter"># </span><span class="org-comment">&#36825;&#37324;&#26174;&#31034; tvm &#30340;&#37327;&#21270;&#26159;&#23545;&#31216;&#37327;&#21270;, &#19978;&#38754;&#35745;&#31639;&#30340; scale &#22312;&#21407;&#29702;&#19978;&#24212;&#35813;&#31561;&#20110;</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">np.max(np.abs(orig_data))</span>
+
+    <span class="org-variable-name">valid_range</span> = 2 ** valid_bit
+    <span class="org-variable-name">const_params</span>[ndom_scale] = _make_const(scale / valid_range)
+    <span class="org-variable-name">const_params</span>[nclip_min] = _make_const(-(valid_range - 1))
+    <span class="org-variable-name">const_params</span>[nclip_max] = _make_const((valid_range - 1))
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000000" class="outline-6">
+<h6 id="org0000000"><span class="section-number-6">1.1.0.1.1</span> percentile</h6>
+<div class="outline-text-6" id="text-1-1-0-1-1">
+<div class="org-src-container">
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">_percentile_scale</span>(mod, dataset):
+    <span class="org-variable-name">cfg</span> = quantize.current_qconfig()
+    <span class="org-variable-name">chunk_by</span> = cfg.calibrate_chunk_by
+    <span class="org-variable-name">scales</span> = []
+    <span class="org-keyword">for</span> samples <span class="org-keyword">in</span> collect_stats(mod, dataset, chunk_by):
+        logging.info(<span class="org-string">"finding threshold with percentile for calibration..."</span>)
+        <span class="org-keyword">with</span> mp.Pool() <span class="org-keyword">as</span> pool:
+            <span class="org-variable-name">scales</span> += <span class="org-builtin">list</span>(pool.<span class="org-builtin">map</span>(_find_scale_by_percentile, samples))
+
+    <span class="org-keyword">def</span> <span class="org-function-name">func</span>(_):
+        <span class="org-comment-delimiter"># </span><span class="org-comment">func &#36820;&#22238;&#27599;&#19968;&#23618;&#30340; scale (&#23454;&#38469;&#19978;&#30456;&#24403;&#20110;&#27599;&#23618;&#30340;`&#26368;&#22823;&#20540;`, &#21518;&#32493;&#20250;&#36890;&#36807;</span>
+        <span class="org-comment-delimiter"># </span><span class="org-comment">scale/valid_range &#33719;&#24471;&#26368;&#32456;&#30340; scale)</span>
+        <span class="org-variable-name">scale</span> = scales[func.scale_idx]
+        <span class="org-variable-name">func.scale_idx</span> += 1
+        <span class="org-keyword">return</span> scale
+
+    <span class="org-variable-name">func.scale_idx</span> = 0
+
+    <span class="org-keyword">return</span> func
+
+
+<span class="org-comment-delimiter"># </span><span class="org-comment">&#20351;&#29992; calibrate_dataset &#33719;&#24471;&#27599;&#19968;&#23618;&#30340;&#36755;&#20986;</span>
+<span class="org-keyword">def</span> <span class="org-function-name">collect_stats</span>(mod, dataset, chunk_by=-1):
+    <span class="org-variable-name">runtime</span> = _get_profile_runtime(mod)
+    <span class="org-variable-name">num_outputs</span> = runtime.get_num_outputs()
+
+    <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(0, num_outputs, chunk_by):
+        <span class="org-variable-name">outputs</span> = [[] <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(<span class="org-builtin">min</span>(chunk_by, num_outputs - i))]
+        <span class="org-keyword">for</span> batch <span class="org-keyword">in</span> dataset:
+            runtime.set_input(**batch)
+            runtime.run()
+            <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(i, <span class="org-builtin">min</span>(i + chunk_by, num_outputs)):
+                outputs[j - i].append(runtime.get_output(j).numpy())
+        <span class="org-keyword">yield</span> [np.concatenate(output).reshape(-1) <span class="org-keyword">for</span> output <span class="org-keyword">in</span> outputs]
+
+
+<span class="org-comment-delimiter"># </span><span class="org-comment">&#36825;&#20010;&#20989;&#25968;&#30456;&#24403;&#20110;&#19968;&#20010; get_k_largest &#20989;&#25968;, &#20854;&#20013; k=percentile*(arr.size), &#29992;&#26469;&#36991;&#20813;</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">&#20010;&#21035;&#26497;&#22823;&#30340;&#20540;&#36896;&#25104;&#37327;&#21270;&#35823;&#24046;</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">file:~/Gitbox/code/leetcode/go/src/kth_largest_element_in_an_array/kth_largest_element_in_an_array.go</span>
+<span class="org-keyword">def</span> <span class="org-function-name">_find_scale_by_percentile</span>(arr, percentile=0.99999):
+    <span class="org-keyword">assert</span> <span class="org-builtin">isinstance</span>(arr, np.ndarray)
+    <span class="org-variable-name">x</span> = np.<span class="org-builtin">abs</span>(arr)
+    <span class="org-variable-name">max_k</span> = <span class="org-builtin">int</span>(x.size * percentile)
+    <span class="org-keyword">return</span> np.partition(x, max_k)[max_k]
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000004" class="outline-6">
+<h6 id="org0000004"><span class="section-number-6">1.1.0.1.2</span> kl_divergence</h6>
+<div class="outline-text-6" id="text-1-1-0-1-2">
+<p>
+KL divergence 的定义: \(KL(p,q)=\sum\big({p_i*log\frac{p_i}{q_i}}\big)\)
+</p>
+
+<p>
+percentile 是使用 get_k_largest 计算 saturation
+</p>
+
+<p>
+kl_divergence 则选择能够 minimize(kl_divergence) 的 saturation
+</p>
+
+<p>
+<a href="https://on-demand.gputechconf.com/gtc/2017/presentation/s7310-8-bit-inference-with-tensorrt.pdf">https://on-demand.gputechconf.com/gtc/2017/presentation/s7310-8-bit-inference-with-tensorrt.pdf</a>
+</p>
+
+<pre class="example" id="org0000003">
+Input: abs(FP32) histogram H with 2048 bins: bin[0], …, bin[2047]
+
+for i in range( 128 , 2048 ):
+    P = [:i] 
+    P[-1] += sum(bin[i:])
+
+    Q = split bin[:i] into 128 levels and expand back to `i` bins
+
+    divergence[ i ] = KL_divergence( P /= sum(P), Q /= sum(Q))
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-python"><span class="org-comment-delimiter">#</span><span class="org-comment">!/usr/bin/env python3</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">-*- coding: utf-8 -*-</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">2021-08-23 22:25</span>
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+
+
+<span class="org-keyword">def</span> <span class="org-function-name">kl_divergence</span>(p, q):
+    <span class="org-keyword">return</span> np.<span class="org-builtin">sum</span>(p * np.log(p / q))
+
+
+<span class="org-keyword">def</span> <span class="org-function-name">check</span>(P, target_bins):
+    <span class="org-variable-name">Q</span> = np.array([np.average(x) <span class="org-keyword">for</span> x <span class="org-keyword">in</span> np.split(P, target_bins)])
+    <span class="org-variable-name">Q</span> = np.repeat(Q, <span class="org-builtin">len</span>(P) // target_bins)
+
+    <span class="org-keyword">return</span> kl_divergence(P / np.<span class="org-builtin">sum</span>(P), Q / np.<span class="org-builtin">sum</span>(Q))
+
+
+<span class="org-keyword">if</span> <span class="org-builtin">__name__</span> == <span class="org-string">"__main__"</span>:
+    <span class="org-keyword">print</span>(check(np.array([1, 2, 3, 4, 5, 6, 7, 8]), 2))
+    <span class="org-keyword">print</span>(check(np.array([1, 3, 5, 7, 2, 4, 6, 8]), 2))
+    <span class="org-keyword">print</span>(check(np.array([2, 2, 2, 2, 6, 6, 6, 6]), 2))
+</pre>
+</div>
+
+<p>
+0.04033873632737679
+0.13645806664911772
+0.0
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000007" class="outline-6">
+<h6 id="org0000007"><span class="section-number-6">1.1.0.1.3</span> global_scale</h6>
+<div class="outline-text-6" id="text-1-1-0-1-3">
+<p>
+global_scale 实际上是假设每层的`最大值`都是相同的值, 例如 8 或 16, 所以它不需要
+calibrate_dataset
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">_global_scale</span>(sq_call):
+    <span class="org-variable-name">cfg</span> = quantize.current_qconfig()
+    <span class="org-keyword">return</span> cfg.global_scale
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000000d" class="outline-5">
+<h5 id="org000000d"><span class="section-number-5">1.1.0.2</span> annotate</h5>
+</div>
+
+<div id="outline-container-org0000010" class="outline-5">
+<h5 id="org0000010"><span class="section-number-5">1.1.0.3</span> realize</h5>
+</div>
+</div>
+
+<div id="outline-container-org0000023" class="outline-3">
+<h3 id="org0000023"><span class="section-number-3">1.2</span> relay.qnn</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+<a href="https://tvm.apache.org/docs/tutorials/frontend/deploy_prequantized.html">https://tvm.apache.org/docs/tutorials/frontend/deploy_prequantized.html</a>#
+</p>
+
+<p>
+对于已经量化过的模型, tvm 使用 relay.qnn 来支持.  relay.qnn 并不是全新定义的
+relay IR, 它是在原来的 relay 之前通过 tvm 的 Canonicalize 机制添加了一些转换
+</p>
+
+<p>
+例如, 一个 qnn.mul 会通过 QnnMulCanonicalize 函数转换成多个 relay.ir 的操作,用来把 frontend 的量化方式转换为 tvm 的量化方式. QnnMulCanonicalize 是通过
+relay::qnn::transform::Legalize 被执行的
+</p>
+</div>
+
+<div id="outline-container-org0000020" class="outline-4">
+<h4 id="org0000020"><span class="section-number-4">1.2.1</span> QnnMulCanonicalize</h4>
+<div class="outline-text-4" id="text-1-2-1">
+</div>
+<div id="outline-container-org0000016" class="outline-5">
+<h5 id="org0000016"><span class="section-number-5">1.2.1.1</span> Example</h5>
+<div class="outline-text-5" id="text-1-2-1-1">
+<p>
+<a href="file:///home/sunway/source/tvm/tests/python/relay/test_op_qnn_mul.py">file:~/source/tvm/tests/python/relay/test_op_qnn_mul.py</a>
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span class="org-comment-delimiter">#</span><span class="org-comment">!/usr/bin/env python3</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">-*- coding: utf-8 -*-</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">2021-09-22 16:20</span>
+
+<span class="org-keyword">import</span> tvm
+<span class="org-keyword">from</span> tvm <span class="org-keyword">import</span> te
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">from</span> tvm <span class="org-keyword">import</span> relay
+
+<span class="org-variable-name">x_data</span> = np.array((1, 153, 2, 178)).reshape((1, 4))
+<span class="org-variable-name">y_data</span> = np.array((204, 178, 1, 8)).reshape((1, 4))
+
+<span class="org-variable-name">x_scale</span> = <span class="org-variable-name">y_scale</span> = <span class="org-variable-name">z_scale</span> = 0.00784314
+<span class="org-variable-name">x_zero_point</span> = <span class="org-variable-name">y_zero_point</span> = <span class="org-variable-name">z_zero_point</span> = 127
+
+
+<span class="org-keyword">def</span> <span class="org-function-name">dequant</span>(data, scale, zp):
+    <span class="org-keyword">return</span> scale * (np.asarray(data) - zp)
+
+
+<span class="org-keyword">def</span> <span class="org-function-name">quant</span>(data, scale, zp):
+    <span class="org-variable-name">z</span> = np.around(data / scale + zp)
+    <span class="org-variable-name">q_min</span> = np.iinfo(np.uint8).<span class="org-builtin">min</span>
+    <span class="org-variable-name">q_max</span> = np.iinfo(np.uint8).<span class="org-builtin">max</span>
+    <span class="org-keyword">return</span> np.clip(z, q_min, q_max)
+
+
+<span class="org-keyword">def</span> <span class="org-function-name">mul_manually</span>():
+    <span class="org-keyword">return</span> quant(
+        dequant(x_data, x_scale, x_zero_point) * dequant(y_data, y_scale, y_zero_point),
+        z_scale,
+        z_zero_point,
+    )
+
+
+<span class="org-keyword">if</span> <span class="org-builtin">__name__</span> == <span class="org-string">"__main__"</span>:
+    <span class="org-variable-name">x</span> = relay.var(<span class="org-string">"x"</span>, shape=(1, 4), dtype=<span class="org-string">"uint8"</span>)
+    <span class="org-variable-name">y</span> = relay.var(<span class="org-string">"y"</span>, shape=(1, 4), dtype=<span class="org-string">"uint8"</span>)
+    <span class="org-variable-name">z</span> = relay.qnn.op.mul(
+        lhs=x,
+        rhs=y,
+        lhs_scale=relay.const(x_scale, <span class="org-string">"float32"</span>),
+        lhs_zero_point=relay.const(x_zero_point, <span class="org-string">"int32"</span>),
+        rhs_scale=relay.const(y_scale, <span class="org-string">"float32"</span>),
+        rhs_zero_point=relay.const(y_zero_point, <span class="org-string">"int32"</span>),
+        output_scale=relay.const(z_scale, <span class="org-string">"float32"</span>),
+        output_zero_point=relay.const(z_zero_point, <span class="org-string">"int32"</span>),
+    )
+
+    <span class="org-variable-name">func</span> = relay.Function([x, y], z)
+    <span class="org-variable-name">mod</span> = tvm.IRModule.from_expr(func)
+    <span class="org-keyword">print</span>(<span class="org-string">"----------before qnn transform----------"</span>)
+    <span class="org-keyword">print</span>(mod)
+    <span class="org-variable-name">mod</span> = relay.transform.InferType()(mod)
+    <span class="org-variable-name">mod</span> = relay.qnn.transform.CanonicalizeOps()(mod)
+    <span class="org-keyword">print</span>(<span class="org-string">"----------after qnn transform----------"</span>)
+    <span class="org-keyword">print</span>(mod)
+    <span class="org-variable-name">func</span> = mod[<span class="org-string">"main"</span>]
+
+    <span class="org-variable-name">intrp</span> = relay.create_executor(<span class="org-string">"graph"</span>, device=tvm.cpu(0), target=<span class="org-string">"llvm"</span>)
+    <span class="org-variable-name">op_res</span> = intrp.evaluate(func)(x_data, y_data)
+
+    <span class="org-keyword">print</span>(<span class="org-string">"----------"</span>)
+    <span class="org-keyword">print</span>(op_res.numpy())
+    <span class="org-keyword">print</span>(<span class="org-string">"----------"</span>)
+    <span class="org-variable-name">golden</span> = mul_manually()
+    <span class="org-keyword">print</span>(golden.astype(<span class="org-string">"uint8"</span>))
+</pre>
+</div>
+
+<p>
+-----&#x2013;&#x2014;before qnn transform-----&#x2013;&#x2014;
+def @main(%x: Tensor[(1, 4), uint8], %y: Tensor[(1, 4), uint8]) {
+  qnn.mul(%x, %y, 0.00784314f, 127, 0.00784314f, 127, 0.00784314f, 127)
+}
+</p>
+
+<p>
+-----&#x2013;&#x2014;after qnn transform-----&#x2013;&#x2014;
+def @main(%x: Tensor[(1, 4), uint8], %y: Tensor[(1, 4), uint8]) -&gt; Tensor[(1, 4), uint8] {
+  %0 = cast(%x, dtype="int32") <i>* ty=Tensor[(1, 4), int32] *</i>;
+  %1 = cast(%y, dtype="int32") <i>* ty=Tensor[(1, 4), int32] *</i>;
+  %2 = subtract(%0, 127 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 4), int32] *</i>;
+  %3 = subtract(%1, 127 <i>* ty=int32 *</i>) <i>* ty=Tensor[(1, 4), int32] *</i>;
+  %4 = multiply(%2, %3) <i>* ty=Tensor[(1, 4), int32] *</i>;
+  %5 = cast(%4, dtype="int32") <i>* ty=Tensor[(1, 4), int32] *</i>;
+  %6 = cast(127 <i>* ty=int32 *</i>, dtype="int32") <i>* ty=int32 *</i>;
+  %7 = fixed_point_multiply(%5, multiplier=1077952893, shift=-6) <i>* ty=Tensor[(1, 4), int32] *</i>;
+  %8 = add(%6, %7) <i>* ty=Tensor[(1, 4), int32] *</i>;
+  %9 = clip(%8, a_min=0f, a_max=255f) <i>* ty=Tensor[(1, 4), int32] *</i>;
+  cast(%9, dtype="uint8") <i>* ty=Tensor[(1, 4), uint8] *</i>
+}
+</p>
+
+<hr />
+<p>
+
+</p>
+<hr />
+<p>
+
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000019" class="outline-5">
+<h5 id="org0000019"><span class="section-number-5">1.2.1.2</span> How is `QnnMulCanonicalize` invoked</h5>
+<div class="outline-text-5" id="text-1-2-1-2">
+<div class="org-src-container">
+<pre class="src src-C++">QNN_REGISTER_BINARY_OP(<span class="org-string">"mul"</span>)
+    .describe(<span class="org-string">"Elementwise mul with with broadcasting for quantized tensors."</span>)
+    .set_support_level(11)
+    .set_attr&lt;FTVMLegalize&gt;(<span class="org-string">"FTVMQnnCanonicalize"</span>, QnnMulCanonicalize);
+
+<span class="org-type">Pass</span> <span class="org-function-name">Legalize</span>() {
+  <span class="org-type">Array</span>&lt;<span class="org-type">Pass</span>&gt; <span class="org-variable-name">pass_seqs</span>;
+  pass_seqs.push_back(<span class="org-constant">relay</span>::<span class="org-constant">transform</span>::Legalize(<span class="org-string">"FTVMQnnLegalize"</span>));
+  pass_seqs.push_back(<span class="org-constant">relay</span>::<span class="org-constant">transform</span>::Legalize(<span class="org-string">"FTVMQnnCanonicalize"</span>));
+  <span class="org-constant">relay</span>::<span class="org-constant">transform</span>::<span class="org-type">Pass</span> <span class="org-variable-name">seq</span> = <span class="org-constant">relay</span>::<span class="org-constant">transform</span>::Sequential(pass_seqs);
+  <span class="org-keyword">return</span> seq;
+}
+
+<span class="org-type">Array</span>&lt;<span class="org-type">Pass</span>&gt; <span class="org-function-name">GetPassPrefix</span>(<span class="org-keyword">const</span> <span class="org-type">Map</span>&lt;<span class="org-constant">tvm</span>::Integer, <span class="org-constant">tvm</span>::Target&gt;&amp; <span class="org-variable-name">targets</span>, <span class="org-type">bool</span> <span class="org-variable-name">is_vm</span>) {
+  <span class="org-type">Array</span>&lt;<span class="org-type">Pass</span>&gt; <span class="org-variable-name">pass_seqs</span>;
+  <span class="org-type">Array</span>&lt;<span class="org-constant">runtime</span>::String&gt; <span class="org-variable-name">entry_functions</span>{<span class="org-string">"main"</span>};
+  <span class="org-comment-delimiter">// </span><span class="org-comment">..</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">Run all dialect legalization passes.</span>
+  pass_seqs.push_back(<span class="org-constant">relay</span>::<span class="org-constant">qnn</span>::<span class="org-constant">transform</span>::Legalize());
+  <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+}
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000001d" class="outline-5">
+<h5 id="org000001d"><span class="section-number-5">1.2.1.3</span> What `QnnMulCanonicalize` does</h5>
+<div class="outline-text-5" id="text-1-2-1-3">
+<p>
+relay.qnn.mul 不能直接转换成 mul, 因为 relay.mul 只支持对称量化.
+</p>
+
+<p>
+以 Example 的代码为例, QnnMulCanonicalize 所做的事实际上就是用下面的公式计算
+\(Z_q\)
+</p>
+
+<p>
+\(Z_q=\frac{X_sY_s}{Z_s}(X_q-127)(Y_q-127)+127\)
+</p>
+
+<pre class="example" id="org000001c">
+def @main(%x: Tensor[(1, 4), uint8], %y: Tensor[(1, 4), uint8]) -&gt; Tensor[(1, 4), uint8] {
+  //...
+  %2 = subtract(%0, 127 /* ty=int32 */) /* ty=Tensor[(1, 4), int32] */;
+  %3 = subtract(%1, 127 /* ty=int32 */) /* ty=Tensor[(1, 4), int32] */;
+  %4 = multiply(%2, %3) /* ty=Tensor[(1, 4), int32] */;
+  %5 = cast(%4, dtype="int32") /* ty=Tensor[(1, 4), int32] */;
+  %6 = cast(127 /* ty=int32 */, dtype="int32") /* ty=int32 */;
+  %7 = fixed_point_multiply(%5, multiplier=1077952893, shift=-6) /* ty=Tensor[(1, 4), int32] */;
+  %8 = add(%6, %7) /* ty=Tensor[(1, 4), int32] */;
+  %9 = clip(%8, a_min=0f, a_max=255f) /* ty=Tensor[(1, 4), int32] */;
+  //...
+}
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000029" class="outline-3">
+<h3 id="org0000029"><span class="section-number-3">1.3</span> WAIT Quantization and BYOC</h3>
+<div class="outline-text-3" id="text-1-3">
+</div>
+<div id="outline-container-org0000026" class="outline-4">
+<h4 id="org0000026"><span class="section-number-4">1.3.1</span> cmsisnn</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<p>
+tvm 的 cmsisnn 依赖于 qnn 及 cmsisnn 的 xxx_s8 系列的 api 来实现对量化的支持
+</p>
+</div>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org000002f" class="outline-2 references">
+<h2 id="org000002f">Backlinks</h2>
+<div class="outline-text-2" id="text-org000002f">
 <p>
 <a href="../tensorflow/quantization.html#ID-6ad56dfa-9772-478b-9872-6f8294d6cb19">Quantization</a>
 (<i>Quantization &gt; Overview</i>):  还有一些框架例如 <a href="tvm_quantization.html#ID-8eef5155-27a8-41c6-9354-5a0c4c8a56c2">TVM</a> 会采用更复杂的量化方式, 因为选择 (q_min, Q_min), (q_max, Q_max) 来计算线性映射并不是唯一的方法, 理论上最佳的量化方式可以最小化量化误差, 即 minimize_divergency(x, DQ(Q(x)))
@@ -56,7 +566,7 @@
 
 <p class="author">Author: sunway (sunwayforever@gmail.com)<br />
 Date: 2021-08-05 Thu 00:00<br />
-Last updated: 2022-01-26 Wed 11:29</p>
+Last updated: 2022-06-21 Tue 09:32</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
