@@ -1,0 +1,555 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>DPC++</title>
+
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">DPC++</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000047">1. DPC++</a>
+<ul>
+<li><a href="#org000001c">1.1. How DPC++ Compiler Works In Details</a>
+<ul>
+<li><a href="#org0000001">1.1.1. sample</a></li>
+<li><a href="#org0000005">1.1.2. 针对 kernel 生成 llvm bc</a></li>
+<li><a href="#org0000009">1.1.3. 把 bc 转换成 spir</a></li>
+<li><a href="#org000000d">1.1.4. 通过 llvm-offload-wrapper 生成 fat bin</a></li>
+<li><a href="#org0000011">1.1.5. 生成 host 需要的头文件</a></li>
+<li><a href="#org0000015">1.1.6. 编译 host 部分</a></li>
+<li><a href="#org0000019">1.1.7. 链接 device 与 hosts</a></li>
+</ul>
+</li>
+<li><a href="#org000002c">1.2. device-sycl</a>
+<ul>
+<li><a href="#org0000020">1.2.1. sycl 库会把 kernel 加上 sycl_kernel attribute</a></li>
+<li><a href="#org0000023">1.2.2. sema 解析 attribute</a></li>
+<li><a href="#org0000026">1.2.3. sema 找到 sycl_kernel</a></li>
+<li><a href="#org0000029">1.2.4. 输出 kernel 到 bitcode</a></li>
+</ul>
+</li>
+<li><a href="#org000002f">1.3. clang offload wrapper</a></li>
+<li><a href="#org0000044">1.4. SPIR-V</a>
+<ul>
+<li><a href="#org000003d">1.4.1. utils</a></li>
+<li><a href="#org0000041">1.4.2. spir details</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000047" class="outline-2">
+<h2 id="org0000047"><span class="section-number-2">1.</span> DPC++</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org000001c" class="outline-3">
+<h3 id="org000001c"><span class="section-number-3">1.1.</span> How DPC++ Compiler Works In Details</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+<a href="https://www.intel.com/content/www/us/en/develop/documentation/oneapi-dpcpp-cpp-compiler-dev-guide-and-reference/top/compilation/use-third-party-compiler-as-host-compiler-dpc-code.html">Use a Third-Party Compiler as a Host Compiler for DPC++ Code</a>
+</p>
+
+<p>
+<a href="https://github.com/compiler-explorer/compiler-explorer/issues/2244">https://github.com/compiler-explorer/compiler-explorer/issues/2244</a>
+</p>
+
+<p>
+可以直接使用 `dpcpp hello.cc` 生成最终的 elf, 但这个命令隐藏了许多细节, 实际上,
+dpc++ 编译时涉及几个步骤:
+</p>
+
+<ol class="org-ol">
+<li>生成 llvm bc</li>
+<li>bc 转换为 spir</li>
+<li>spir 打包到另一个 llvm bc</li>
+<li>&#x2026;</li>
+</ol>
+
+<p>
+使用 clang 的 `-ccc-print-phases` 和 `-ccc-print-bindings` 可以看到更详细一些:
+</p>
+
+<pre class="example" id="org0000000">
+$&gt; dpcpp hello.cc -ccc-print-bindings
+# "spir64-unknown-unknown-sycldevice" - "clang", inputs: ["hello.cc"], output: "/tmp/hello-6d6ed7.bc"
+# "spir64-unknown-unknown-sycldevice" - "SYCL::Linker", inputs: ["/tmp/hello-6d6ed7.bc"], output: "/tmp/hello-14dd3c.bc"
+# "spir64-unknown-unknown-sycldevice" - "offload bundler", inputs: ["/opt/intel/oneapi/compiler/2021.4.0/linux/bin/../lib/libsycl-crt.o"], outputs: ["/tmp/libsycl-crt-62d5d0.o"] 
+# "spir64-unknown-unknown-sycldevice" - "offload bundler", inputs: ["/opt/intel/oneapi/compiler/2021.4.0/linux/bin/../lib/libsycl-complex.o"], outputs: ["/tmp/libsycl-complex-0e4709.o"] 
+# "spir64-unknown-unknown-sycldevice" - "offload bundler", inputs: ["/opt/intel/oneapi/compiler/2021.4.0/linux/bin/../lib/libsycl-complex-fp64.o"], outputs: ["/tmp/libsycl-complex-fp64-837d7b.o"] 
+# "spir64-unknown-unknown-sycldevice" - "offload bundler", inputs: ["/opt/intel/oneapi/compiler/2021.4.0/linux/bin/../lib/libsycl-cmath.o"], outputs: ["/tmp/libsycl-cmath-ae81c5.o"] 
+# "spir64-unknown-unknown-sycldevice" - "offload bundler", inputs: ["/opt/intel/oneapi/compiler/2021.4.0/linux/bin/../lib/libsycl-cmath-fp64.o"], outputs: ["/tmp/libsycl-cmath-fp64-8d96bd.o"] 
+# "spir64-unknown-unknown-sycldevice" - "offload bundler", inputs: ["/opt/intel/oneapi/compiler/2021.4.0/linux/bin/../lib/libsycl-fallback-cassert.o"], outputs: ["/tmp/libsycl-fallback-cassert-21ff6c.o"] 
+# "spir64-unknown-unknown-sycldevice" - "offload bundler", inputs: ["/opt/intel/oneapi/compiler/2021.4.0/linux/bin/../lib/libsycl-fallback-cstring.o"], outputs: ["/tmp/libsycl-fallback-cstring-f6a3da.o"] 
+# "spir64-unknown-unknown-sycldevice" - "offload bundler", inputs: ["/opt/intel/oneapi/compiler/2021.4.0/linux/bin/../lib/libsycl-fallback-complex.o"], outputs: ["/tmp/libsycl-fallback-complex-c5e325.o"] 
+# "spir64-unknown-unknown-sycldevice" - "offload bundler", inputs: ["/opt/intel/oneapi/compiler/2021.4.0/linux/bin/../lib/libsycl-fallback-complex-fp64.o"], outputs: ["/tmp/libsycl-fallback-complex-fp64-ed36e0.o"] 
+# "spir64-unknown-unknown-sycldevice" - "offload bundler", inputs: ["/opt/intel/oneapi/compiler/2021.4.0/linux/bin/../lib/libsycl-fallback-cmath.o"], outputs: ["/tmp/libsycl-fallback-cmath-b6d5c8.o"] 
+# "spir64-unknown-unknown-sycldevice" - "offload bundler", inputs: ["/opt/intel/oneapi/compiler/2021.4.0/linux/bin/../lib/libsycl-fallback-cmath-fp64.o"], outputs: ["/tmp/libsycl-fallback-cmath-fp64-2ea1d0.o"] 
+# "spir64-unknown-unknown-sycldevice" - "SYCL::Linker", inputs: ["/tmp/hello-14dd3c.bc", "/tmp/libsycl-crt-62d5d0.o", "/tmp/libsycl-complex-0e4709.o", "/tmp/libsycl-complex-fp64-837d7b.o", "/tmp/libsycl-cmath-ae81c5.o", "/tmp/libsycl-cmath-fp64-8d96bd.o", "/tmp/libsycl-fallback-cassert-21ff6c.o", "/tmp/libsycl-fallback-cstring-f6a3da.o", "/tmp/libsycl-fallback-complex-c5e325.o", "/tmp/libsycl-fallback-complex-fp64-ed36e0.o", "/tmp/libsycl-fallback-cmath-b6d5c8.o", "/tmp/libsycl-fallback-cmath-fp64-2ea1d0.o"], output: "/tmp/hello-dc7804.bc"
+# "spir64-unknown-unknown-sycldevice" - "SYCL post link", inputs: ["/tmp/hello-dc7804.bc"], output: "/tmp/hello-2ca00c.table"
+# "spir64-unknown-unknown-sycldevice" - "File table transformation", inputs: ["/tmp/hello-2ca00c.table"], output: "/tmp/hello-6e9957.txt"
+# "spir64-unknown-unknown-sycldevice" - "SPIR-V translator", inputs: ["/tmp/hello-6e9957.txt"], output: "/tmp/hello-90e75a.txt"
+# "spir64-unknown-unknown-sycldevice" - "File table transformation", inputs: ["/tmp/hello-2ca00c.table", "/tmp/hello-90e75a.txt"], output: "/tmp/hello-f79986.table"
+# "spir64-unknown-unknown-sycldevice" - "offload wrapper", inputs: ["/tmp/hello-f79986.table"], output: "/tmp/a-a631e3.o"
+# "x86_64-unknown-linux-gnu" - "Append Footer to source", inputs: ["hello.cc"], output: "/tmp/hello-50ff1f.cpp"
+# "x86_64-unknown-linux-gnu" - "clang", inputs: ["/tmp/hello-50ff1f.cpp", "/tmp/hello-6d6ed7.bc"], output: "/tmp/hello-c7e503.o"
+# "x86_64-unknown-linux-gnu" - "GNU::Linker", inputs: ["/tmp/hello-c7e503.o", "/tmp/a-a631e3.o"], output: "a.out"
+
+</pre>
+</div>
+
+<div id="outline-container-org0000001" class="outline-4">
+<h4 id="org0000001"><span class="section-number-4">1.1.1.</span> sample</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;CL/sycl.hpp&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;iostream&gt;</span>
+<span class="org-keyword">namespace</span> <span class="org-constant">sycl</span> = <span class="org-constant">cl</span>::sycl;
+
+<span class="org-keyword">class</span> <span class="org-type">kernel_vector_add</span>;
+<span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span>* <span class="org-variable-name">argv</span>[]) {
+    <span class="org-constant">sycl</span>::<span class="org-type">float4</span> <span class="org-variable-name">a</span> = {1.0, 2.0, 3.0, 4.0};
+    <span class="org-constant">sycl</span>::<span class="org-type">float4</span> <span class="org-variable-name">b</span> = {1.0, 2.0, 3.0, 4.0};
+    <span class="org-constant">sycl</span>::<span class="org-type">float4</span> <span class="org-variable-name">c</span> = {0.0, 0.0, 0.0, 0.0};
+    <span class="org-constant">sycl</span>::<span class="org-type">default_selector</span> <span class="org-variable-name">device_selector</span>;
+    <span class="org-constant">sycl</span>::<span class="org-type">queue</span> <span class="org-variable-name">queue</span>(device_selector);
+    {
+        <span class="org-constant">sycl</span>::<span class="org-type">buffer</span>&lt;<span class="org-constant">sycl</span>::<span class="org-type">float4</span>, 1&gt; <span class="org-variable-name">buff_a</span>(&amp;a, <span class="org-constant">sycl</span>::range&lt;1&gt;(1));
+        <span class="org-constant">sycl</span>::<span class="org-type">buffer</span>&lt;<span class="org-constant">sycl</span>::<span class="org-type">float4</span>, 1&gt; <span class="org-variable-name">buff_b</span>(&amp;b, <span class="org-constant">sycl</span>::range&lt;1&gt;(1));
+        <span class="org-constant">sycl</span>::<span class="org-type">buffer</span>&lt;<span class="org-constant">sycl</span>::<span class="org-type">float4</span>, 1&gt; <span class="org-variable-name">buff_c</span>(&amp;c, <span class="org-constant">sycl</span>::range&lt;1&gt;(1));
+        queue.submit([&amp;](<span class="org-constant">sycl</span>::<span class="org-type">handler</span>&amp; <span class="org-variable-name">cgh</span>) {
+            <span class="org-keyword">auto</span> <span class="org-variable-name">a_acc</span> = buff_a.get_access&lt;<span class="org-constant">sycl</span>::<span class="org-constant">access</span>::<span class="org-constant">mode</span>::read&gt;(cgh);
+            <span class="org-keyword">auto</span> <span class="org-variable-name">b_acc</span> = buff_b.get_access&lt;<span class="org-constant">sycl</span>::<span class="org-constant">access</span>::<span class="org-constant">mode</span>::read&gt;(cgh);
+            <span class="org-keyword">auto</span> <span class="org-variable-name">c_acc</span> =
+                buff_c.get_access&lt;<span class="org-constant">sycl</span>::<span class="org-constant">access</span>::<span class="org-constant">mode</span>::discard_write&gt;(cgh);
+
+            cgh.single_task&lt;<span class="org-keyword">class</span> <span class="org-type">kernel_vector_add</span>&gt;(
+                [=]() { c_acc[0] = a_acc[0] + b_acc[0]; });
+        });
+    }
+
+    <span class="org-constant">std</span>::cout &lt;&lt; c.x() &lt;&lt; <span class="org-string">","</span> &lt;&lt; c.y() &lt;&lt; <span class="org-string">","</span> &lt;&lt; c.z() &lt;&lt; <span class="org-string">","</span> &lt;&lt; c.w()
+              &lt;&lt; <span class="org-constant">std</span>::endl;
+
+    <span class="org-keyword">return</span> 0;
+}
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000005" class="outline-4">
+<h4 id="org0000005"><span class="section-number-4">1.1.2.</span> 针对 kernel 生成 llvm bc</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<pre class="example" id="org0000004">
+$&gt; dpcpp -fsycl-device-only hello.cc
+$&gt; ls
+hello-sycl-spir64-unknown-unknown-sycldevice.bc
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000009" class="outline-4">
+<h4 id="org0000009"><span class="section-number-4">1.1.3.</span> 把 bc 转换成 spir</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<pre class="example" id="org0000008">
+$&gt; llvm-spirv hello-sycl-spir64-unknown-unknown-sycldevice.bc
+$&gt; ls
+hello-sycl-spir64-unknown-unknown-sycldevice.spv
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org000000d" class="outline-4">
+<h4 id="org000000d"><span class="section-number-4">1.1.4.</span> 通过 llvm-offload-wrapper 生成 fat bin</h4>
+<div class="outline-text-4" id="text-1-1-4">
+<pre class="example" id="org000000c">
+$&gt; clang-offload-wrapper --kind=sycl --target=spir64 hello-sycl-spir64-unknown-unknown-sycldevice.spv -o device.bc
+$&gt; clang device.bc -c -fPIC
+$&gt; file device.o
+device.o: ELF 64-bit LSB relocatable, x86-64, version 1 (GNU/Linux), not stripped
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000011" class="outline-4">
+<h4 id="org0000011"><span class="section-number-4">1.1.5.</span> 生成 host 需要的头文件</h4>
+<div class="outline-text-4" id="text-1-1-5">
+<pre class="example" id="org0000010">
+$&gt; dpcpp -fsycl-device-only -Xclang -fsycl-int-header=device.h hello.cc
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000015" class="outline-4">
+<h4 id="org0000015"><span class="section-number-4">1.1.6.</span> 编译 host 部分</h4>
+<div class="outline-text-4" id="text-1-1-6">
+<pre class="example" id="org0000014">
+$&gt; g++ -std=c++17 -c hello.cc -o host.o -include device.h -fPIC -I /opt/intel/oneapi/compiler/2021.4.0/linux/include/sycl
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000019" class="outline-4">
+<h4 id="org0000019"><span class="section-number-4">1.1.7.</span> 链接 device 与 hosts</h4>
+<div class="outline-text-4" id="text-1-1-7">
+<pre class="example" id="org0000018">
+$&gt; gcc host.o device.o -lsycl -lstdc++
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000002c" class="outline-3">
+<h3 id="org000002c"><span class="section-number-3">1.2.</span> device-sycl</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+device-sycl 是一个 clang 的 action, 目的是把源码中的 kernel 等编译成 bc.
+</p>
+
+<p>
+例如下面的代码:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;CL/sycl.hpp&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;iostream&gt;</span>
+<span class="org-keyword">namespace</span> <span class="org-constant">sycl</span> = <span class="org-constant">cl</span>::sycl;
+
+<span class="org-type">void</span> <span class="org-function-name">bar</span>(){};
+<span class="org-type">int</span> <span class="org-function-name">foo</span>() {
+    <span class="org-type">int</span> <span class="org-variable-name">x</span> = 1;
+    x += 1;
+    <span class="org-keyword">return</span> x;
+}
+
+<span class="org-keyword">class</span> <span class="org-type">kernel_vector_add</span>;
+<span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span>* <span class="org-variable-name">argv</span>[]) {
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+    <span class="org-constant">sycl</span>::<span class="org-type">queue</span> <span class="org-variable-name">queue</span>(device_selector);
+    {
+        <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+        queue.submit([&amp;](<span class="org-constant">sycl</span>::<span class="org-type">handler</span>&amp; <span class="org-variable-name">cgh</span>) {
+            <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+            cgh.single_task&lt;<span class="org-keyword">class</span> <span class="org-type">kernel_vector_add</span>&gt;([=]() {
+                foo();
+                c_acc[0] = a_acc[0] + b_acc[0];
+            });
+        });
+    }
+    <span class="org-keyword">return</span> 0;
+}
+</pre>
+</div>
+
+<p>
+single_task 中的 lambda 以及 foo 会被 device-sycl 找到, 做为 kernel 输出到 bc 中,
+但 main 和 bar 并不会.
+</p>
+
+<p>
+判断函数是否是 kernel 是根据 `sycl_kernel` 这个 attribute
+</p>
+</div>
+
+<div id="outline-container-org0000020" class="outline-4">
+<h4 id="org0000020"><span class="section-number-4">1.2.1.</span> sycl 库会把 kernel 加上 sycl_kernel attribute</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+匿名的 lambda 会被 sycl 库封装成 `__attribute__(sycl_kernel) &#x2026;` 的样子
+</p>
+
+<pre class="example" id="org000001f">
+$&gt; dpcpp -fsycl-device-only hello.cc  -E
+</pre>
+
+<p>
+最终代码为:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">KernelName</span>, <span class="org-keyword">typename</span> <span class="org-type">KernelType</span>&gt;
+<span class="org-keyword">__attribute__</span>((sycl_kernel)) <span class="org-type">void</span> <span class="org-function-name">kernel_single_task</span>(
+    <span class="org-keyword">const</span> <span class="org-type">KernelType</span> &amp;<span class="org-variable-name">KernelFunc</span>) {
+    KernelFunc();
+}
+
+<span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">KernelName</span> = <span class="org-constant">detail</span>::auto_name, <span class="org-keyword">typename</span> <span class="org-type">KernelType</span>&gt;
+
+<span class="org-function-name">kernel_single_task_wrapper</span>(<span class="org-keyword">const</span> <span class="org-type">KernelType</span> &amp;<span class="org-variable-name">KernelFunc</span>) {
+    <span class="org-constant">detail</span>::CheckDeviceCopyable&lt;<span class="org-type">KernelType</span>&gt;();
+
+    kernel_single_task&lt;<span class="org-type">KernelName</span>&gt;(KernelFunc);
+}
+
+<span class="org-type">void</span> <span class="org-function-name">single_task</span>(<span class="org-keyword">const</span> <span class="org-type">KernelType</span> &amp;<span class="org-variable-name">KernelFunc</span>) {
+    throwIfActionIsCreated();
+    <span class="org-keyword">using</span> <span class="org-type">NameT</span> =
+        <span class="org-keyword">typename</span> <span class="org-constant">detail</span>::<span class="org-constant">get_kernel_name_t</span>&lt;<span class="org-type">KernelName</span>, <span class="org-type">KernelType</span>&gt;::name;
+    kernel_single_task_wrapper&lt;NameT&gt;(KernelFunc);
+}
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000023" class="outline-4">
+<h4 id="org0000023"><span class="section-number-4">1.2.2.</span> sema 解析 attribute</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<p>
+clang/lib/Sema/SemaDeclAttr.cpp:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-keyword">case</span> <span class="org-constant">ParsedAttr</span>::AT_SYCLKernel:
+    handleSYCLKernelAttr(S, D, AL);
+    <span class="org-keyword">break</span>;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000026" class="outline-4">
+<h4 id="org0000026"><span class="section-number-4">1.2.3.</span> sema 找到 sycl_kernel</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<p>
+clang/lib/Sema/SemaTemplateInstantiateDecl.cpp:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">processFunctionInstantiation</span>(
+    <span class="org-type">Sema</span> &amp;<span class="org-variable-name">S</span>, <span class="org-type">SourceLocation</span> <span class="org-variable-name">PointOfInstantiation</span>, <span class="org-type">FunctionDecl</span> *<span class="org-variable-name">FD</span>,
+    <span class="org-type">bool</span> <span class="org-variable-name">DefinitionRequired</span>, <span class="org-type">MangleContext</span> &amp;<span class="org-variable-name">MC</span>) {
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+    <span class="org-keyword">if</span> (S.LangOpts.SYCLIsDevice &amp;&amp; FD-&gt;hasAttr&lt;SYCLKernelAttr&gt;())
+        S.ConstructOpenCLKernel(FD, MC);
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+}
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000029" class="outline-4">
+<h4 id="org0000029"><span class="section-number-4">1.2.4.</span> 输出 kernel 到 bitcode</h4>
+<div class="outline-text-4" id="text-1-2-4">
+<p>
+clang/lib/Parse/ParseAST.cpp:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-keyword">if</span> (S.getLangOpts().SYCLIsDevice) {
+    <span class="org-keyword">for</span> (<span class="org-type">Decl</span> *<span class="org-variable-name">D</span> : S.syclDeviceDecls()) {
+        Consumer-&gt;HandleTopLevelDecl(DeclGroupRef(D));
+    }
+}
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000002f" class="outline-3">
+<h3 id="org000002f"><span class="section-number-3">1.3.</span> clang offload wrapper</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+<a href="https://clang.llvm.org/docs/ClangOffloadWrapper.html">https://clang.llvm.org/docs/ClangOffloadWrapper.html</a>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000044" class="outline-3">
+<h3 id="org0000044"><span class="section-number-3">1.4.</span> SPIR-V</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+<a href="https://github.com/KhronosGroup/SPIRV-Guide">https://github.com/KhronosGroup/SPIRV-Guide</a>
+</p>
+
+<p>
+<a href="https://github.com/google/spirv-tutor">https://github.com/google/spirv-tutor</a>
+</p>
+</div>
+
+<div id="outline-container-org000003d" class="outline-4">
+<h4 id="org000003d"><span class="section-number-4">1.4.1.</span> utils</h4>
+<div class="outline-text-4" id="text-1-4-1">
+</div>
+<div id="outline-container-org0000034" class="outline-5">
+<h5 id="org0000034"><span class="section-number-5">1.4.1.1.</span> llvm-spirv</h5>
+<div class="outline-text-5" id="text-1-4-1-1">
+<p>
+spv 转换为 llvm bc:
+</p>
+
+<pre class="example" id="org0000032">
+$&gt; llvm-spirv -r hello-sycl-spir64-unknown-unknown-sycldevice.spv
+</pre>
+
+<p>
+llvm bc 转换为 spv:
+</p>
+
+<pre class="example" id="org0000033">
+$&gt; llvm-spirv hello-sycl-spir64-unknown-unknown-sycldevice.bc
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000037" class="outline-5">
+<h5 id="org0000037"><span class="section-number-5">1.4.1.2.</span> spirv visualizer</h5>
+<div class="outline-text-5" id="text-1-4-1-2">
+<p>
+<a href="https://www.khronos.org/spir/visualizer/">https://www.khronos.org/spir/visualizer/</a>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000003a" class="outline-5">
+<h5 id="org000003a"><span class="section-number-5">1.4.1.3.</span> spirv tools</h5>
+<div class="outline-text-5" id="text-1-4-1-3">
+<ul class="org-ul">
+<li>spirv-dis</li>
+
+<li>spirv-as</li>
+
+<li>spirv-link</li>
+</ul>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000041" class="outline-4">
+<h4 id="org0000041"><span class="section-number-4">1.4.2.</span> spir details</h4>
+<div class="outline-text-4" id="text-1-4-2">
+<pre class="example" id="org0000040">
+; SPIR-V
+; Version: 1.0
+; Generator: Khronos LLVM/SPIR-V Translator; 14
+; Bound: 60
+; Schema: 0
+               OpCapability Addresses
+               OpCapability Kernel
+               OpCapability Int64
+               OpCapability GenericPointer
+          %1 = OpExtInstImport "OpenCL.std"
+               OpMemoryModel Physical64 OpenCL
+               OpEntryPoint Kernel %16 "_ZTS17kernel_vector_add"
+         %58 = OpString "kernel_arg_type._ZTS17kernel_vector_add.class._ZTSN2cl4sycl3vecIfLi4EEE.cl::sycl::vec*,class._ZTSN2cl4sycl5rangeILi1EEE.cl::sycl::range,class._ZTSN2cl4sycl5rangeILi1EEE.cl::sycl::range,class._ZTSN2cl4sycl2idILi1EEE.cl::sycl::id,class._ZTSN2cl4sycl3vecIfLi4EEE.cl::sycl::vec*,class._ZTSN2cl4sycl5rangeILi1EEE.cl::sycl::range,class._ZTSN2cl4sycl5rangeILi1EEE.cl::sycl::range,class._ZTSN2cl4sycl2idILi1EEE.cl::sycl::id,class._ZTSN2cl4sycl3vecIfLi4EEE.cl::sycl::vec*,class._ZTSN2cl4sycl5rangeILi1EEE.cl::sycl::range,class._ZTSN2cl4sycl5rangeILi1EEE.cl::sycl::range,class._ZTSN2cl4sycl2idILi1EEE.cl::sycl::id,"
+         %59 = OpString "kernel_arg_type_qual._ZTS17kernel_vector_add.,,,,,,,,,,,,"
+               OpSource OpenCL_CPP 100000
+               OpName %class__ZTSN2cl4sycl3vecIfLi4EEE_cl__sycl__vec "class._ZTSN2cl4sycl3vecIfLi4EEE.cl::sycl::vec"
+               OpName %class__ZTSN2cl4sycl5rangeILi1EEE_cl__sycl__range "class._ZTSN2cl4sycl5rangeILi1EEE.cl::sycl::range"
+               OpName %class__ZTSN2cl4sycl6detail5arrayILi1EEE_cl__sycl__detail__array "class._ZTSN2cl4sycl6detail5arrayILi1EEE.cl::sycl::detail::array"
+               OpName %class__ZTSN2cl4sycl2idILi1EEE_cl__sycl__id "class._ZTSN2cl4sycl2idILi1EEE.cl::sycl::id"
+               OpDecorate %18 FuncParamAttr ByVal
+               OpDecorate %19 FuncParamAttr ByVal
+               OpDecorate %20 FuncParamAttr ByVal
+               OpDecorate %22 FuncParamAttr ByVal
+               OpDecorate %23 FuncParamAttr ByVal
+               OpDecorate %24 FuncParamAttr ByVal
+               OpDecorate %26 FuncParamAttr ByVal
+               OpDecorate %27 FuncParamAttr ByVal
+               OpDecorate %28 FuncParamAttr ByVal
+               OpDecorate %21 FuncParamAttr NoWrite
+               OpDecorate %25 FuncParamAttr NoWrite
+               OpDecorate %55 FPFastMathMode Fast
+      %ulong = OpTypeInt 64 0
+       %uint = OpTypeInt 32 0
+    %ulong_1 = OpConstant %ulong 1
+    %ulong_0 = OpConstant %ulong 0
+     %uint_0 = OpConstant %uint 0
+       %void = OpTypeVoid
+      %float = OpTypeFloat 32
+    %v4float = OpTypeVector %float 4
+%class__ZTSN2cl4sycl3vecIfLi4EEE_cl__sycl__vec = OpTypeStruct %v4float
+%_ptr_CrossWorkgroup_class__ZTSN2cl4sycl3vecIfLi4EEE_cl__sycl__vec = OpTypePointer CrossWorkgroup %class__ZTSN2cl4sycl3vecIfLi4EEE_cl__sycl__vec
+%_arr_ulong_ulong_1 = OpTypeArray %ulong %ulong_1
+%class__ZTSN2cl4sycl6detail5arrayILi1EEE_cl__sycl__detail__array = OpTypeStruct %_arr_ulong_ulong_1
+%class__ZTSN2cl4sycl5rangeILi1EEE_cl__sycl__range = OpTypeStruct %class__ZTSN2cl4sycl6detail5arrayILi1EEE_cl__sycl__detail__array
+%_ptr_Function_class__ZTSN2cl4sycl5rangeILi1EEE_cl__sycl__range = OpTypePointer Function %class__ZTSN2cl4sycl5rangeILi1EEE_cl__sycl__range
+%class__ZTSN2cl4sycl2idILi1EEE_cl__sycl__id = OpTypeStruct %class__ZTSN2cl4sycl6detail5arrayILi1EEE_cl__sycl__detail__array
+%_ptr_Function_class__ZTSN2cl4sycl2idILi1EEE_cl__sycl__id = OpTypePointer Function %class__ZTSN2cl4sycl2idILi1EEE_cl__sycl__id
+         %15 = OpTypeFunction %void %_ptr_CrossWorkgroup_class__ZTSN2cl4sycl3vecIfLi4EEE_cl__sycl__vec %_ptr_Function_class__ZTSN2cl4sycl5rangeILi1EEE_cl__sycl__range %_ptr_Function_class__ZTSN2cl4sycl5rangeILi1EEE_cl__sycl__range %_ptr_Function_class__ZTSN2cl4sycl2idILi1EEE_cl__sycl__id %_ptr_CrossWorkgroup_class__ZTSN2cl4sycl3vecIfLi4EEE_cl__sycl__vec %_ptr_Function_class__ZTSN2cl4sycl5rangeILi1EEE_cl__sycl__range %_ptr_Function_class__ZTSN2cl4sycl5rangeILi1EEE_cl__sycl__range %_ptr_Function_class__ZTSN2cl4sycl2idILi1EEE_cl__sycl__id %_ptr_CrossWorkgroup_class__ZTSN2cl4sycl3vecIfLi4EEE_cl__sycl__vec %_ptr_Function_class__ZTSN2cl4sycl5rangeILi1EEE_cl__sycl__range %_ptr_Function_class__ZTSN2cl4sycl5rangeILi1EEE_cl__sycl__range %_ptr_Function_class__ZTSN2cl4sycl2idILi1EEE_cl__sycl__id
+%_ptr_Function_ulong = OpTypePointer Function %ulong
+%_ptr_Generic_ulong = OpTypePointer Generic %ulong
+%_ptr_Generic_class__ZTSN2cl4sycl3vecIfLi4EEE_cl__sycl__vec = OpTypePointer Generic %class__ZTSN2cl4sycl3vecIfLi4EEE_cl__sycl__vec
+%_ptr_Generic_v4float = OpTypePointer Generic %v4float
+         %16 = OpFunction %void None %15
+         %17 = OpFunctionParameter %_ptr_CrossWorkgroup_class__ZTSN2cl4sycl3vecIfLi4EEE_cl__sycl__vec
+         %18 = OpFunctionParameter %_ptr_Function_class__ZTSN2cl4sycl5rangeILi1EEE_cl__sycl__range
+         %19 = OpFunctionParameter %_ptr_Function_class__ZTSN2cl4sycl5rangeILi1EEE_cl__sycl__range
+         %20 = OpFunctionParameter %_ptr_Function_class__ZTSN2cl4sycl2idILi1EEE_cl__sycl__id
+         %21 = OpFunctionParameter %_ptr_CrossWorkgroup_class__ZTSN2cl4sycl3vecIfLi4EEE_cl__sycl__vec
+         %22 = OpFunctionParameter %_ptr_Function_class__ZTSN2cl4sycl5rangeILi1EEE_cl__sycl__range
+         %23 = OpFunctionParameter %_ptr_Function_class__ZTSN2cl4sycl5rangeILi1EEE_cl__sycl__range
+         %24 = OpFunctionParameter %_ptr_Function_class__ZTSN2cl4sycl2idILi1EEE_cl__sycl__id
+         %25 = OpFunctionParameter %_ptr_CrossWorkgroup_class__ZTSN2cl4sycl3vecIfLi4EEE_cl__sycl__vec
+         %26 = OpFunctionParameter %_ptr_Function_class__ZTSN2cl4sycl5rangeILi1EEE_cl__sycl__range
+         %27 = OpFunctionParameter %_ptr_Function_class__ZTSN2cl4sycl5rangeILi1EEE_cl__sycl__range
+         %28 = OpFunctionParameter %_ptr_Function_class__ZTSN2cl4sycl2idILi1EEE_cl__sycl__id
+         %29 = OpLabel
+         %34 = OpInBoundsPtrAccessChain %_ptr_Function_ulong %20 %ulong_0 %uint_0 %uint_0 %ulong_0
+         %36 = OpPtrCastToGeneric %_ptr_Generic_ulong %34
+         %37 = OpLoad %ulong %36 Aligned 8
+         %38 = OpInBoundsPtrAccessChain %_ptr_CrossWorkgroup_class__ZTSN2cl4sycl3vecIfLi4EEE_cl__sycl__vec %17 %37
+         %39 = OpInBoundsPtrAccessChain %_ptr_Function_ulong %24 %ulong_0 %uint_0 %uint_0 %ulong_0
+         %40 = OpPtrCastToGeneric %_ptr_Generic_ulong %39
+         %41 = OpLoad %ulong %40 Aligned 8
+         %42 = OpInBoundsPtrAccessChain %_ptr_CrossWorkgroup_class__ZTSN2cl4sycl3vecIfLi4EEE_cl__sycl__vec %21 %41
+         %43 = OpInBoundsPtrAccessChain %_ptr_Function_ulong %28 %ulong_0 %uint_0 %uint_0 %ulong_0
+         %44 = OpPtrCastToGeneric %_ptr_Generic_ulong %43
+         %45 = OpLoad %ulong %44 Aligned 8
+         %46 = OpInBoundsPtrAccessChain %_ptr_CrossWorkgroup_class__ZTSN2cl4sycl3vecIfLi4EEE_cl__sycl__vec %25 %45
+         %48 = OpPtrCastToGeneric %_ptr_Generic_class__ZTSN2cl4sycl3vecIfLi4EEE_cl__sycl__vec %42
+         %49 = OpPtrCastToGeneric %_ptr_Generic_class__ZTSN2cl4sycl3vecIfLi4EEE_cl__sycl__vec %46
+         %51 = OpInBoundsPtrAccessChain %_ptr_Generic_v4float %48 %ulong_0 %uint_0
+         %52 = OpLoad %v4float %51 Aligned 16
+         %53 = OpInBoundsPtrAccessChain %_ptr_Generic_v4float %49 %ulong_0 %uint_0
+         %54 = OpLoad %v4float %53 Aligned 16
+         %55 = OpFAdd %v4float %52 %54
+         %56 = OpPtrCastToGeneric %_ptr_Generic_class__ZTSN2cl4sycl3vecIfLi4EEE_cl__sycl__vec %38
+         %57 = OpInBoundsPtrAccessChain %_ptr_Generic_v4float %56 %ulong_0 %uint_0
+               OpStore %57 %55 Aligned 16
+               OpReturn
+               OpFunctionEnd
+
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway (sunwayforever@gmail.com)<br />
+Date: 2022-08-03 Wed 14:45<br />
+Last updated: 2022-08-11 Thu 03:31</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
+<br />
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>

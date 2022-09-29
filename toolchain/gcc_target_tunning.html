@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>GCC Target Tunning</title>
+
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">GCC Target Tunning</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000013">1. GCC Target Tunning</a>
+<ul>
+<li><a href="#org0000000">1.1. cost 相关</a></li>
+<li><a href="#org0000003">1.2. unaligned_access</a></li>
+<li><a href="#org0000007">1.3. scheduler 相关</a></li>
+<li><a href="#org000000a">1.4. peephole 优化</a></li>
+<li><a href="#org000000d">1.5. prefetch</a></li>
+<li><a href="#org0000010">1.6. intrinsics</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000013" class="outline-2">
+<h2 id="org0000013"><span class="section-number-2">1.</span> GCC Target Tunning</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org0000000" class="outline-3">
+<h3 id="org0000000"><span class="section-number-3">1.1.</span> cost 相关</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+cost 是指 `the relative speed of rtx on the target machine`
+</p>
+
+<p>
+gcc 在实施许多优化时需要考虑 target 的 cost, 例如 `x*12` 有可能会被 expand 成
+`((x&lt;&lt;2)+x)&lt;&lt;2`, gcc 会比较两个 rtx 的 cost 决定是否应用这个优化.
+</p>
+
+<p>
+通过 `-mtune` 可以指定一些 cost, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-keyword">const</span> <span class="org-keyword">struct</span> <span class="org-type">riscv_tune_param</span> <span class="org-variable-name">rocket_tune_info</span> = {
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">SFMode          DFMode</span><span class="org-comment-delimiter">*/</span>
+    {COSTS_N_INSNS(4), COSTS_N_INSNS(5)},   <span class="org-comment-delimiter">/* </span><span class="org-comment">fp_add</span><span class="org-comment-delimiter"> */</span>
+    {COSTS_N_INSNS(4), COSTS_N_INSNS(5)},   <span class="org-comment-delimiter">/* </span><span class="org-comment">fp_mul</span><span class="org-comment-delimiter"> */</span>
+    {COSTS_N_INSNS(20), COSTS_N_INSNS(20)}, <span class="org-comment-delimiter">/* </span><span class="org-comment">fp_div</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">SIMode          DIMode</span><span class="org-comment-delimiter"> */</span>
+    {COSTS_N_INSNS(4), COSTS_N_INSNS(4)},   <span class="org-comment-delimiter">/* </span><span class="org-comment">int_mul</span><span class="org-comment-delimiter"> */</span>
+    {COSTS_N_INSNS(6), COSTS_N_INSNS(6)},   <span class="org-comment-delimiter">/* </span><span class="org-comment">int_div</span><span class="org-comment-delimiter"> */</span>
+    1,                                      <span class="org-comment-delimiter">/* </span><span class="org-comment">issue_rate</span><span class="org-comment-delimiter"> */</span>
+    3,                                      <span class="org-comment-delimiter">/* </span><span class="org-comment">branch_cost</span><span class="org-comment-delimiter"> */</span>
+    5,                                      <span class="org-comment-delimiter">/* </span><span class="org-comment">memory_cost</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-constant">true</span>,                                   <span class="org-comment-delimiter">/* </span><span class="org-comment">slow_unaligned_access</span><span class="org-comment-delimiter"> */</span>
+};
+</pre>
+</div>
+
+<ul class="org-ul">
+<li><p>
+fp_\{add,mul,div\}, int_\{mul,div\}
+</p>
+
+<p>
+arith cost
+</p></li>
+
+<li><p>
+branch_cost
+</p>
+
+<p>
+branch_cost 决定了某些操作可不可以使用 branch 来实现， 例如 abs(x), 当 branch
+cost 较小时，会通过 branch 来实现， 当 branch cost 较大时， 会通过
+shift/xor/sub 实现
+</p>
+
+<p>
+另外, gcc 的 pass_data_tree_ifcombine 也会考虑 branch_cost 的影响: 当
+branch_cost 较大时, 会把 `if (a) {if (b) {}}` 优化成 `if (a&amp;b)`
+</p></li>
+
+<li><p>
+memory_cost    
+</p>
+
+<p>
+访存的 cost, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-constant">riscv_rtx_costs</span>:
+    <span class="org-comment-delimiter">/*</span><span class="org-comment">...</span><span class="org-comment-delimiter">*/</span>
+    <span class="org-keyword">case</span> MEM:
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">addressing cost, &#20363;&#22914; lui/auipc/got/</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">if</span> ((cost = riscv_address_insns(XEXP(x, 0), mode, <span class="org-constant">true</span>)) &gt; 0) {
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">memory cost</span><span class="org-comment-delimiter"> */</span>
+            *total = COSTS_N_INSNS(cost + tune_param-&gt;memory_cost);
+            <span class="org-keyword">return</span> <span class="org-constant">true</span>;
+        }
+    <span class="org-comment-delimiter">/*</span><span class="org-comment">...</span><span class="org-comment-delimiter">*/</span>
+
+</pre>
+</div></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000003" class="outline-3">
+<h3 id="org0000003"><span class="section-number-3">1.2.</span> unaligned_access</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+mtune 中的 slow_unaliagned_access 决定了 gcc 针对非对齐数据的是否会直接 load/store 
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000007" class="outline-3">
+<h3 id="org0000007"><span class="section-number-3">1.3.</span> scheduler 相关</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+mtune 中的 issue_rate 和 scheduler 相关
+</p>
+
+<p>
+gcc 通过 md 定义了 scheduler 需要的流水线相关的信息, 例如:
+</p>
+
+<ol class="org-ol">
+<li>latency</li>
+
+<li>functional unit</li>
+
+<li>resource</li>
+</ol>
+
+<p>
+例如：
+</p>
+
+<pre class="example" id="org0000006">
+// gcc md:
+(define_insn_reservation "sifive_7_fdiv_s" 27
+  (and (eq_attr "tune" "sifive_7")
+       (eq_attr "type" "fdiv,fsqrt")
+       (eq_attr "mode" "SF"))
+  "sifive_7_B,sifive_7_fpu*26")
+
+// llvm td:
+defm FSQRT_S : FPUnaryOp_r_frm_m&lt;0b0101100, 0b00000, FFINX, "fsqrt.s"&gt;,
+               Sched&lt;[WriteFSqrt32, ReadFSqrt32]&gt;;
+def : WriteRes&lt;WriteFSqrt32, [SiFive7PipeB, SiFive7FDiv]&gt; {
+               let Latency = 27; let ResourceCycles = [1, 26]; }
+</pre>
+
+<p>
+另外， llvm 的 mtune 中还包含额外的信息：
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">def</span> <span class="org-variable-name">RocketModel</span> : SchedMachineModel {
+    <span class="org-type">let</span> <span class="org-variable-name">MicroOpBufferSize</span> = 0; <span class="org-comment-delimiter">// </span><span class="org-comment">Rocket is in-order.</span>
+    <span class="org-type">let</span> <span class="org-variable-name">IssueWidth</span> = 1;        <span class="org-comment-delimiter">// </span><span class="org-comment">1 micro-op is dispatched per cycle.</span>
+    <span class="org-type">let</span> <span class="org-variable-name">LoadLatency</span> = 3;
+    <span class="org-type">let</span> <span class="org-variable-name">MispredictPenalty</span> = 3;
+    <span class="org-type">let</span> <span class="org-variable-name">CompleteModel</span> = <span class="org-constant">false</span>;
+}
+</pre>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org000000a" class="outline-3">
+<h3 id="org000000a"><span class="section-number-3">1.4.</span> peephole 优化</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+gcc 的 arm/aarch64 有大量的 peephole 优化， 但 riscv 基本没有任何 peephole 优化.
+</p>
+
+<p>
+MIPS riscv 是否有特定的指令适合用来做 peephole 优化? 例如 aarch64 的 ldp/stp 指令
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000000d" class="outline-3">
+<h3 id="org000000d"><span class="section-number-3">1.5.</span> prefetch</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+gcc 的 `prefetch-loop-arrays` 及 `__builtin_prefetch` 依赖 prefetch 指令和 cache
+size 的配置
+</p>
+
+<p>
+MIPS riscv 是否支持 prefetch 指令?
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000010" class="outline-3">
+<h3 id="org0000010"><span class="section-number-3">1.6.</span> intrinsics</h3>
+<div class="outline-text-3" id="text-1-6">
+<p>
+MIPS riscv 是否有新增指令需要通过 intrinsic 来使用
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway (sunwayforever@gmail.com)<br />
+Date: 2022-05-16 Mon 17:00<br />
+Last updated: 2022-07-17 Sun 11:39</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
+<br />
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>
