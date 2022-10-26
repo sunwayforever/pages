@@ -67,7 +67,7 @@
 <li><a href="#org0000050">1.6.2. inter_op_parallelism_threads</a></li>
 <li><a href="#org0000053">1.6.3. intra_op_parallelism_threads</a></li>
 <li><a href="#org0000056">1.6.4. OMP_NUM_THREADS</a></li>
-<li><a href="#org0000059">1.6.5. 测试</a></li>
+<li><a href="#org000005e">1.6.5. 测试</a></li>
 <li><a href="#org000005c">1.6.6. 其它</a></li>
 </ul>
 </li>
@@ -1071,8 +1071,8 @@ OMP_NUM_THREADS 之于 mkl 相当于 intra_op_parallelism_threads 之于 eigen.
 </div>
 </div>
 
-<div id="outline-container-org0000059" class="outline-4">
-<h4 id="org0000059"><span class="section-number-4">1.6.5</span> 测试</h4>
+<div id="outline-container-org000005e" class="outline-4">
+<h4 id="org000005e"><span class="section-number-4">1.6.5</span> 测试</h4>
 <div class="outline-text-4" id="text-1-6-5">
 <p>
 通过测试一个简单的 mnist 模型, 有以下结论:
@@ -1085,15 +1085,60 @@ OMP_NUM_THREADS 之于 mkl 相当于 intra_op_parallelism_threads 之于 eigen.
 
 <li>OMP_NUM_THREADS 对 mkl 作用很大, intra_op_parallelism_threads 的作用不明显</li>
 
-<li><p>
-设定各个 pool 的大小时需要考虑 core 的个数以避免 thread oversubscription, 例如当 `inter_op_parallelism_threads * OMP_NUM_THREADS 超过 core` 时 mkl 性能会下降很多.
+<li>设定各个 pool 的大小时需要考虑 core 的个数以避免 thread oversubscription, 例如当 `inter_op_parallelism_threads * OMP_NUM_THREADS 超过 core` 时 mkl 性能会下降很多.</li>
+</ol>
+</div>
+
+<div id="outline-container-org000005b" class="outline-5">
+<h5 id="org000005b"><span class="section-number-5">1.6.5.1</span> 比较多线程对性能的提升</h5>
+<div class="outline-text-5" id="text-1-6-5-1">
+<p>
+线程数不超过 core 的个数时, 更多的线程有更好的性能, 但随着线程数的增加提升越来越小, 例如:
 </p>
 
 <p>
-另外, 看起来 tensorflow 的代码会强制 inter_op_parallelism_threads 不超过 core
-的个数, 且 mkl 默认的 intra_op_parallelism_threads 等于 core/OMP_NUM_THREADS
-</p></li>
+eigen 在 40 core CPU 测试的结果:
+</p>
+
+
+<div id="org0000059" class="figure">
+<p><img src="../extra/eigen_mt_benchmark.png" alt="eigen_mt_benchmark.png" />
+</p>
+</div>
+
+<p>
+mkl 在 40 core CPU 的测试结果:
+</p>
+
+
+<div id="org000005a" class="figure">
+<p><img src="../extra/mkl_mt_benchmark.png" alt="mkl_mt_benchmark.png" />
+</p>
+</div>
+
+<p>
+其中图中右上角的图例表示不同模型和大小.
+</p>
+
+<p>
+从上图能得出结论:
+</p>
+
+<ol class="org-ol">
+<li>模型越大提升越多</li>
+<li>线程越多, 提升空间越小</li>
+<li>超过 core 个数时性能会变差</li>
+<li>40 个 core 只提升了 5~10 倍, 且大约 8 个 thread 时已经接近性能最大值.</li>
 </ol>
+
+<p>
+可见 intra_op_parallelism 性能一般, 可能是因为 intra_op_parallelism 属于
+find-graind parallelism, 相对于 corse-grained palrallelism (例如
+inter_op_parallelism), 它有许多通信和同步的开销 (cache, 锁, 原子操作, 内存屏障等),
+对于这类问题, 使用向量指令会更有优势 (Optimizing software in C++ By Agner Fog,
+p108, Multithreading)
+</p>
+</div>
 </div>
 </div>
 
@@ -1129,7 +1174,7 @@ tensorflow 只会使用一个 (a single) cuda stream:
 
 <p class="author">Author: sunway (sunway@dogdog.run)<br />
 Date: 2022-10-17 Mon 15:18<br />
-Last updated: 2022-10-25 Tue 11:49</p>
+Last updated: 2022-10-26 Wed 12:18</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
