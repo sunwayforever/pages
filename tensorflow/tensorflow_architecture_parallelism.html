@@ -10,35 +10,13 @@
 <link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
 <link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
 <link rel = "icon" href = "/icon.png"  type = "image/x-icon">
-<script type="text/javascript">
-// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
-<!--/*--><![CDATA[/*><!--*/
-     function CodeHighlightOn(elem, id)
-     {
-       var target = document.getElementById(id);
-       if(null != target) {
-         elem.classList.add("code-highlighted");
-         target.classList.add("code-highlighted");
-       }
-     }
-     function CodeHighlightOff(elem, id)
-     {
-       var target = document.getElementById(id);
-       if(null != target) {
-         elem.classList.remove("code-highlighted");
-         target.classList.remove("code-highlighted");
-       }
-     }
-    /*]]>*///-->
-// @license-end
-</script>
 </head>
 <body>
-<div id="content">
+<div id="content" class="content">
 <h1 class="title">Tensorflow Architecture: Parallism</h1>
-<div id="table-of-contents">
+<div id="table-of-contents" role="doc-toc">
 <h2>Table of Contents</h2>
-<div id="text-table-of-contents">
+<div id="text-table-of-contents" role="doc-toc">
 <ul>
 <li><a href="#org000007c">1. Tensorflow Architecture: Parallism</a>
 <ul>
@@ -47,7 +25,7 @@
 <li><a href="#org0000007">1.3. distributed runtime</a></li>
 <li><a href="#org000003a">1.4. kernels</a>
 <ul>
-<li><a href="#org000000a">1.4.1. Eigen</a></li>
+<li><a href="#org000000a">1.4.1. eigen</a></li>
 <li><a href="#org0000010">1.4.2. mkl</a></li>
 <li><a href="#org000001e">1.4.3. cuda</a></li>
 <li><a href="#org0000027">1.4.4. sycl</a></li>
@@ -62,7 +40,7 @@
 <li><a href="#org0000056">1.5.3. intra_op_parallelism_threads</a></li>
 <li><a href="#org0000059">1.5.4. OMP_NUM_THREADS</a></li>
 <li><a href="#org0000067">1.5.5. 测试</a></li>
-<li><a href="#org0000073">1.5.6. 其它</a></li>
+<li><a href="#org0000074">1.5.6. 其它</a></li>
 <li><a href="#org0000076">1.5.7. 后续工作</a></li>
 </ul>
 </li>
@@ -73,11 +51,11 @@
 </div>
 
 <div id="outline-container-org000007c" class="outline-2">
-<h2 id="org000007c"><span class="section-number-2">1</span> Tensorflow Architecture: Parallism</h2>
+<h2 id="org000007c"><span class="section-number-2">1.</span> Tensorflow Architecture: Parallism</h2>
 <div class="outline-text-2" id="text-1">
 </div>
 <div id="outline-container-org0000001" class="outline-3">
-<h3 id="org0000001"><span class="section-number-3">1.1</span> Overview</h3>
+<h3 id="org0000001"><span class="section-number-3">1.1.</span> Overview</h3>
 <div class="outline-text-3" id="text-1-1">
 <p>
 从代码上看, tensorflow 主要包括:
@@ -110,45 +88,6 @@
 功能上大致的层次是:
 </p>
 
-<div class="org-src-container">
-<pre class="src src-dot"><span class="org-keyword">digraph</span> {
-    <span class="org-keyword">node</span> [<span class="org-variable-name">shape=</span><span class="org-string">"box"</span>];
-
-    grappler -&gt; distributed_runtime
-    grappler -&gt; runtime_executor
-
-    runtime_executor -&gt; kernels
-    runtime_thread_pool [<span class="org-variable-name">shape=</span><span class="org-string">"cylinder"</span>]
-    runtime_executor -&gt; runtime_thread_pool [<span class="org-variable-name">style=</span><span class="org-string">"dashed"</span>,<span class="org-variable-name">arrowhead=</span><span class="org-keyword">none</span>,<span class="org-variable-name">penwidth=</span>3,<span class="org-variable-name">color=</span><span class="org-string">"blue"</span>]
-
-    kernels-&gt; xla [<span class="org-variable-name">color=</span><span class="org-string">"red"</span>]
-    kernels-&gt;mkl [<span class="org-variable-name">color=</span><span class="org-string">"red"</span>]
-    kernels-&gt;eigen [<span class="org-variable-name">color=</span><span class="org-string">"red"</span>]
-    kernels-&gt;sycl [<span class="org-variable-name">color=</span><span class="org-string">"red"</span>]
-    kernels-&gt;cuda [<span class="org-variable-name">color=</span><span class="org-string">"red"</span>]
-    kernels-&gt;stream_executor [<span class="org-variable-name">color=</span><span class="org-string">"red"</span>]
-
-    eigen-&gt;cpu
-    eigen-&gt;cuda
-    eigen-&gt;sycl
-    eigen_thread_pool [<span class="org-variable-name">shape=</span><span class="org-string">"cylinder"</span>]
-    eigen-&gt;eigen_thread_pool [<span class="org-variable-name">style=</span><span class="org-string">"dashed"</span>,<span class="org-variable-name">arrowhead=</span><span class="org-keyword">none</span>,<span class="org-variable-name">penwidth=</span>3,<span class="org-variable-name">color=</span><span class="org-string">"blue"</span>]
-
-    stream_executor-&gt;cpu
-    stream_executor-&gt;cublas
-    stream_executor-&gt;cudnn
-    stream_executor-&gt;cufft
-
-    xla-&gt;cpu
-    xla-&gt;cuda
-
-    mkl-&gt;cpu
-    openmp_thread_pool [<span class="org-variable-name">shape=</span><span class="org-string">"cylinder"</span>]
-    mkl-&gt;openmp_thread_pool [<span class="org-variable-name">style=</span><span class="org-string">"dashed"</span>,<span class="org-variable-name">arrowhead=</span><span class="org-keyword">none</span>,<span class="org-variable-name">penwidth=</span>3,<span class="org-variable-name">color=</span><span class="org-string">"blue"</span>]
-}
-</pre>
-</div>
-
 
 <div id="org0000000" class="figure">
 <p><img src="../extra/tf_arch.png" alt="tf_arch.png" />
@@ -158,7 +97,7 @@
 </div>
 
 <div id="outline-container-org0000004" class="outline-3">
-<h3 id="org0000004"><span class="section-number-3">1.2</span> grappler</h3>
+<h3 id="org0000004"><span class="section-number-3">1.2.</span> grappler</h3>
 <div class="outline-text-3" id="text-1-2">
 <p>
 <a href="http://web.stanford.edu/class/cs245/slides/TFGraphOptimizationsStanford.pdf">http://web.stanford.edu/class/cs245/slides/TFGraphOptimizationsStanford.pdf</a>
@@ -167,7 +106,7 @@
 </div>
 
 <div id="outline-container-org0000007" class="outline-3">
-<h3 id="org0000007"><span class="section-number-3">1.3</span> distributed runtime</h3>
+<h3 id="org0000007"><span class="section-number-3">1.3.</span> distributed runtime</h3>
 <div class="outline-text-3" id="text-1-3">
 <p>
 <a href="https://www.tensorflow.org/tutorials/distribute/keras">https://www.tensorflow.org/tutorials/distribute/keras</a>
@@ -176,7 +115,7 @@
 </div>
 
 <div id="outline-container-org000003a" class="outline-3">
-<h3 id="org000003a"><span class="section-number-3">1.4</span> kernels</h3>
+<h3 id="org000003a"><span class="section-number-3">1.4.</span> kernels</h3>
 <div class="outline-text-3" id="text-1-4">
 <p>
 默认情况下 tensorflow 使用预先手写的 kernel.
@@ -184,10 +123,10 @@
 </div>
 
 <div id="outline-container-org000000a" class="outline-4">
-<h4 id="org000000a"><span class="section-number-4">1.4.1</span> Eigen</h4>
+<h4 id="org000000a"><span class="section-number-4">1.4.1.</span> eigen</h4>
 <div class="outline-text-4" id="text-1-4-1">
 <p>
-默认情况下 tensorflow 使用 <a href="https://eigen.tuxfamily.org/index.php?title=Main_Page">Eigen</a>, Eigen 是一个基于 c++ 模板的线性代数库, 和 BLAS
+默认情况下 tensorflow 使用 <a href="https://eigen.tuxfamily.org/index.php?title=Main_Page">eigen</a>, eigen 是一个基于 c++ 模板的线性代数库, 和 BLAS
 (Basic Linear Algebra Subprograms) 功能类似. 它支持的特性包括:
 </p>
 
@@ -213,7 +152,7 @@
 </div>
 
 <div id="outline-container-org0000010" class="outline-4">
-<h4 id="org0000010"><span class="section-number-4">1.4.2</span> mkl</h4>
+<h4 id="org0000010"><span class="section-number-4">1.4.2.</span> mkl</h4>
 <div class="outline-text-4" id="text-1-4-2">
 <p>
 当配置了 `&#x2013;config=mkl` 时, 会使用 mkl 实现一些算子, 而不使用 eigen.
@@ -229,7 +168,7 @@ mkl 的支持与 cuda 和 sycl 不太一样: 它会提前用一个 MklToTfConver
 </div>
 
 <div id="outline-container-org000000d" class="outline-5">
-<h5 id="org000000d"><span class="section-number-5">1.4.2.1</span> MklSoftmaxOp</h5>
+<h5 id="org000000d"><span class="section-number-5">1.4.2.1.</span> MklSoftmaxOp</h5>
 <div class="outline-text-5" id="text-1-4-2-1">
 <div class="org-src-container">
 <pre class="src src-C++"><span class="org-preprocessor">#ifdef</span> INTEL_MKL
@@ -254,7 +193,7 @@ mkl 的支持与 cuda 和 sycl 不太一样: 它会提前用一个 MklToTfConver
 </div>
 
 <div id="outline-container-org000001e" class="outline-4">
-<h4 id="org000001e"><span class="section-number-4">1.4.3</span> cuda</h4>
+<h4 id="org000001e"><span class="section-number-4">1.4.3.</span> cuda</h4>
 <div class="outline-text-4" id="text-1-4-3">
 <p>
 当配置了 `&#x2013;config=cuda` 时, 会使用 cuda 实现一些算子:
@@ -270,7 +209,7 @@ mkl 的支持与 cuda 和 sycl 不太一样: 它会提前用一个 MklToTfConver
 </div>
 
 <div id="outline-container-org0000015" class="outline-5">
-<h5 id="org0000015"><span class="section-number-5">1.4.3.1</span> SoftmaxOpGPU</h5>
+<h5 id="org0000015"><span class="section-number-5">1.4.3.1.</span> SoftmaxOpGPU</h5>
 <div class="outline-text-5" id="text-1-4-3-1">
 <p>
 softmax 的 gpu 实现是直接用 cuda 实现的
@@ -337,7 +276,7 @@ REGISTER_KERNEL_BUILDER(
 </div>
 
 <div id="outline-container-org0000018" class="outline-5">
-<h5 id="org0000018"><span class="section-number-5">1.4.3.2</span> ArgMaxOp</h5>
+<h5 id="org0000018"><span class="section-number-5">1.4.3.2.</span> ArgMaxOp</h5>
 <div class="outline-text-5" id="text-1-4-3-2">
 <p>
 argmax 的 gpu 实现是通过 eigen 的 cuda 实现的
@@ -413,7 +352,7 @@ DECLARE_COMPUTE_SPEC(2);
 </div>
 
 <div id="outline-container-org000001b" class="outline-5">
-<h5 id="org000001b"><span class="section-number-5">1.4.3.3</span> MatMulOp</h5>
+<h5 id="org000001b"><span class="section-number-5">1.4.3.3.</span> MatMulOp</h5>
 <div class="outline-text-5" id="text-1-4-3-3">
 <p>
 matmul 的 gpu 实现是通过 stream executor 实现的
@@ -441,7 +380,7 @@ REGISTER_KERNEL_BUILDER(
 <span class="org-preprocessor">#if</span> GOOGLE_CUDA
 <span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">T</span>&gt;
 <span class="org-keyword">struct</span> <span class="org-type">LaunchMatMul</span>&lt;GPUDevice, <span class="org-type">T</span>, <span class="org-constant">true</span> <span class="org-comment-delimiter">/* </span><span class="org-comment">USE_CUBLAS</span><span class="org-comment-delimiter"> */</span>&gt; {
-    <span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-variable-name">launch</span>() {
+    <span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">launch</span>() {
         <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
         <span class="org-keyword">auto</span>* <span class="org-variable-name">stream</span> = ctx-&gt;op_device_context()-&gt;stream();
         <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
@@ -463,7 +402,7 @@ REGISTER_KERNEL_BUILDER(
 </div>
 
 <div id="outline-container-org0000027" class="outline-4">
-<h4 id="org0000027"><span class="section-number-4">1.4.4</span> sycl</h4>
+<h4 id="org0000027"><span class="section-number-4">1.4.4.</span> sycl</h4>
 <div class="outline-text-4" id="text-1-4-4">
 <p>
 当配置了 `&#x2013;config=sycl` 时, 会使用 sycl 实现一些算子.
@@ -481,7 +420,7 @@ sycl 的支持与 GPU 的支持类似 (除了 stream executor) 的方式:
 </div>
 
 <div id="outline-container-org0000021" class="outline-5">
-<h5 id="org0000021"><span class="section-number-5">1.4.4.1</span> SoftmaxOp</h5>
+<h5 id="org0000021"><span class="section-number-5">1.4.4.1.</span> SoftmaxOp</h5>
 <div class="outline-text-5" id="text-1-4-4-1">
 <p>
 softmax 的 sycl 支持是通过 eigen 实现的
@@ -533,7 +472,7 @@ REGISTER_KERNEL_BUILDER(
 </div>
 
 <div id="outline-container-org0000024" class="outline-5">
-<h5 id="org0000024"><span class="section-number-5">1.4.4.2</span> Pooling3DOp</h5>
+<h5 id="org0000024"><span class="section-number-5">1.4.4.2.</span> Pooling3DOp</h5>
 <div class="outline-text-5" id="text-1-4-4-2">
 <p>
 Pooling3DOp 是直接用 sycl 实现的
@@ -572,7 +511,7 @@ REGISTER_KERNEL_BUILDER(
 </div>
 
 <div id="outline-container-org000002a" class="outline-4">
-<h4 id="org000002a"><span class="section-number-4">1.4.5</span> stream executor</h4>
+<h4 id="org000002a"><span class="section-number-4">1.4.5.</span> stream executor</h4>
 <div class="outline-text-4" id="text-1-4-5">
 <p>
 启用 cuda 后使用 cublas 和 cudnn 的 op 需要用 stream executor 来执行, 例如:
@@ -605,7 +544,7 @@ cuda 和 rocm 均有对应的具体实现, 例如 BlasSupport 中的 DoBlasAsum,
 </div>
 
 <div id="outline-container-org0000037" class="outline-4">
-<h4 id="org0000037"><span class="section-number-4">1.4.6</span> XLA</h4>
+<h4 id="org0000037"><span class="section-number-4">1.4.6.</span> XLA</h4>
 <div class="outline-text-4" id="text-1-4-6">
 <p>
 <a href="https://www.tensorflow.org/XLA">XLA</a> (Accelerated Linear Algebra) 是一个针对 graph 的 jit (just in time) 编译器.
@@ -621,7 +560,7 @@ XLA 编译的步骤大约是:
 </p>
 
 <ol class="org-ol">
-<li>把图翻译成 HLO IR<sup><a id="fnr.1" class="footref" href="#fn.1">1</a></sup> (类似于 <a href="../tvm/tvm_relay_ir.html#ID-404b926a-32a8-4ab8-8bdd-6f28a7ae0961">TVM Relay IR</a>), 新版本的 tensorflow 会先翻译成
+<li>把图翻译成 HLO IR<sup><a id="fnr.1" class="footref" href="#fn.1" role="doc-backlink">1</a></sup> (类似于 <a href="../tvm/tvm_relay_ir.html#ID-404b926a-32a8-4ab8-8bdd-6f28a7ae0961">TVM Relay IR</a>), 新版本的 tensorflow 会先翻译成
 MLIR (Multi-Level IR) 再翻译成 HLO</li>
 <li>对 HLO 进行优化</li>
 <li>XLA 后端 (cpu, gpu) 把 HLO 转换为 LLIR</li>
@@ -632,7 +571,7 @@ MLIR (Multi-Level IR) 再翻译成 HLO</li>
 </div>
 
 <div id="outline-container-org000002d" class="outline-5">
-<h5 id="org000002d"><span class="section-number-5">1.4.6.1</span> tf2xla</h5>
+<h5 id="org000002d"><span class="section-number-5">1.4.6.1.</span> tf2xla</h5>
 <div class="outline-text-5" id="text-1-4-6-1">
 <p>
 XLA 并不能凭空生成 kernel, 它需要 tf2xla 告诉它 op 要怎么计算 (以 IR 的形式), 例如:
@@ -672,7 +611,7 @@ XLA 并不能凭空生成 kernel, 它需要 tf2xla 告诉它 op 要怎么计算 
 </div>
 
 <div id="outline-container-org0000031" class="outline-5">
-<h5 id="org0000031"><span class="section-number-5">1.4.6.2</span> HloModulePass</h5>
+<h5 id="org0000031"><span class="section-number-5">1.4.6.2.</span> HloModulePass</h5>
 <div class="outline-text-5" id="text-1-4-6-2">
 <p>
 针对 HLO 的优化, 例如:
@@ -708,7 +647,7 @@ y=z+d
 </div>
 
 <div id="outline-container-org0000034" class="outline-5">
-<h5 id="org0000034"><span class="section-number-5">1.4.6.3</span> CpuCompiler/GpuCompiler</h5>
+<h5 id="org0000034"><span class="section-number-5">1.4.6.3.</span> CpuCompiler/GpuCompiler</h5>
 <div class="outline-text-5" id="text-1-4-6-3">
 <ol class="org-ol">
 <li>backend 通过 `RunHloPasses` 针对 HLO 做优化</li>
@@ -727,7 +666,7 @@ y=z+d
 </div>
 
 <div id="outline-container-org0000079" class="outline-3">
-<h3 id="org0000079"><span class="section-number-3">1.5</span> Parallelism</h3>
+<h3 id="org0000079"><span class="section-number-3">1.5.</span> Parallelism</h3>
 <div class="outline-text-3" id="text-1-5">
 <p>
 parallelism 主要涉及到几个方面:
@@ -750,7 +689,7 @@ prefetch 功能</li>
 </div>
 
 <div id="outline-container-org000004f" class="outline-4">
-<h4 id="org000004f"><span class="section-number-4">1.5.1</span> data parallelism</h4>
+<h4 id="org000004f"><span class="section-number-4">1.5.1.</span> data parallelism</h4>
 <div class="outline-text-4" id="text-1-5-1">
 <p>
 <a href="https://www.tensorflow.org/guide/data_performance">https://www.tensorflow.org/guide/data_performance</a>
@@ -775,7 +714,7 @@ tensorflow dataset api 用 prefetch, interleave, map 并行, 用 tf profiler 分
 </div>
 
 <div id="outline-container-org000003d" class="outline-5">
-<h5 id="org000003d"><span class="section-number-5">1.5.1.1</span> generator</h5>
+<h5 id="org000003d"><span class="section-number-5">1.5.1.1.</span> generator</h5>
 <div class="outline-text-5" id="text-1-5-1-1">
 <p>
 tensorflow dataset api 是一个 <a href="../tech/coroutine.html#ID-e969e80b-4060-4209-91e1-baa79e4076b2">generator</a> 模式的 api, 用来构造 data pipeline, 例如:
@@ -803,7 +742,7 @@ map 类似: 把 `kernel` map 到某个序列上产生另一个序列. generator 
 </div>
 
 <div id="outline-container-org0000041" class="outline-5">
-<h5 id="org0000041"><span class="section-number-5">1.5.1.2</span> prefetch</h5>
+<h5 id="org0000041"><span class="section-number-5">1.5.1.2.</span> prefetch</h5>
 <div class="outline-text-5" id="text-1-5-1-2">
 <p>
 单个 dataset (generator) 是底层数据文件的抽象, 无法并行使用, 但是可以
@@ -837,7 +776,7 @@ generator.next()  generator.next()
 </div>
 
 <div id="outline-container-org0000045" class="outline-5">
-<h5 id="org0000045"><span class="section-number-5">1.5.1.3</span> interleave</h5>
+<h5 id="org0000045"><span class="section-number-5">1.5.1.3.</span> interleave</h5>
 <div class="outline-text-5" id="text-1-5-1-3">
 <p>
 如果 prefetch 不够, 可以用 interleave, interleave 通过 num_parallel_calls 参数可以并行的加载 <b>多个</b> dataset, 例如这样:
@@ -861,7 +800,7 @@ generator2.next()
 </div>
 
 <div id="outline-container-org0000049" class="outline-5">
-<h5 id="org0000049"><span class="section-number-5">1.5.1.4</span> map</h5>
+<h5 id="org0000049"><span class="section-number-5">1.5.1.4.</span> map</h5>
 <div class="outline-text-5" id="text-1-5-1-4">
 <p>
 map 也提供了 num_parallel_calls 可以并行的 map, 例如这样
@@ -880,8 +819,8 @@ generator.next()
 </div>
 </div>
 
-<div id="outline-container-org000004c" class="outline-5">
-<h5 id="org000004c"><span class="section-number-5">1.5.1.5</span> 其它</h5>
+<div id="outline-container-org0000073" class="outline-5">
+<h5 id="org0000073"><span class="section-number-5">1.5.1.5.</span> 其它</h5>
 <div class="outline-text-5" id="text-1-5-1-5">
 <p>
 由于 dataset 容易成为训练时的瓶颈, 所以 nvidia 专门有一个 <a href="https://developer.nvidia.com/DALI">DALI</a> 库用来加速
@@ -892,7 +831,7 @@ dataset 的处理
 </div>
 
 <div id="outline-container-org0000053" class="outline-4">
-<h4 id="org0000053"><span class="section-number-4">1.5.2</span> inter_op_parallelism_threads</h4>
+<h4 id="org0000053"><span class="section-number-4">1.5.2.</span> inter_op_parallelism_threads</h4>
 <div class="outline-text-4" id="text-1-5-2">
 <p>
 指相互独立的 op 可以并行的计算, 例如:
@@ -916,7 +855,7 @@ DirectSession 的 thread_pools_ 和 grpc_server 的 compute_pool
 </div>
 
 <div id="outline-container-org0000056" class="outline-4">
-<h4 id="org0000056"><span class="section-number-4">1.5.3</span> intra_op_parallelism_threads</h4>
+<h4 id="org0000056"><span class="section-number-4">1.5.3.</span> intra_op_parallelism_threads</h4>
 <div class="outline-text-4" id="text-1-5-3">
 <p>
 eigen 的 TensorDeviceThreadPool 支持对单个 op 并行计算, tensorflow 通过
@@ -926,7 +865,7 @@ intra_op_parallelism_threads 设置 eigen thread pool 的大小
 </div>
 
 <div id="outline-container-org0000059" class="outline-4">
-<h4 id="org0000059"><span class="section-number-4">1.5.4</span> OMP_NUM_THREADS</h4>
+<h4 id="org0000059"><span class="section-number-4">1.5.4.</span> OMP_NUM_THREADS</h4>
 <div class="outline-text-4" id="text-1-5-4">
 <p>
 mkl 算子的并行是通过 openmp 实现, OMP_NUM_THREADS 可以控制 openmp thread poll 的大小. OMP_NUM_THREADS 之于 mkl 相当于 intra_op_parallelism_threads 之于 eigen.
@@ -935,7 +874,7 @@ mkl 算子的并行是通过 openmp 实现, OMP_NUM_THREADS 可以控制 openmp 
 </div>
 
 <div id="outline-container-org0000067" class="outline-4">
-<h4 id="org0000067"><span class="section-number-4">1.5.5</span> 测试</h4>
+<h4 id="org0000067"><span class="section-number-4">1.5.5.</span> 测试</h4>
 <div class="outline-text-4" id="text-1-5-5">
 <p>
 通过测试一个简单的 mnist 模型, 有以下结论:
@@ -953,7 +892,7 @@ mkl 算子的并行是通过 openmp 实现, OMP_NUM_THREADS 可以控制 openmp 
 </div>
 
 <div id="outline-container-org000005e" class="outline-5">
-<h5 id="org000005e"><span class="section-number-5">1.5.5.1</span> intra_op_parallelism 性能</h5>
+<h5 id="org000005e"><span class="section-number-5">1.5.5.1.</span> intra_op_parallelism 性能</h5>
 <div class="outline-text-5" id="text-1-5-5-1">
 <p>
 线程数不超过 core 的个数时, 更多的线程有更好的性能, 但随着线程数的增加提升越来越小, 例如:
@@ -1003,7 +942,7 @@ find-graind parallelism, 相对于 corse-grained palrallelism (例如 make -j �
 </div>
 
 <div id="outline-container-org0000064" class="outline-5">
-<h5 id="org0000064"><span class="section-number-5">1.5.5.2</span> inter_op_parallelism 性能</h5>
+<h5 id="org0000064"><span class="section-number-5">1.5.5.2.</span> inter_op_parallelism 性能</h5>
 <div class="outline-text-5" id="text-1-5-5-2">
 <p>
 前面提到 inter_op_parallelism_threads 对 mnist 影响不大, 通过构造一个并行的网络,
@@ -1053,12 +992,12 @@ mkl @ 40 core CPU, 同时指定 OMP_NUM_THREADS=2 的结果:
 </div>
 </div>
 
-<div id="outline-container-org0000073" class="outline-4">
-<h4 id="org0000073"><span class="section-number-4">1.5.6</span> 其它</h4>
+<div id="outline-container-org0000074" class="outline-4">
+<h4 id="org0000074"><span class="section-number-4">1.5.6.</span> 其它</h4>
 <div class="outline-text-4" id="text-1-5-6">
 </div>
 <div id="outline-container-org000006a" class="outline-5">
-<h5 id="org000006a"><span class="section-number-5">1.5.6.1</span> XLA 并行编译</h5>
+<h5 id="org000006a"><span class="section-number-5">1.5.6.1.</span> XLA 并行编译</h5>
 <div class="outline-text-5" id="text-1-5-6-1">
 <p>
 虽然 xla 有可能通过并行加速编译
@@ -1069,7 +1008,7 @@ mkl @ 40 core CPU, 同时指定 OMP_NUM_THREADS=2 的结果:
 </div>
 
 <div id="outline-container-org000006d" class="outline-5">
-<h5 id="org000006d"><span class="section-number-5">1.5.6.2</span> 多个 cuda stream</h5>
+<h5 id="org000006d"><span class="section-number-5">1.5.6.2.</span> 多个 cuda stream</h5>
 <div class="outline-text-5" id="text-1-5-6-2">
 <p>
 tensorflow 只会使用一个 (a single) cuda stream:
@@ -1079,7 +1018,7 @@ tensorflow 只会使用一个 (a single) cuda stream:
 </div>
 
 <div id="outline-container-org0000070" class="outline-5">
-<h5 id="org0000070"><span class="section-number-5">1.5.6.3</span> distributed training</h5>
+<h5 id="org0000070"><span class="section-number-5">1.5.6.3.</span> distributed training</h5>
 <div class="outline-text-5" id="text-1-5-6-3">
 <p>
 <a href="https://www.oreilly.com/content/distributed-tensorflow/">https://www.oreilly.com/content/distributed-tensorflow/</a>
@@ -1093,7 +1032,7 @@ tensorflow 只会使用一个 (a single) cuda stream:
 </div>
 
 <div id="outline-container-org0000076" class="outline-4">
-<h4 id="org0000076"><span class="section-number-4">1.5.7</span> 后续工作</h4>
+<h4 id="org0000076"><span class="section-number-4">1.5.7.</span> 后续工作</h4>
 <div class="outline-text-4" id="text-1-5-7">
 <ol class="org-ol">
 <li><p>
@@ -1125,9 +1064,9 @@ XLA 使用 llvm 生成 cpu 指令时需要 RISC-V 后端生成优化指令
 <h2 class="footnotes">Footnotes: </h2>
 <div id="text-footnotes">
 
-<div class="footdef"><sup><a id="fn.1" class="footnum" href="#fnr.1">1</a></sup> <div class="footpara"><p class="footpara">
-IR (intermediate representation) 有利于模块解耦合, 代码重用, 并且使代码优化更容易. You can solve every problem with another level of indirection, except
-for the problem of too many levels of indirection.
+<div class="footdef"><sup><a id="fn.1" class="footnum" href="#fnr.1" role="doc-backlink">1</a></sup> <div class="footpara" role="doc-footnote"><p class="footpara">
+IR (Intermediate Representation), 代码的中间表示, 有利于模块解耦合, 代码重用, 并且使代码优化更容易. You can solve every problem with another level of
+indirection, except for the problem of too many levels of indirection.
 </p></div></div>
 
 
@@ -1137,7 +1076,7 @@ for the problem of too many levels of indirection.
 
 <p class="author">Author: sunway (sunway@dogdog.run)<br />
 Date: 2022-10-17 Mon 15:18<br />
-Last updated: 2022-10-27 Thu 12:29</p>
+Last updated: 2022-10-27 Thu 15:19</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
