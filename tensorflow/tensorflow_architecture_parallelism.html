@@ -1,0 +1,1156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>Tensorflow Architecture: Parallism</title>
+
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+<script type="text/javascript">
+// @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain
+<!--/*--><![CDATA[/*><!--*/
+     function CodeHighlightOn(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.add("code-highlighted");
+         target.classList.add("code-highlighted");
+       }
+     }
+     function CodeHighlightOff(elem, id)
+     {
+       var target = document.getElementById(id);
+       if(null != target) {
+         elem.classList.remove("code-highlighted");
+         target.classList.remove("code-highlighted");
+       }
+     }
+    /*]]>*///-->
+// @license-end
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Tensorflow Architecture: Parallism</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org000007c">1. Tensorflow Architecture: Parallism</a>
+<ul>
+<li><a href="#org0000001">1.1. Overview</a></li>
+<li><a href="#org0000004">1.2. grappler</a></li>
+<li><a href="#org0000007">1.3. distributed runtime</a></li>
+<li><a href="#org000003a">1.4. kernels</a>
+<ul>
+<li><a href="#org000000a">1.4.1. Eigen</a></li>
+<li><a href="#org0000010">1.4.2. mkl</a></li>
+<li><a href="#org000001e">1.4.3. cuda</a></li>
+<li><a href="#org0000027">1.4.4. sycl</a></li>
+<li><a href="#org000002a">1.4.5. stream executor</a></li>
+<li><a href="#org0000037">1.4.6. XLA</a></li>
+</ul>
+</li>
+<li><a href="#org0000079">1.5. Parallelism</a>
+<ul>
+<li><a href="#org000004f">1.5.1. data parallelism</a></li>
+<li><a href="#org0000053">1.5.2. inter_op_parallelism_threads</a></li>
+<li><a href="#org0000056">1.5.3. intra_op_parallelism_threads</a></li>
+<li><a href="#org0000059">1.5.4. OMP_NUM_THREADS</a></li>
+<li><a href="#org0000067">1.5.5. 测试</a></li>
+<li><a href="#org0000073">1.5.6. 其它</a></li>
+<li><a href="#org0000076">1.5.7. 后续工作</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000007c" class="outline-2">
+<h2 id="org000007c"><span class="section-number-2">1</span> Tensorflow Architecture: Parallism</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org0000001" class="outline-3">
+<h3 id="org0000001"><span class="section-number-3">1.1</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+从代码上看, tensorflow 主要包括:
+</p>
+
+<ol class="org-ol">
+<li>core
+<ol class="org-ol">
+<li>grappler</li>
+<li>distributed runtime</li>
+<li>runtime executor</li>
+<li>kernels</li>
+</ol></li>
+<li>stream executor</li>
+<li>compiler
+<ol class="org-ol">
+<li>mlir</li>
+<li>XLA</li>
+</ol></li>
+<li>3rd party
+<ol class="org-ol">
+<li>eigen</li>
+<li>mkl</li>
+<li>absl</li>
+<li>&#x2026;</li>
+</ol></li>
+</ol>
+
+<p>
+功能上大致的层次是:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-dot"><span class="org-keyword">digraph</span> {
+    <span class="org-keyword">node</span> [<span class="org-variable-name">shape=</span><span class="org-string">"box"</span>];
+
+    grappler -&gt; distributed_runtime
+    grappler -&gt; runtime_executor
+
+    runtime_executor -&gt; kernels
+    runtime_thread_pool [<span class="org-variable-name">shape=</span><span class="org-string">"cylinder"</span>]
+    runtime_executor -&gt; runtime_thread_pool [<span class="org-variable-name">style=</span><span class="org-string">"dashed"</span>,<span class="org-variable-name">arrowhead=</span><span class="org-keyword">none</span>,<span class="org-variable-name">penwidth=</span>3,<span class="org-variable-name">color=</span><span class="org-string">"blue"</span>]
+
+    kernels-&gt; xla [<span class="org-variable-name">color=</span><span class="org-string">"red"</span>]
+    kernels-&gt;mkl [<span class="org-variable-name">color=</span><span class="org-string">"red"</span>]
+    kernels-&gt;eigen [<span class="org-variable-name">color=</span><span class="org-string">"red"</span>]
+    kernels-&gt;sycl [<span class="org-variable-name">color=</span><span class="org-string">"red"</span>]
+    kernels-&gt;cuda [<span class="org-variable-name">color=</span><span class="org-string">"red"</span>]
+    kernels-&gt;stream_executor [<span class="org-variable-name">color=</span><span class="org-string">"red"</span>]
+
+    eigen-&gt;cpu
+    eigen-&gt;cuda
+    eigen-&gt;sycl
+    eigen_thread_pool [<span class="org-variable-name">shape=</span><span class="org-string">"cylinder"</span>]
+    eigen-&gt;eigen_thread_pool [<span class="org-variable-name">style=</span><span class="org-string">"dashed"</span>,<span class="org-variable-name">arrowhead=</span><span class="org-keyword">none</span>,<span class="org-variable-name">penwidth=</span>3,<span class="org-variable-name">color=</span><span class="org-string">"blue"</span>]
+
+    stream_executor-&gt;cpu
+    stream_executor-&gt;cublas
+    stream_executor-&gt;cudnn
+    stream_executor-&gt;cufft
+
+    xla-&gt;cpu
+    xla-&gt;cuda
+
+    mkl-&gt;cpu
+    openmp_thread_pool [<span class="org-variable-name">shape=</span><span class="org-string">"cylinder"</span>]
+    mkl-&gt;openmp_thread_pool [<span class="org-variable-name">style=</span><span class="org-string">"dashed"</span>,<span class="org-variable-name">arrowhead=</span><span class="org-keyword">none</span>,<span class="org-variable-name">penwidth=</span>3,<span class="org-variable-name">color=</span><span class="org-string">"blue"</span>]
+}
+</pre>
+</div>
+
+
+<div id="org0000000" class="figure">
+<p><img src="../extra/tf_arch.png" alt="tf_arch.png" />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000004" class="outline-3">
+<h3 id="org0000004"><span class="section-number-3">1.2</span> grappler</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+<a href="http://web.stanford.edu/class/cs245/slides/TFGraphOptimizationsStanford.pdf">http://web.stanford.edu/class/cs245/slides/TFGraphOptimizationsStanford.pdf</a>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000007" class="outline-3">
+<h3 id="org0000007"><span class="section-number-3">1.3</span> distributed runtime</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+<a href="https://www.tensorflow.org/tutorials/distribute/keras">https://www.tensorflow.org/tutorials/distribute/keras</a>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000003a" class="outline-3">
+<h3 id="org000003a"><span class="section-number-3">1.4</span> kernels</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+默认情况下 tensorflow 使用预先手写的 kernel.
+</p>
+</div>
+
+<div id="outline-container-org000000a" class="outline-4">
+<h4 id="org000000a"><span class="section-number-4">1.4.1</span> Eigen</h4>
+<div class="outline-text-4" id="text-1-4-1">
+<p>
+默认情况下 tensorflow 使用 <a href="https://eigen.tuxfamily.org/index.php?title=Main_Page">Eigen</a>, Eigen 是一个基于 c++ 模板的线性代数库, 和 BLAS
+(Basic Linear Algebra Subprograms) 功能类似. 它支持的特性包括:
+</p>
+
+<ol class="org-ol">
+<li>在 cpu 直接执行</li>
+<li>支持 <a href="https://www.openmp.org/resources/tutorials-articles/">openmp</a> 和 thread pool</li>
+<li>用 cuda 执行</li>
+<li>使用指定的 BLAS 或 MKL (Math Kernel Library)</li>
+<li>使用 <a href="https://www.khronos.org/sycl/">sycl</a></li>
+</ol>
+
+<p>
+在 tensorflow 里 eigen 会用到以下几个特性:
+</p>
+
+<ol class="org-ol">
+<li>在 cpu 直接执行 (使用 thread pool, 不使用 openmp)</li>
+<li>用 cuda 执行</li>
+<li>使用 mkl_dnn 实现其 contract kernel</li>
+<li>使用 sycl</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000010" class="outline-4">
+<h4 id="org0000010"><span class="section-number-4">1.4.2</span> mkl</h4>
+<div class="outline-text-4" id="text-1-4-2">
+<p>
+当配置了 `&#x2013;config=mkl` 时, 会使用 mkl 实现一些算子, 而不使用 eigen.
+</p>
+
+<p>
+mkl 会使用 openmp 通过 thread 和 simd 来加速.
+</p>
+
+<p>
+mkl 的支持与 cuda 和 sycl 不太一样: 它会提前用一个 MklToTfConversionPass 把它支持的 op 修改成自己的名字, 例如 _MklSoftmax
+</p>
+</div>
+
+<div id="outline-container-org000000d" class="outline-5">
+<h5 id="org000000d"><span class="section-number-5">1.4.2.1</span> MklSoftmaxOp</h5>
+<div class="outline-text-5" id="text-1-4-2-1">
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-preprocessor">#ifdef</span> INTEL_MKL
+<span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">Device</span>, <span class="org-keyword">typename</span> <span class="org-type">T</span>&gt;
+<span class="org-keyword">class</span> <span class="org-type">MklSoftmaxOp</span> : <span class="org-keyword">public</span> <span class="org-type">OpKernel</span> {
+   <span class="org-keyword">public</span>:
+    ~<span class="org-function-name">MklSoftmaxOp</span>() {}
+
+    <span class="org-keyword">explicit</span> <span class="org-function-name">MklSoftmaxOp</span>(<span class="org-type">OpKernelConstruction</span>* <span class="org-variable-name">context</span>) : OpKernel(context) {}
+
+    <span class="org-type">void</span> <span class="org-function-name">Compute</span>(<span class="org-type">OpKernelContext</span>* <span class="org-variable-name">context</span>) <span class="org-keyword">override</span> <span class="org-keyword">try</span> {
+        <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+        <span class="org-comment-delimiter">// </span><span class="org-comment">NOTE: softmax_fwd &#26159; mkldnn::softmax_forward</span>
+        softmax_fwd-&gt;Execute(src_data, dst_data);
+    }
+};
+<span class="org-preprocessor">#endif</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000001e" class="outline-4">
+<h4 id="org000001e"><span class="section-number-4">1.4.3</span> cuda</h4>
+<div class="outline-text-4" id="text-1-4-3">
+<p>
+当配置了 `&#x2013;config=cuda` 时, 会使用 cuda 实现一些算子:
+</p>
+
+<ol class="org-ol">
+<li>有些是用 cuda 直接实现</li>
+
+<li>有些是通过 eigen 实现, 间接利用 eigen 的 cuda 支持</li>
+
+<li>有的是通过 stream executor (使用 <a href="https://developer.nvidia.com/cublas">cublas</a> 和 <a href="https://developer.nvidia.com/cudnn">cudnn</a>)</li>
+</ol>
+</div>
+
+<div id="outline-container-org0000015" class="outline-5">
+<h5 id="org0000015"><span class="section-number-5">1.4.3.1</span> SoftmaxOpGPU</h5>
+<div class="outline-text-5" id="text-1-4-3-1">
+<p>
+softmax 的 gpu 实现是直接用 cuda 实现的
+</p>
+
+<ol class="org-ol">
+<li><p>
+首先定义 cuda 这个 config
+</p>
+
+<pre class="example" id="org0000013">
+build:using_cuda --define=using_cuda=true
+build:using_cuda --action_env TF_NEED_CUDA=1
+build:using_cuda --crosstool_top=@local_config_cuda//crosstool:toolchain
+
+build:cuda --config=using_cuda
+build:cuda --define=using_cuda_nvcc=true
+</pre></li>
+
+<li><p>
+using_cuda_nvcc 会导致 GOOGLE_CUDA 宏被定义
+</p>
+
+<pre class="example" id="org0000014">
+def if_cuda(if_true, if_false = []):
+    return select({
+        "@local_config_cuda//cuda:using_nvcc": if_true,
+        "@local_config_cuda//cuda:using_clang": if_true,
+        "//conditions:default": if_false,
+    })
+
+if_cuda(["-DGOOGLE_CUDA=1"])
+</pre></li>
+
+<li><p>
+GOOGLE_CUDA 宏导致 softmax_op_gpu.cu.cc 被编译, 相关 kernel 被注册
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-preprocessor">#if</span> GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+<span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">T</span>&gt;
+<span class="org-keyword">class</span> <span class="org-type">SoftmaxOpGPU</span> : <span class="org-keyword">public</span> <span class="org-type">OpKernel</span> {
+    <span class="org-type">void</span> <span class="org-function-name">Compute</span>(<span class="org-type">OpKernelContext</span>* <span class="org-variable-name">context</span>) <span class="org-keyword">override</span> {
+        GpuLaunchKernel(
+            GenerateNormalizedProb&lt;T, acc_type&gt;, numBlocks, numThreadsPerBlock,
+            0, cu_stream,...);
+    }
+};
+
+<span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">T</span>, <span class="org-keyword">typename</span> <span class="org-type">U</span>&gt;
+__global__ <span class="org-type">void</span> <span class="org-variable-name">GenerateNormalizedProb</span>(...) {
+    <span class="org-keyword">const</span> <span class="org-type">int</span> <span class="org-variable-name">tid</span> = blockIdx.x * blockDim.x + threadIdx.x;
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+}
+
+REGISTER_KERNEL_BUILDER(
+    Name(<span class="org-string">"Softmax"</span>).Device(DEVICE_GPU).TypeConstraint&lt;<span class="org-type">float</span>&gt;(<span class="org-string">"T"</span>),
+    <span class="org-type">SoftmaxOpGPU</span>&lt;<span class="org-type">float</span>&gt;);
+<span class="org-preprocessor">#endif</span>
+</pre>
+</div></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000018" class="outline-5">
+<h5 id="org0000018"><span class="section-number-5">1.4.3.2</span> ArgMaxOp</h5>
+<div class="outline-text-5" id="text-1-4-3-2">
+<p>
+argmax 的 gpu 实现是通过 eigen 的 cuda 实现的
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-preprocessor">#if</span> <span class="org-preprocessor">defined</span>(GOOGLE_CUDA)
+<span class="org-comment-delimiter">// </span><span class="org-comment">NOTE: EIGEN_USE_GPU &#20250;</span>
+<span class="org-preprocessor">#define</span> <span class="org-variable-name">EIGEN_USE_GPU</span>
+REGISTER_KERNEL_BUILDER(
+    Name(<span class="org-string">"ArgMax"</span>)
+        .Device(DEVICE_GPU)
+        .TypeConstraint&lt;type&gt;(<span class="org-string">"T"</span>)
+        .HostMemory(<span class="org-string">"dimension"</span>),
+    <span class="org-type">ArgMaxOp</span>&lt;GPUDevice, type, int64&gt;);
+<span class="org-preprocessor">#endif</span>
+
+<span class="org-comment-delimiter">// </span><span class="org-comment">NOTE: ArgMaxOp &#26159; CPU/GPU &#36890;&#29992;&#30340;, &#19981;&#38656;&#35201;&#21253;&#22312; GOOGLE_CUDA &#23439;&#20013;</span>
+<span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">Device</span>, <span class="org-keyword">typename</span> <span class="org-type">T</span>, <span class="org-keyword">typename</span> <span class="org-type">Tout</span>&gt;
+<span class="org-keyword">class</span> <span class="org-type">ArgMaxOp</span>
+    : <span class="org-keyword">public</span> <span class="org-type">ArgOp</span>&lt;<span class="org-type">Device</span>, <span class="org-type">T</span>, <span class="org-type">Tout</span>, <span class="org-constant">functor</span>::<span class="org-type">ArgMax</span>&lt;<span class="org-type">Device</span>, <span class="org-type">T</span>, <span class="org-type">Tout</span>&gt; &gt; {
+   <span class="org-keyword">public</span>:
+    <span class="org-keyword">explicit</span> <span class="org-function-name">ArgMaxOp</span>(<span class="org-type">OpKernelConstruction</span>* <span class="org-variable-name">context</span>)
+        : ArgOp&lt;<span class="org-type">Device</span>, <span class="org-type">T</span>, <span class="org-type">Tout</span>, <span class="org-constant">functor</span>::<span class="org-type">ArgMax</span>&lt;<span class="org-type">Device</span>, <span class="org-type">T</span>, <span class="org-type">Tout</span>&gt; &gt;(context) {}
+};
+
+<span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">Device</span>, <span class="org-keyword">typename</span> <span class="org-type">T</span>, <span class="org-keyword">typename</span> <span class="org-type">Tout</span>, <span class="org-keyword">typename</span> <span class="org-type">ArgFunctor</span>&gt;
+<span class="org-keyword">class</span> <span class="org-type">ArgOp</span> : <span class="org-keyword">public</span> <span class="org-type">OpKernel</span> {
+   <span class="org-keyword">public</span>:
+    <span class="org-keyword">explicit</span> <span class="org-function-name">ArgOp</span>(<span class="org-type">OpKernelConstruction</span>* <span class="org-variable-name">context</span>) : OpKernel(context) {}
+
+    <span class="org-type">void</span> <span class="org-function-name">Compute</span>(<span class="org-type">OpKernelContext</span>* <span class="org-variable-name">context</span>) <span class="org-keyword">override</span> {
+        <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+
+<span class="org-preprocessor">#define</span> <span class="org-function-name">HANDLE_DIM</span>(<span class="org-variable-name">NDIM</span>) \
+    <span class="org-keyword">case</span> NDIM:           \
+        <span class="org-comment-delimiter">// </span><span class="org-comment">NOTE: &#26368;&#32456;&#20250;&#35843;&#29992; ArgFunctor::Reduce1 &#31561;, &#20363;&#22914; ArgMax::Reduce1 \</span>
+<span class="org-comment">        ArgFunctor::Reduce##NDIM(                                           \</span>
+<span class="org-comment">            context-&gt;eigen_device&lt;Device&gt;(), input.tensor&lt;T, NDIM&gt;(), axis, \</span>
+<span class="org-comment">            output-&gt;tensor&lt;Tout, NDIM - 1&gt;());                              \</span>
+<span class="org-comment">        break;</span>
+
+        <span class="org-keyword">switch</span> (input_dims) {
+            HANDLE_DIM(1);
+            HANDLE_DIM(2);
+            <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+        }
+    }
+<span class="org-preprocessor">#undef</span> HANDLE_DIM
+};
+
+<span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">Device</span>, <span class="org-keyword">typename</span> <span class="org-type">T</span>, <span class="org-keyword">typename</span> <span class="org-type">Tout</span>&gt;
+<span class="org-keyword">struct</span> <span class="org-type">ArgMax</span> {
+<span class="org-preprocessor">#define</span> <span class="org-function-name">DECLARE_COMPUTE_SPEC</span>(<span class="org-variable-name">Dims</span>)                                    \
+    EIGEN_ALWAYS_INLINE <span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-variable-name">Reduce</span>##Dims(                     \
+        <span class="org-keyword">const</span> <span class="org-type">Device</span>&amp; <span class="org-variable-name">d</span>, <span class="org-keyword">typename</span> <span class="org-type">TTypes</span>&lt;T, Dims&gt;::ConstTensor input, \
+        <span class="org-keyword">const</span> <span class="org-type">int32</span> <span class="org-variable-name">dimension</span>,                                        \
+        <span class="org-keyword">typename</span> <span class="org-type">TTypes</span>&lt;Tout, Dims - 1&gt;::Tensor output) {             \
+        output.device(d) = input.argmax(dimension).<span class="org-keyword">template</span> cast&lt;Tout&gt;();
+}
+
+<span class="org-variable-name">DECLARE_COMPUTE_SPEC</span>(1);
+DECLARE_COMPUTE_SPEC(2);
+<span class="org-preprocessor">#undef</span> DECLARE_COMPUTE_SPEC
+}
+;
+
+<span class="org-comment-delimiter">// </span><span class="org-comment">NOTE: input &#26159; Eigen::TensorMap, &#36825;&#37324;&#20250;&#35843;&#29992; engien &#30340; argmax &#26041;&#27861;,</span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">&#26368;&#32456;&#20250;&#35843;&#29992;&#21040; TensorReductionGpu.h &#20013;&#30456;&#24212;&#30340; kernel &#20363;&#22914; FullReductionKernel</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000001b" class="outline-5">
+<h5 id="org000001b"><span class="section-number-5">1.4.3.3</span> MatMulOp</h5>
+<div class="outline-text-5" id="text-1-4-3-3">
+<p>
+matmul 的 gpu 实现是通过 stream executor 实现的
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-preprocessor">#if</span> GOOGLE_CUDA
+REGISTER_KERNEL_BUILDER(
+    Name(<span class="org-string">"MatMul"</span>).Device(DEVICE_GPU).TypeConstraint&lt;T&gt;(<span class="org-string">"T"</span>),
+    <span class="org-type">MatMulOp</span>&lt;GPUDevice, T, <span class="org-constant">true</span> <span class="org-comment-delimiter">/* </span><span class="org-comment">cublas, true by default</span><span class="org-comment-delimiter"> */</span>&gt;);
+<span class="org-preprocessor">#endif</span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">--------------------</span>
+<span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">Device</span>, <span class="org-keyword">typename</span> <span class="org-type">T</span>, <span class="org-type">bool</span> <span class="org-variable-name">USE_CUBLAS</span>&gt;
+<span class="org-keyword">class</span> <span class="org-type">MatMulOp</span> : <span class="org-keyword">public</span> <span class="org-type">OpKernel</span> {
+   <span class="org-keyword">public</span>:
+    <span class="org-type">void</span> <span class="org-function-name">Compute</span>(<span class="org-type">OpKernelContext</span>* <span class="org-variable-name">ctx</span>) <span class="org-keyword">override</span> {
+        <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+        <span class="org-constant">LaunchMatMul</span>&lt;<span class="org-type">Device</span>, <span class="org-type">float</span>, USE_CUBLAS&gt;::launch(
+            ctx, a_float, b_float, dim_pair, &amp;algorithms_, use_autotune_,
+            &amp;out_float);
+        <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+    }
+};
+<span class="org-comment-delimiter">// </span><span class="org-comment">--------------------</span>
+<span class="org-preprocessor">#if</span> GOOGLE_CUDA
+<span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">T</span>&gt;
+<span class="org-keyword">struct</span> <span class="org-type">LaunchMatMul</span>&lt;GPUDevice, <span class="org-type">T</span>, <span class="org-constant">true</span> <span class="org-comment-delimiter">/* </span><span class="org-comment">USE_CUBLAS</span><span class="org-comment-delimiter"> */</span>&gt; {
+    <span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-variable-name">launch</span>() {
+        <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+        <span class="org-keyword">auto</span>* <span class="org-variable-name">stream</span> = ctx-&gt;op_device_context()-&gt;stream();
+        <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+        <span class="org-type">bool</span> <span class="org-variable-name">blas_launch_status</span> =
+            stream
+                -&gt;ThenBlasGemm(
+                    blas_transpose_b, blas_transpose_a, n, m, k, 1.0f, b_ptr,
+                    transpose_b ? k : n, a_ptr, transpose_a ? m : k, 0.0f,
+                    &amp;c_ptr, n)
+                .ok();
+        <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+    }
+    <span class="org-comment-delimiter">// </span><span class="org-comment">NOTE: ThenBlasGemm &#26159; stream_executor &#30340;&#25509;&#21475;</span>
+<span class="org-preprocessor">#endif</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000027" class="outline-4">
+<h4 id="org0000027"><span class="section-number-4">1.4.4</span> sycl</h4>
+<div class="outline-text-4" id="text-1-4-4">
+<p>
+当配置了 `&#x2013;config=sycl` 时, 会使用 sycl 实现一些算子.
+</p>
+
+<p>
+sycl 的支持与 GPU 的支持类似 (除了 stream executor) 的方式:
+</p>
+
+<ol class="org-ol">
+<li>有些是用 sycl 直接实现</li>
+
+<li>有些是通过 eigen 实现</li>
+</ol>
+</div>
+
+<div id="outline-container-org0000021" class="outline-5">
+<h5 id="org0000021"><span class="section-number-5">1.4.4.1</span> SoftmaxOp</h5>
+<div class="outline-text-5" id="text-1-4-4-1">
+<p>
+softmax 的 sycl 支持是通过 eigen 实现的
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">Device</span>, <span class="org-keyword">typename</span> <span class="org-type">T</span>&gt;
+<span class="org-keyword">class</span> <span class="org-type">SoftmaxOp</span> : <span class="org-keyword">public</span> <span class="org-type">OpKernel</span> {
+   <span class="org-keyword">public</span>:
+    <span class="org-keyword">explicit</span> <span class="org-function-name">SoftmaxOp</span>(<span class="org-type">OpKernelConstruction</span>* <span class="org-variable-name">context</span>) : OpKernel(context) {
+        log_ = <span class="org-constant">absl</span>::StartsWith(type_string(), <span class="org-string">"Log"</span>);
+    }
+
+    <span class="org-type">void</span> <span class="org-function-name">Compute</span>(<span class="org-type">OpKernelContext</span>* <span class="org-variable-name">context</span>) <span class="org-keyword">override</span> {
+        <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+        <span class="org-keyword">if</span> (logits_in.NumElements() &gt; 0) {
+            <span class="org-comment-delimiter">// </span><span class="org-comment">NOTE: &#36825;&#37324;&#30340; functor &#20250;&#26368;&#32456;&#35843;&#29992;&#21040; SoftmaxEigenImpl&lt;SyclDevice&gt;</span>
+            <span class="org-constant">functor</span>::<span class="org-type">SoftmaxFunctor</span>&lt;<span class="org-type">Device</span>, <span class="org-type">T</span>&gt; <span class="org-variable-name">functor</span>;
+            functor(
+                context-&gt;eigen_device&lt;<span class="org-type">Device</span>&gt;(), logits_in.flat_inner_dims&lt;<span class="org-type">T</span>&gt;(),
+                softmax_out-&gt;flat_inner_dims&lt;<span class="org-type">T</span>&gt;(), log_);
+        }
+    }
+};
+<span class="org-comment-delimiter">// </span><span class="org-comment">--------------------</span>
+<span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">Device</span>, <span class="org-keyword">typename</span> <span class="org-type">T</span>&gt;
+<span class="org-keyword">struct</span> <span class="org-type">SoftmaxEigenImpl</span> {
+    <span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">Compute</span>(
+        <span class="org-keyword">const</span> <span class="org-type">Device</span>&amp; <span class="org-variable-name">d</span>, <span class="org-keyword">typename</span> <span class="org-constant">TTypes</span>&lt;<span class="org-type">T</span>&gt;::<span class="org-type">ConstMatrix</span> <span class="org-variable-name">logits</span>,
+        <span class="org-keyword">typename</span> <span class="org-constant">TTypes</span>&lt;<span class="org-type">T</span>&gt;::<span class="org-type">Matrix</span> <span class="org-variable-name">softmax</span>, <span class="org-keyword">const</span> <span class="org-type">bool</span> <span class="org-variable-name">log</span>) {
+        <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+        <span class="org-comment-delimiter">// </span><span class="org-comment">logits &#26159; Eigen TensorMap</span>
+        <span class="org-keyword">auto</span> <span class="org-variable-name">shifted_logits</span> =
+            (logits - logits.maximum(along_class)
+                          .eval()
+                          .reshape(batch_by_one)
+                          .broadcast(one_by_class));
+        <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+    }
+};
+<span class="org-comment-delimiter">// </span><span class="org-comment">--------------------</span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">NOTE: &#27880;&#20876;</span>
+REGISTER_KERNEL_BUILDER(
+    Name(<span class="org-string">"Softmax"</span>).Device(DEVICE_SYCL).TypeConstraint&lt;<span class="org-type">float</span>&gt;(<span class="org-string">"T"</span>),
+    SoftmaxOp&lt;SYCLDevice, <span class="org-type">float</span>&gt;);
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000024" class="outline-5">
+<h5 id="org0000024"><span class="section-number-5">1.4.4.2</span> Pooling3DOp</h5>
+<div class="outline-text-5" id="text-1-4-4-2">
+<p>
+Pooling3DOp 是直接用 sycl 实现的
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">T</span>&gt;
+<span class="org-keyword">struct</span> <span class="org-type">LaunchAvgPooling3dGradOp</span>&lt;SYCLDevice, <span class="org-type">T</span>&gt; {
+    <span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-variable-name">launch</span>(...) {
+        <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+        device.sycl_queue().submit([&amp;](<span class="org-constant">cl</span>::<span class="org-constant">sycl</span>::<span class="org-type">handler</span>&amp; <span class="org-variable-name">cgh</span>) {
+            <span class="org-keyword">auto</span> <span class="org-variable-name">input_backprop_access</span> =
+                input_backprop_buffer
+                    .<span class="org-keyword">template</span> get_access&lt;<span class="org-constant">cl</span>::<span class="org-constant">sycl</span>::<span class="org-constant">access</span>::<span class="org-constant">mode</span>::read&gt;(cgh);
+            <span class="org-keyword">auto</span> <span class="org-variable-name">output_backprop_access</span> =
+                output_backprop_buffer
+                    .<span class="org-keyword">template</span> get_access&lt;<span class="org-constant">cl</span>::<span class="org-constant">sycl</span>::<span class="org-constant">access</span>::<span class="org-constant">mode</span>::write&gt;(cgh);
+            <span class="org-type">AvgPool3DGradSYCL</span>&lt;<span class="org-type">T</span>&gt; <span class="org-variable-name">functor</span>(
+                depth, batch, in_planes, in_rows, in_cols, output_shape, window,
+                stride, padding, input_backprop_access, output_backprop_access);
+
+            cgh.parallel_for(<span class="org-constant">cl</span>::<span class="org-constant">sycl</span>::range&lt;1&gt;(<span class="org-variable-name">num_threads</span>), functor);
+        });
+    }
+};
+<span class="org-comment-delimiter">// </span><span class="org-comment">--------------------</span>
+<span class="org-preprocessor">#ifdef</span> TENSORFLOW_USE_SYCL
+REGISTER_KERNEL_BUILDER(
+    Name(<span class="org-string">"MaxPool3DGradGrad"</span>).Device(DEVICE_SYCL).TypeConstraint&lt;<span class="org-type">T</span>&gt;(<span class="org-string">"T"</span>),
+    MaxPooling3dGradGradOp&lt;SYCL_Device, T&gt;);
+<span class="org-preprocessor">#endif</span>  <span class="org-comment-delimiter">// </span><span class="org-comment">TENSORFLOW_USE_SYCL</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000002a" class="outline-4">
+<h4 id="org000002a"><span class="section-number-4">1.4.5</span> stream executor</h4>
+<div class="outline-text-4" id="text-1-4-5">
+<p>
+启用 cuda 后使用 cublas 和 cudnn 的 op 需要用 stream executor 来执行, 例如:
+</p>
+
+<ol class="org-ol">
+<li>matmul_op</li>
+<li>conv_ops</li>
+<li>where_op</li>
+<li>fused_batch_norm_op</li>
+<li>pooling_ops</li>
+</ol>
+
+<p>
+stream executor 定义了几个功能集合, 例如:
+</p>
+
+<ol class="org-ol">
+<li>BlasSupport</li>
+<li>DnnSupport</li>
+<li>RngSupport</li>
+<li>FftSupport</li>
+</ol>
+
+<p>
+cuda 和 rocm 均有对应的具体实现, 例如 BlasSupport 中的 DoBlasAsum, DoBlasDot,
+&#x2026; 以及 DnnSupport 中的 DoMatmul, DoConvolve, &#x2026;
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000037" class="outline-4">
+<h4 id="org0000037"><span class="section-number-4">1.4.6</span> XLA</h4>
+<div class="outline-text-4" id="text-1-4-6">
+<p>
+<a href="https://www.tensorflow.org/XLA">XLA</a> (Accelerated Linear Algebra) 是一个针对 graph 的 jit (just in time) 编译器.
+</p>
+
+<p>
+当 tensorflow 指定了 jit_compile 选项时, 则不再使用前面手写的 kernel (gemm 和
+conv 除外), 而是使用 XLA 编译生成的 kernel.
+</p>
+
+<p>
+XLA 编译的步骤大约是:
+</p>
+
+<ol class="org-ol">
+<li>把图翻译成 HLO IR<sup><a id="fnr.1" class="footref" href="#fn.1">1</a></sup> (类似于 <a href="../tvm/tvm_relay_ir.html#ID-404b926a-32a8-4ab8-8bdd-6f28a7ae0961">TVM Relay IR</a>), 新版本的 tensorflow 会先翻译成
+MLIR (Multi-Level IR) 再翻译成 HLO</li>
+<li>对 HLO 进行优化</li>
+<li>XLA 后端 (cpu, gpu) 把 HLO 转换为 LLIR</li>
+<li>llvm 对 LLIR 进行优化</li>
+<li>使用 llvm 后端生成 cpu 代码或 nvptx</li>
+<li>nvptx (以及 cpu 代码) 通过 stream_executor 执行</li>
+</ol>
+</div>
+
+<div id="outline-container-org000002d" class="outline-5">
+<h5 id="org000002d"><span class="section-number-5">1.4.6.1</span> tf2xla</h5>
+<div class="outline-text-5" id="text-1-4-6-1">
+<p>
+XLA 并不能凭空生成 kernel, 它需要 tf2xla 告诉它 op 要怎么计算 (以 IR 的形式), 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-keyword">class</span> <span class="org-type">SoftmaxOp</span> : <span class="org-keyword">public</span> <span class="org-type">XlaOpKernel</span> {
+   <span class="org-keyword">public</span>:
+    <span class="org-keyword">explicit</span> <span class="org-function-name">SoftmaxOp</span>(<span class="org-type">OpKernelConstruction</span>* <span class="org-variable-name">ctx</span>) : XlaOpKernel(ctx) {
+        log_ = <span class="org-constant">absl</span>::StartsWith(type_string(), <span class="org-string">"Log"</span>);
+    }
+
+    <span class="org-type">void</span> <span class="org-function-name">Compile</span>(<span class="org-type">XlaOpKernelContext</span>* <span class="org-variable-name">ctx</span>) <span class="org-keyword">override</span> {
+        <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+        <span class="org-constant">xla</span>::<span class="org-type">XlaBuilder</span>* <span class="org-keyword">const</span> <span class="org-variable-name">b</span> = ctx-&gt;builder();
+        <span class="org-keyword">const</span> <span class="org-constant">xla</span>::<span class="org-type">XlaComputation</span>&amp; <span class="org-variable-name">max_func</span> = *ctx-&gt;GetOrCreateMax(type);
+
+        <span class="org-keyword">auto</span> <span class="org-variable-name">logits_max</span> = <span class="org-constant">xla</span>::Reduce(
+            logits, <span class="org-constant">xla</span>::MinValue(b, xla_type), max_func, {kClassDim});
+        <span class="org-keyword">auto</span> <span class="org-variable-name">shifted_logits</span> = <span class="org-constant">xla</span>::Sub(logits, logits_max, batch_dims);
+        <span class="org-keyword">auto</span> <span class="org-variable-name">exp_shifted</span> = <span class="org-constant">xla</span>::Exp(shifted_logits);
+        <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+        <span class="org-keyword">auto</span> <span class="org-variable-name">reduce</span> = <span class="org-constant">xla</span>::Reduce(
+            converted, <span class="org-constant">xla</span>::Zero(b, xla_accumulation_type),
+            *ctx-&gt;GetOrCreateAdd(accumulation_type), {kClassDim});
+        <span class="org-keyword">auto</span> <span class="org-variable-name">sum</span> = <span class="org-constant">XlaHelpers</span>::ConvertElementType(reduce, type);
+        <span class="org-comment-delimiter">// </span><span class="org-comment">NOTE: softmax=exp/sum, sum &#21448;&#26469;&#33258; reduce (..., add)</span>
+        <span class="org-keyword">auto</span> <span class="org-variable-name">softmax</span> = log_
+                           ? <span class="org-constant">xla</span>::Sub(shifted_logits, <span class="org-constant">xla</span>::Log(sum), batch_dims)
+                           : <span class="org-constant">xla</span>::Div(exp_shifted, sum, batch_dims);
+        ctx-&gt;SetOutput(0, softmax);
+    }
+}
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000031" class="outline-5">
+<h5 id="org0000031"><span class="section-number-5">1.4.6.2</span> HloModulePass</h5>
+<div class="outline-text-5" id="text-1-4-6-2">
+<p>
+针对 HLO 的优化, 例如:
+</p>
+
+<ul class="org-ul">
+<li>hlo_cse (common subexpression elimination)</li>
+<li>hlo_dce (dead code elimination)</li>
+<li>hlo_constant_folding</li>
+<li>horizontal_fusion</li>
+<li>instruction_fusion</li>
+</ul>
+
+<p>
+例如 cse 指的是这种优化:
+</p>
+
+<pre class="example" id="org0000030">
+优化前:
+
+x=a+b+c
+y=a+b+d
+
+优化后:
+
+z=a+b
+x=z+c
+y=z+d
+
+其中 a+b 称为 common subexpression
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000034" class="outline-5">
+<h5 id="org0000034"><span class="section-number-5">1.4.6.3</span> CpuCompiler/GpuCompiler</h5>
+<div class="outline-text-5" id="text-1-4-6-3">
+<ol class="org-ol">
+<li>backend 通过 `RunHloPasses` 针对 HLO 做优化</li>
+
+<li>`RunBackend` 先将 HLO 转换成 LLVM</li>
+
+<li>`LinkAndOptimizeModule` 对 LLVM 做优化</li>
+
+<li>`CompileTargetBinary` 把 llvm 转换成 ptx (Parallel Thread eXecution)</li>
+
+<li>GpuExecutable 通过 stream_executor 执行 ptx</li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000079" class="outline-3">
+<h3 id="org0000079"><span class="section-number-3">1.5</span> Parallelism</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+parallelism 主要涉及到几个方面:
+</p>
+
+<ol class="org-ol">
+<li>dataset (及其预处理) 的并行, 主要是 dataset 的 num_parallel_calls 以及
+prefetch 功能</li>
+
+<li>inter_op_parallelism_threads</li>
+
+<li>intra_op_parallelism_threads</li>
+
+<li>OMP_NUM_THREADS</li>
+</ol>
+
+<p>
+使用 <a href="https://www.tensorflow.org/guide/data_performance_analysis">TF Profiler</a> 可以分析 cpu 和 data 的并行情况.
+</p>
+</div>
+
+<div id="outline-container-org000004f" class="outline-4">
+<h4 id="org000004f"><span class="section-number-4">1.5.1</span> data parallelism</h4>
+<div class="outline-text-4" id="text-1-5-1">
+<p>
+<a href="https://www.tensorflow.org/guide/data_performance">https://www.tensorflow.org/guide/data_performance</a>
+</p>
+
+<p>
+dataset 的处理分为两步:
+</p>
+
+<ol class="org-ol">
+<li>数据加载</li>
+<li>数据增强和预处理</li>
+</ol>
+
+<p>
+前者是 io bound, 并行会有效果, 但受限于数据传输速度; 后者是 cpu bound, 可以更好的利用并行.
+</p>
+
+<p>
+tensorflow dataset api 用 prefetch, interleave, map 并行, 用 tf profiler 分析并行效果.
+</p>
+</div>
+
+<div id="outline-container-org000003d" class="outline-5">
+<h5 id="org000003d"><span class="section-number-5">1.5.1.1</span> generator</h5>
+<div class="outline-text-5" id="text-1-5-1-1">
+<p>
+tensorflow dataset api 是一个 <a href="../tech/coroutine.html#ID-e969e80b-4060-4209-91e1-baa79e4076b2">generator</a> 模式的 api, 用来构造 data pipeline, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++">dataset(generator)
+  .map(fn1)
+  .filter(fn2)
+  .shuffle()
+  .prefetch();
+</pre>
+</div>
+
+<p>
+上面的例子中, generator 负责加载数据, 后面的 map, filter 等负责数据增强和预处理.
+</p>
+
+<p>
+generator 模式适合并行: cuda/sycl/opencl/openmp 等并行架构实际上与 generator 的
+map 类似: 把 `kernel` map 到某个序列上产生另一个序列. generator 本身与 <a href="https://en.wikipedia.org/wiki/Coroutine">coroutine</a>
+和 functional programming 有很大的关系
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000041" class="outline-5">
+<h5 id="org0000041"><span class="section-number-5">1.5.1.2</span> prefetch</h5>
+<div class="outline-text-5" id="text-1-5-1-2">
+<p>
+单个 dataset (generator) 是底层数据文件的抽象, 无法并行使用, 但是可以
+prefetch. 例如这样:
+</p>
+
+<pre class="example" id="org0000040">
+no prefetch:
+
+generator.next()                       generator.next()                  
+----------------                       ----------------               
+                map                                    map            
+                ---------                              ---------      
+                         train                                  train 
+                         --------------                         --------------
+
+prefetch:
+
+generator.next()  generator.next()                  
+----------------  ----------------
+                map               map                                  
+                ---------         ---------                            
+                         train             train                       
+                         --------------    --------------
+</pre>
+
+<p>
+在上图中, 因为梯度更新的原因, train 需要顺序执行, 但 generator 和 map 可以按需要通过多线程并行.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000045" class="outline-5">
+<h5 id="org0000045"><span class="section-number-5">1.5.1.3</span> interleave</h5>
+<div class="outline-text-5" id="text-1-5-1-3">
+<p>
+如果 prefetch 不够, 可以用 interleave, interleave 通过 num_parallel_calls 参数可以并行的加载 <b>多个</b> dataset, 例如这样:
+</p>
+
+<pre class="example" id="org0000044">
+interleave:
+
+generator.next()                    
+------------
+            map
+            ------- 
+generator2.next()               
+----------                                  
+          map    
+          -------
+                 train                  
+                 --------------
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000049" class="outline-5">
+<h5 id="org0000049"><span class="section-number-5">1.5.1.4</span> map</h5>
+<div class="outline-text-5" id="text-1-5-1-4">
+<p>
+map 也提供了 num_parallel_calls 可以并行的 map, 例如这样
+</p>
+
+<pre class="example" id="org0000048">
+generator.next()               
+----------------                                  
+                map                             
+                --------
+                map                             
+                ------
+                        train                  
+                        --------------
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org000004c" class="outline-5">
+<h5 id="org000004c"><span class="section-number-5">1.5.1.5</span> 其它</h5>
+<div class="outline-text-5" id="text-1-5-1-5">
+<p>
+由于 dataset 容易成为训练时的瓶颈, 所以 nvidia 专门有一个 <a href="https://developer.nvidia.com/DALI">DALI</a> 库用来加速
+dataset 的处理
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000053" class="outline-4">
+<h4 id="org0000053"><span class="section-number-4">1.5.2</span> inter_op_parallelism_threads</h4>
+<div class="outline-text-4" id="text-1-5-2">
+<p>
+指相互独立的 op 可以并行的计算, 例如:
+</p>
+
+<pre class="example" id="org0000052">
+x=a+b
+y=c+d
+z=x+y
+</pre>
+
+<p>
+`a+b` 和 `c+d` 可以并行计算.
+</p>
+
+<p>
+用 inter_op_parallelism_threads 可以限定 runtime thread pool 的大小, 例如
+DirectSession 的 thread_pools_ 和 grpc_server 的 compute_pool
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000056" class="outline-4">
+<h4 id="org0000056"><span class="section-number-4">1.5.3</span> intra_op_parallelism_threads</h4>
+<div class="outline-text-4" id="text-1-5-3">
+<p>
+eigen 的 TensorDeviceThreadPool 支持对单个 op 并行计算, tensorflow 通过
+intra_op_parallelism_threads 设置 eigen thread pool 的大小
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000059" class="outline-4">
+<h4 id="org0000059"><span class="section-number-4">1.5.4</span> OMP_NUM_THREADS</h4>
+<div class="outline-text-4" id="text-1-5-4">
+<p>
+mkl 算子的并行是通过 openmp 实现, OMP_NUM_THREADS 可以控制 openmp thread poll 的大小. OMP_NUM_THREADS 之于 mkl 相当于 intra_op_parallelism_threads 之于 eigen.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000067" class="outline-4">
+<h4 id="org0000067"><span class="section-number-4">1.5.5</span> 测试</h4>
+<div class="outline-text-4" id="text-1-5-5">
+<p>
+通过测试一个简单的 mnist 模型, 有以下结论:
+</p>
+
+<ol class="org-ol">
+<li>inter_op_parallelism_threads 作用不大, 可能是因为 mnist 模型没有分支结构, 换成 <a href="../machine_learning/inception.html#ID-c8e4ddb9-1372-4a28-99c3-93f7f3e56bdf">Inception</a> 会明显起作用</li>
+
+<li>intra_op_parallelism_threads 对 eigen 作用很大, OMP_NUM_THREADS 对 eigen 没有作用</li>
+
+<li>OMP_NUM_THREADS 对 mkl 作用很大, intra_op_parallelism_threads 的作用不明显</li>
+
+<li>设定各个 pool 的大小时需要考虑 core 的个数以避免 thread oversubscription, 例如当 `inter_op_parallelism_threads * OMP_NUM_THREADS 超过 core` 时 mkl 性能会下降很多.</li>
+</ol>
+</div>
+
+<div id="outline-container-org000005e" class="outline-5">
+<h5 id="org000005e"><span class="section-number-5">1.5.5.1</span> intra_op_parallelism 性能</h5>
+<div class="outline-text-5" id="text-1-5-5-1">
+<p>
+线程数不超过 core 的个数时, 更多的线程有更好的性能, 但随着线程数的增加提升越来越小, 例如:
+</p>
+
+<p>
+eigen 在 40 core CPU 测试的结果:
+</p>
+
+
+<div id="org000005c" class="figure">
+<p><img src="../extra/eigen_mt_benchmark.png" alt="eigen_mt_benchmark.png" />
+</p>
+</div>
+
+<p>
+mkl 在 40 core CPU 的测试结果:
+</p>
+
+
+<div id="org000005d" class="figure">
+<p><img src="../extra/mkl_mt_benchmark.png" alt="mkl_mt_benchmark.png" />
+</p>
+</div>
+
+<p>
+其中图中右上角的图例表示不同模型和大小.
+</p>
+
+<p>
+从上图能得出结论:
+</p>
+
+<ol class="org-ol">
+<li>模型越大提升越多</li>
+<li>线程越多, 提升空间越小</li>
+<li>超过 core 个数时性能会变差</li>
+<li>40 个 core 最大提升了 ~10 倍</li>
+</ol>
+
+<p>
+可见 intra_op_parallelism 性能没有达到预期, 可能是因为 intra_op_parallelism 属于
+find-graind parallelism, 相对于 corse-grained palrallelism (例如 make -j 这种),
+它有许多通信和同步的开销 (cache, 锁, 原子操作, 内存屏障等),对于这类问题, 使用向量指令会更有优势 (Optimizing software in C++ By Agner Fog, p108, Multithreading)
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000064" class="outline-5">
+<h5 id="org0000064"><span class="section-number-5">1.5.5.2</span> inter_op_parallelism 性能</h5>
+<div class="outline-text-5" id="text-1-5-5-2">
+<p>
+前面提到 inter_op_parallelism_threads 对 mnist 影响不大, 通过构造一个并行的网络,
+可以观察 inter_op_parallelism_threads 的影响.
+</p>
+
+<p>
+网络大致是这样的:
+</p>
+
+<pre class="example" id="org0000061">
+         +-&gt; conv -+            +-&gt; conv -+
+         |-&gt; conv -|            |-&gt; conv -|
+         |-&gt; conv -|            |-&gt; conv -|
+input -&gt; |-&gt; conv -+-&gt; concat -&gt;|-&gt; conv -+-&gt; flattern -&gt; dense -&gt; output
+         |-&gt; conv -|            |-&gt; conv -|
+         .         .            .         .
+         .         .            .         .
+         +-&gt; conv -+            +-&gt; conv -+
+</pre>
+
+<p>
+mkl @ 40 core CPU 执行的结果为:
+</p>
+
+
+<div id="org0000062" class="figure">
+<p><img src="../extra/inception_eigen_mt_benchmark.png" alt="inception_eigen_mt_benchmark.png" />
+</p>
+</div>
+
+<p>
+mkl @ 40 core CPU, 同时指定 OMP_NUM_THREADS=2 的结果:
+</p>
+
+
+
+<div id="org0000063" class="figure">
+<p><img src="../extra/inception_both.png" alt="inception_both.png" />
+</p>
+</div>
+
+<p>
+可见 inter_op_parallelism 有效, 但仍然受到同样的某种限制, 无法达到最佳预期.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000073" class="outline-4">
+<h4 id="org0000073"><span class="section-number-4">1.5.6</span> 其它</h4>
+<div class="outline-text-4" id="text-1-5-6">
+</div>
+<div id="outline-container-org000006a" class="outline-5">
+<h5 id="org000006a"><span class="section-number-5">1.5.6.1</span> XLA 并行编译</h5>
+<div class="outline-text-5" id="text-1-5-6-1">
+<p>
+虽然 xla 有可能通过并行加速编译
+(<a href="https://groups.google.com/g/xla-dev/c/VZMMD44BC7Y">https://groups.google.com/g/xla-dev/c/VZMMD44BC7Y</a>), 但由于 xla 只需要编译一次,
+所以对整个训练过程影响不大.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000006d" class="outline-5">
+<h5 id="org000006d"><span class="section-number-5">1.5.6.2</span> 多个 cuda stream</h5>
+<div class="outline-text-5" id="text-1-5-6-2">
+<p>
+tensorflow 只会使用一个 (a single) cuda stream:
+<a href="https://github.com/tensorflow/tensorflow/issues/36634">https://github.com/tensorflow/tensorflow/issues/36634</a>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000070" class="outline-5">
+<h5 id="org0000070"><span class="section-number-5">1.5.6.3</span> distributed training</h5>
+<div class="outline-text-5" id="text-1-5-6-3">
+<p>
+<a href="https://www.oreilly.com/content/distributed-tensorflow/">https://www.oreilly.com/content/distributed-tensorflow/</a>
+</p>
+
+<p>
+如果 intra_op_parallelism_threads 因为粒度太小无法更高效的并行, 那么分布式训练可以看做是粒度很大的并行: 它会把输入分成多份, 交给不同的机器或 GPU 处理, 然后再把梯度聚合. 虽然分布式训练针对的主要是集群, 但也许可以通过 <a href="https://www.tensorflow.org/tutorials/distribute/multi_worker_with_keras">multi worker</a> 利用本机的多个进程来并行
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000076" class="outline-4">
+<h4 id="org0000076"><span class="section-number-4">1.5.7</span> 后续工作</h4>
+<div class="outline-text-4" id="text-1-5-7">
+<ol class="org-ol">
+<li><p>
+eigen
+</p>
+
+<p>
+利用 RISC-V 的 vector 或 SIMD 指令加速 eigen 的 CPU device, 现在
+`Eigen/src/Core/arch` 下已经包含 NEON, SSE, AVX, AVX512 等.
+</p></li>
+
+<li>intra/inter op palrallelism 的瓶颈在什么地方</li>
+
+<li>基于多进程的分布式训练是否有意义</li>
+
+<li><p>
+llvm
+</p>
+
+<p>
+XLA 使用 llvm 生成 cpu 指令时需要 RISC-V 后端生成优化指令
+</p></li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+<div id="footnotes">
+<h2 class="footnotes">Footnotes: </h2>
+<div id="text-footnotes">
+
+<div class="footdef"><sup><a id="fn.1" class="footnum" href="#fnr.1">1</a></sup> <div class="footpara"><p class="footpara">
+IR (intermediate representation) 有利于模块解耦合, 代码重用, 并且使代码优化更容易. You can solve every problem with another level of indirection, except
+for the problem of too many levels of indirection.
+</p></div></div>
+
+
+</div>
+</div></div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway (sunway@dogdog.run)<br />
+Date: 2022-10-17 Mon 15:18<br />
+Last updated: 2022-10-27 Thu 12:29</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
+<br />
+
+<div id="disqus_thread"></div>
+<script>
+
+(function() { // DON'T EDIT BELOW THIS LINE
+         var d = document, s = d.createElement('script');
+         s.src = '//sunwayforever-github-io.disqus.com/embed.js';
+         s.setAttribute('data-timestamp', +new Date());
+         (d.head || d.body).appendChild(s);
+         })();
+</script>
+</div>
+</body>
+</html>
