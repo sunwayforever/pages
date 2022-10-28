@@ -10,6 +10,27 @@
 <link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
 <link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
 <link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content" class="content">
@@ -40,8 +61,8 @@
 <li><a href="#org0000056">1.5.3. intra_op_parallelism_threads</a></li>
 <li><a href="#org0000059">1.5.4. OMP_NUM_THREADS</a></li>
 <li><a href="#org0000067">1.5.5. 测试</a></li>
-<li><a href="#org0000072">1.5.6. 其它</a></li>
-<li><a href="#org0000076">1.5.7. 后续工作</a></li>
+<li><a href="#org0000074">1.5.6. 其它</a></li>
+<li><a href="#org0000076">1.5.7. TODO</a></li>
 </ul>
 </li>
 </ul>
@@ -563,7 +584,7 @@ XLA 编译的步骤大约是:
 </p>
 
 <ol class="org-ol">
-<li>把图翻译成 HLO IR<sup><a id="fnr.1" class="footref" href="#fn.1" role="doc-backlink">1</a></sup> (类似于 <a href="../tvm/tvm_relay_ir.html#ID-404b926a-32a8-4ab8-8bdd-6f28a7ae0961">TVM Relay IR</a>), 新版本的 tensorflow 会先翻译成
+<li>把图翻译成 HLO IR<sup><a id="fnr.1" class="footref" href="#fn.1" role="doc-backlink">1</a></sup>, 新版本的 tensorflow 会先翻译成
 MLIR (Multi-Level IR) 再翻译成 HLO</li>
 <li>对 HLO 进行优化</li>
 <li>XLA 后端 (cpu, gpu) 把 HLO 转换为 LLIR</li>
@@ -894,12 +915,12 @@ mkl 算子的并行是通过 openmp 实现, OMP_NUM_THREADS 可以控制 openmp 
 </ol>
 
 <p>
-有一篇<a href="https://arxiv.org/pdf/1812.01665.pdf">文章</a>试验了这几个参数的选择, 它也传递了一个信息: 参数并非越大越好, 且参数调整到最佳后性能也和模型有很大关繁育, 且整体改进不大.
+有一篇<a href="https://arxiv.org/pdf/1812.01665.pdf">文章</a>试验了这几个参数的选择, 它也传递了一个信息: 参数并非越大越好, 且参数调整到最佳后性能也和模型有很大关系, 且整体改进不大.
 </p>
 </div>
 
-<div id="outline-container-org000005e" class="outline-5">
-<h5 id="org000005e"><span class="section-number-5">1.5.5.1.</span> intra_op_parallelism 性能</h5>
+<div id="outline-container-org000005f" class="outline-5">
+<h5 id="org000005f"><span class="section-number-5">1.5.5.1.</span> intra_op_parallelism 性能</h5>
 <div class="outline-text-5" id="text-1-5-5-1">
 <p>
 线程数不超过 core 的个数时, 更多的线程有更好的性能, 但随着线程数的增加提升越来越小, 例如:
@@ -926,7 +947,8 @@ mkl 在 40 core CPU 的测试结果:
 </div>
 
 <p>
-其中图中右上角的图例表示不同模型和大小.
+图中右上角的图例表示不同模型和大小, 其中 `optimal` 这条线是 \(f(x)=\frac{1}{x}\),
+做为参考值
 </p>
 
 <p>
@@ -939,6 +961,17 @@ mkl 在 40 core CPU 的测试结果:
 <li>超过 core 个数时性能会变差</li>
 <li>40 个 core 最大提升了 ~10 倍</li>
 </ol>
+
+<p>
+下图是统计 cpu time 的情况. 所谓 cpu time, 是指统计进程使用的所有 core 处于
+TASK_RUNNING 状态的时间之和, 这个时间一般会远大于 wall time.
+</p>
+
+
+<div id="org000005e" class="figure">
+<p><img src="../extra/mkl_mt_benchmark_2.png" alt="mkl_mt_benchmark_2.png" />
+</p>
+</div>
 
 <p>
 可见 intra_op_parallelism 性能没有达到预期, 可能是因为 intra_op_parallelism 属于
@@ -960,7 +993,7 @@ find-graind parallelism, 相对于 corse-grained palrallelism (例如 make -j �
 网络大致是这样的:
 </p>
 
-<pre class="example" id="org0000061">
+<pre class="example" id="org0000062">
          +-&gt; conv -+            +-&gt; conv -+
          |-&gt; conv -|            |-&gt; conv -|
          |-&gt; conv -|            |-&gt; conv -|
@@ -976,7 +1009,7 @@ mkl @ 40 core CPU 执行的结果为:
 </p>
 
 
-<div id="org0000062" class="figure">
+<div id="org0000063" class="figure">
 <p><img src="../extra/inception_eigen_mt_benchmark.png" alt="inception_eigen_mt_benchmark.png" />
 </p>
 </div>
@@ -988,8 +1021,8 @@ mkl @ 40 core CPU 执行的结果为:
 </div>
 </div>
 
-<div id="outline-container-org0000072" class="outline-4">
-<h4 id="org0000072"><span class="section-number-4">1.5.6.</span> 其它</h4>
+<div id="outline-container-org0000074" class="outline-4">
+<h4 id="org0000074"><span class="section-number-4">1.5.6.</span> 其它</h4>
 <div class="outline-text-4" id="text-1-5-6">
 </div>
 <div id="outline-container-org000006a" class="outline-5">
@@ -1028,9 +1061,19 @@ tensorflow 只会使用一个 (a single) cuda stream:
 </div>
 
 <div id="outline-container-org0000076" class="outline-4">
-<h4 id="org0000076"><span class="section-number-4">1.5.7.</span> 后续工作</h4>
+<h4 id="org0000076"><span class="section-number-4">1.5.7.</span> TODO</h4>
 <div class="outline-text-4" id="text-1-5-7">
 <ol class="org-ol">
+<li><p>
+intra/inter op palrallelism 的瓶颈在什么地方
+</p>
+
+<p>
+cachegrind, VTune
+</p></li>
+
+<li>基于多进程的分布式训练是否可能, 是否有意义</li>
+
 <li><p>
 eigen
 </p>
@@ -1039,10 +1082,6 @@ eigen
 利用 RISC-V 的 vector 或 SIMD 指令加速 eigen 的 CPU device, 现在
 `Eigen/src/Core/arch` 下已经包含 NEON, SSE, AVX, AVX512 等.
 </p></li>
-
-<li>intra/inter op palrallelism 的瓶颈在什么地方</li>
-
-<li>基于多进程的分布式训练是否有意义</li>
 
 <li><p>
 llvm
@@ -1072,7 +1111,7 @@ indirection, except for the problem of too many levels of indirection.
 
 <p class="author">Author: sunway (sunway@dogdog.run)<br />
 Date: 2022-10-17 Mon 15:18<br />
-Last updated: 2022-10-27 Thu 18:13</p>
+Last updated: 2022-10-28 Fri 09:59</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
