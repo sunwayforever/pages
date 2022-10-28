@@ -60,8 +60,8 @@
 <li><a href="#org0000053">1.5.2. inter_op_parallelism_threads</a></li>
 <li><a href="#org0000056">1.5.3. intra_op_parallelism_threads</a></li>
 <li><a href="#org0000059">1.5.4. OMP_NUM_THREADS</a></li>
-<li><a href="#org000006f">1.5.5. 测试</a></li>
-<li><a href="#org000007b">1.5.6. 其它</a></li>
+<li><a href="#org0000077">1.5.5. 测试</a></li>
+<li><a href="#org0000083">1.5.6. 其它</a></li>
 <li><a href="#org0000076">1.5.7. TODO</a></li>
 </ul>
 </li>
@@ -843,8 +843,8 @@ generator.next()
 </div>
 </div>
 
-<div id="outline-container-org000007c" class="outline-5">
-<h5 id="org000007c"><span class="section-number-5">1.5.1.5.</span> 其它</h5>
+<div id="outline-container-org000007b" class="outline-5">
+<h5 id="org000007b"><span class="section-number-5">1.5.1.5.</span> 其它</h5>
 <div class="outline-text-5" id="text-1-5-1-5">
 <p>
 由于 dataset 容易成为训练时的瓶颈, 所以 nvidia 专门有一个 <a href="https://developer.nvidia.com/DALI">DALI</a> 库用来加速
@@ -897,8 +897,8 @@ mkl 算子的并行是通过 openmp 实现, OMP_NUM_THREADS 可以控制 openmp 
 </div>
 </div>
 
-<div id="outline-container-org000006f" class="outline-4">
-<h4 id="org000006f"><span class="section-number-4">1.5.5.</span> 测试</h4>
+<div id="outline-container-org0000077" class="outline-4">
+<h4 id="org0000077"><span class="section-number-4">1.5.5.</span> 测试</h4>
 <div class="outline-text-4" id="text-1-5-5">
 <p>
 通过测试一个简单的 mnist 模型, 有以下结论:
@@ -1024,49 +1024,103 @@ mkl 执行的结果为:
 </div>
 </div>
 
-<div id="outline-container-org000006c" class="outline-5">
-<h5 id="org000006c"><span class="section-number-5">1.5.5.3.</span> 基于 vtune 的初步分析</h5>
+<div id="outline-container-org0000074" class="outline-5">
+<h5 id="org0000074"><span class="section-number-5">1.5.5.3.</span> 基于 vtune 的初步分析</h5>
 <div class="outline-text-5" id="text-1-5-5-3">
+</div>
+<div id="outline-container-org0000069" class="outline-6">
+<h6 id="org0000069"><span class="section-number-6">1.5.5.3.1.</span> 同步的影响</h6>
+<div class="outline-text-6" id="text-1-5-5-3-1">
 <p>
-使用 vtune 对比 2/4/8/16/32 个线程时 microarch 的数据, 可以看到随着线程增加, CPI
-(clock per instruction) 变大, cache miss 增加. 另外, vtune threading 相关的信息显示, 涉及同步的耗时主要发生在 Eigen WorkPool 的 wait, 这个实际是正常情况. 结合前面 cpu time 的信息, 猜测问题和同步无关, 和 cache 有关.
+对比 4/20 个线程时 threading 的数据, 可以看到随着线程增加, eigen 的一个负责
+barrier 的线程的处理时间变长, 导致其它依赖于该 barrier 的工作线程的等待增加
+</p>
+
+<p>
+4 个线程:
 </p>
 
 
 <div id="org0000067" class="figure">
+<p><img src="../extra/eigen_vtune_barrier_4.png" alt="eigen_vtune_barrier_4.png" />
+</p>
+</div>
+
+<p>
+绿色表示 wait, 其中 77630 使用的 cond 是一个 barrier, 前四个 worker thread 是生产者,
+barrier 是消费者. barrier 消费完数据后通知 worker thread 继续工作.
+</p>
+
+<p>
+当 worker thread 增多时, barrier 的工作量变大, 导致 worker thread 等待时间变长,
+</p>
+
+<p>
+对比下面 20 个线程的数据:
+</p>
+
+
+<div id="org0000068" class="figure">
+<p><img src="../extra/eigen_vtune_barrier_20.png" alt="eigen_vtune_barrier_20.png" />
+</p>
+</div>
+
+<p>
+4 个线程时 barrier 的 `等待/运行` 时间的比例大约是 2.48, 而 20 个线程时变成为
+1.45, 即 barrier 在多线程时运行的时间变长, 进而导致 worker 运行时间变短.
+</p>
+
+<p>
+归根到底, 多线程时负责把 worker 线程的结果进行 reduction 的线程的工作量增大了,
+导致 worker 线程等待时间变长&#x2026;
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000071" class="outline-6">
+<h6 id="org0000071"><span class="section-number-6">1.5.5.3.2.</span> cache 的影响</h6>
+<div class="outline-text-6" id="text-1-5-5-3-2">
+<p>
+使用 vtune 对比 2/4/8/16/32 个线程时 microarch 的数据, 可以看到随着线程增加, CPI
+(clock per instruction) 变大, cache miss 增加.
+</p>
+
+
+<div id="org000006c" class="figure">
 <p><img src="../extra/vtune_x2.png" alt="vtune_x2.png" />
 </p>
 </div>
 
 
-<div id="org0000068" class="figure">
+<div id="org000006d" class="figure">
 <p><img src="../extra/vtune_x4.png" alt="vtune_x4.png" />
 </p>
 </div>
 
 
-<div id="org0000069" class="figure">
+<div id="org000006e" class="figure">
 <p><img src="../extra/vtune_x8.png" alt="vtune_x8.png" />
 </p>
 </div>
 
 
-<div id="org000006a" class="figure">
+<div id="org000006f" class="figure">
 <p><img src="../extra/vtune_x16.png" alt="vtune_x16.png" />
 </p>
 </div>
 
 
-<div id="org000006b" class="figure">
+<div id="org0000070" class="figure">
 <p><img src="../extra/vtune_x32.png" alt="vtune_x32.png" />
 </p>
 </div>
 </div>
 </div>
 </div>
+</div>
 
-<div id="outline-container-org000007b" class="outline-4">
-<h4 id="org000007b"><span class="section-number-4">1.5.6.</span> 其它</h4>
+<div id="outline-container-org0000083" class="outline-4">
+<h4 id="org0000083"><span class="section-number-4">1.5.6.</span> 其它</h4>
 <div class="outline-text-4" id="text-1-5-6">
 </div>
 <div id="outline-container-org0000072" class="outline-5">
@@ -1080,8 +1134,8 @@ mkl 执行的结果为:
 </div>
 </div>
 
-<div id="outline-container-org000006d" class="outline-5">
-<h5 id="org000006d"><span class="section-number-5">1.5.6.2.</span> 多个 cuda stream</h5>
+<div id="outline-container-org000007d" class="outline-5">
+<h5 id="org000007d"><span class="section-number-5">1.5.6.2.</span> 多个 cuda stream</h5>
 <div class="outline-text-5" id="text-1-5-6-2">
 <p>
 tensorflow 只会使用一个 (a single) cuda stream:
@@ -1090,8 +1144,8 @@ tensorflow 只会使用一个 (a single) cuda stream:
 </div>
 </div>
 
-<div id="outline-container-org0000070" class="outline-5">
-<h5 id="org0000070"><span class="section-number-5">1.5.6.3.</span> distributed training</h5>
+<div id="outline-container-org0000080" class="outline-5">
+<h5 id="org0000080"><span class="section-number-5">1.5.6.3.</span> distributed training</h5>
 <div class="outline-text-5" id="text-1-5-6-3">
 <p>
 <a href="https://www.oreilly.com/content/distributed-tensorflow/">https://www.oreilly.com/content/distributed-tensorflow/</a>
@@ -1155,7 +1209,7 @@ indirection, except for the problem of too many levels of indirection.
 
 <p class="author">Author: sunway (sunway@dogdog.run)<br />
 Date: 2022-10-17 Mon 15:18<br />
-Last updated: 2022-10-28 Fri 16:13</p>
+Last updated: 2022-10-28 Fri 19:17</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />本作品采用<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享署名-非商业性使用-相同方式共享 4.0 国际许可协议</a>进行许可。
 <br />
 
