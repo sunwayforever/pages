@@ -69,7 +69,7 @@
 <li><a href="#org0000056">1.5.3. intra_op_parallelism_threads</a></li>
 <li><a href="#org0000059">1.5.4. OMP_NUM_THREADS</a></li>
 <li><a href="#org0000077">1.5.5. 测试</a></li>
-<li><a href="#org0000083">1.5.6. 其它</a></li>
+<li><a href="#org0000085">1.5.6. 其它</a></li>
 <li><a href="#org0000086">1.5.7. TODO</a></li>
 </ul>
 </li>
@@ -851,8 +851,8 @@ generator.next()
 </div>
 </div>
 
-<div id="outline-container-org0000084" class="outline-5">
-<h5 id="org0000084"><span class="section-number-5">1.5.1.5.</span> 其它</h5>
+<div id="outline-container-org0000083" class="outline-5">
+<h5 id="org0000083"><span class="section-number-5">1.5.1.5.</span> 其它</h5>
 <div class="outline-text-5" id="text-1-5-1-5">
 <p>
 由于 dataset 容易成为训练时的瓶颈, 所以 nvidia 专门有一个 <a href="https://developer.nvidia.com/DALI">DALI</a> 库用来加速
@@ -1041,27 +1041,60 @@ mkl 执行的结果为:
 </p>
 </div>
 
-<div id="outline-container-org0000069" class="outline-6">
-<h6 id="org0000069"><span class="section-number-6">1.5.5.3.1.</span> 同步的影响</h6>
+<div id="outline-container-org000006b" class="outline-6">
+<h6 id="org000006b"><span class="section-number-6">1.5.5.3.1.</span> 同步的影响</h6>
 <div class="outline-text-6" id="text-1-5-5-3-1">
 <p>
-对比 4/20 个线程时 threading 的数据, 可以看到随着线程增加, eigen 的一个负责
-<a href="https://en.wikipedia.org/wiki/Barrier_(computer_science)">barrier</a> 的线程的处理时间变长, 导致其它依赖于该 barrier 的 worker thread 的等待增加.
+对比 2/4/12/20 个线程的 threading 数据:
 </p>
 
 <p>
-4 个线程时的数据:
+2x:
 </p>
 
 
 <div id="org0000067" class="figure">
+<p><img src="../extra/eigen_vtune_barrier_2.png" alt="eigen_vtune_barrier_2.png" />
+</p>
+</div>
+
+<p>
+4x:
+</p>
+
+
+<div id="org0000068" class="figure">
 <p><img src="../extra/eigen_vtune_barrier_4.png" alt="eigen_vtune_barrier_4.png" />
 </p>
 </div>
 
 <p>
-绿色表示 wait, 其中 77630 使用的 cond 是一个 barrier, 前四个 worker thread 是生产者,
-barrier 是消费者. barrier 消费完数据后通知 worker thread 继续工作.
+12x:
+</p>
+
+
+<div id="org0000069" class="figure">
+<p><img src="../extra/eigen_vtune_barrier_12.png" alt="eigen_vtune_barrier_12.png" />
+</p>
+</div>
+
+<p>
+20x:
+</p>
+
+
+<div id="org000006a" class="figure">
+<p><img src="../extra/eigen_vtune_barrier_20.png" alt="eigen_vtune_barrier_20.png" />
+</p>
+</div>
+
+<p>
+可以看到随着线程增加, eigen 的一个负责 <a href="https://en.wikipedia.org/wiki/Barrier_(computer_science)">barrier</a> 的线程的处理时间变长, 导致其它依赖于该 barrier 的 worker thread 的等待增加.
+</p>
+
+<p>
+以 4x 为例, 绿色表示 wait, 其中 77630 使用的 cond 是一个 barrier, 前四个 worker
+thread 是生产者, barrier 是消费者. barrier 消费完数据后通知 worker thread 继续工作.
 </p>
 
 <p>
@@ -1069,18 +1102,8 @@ barrier 是消费者. barrier 消费完数据后通知 worker thread 继续工�
 </p>
 
 <p>
-对比下面 20 个线程时的数据:
-</p>
-
-
-<div id="org0000068" class="figure">
-<p><img src="../extra/eigen_vtune_barrier_20.png" alt="eigen_vtune_barrier_20.png" />
-</p>
-</div>
-
-<p>
-4 个线程时 barrier 的 `等待/运行` 时间的比例大约是 2.48, 而 20 个线程时变成为
-1.45, 即 barrier 在更多线程时运行的时间更长, 进而导致 worker 运行时间变短.
+2/4/12/20 个线程时 barrier 的 `等待/运行` 时间的比例分别为: 11.6/2.48/1.7/1.45, 即
+barrier 在更多线程时运行的时间更长, 进而导致 worker 运行时间变短.
 </p>
 
 <p>
@@ -1095,8 +1118,8 @@ barrier 是消费者. barrier 消费完数据后通知 worker thread 继续工�
 </div>
 </div>
 
-<div id="outline-container-org0000071" class="outline-6">
-<h6 id="org0000071"><span class="section-number-6">1.5.5.3.2.</span> cache 的影响</h6>
+<div id="outline-container-org0000073" class="outline-6">
+<h6 id="org0000073"><span class="section-number-6">1.5.5.3.2.</span> cache 的影响</h6>
 <div class="outline-text-6" id="text-1-5-5-3-2">
 <p>
 通过前面提到的 <a href="#org000005f">cpu time</a> 可以看到多线程性能并不仅仅和同步有关 (因为 cpu time 并不包含 wait 的时间)
@@ -1108,31 +1131,31 @@ instruction) 变大, cache miss 增加.
 </p>
 
 
-<div id="org000006c" class="figure">
+<div id="org000006e" class="figure">
 <p><img src="../extra/vtune_x2.png" alt="vtune_x2.png" />
 </p>
 </div>
 
 
-<div id="org000006d" class="figure">
+<div id="org000006f" class="figure">
 <p><img src="../extra/vtune_x4.png" alt="vtune_x4.png" />
 </p>
 </div>
 
 
-<div id="org000006e" class="figure">
+<div id="org0000070" class="figure">
 <p><img src="../extra/vtune_x8.png" alt="vtune_x8.png" />
 </p>
 </div>
 
 
-<div id="org000006f" class="figure">
+<div id="org0000071" class="figure">
 <p><img src="../extra/vtune_x16.png" alt="vtune_x16.png" />
 </p>
 </div>
 
 
-<div id="org0000070" class="figure">
+<div id="org0000072" class="figure">
 <p><img src="../extra/vtune_x32.png" alt="vtune_x32.png" />
 </p>
 </div>
@@ -1141,8 +1164,8 @@ instruction) 变大, cache miss 增加.
 </div>
 </div>
 
-<div id="outline-container-org0000083" class="outline-4">
-<h4 id="org0000083"><span class="section-number-4">1.5.6.</span> 其它</h4>
+<div id="outline-container-org0000085" class="outline-4">
+<h4 id="org0000085"><span class="section-number-4">1.5.6.</span> 其它</h4>
 <div class="outline-text-4" id="text-1-5-6">
 </div>
 <div id="outline-container-org000007a" class="outline-5">
@@ -1231,7 +1254,7 @@ indirection, except for the problem of too many levels of indirection.
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2022-10-17 Mon 15:18<br />
-Last updated: 2022-10-29 Sat 00:52</p>
+Last updated: 2022-10-29 Sat 10:22</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
