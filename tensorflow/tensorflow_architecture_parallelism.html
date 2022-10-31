@@ -69,7 +69,7 @@
 <li><a href="#org0000056">1.5.3. intra_op_parallelism_threads</a></li>
 <li><a href="#org0000059">1.5.4. OMP_NUM_THREADS</a></li>
 <li><a href="#org0000077">1.5.5. 测试</a></li>
-<li><a href="#org0000085">1.5.6. 其它</a></li>
+<li><a href="#org0000086">1.5.6. 其它</a></li>
 <li><a href="#org0000076">1.5.7. TODO</a></li>
 </ul>
 </li>
@@ -863,8 +863,8 @@ generator.next()
 </div>
 </div>
 
-<div id="outline-container-org0000086" class="outline-5">
-<h5 id="org0000086"><span class="section-number-5">1.5.1.5.</span> 其它</h5>
+<div id="outline-container-org0000085" class="outline-5">
+<h5 id="org0000085"><span class="section-number-5">1.5.1.5.</span> 其它</h5>
 <div class="outline-text-5" id="text-1-5-1-5">
 <ul class="org-ul">
 <li>由于 dataset 容易成为训练时的瓶颈, 所以 nvidia 专门有一个 <a href="https://developer.nvidia.com/DALI">DALI</a> 库用来加速
@@ -1131,6 +1131,29 @@ barrier 在更多线程时运行的时间更长, 进而导致 worker 运行时�
 <p>
 归根到底, 多线程时负责把 worker thread 的结果进行某种 reduction 的 thread 的工作量增大了, 导致 worker 线程等待时间变长&#x2026;
 </p>
+
+<p>
+<b>Update on 2022/10/31</b>
+</p>
+
+<p>
+通过 tensorflow 2.2.0 的代码, 能确认这个 barrier 来自
+TensorContractionThreadPool 的 evalProductImpl, 参考下面的注释:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-comment-delimiter">// </span><span class="org-comment">We compute partial gemm results in parallel, and to get the final result</span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">we need to add them all together. For the large number of threads (&gt;= 48)</span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">this adds a very expensive sequential step at the end.</span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">For now we use just a single level of ranges to compute pre-aggregated</span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">partial sums, but in general we can use more layers to compute tree</span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">aggregation in parallel and reduce the size of the sequential step.</span>
+<span class="org-comment-delimiter">//</span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">TODO(ezhulenev): Add multilevel tree aggregation? Probably will make</span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">sense only if number of threads &gt;= ~128?</span>
+</pre>
+</div>
 </div>
 </div>
 
@@ -1180,8 +1203,8 @@ instruction) 变大, cache miss 增加.
 </div>
 </div>
 
-<div id="outline-container-org0000085" class="outline-4">
-<h4 id="org0000085"><span class="section-number-4">1.5.6.</span> 其它</h4>
+<div id="outline-container-org0000086" class="outline-4">
+<h4 id="org0000086"><span class="section-number-4">1.5.6.</span> 其它</h4>
 <div class="outline-text-4" id="text-1-5-6">
 </div>
 <div id="outline-container-org000007c" class="outline-5">
@@ -1272,7 +1295,7 @@ indirection, except for the problem of too many levels of indirection.
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2022-10-17 Mon 15:18<br />
-Last updated: 2022-10-31 Mon 14:09</p>
+Last updated: 2022-10-31 Mon 16:34</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
