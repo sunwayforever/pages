@@ -69,7 +69,7 @@
 <li><a href="#org0000056">1.5.3. intra_op_parallelism_threads</a></li>
 <li><a href="#org0000059">1.5.4. OMP_NUM_THREADS</a></li>
 <li><a href="#org0000077">1.5.5. 测试</a></li>
-<li><a href="#org0000086">1.5.6. 其它</a></li>
+<li><a href="#org0000085">1.5.6. 其它</a></li>
 <li><a href="#org0000076">1.5.7. TODO</a></li>
 </ul>
 </li>
@@ -754,10 +754,10 @@ tensorflow dataset api 是一个 <a href="../tech/coroutine.html#ID-e969e80b-406
 
 <div class="org-src-container">
 <pre class="src src-C++">dataset(generator)
-  .map(fn1)
+  .map(fn1,num_parallel_calls)
   .filter(fn2)
   .shuffle()
-  .prefetch();
+  .prefetch(buffer_size);
 </pre>
 </div>
 
@@ -863,13 +863,15 @@ generator.next()
 </div>
 </div>
 
-<div id="outline-container-org0000085" class="outline-5">
-<h5 id="org0000085"><span class="section-number-5">1.5.1.5.</span> 其它</h5>
+<div id="outline-container-org0000086" class="outline-5">
+<h5 id="org0000086"><span class="section-number-5">1.5.1.5.</span> 其它</h5>
 <div class="outline-text-5" id="text-1-5-1-5">
-<p>
-由于 dataset 容易成为训练时的瓶颈, 所以 nvidia 专门有一个 <a href="https://developer.nvidia.com/DALI">DALI</a> 库用来加速
-dataset 的处理
-</p>
+<ul class="org-ul">
+<li>由于 dataset 容易成为训练时的瓶颈, 所以 nvidia 专门有一个 <a href="https://developer.nvidia.com/DALI">DALI</a> 库用来加速
+dataset 的处理</li>
+
+<li>dataset 通过 num_parallel_calls 指定它自己的 thread pool, 有一个 AUTOTUNE 机制可以自动调整 thread pool 以达到最佳性能</li>
+</ul>
 </div>
 </div>
 </div>
@@ -1006,10 +1008,12 @@ TASK_RUNNING 状态的时间之和, 这个时间一般会远大于 wall time.
 
 <li>intra_op_parallelism 属于 find-graind parallelism, 相对于 corse-grained
 palrallelism (例如 make -j 这种),它有许多通信和同步的开销 (cache, 锁, 原子操作, 内存屏障等),对于这类问题, 使用向量指令会更有优势 (Optimizing software in
-C++ By Agner Fog, p108, Multithreading)</li>
+C++ By Agner Fog, p108, Multithreading). 另外, 更多的线程意味着更多的内存占用
+(栈, 中间结果&#x2026;), 影响 cache 从而影响性能.</li>
 </ol>
 </div>
 </div>
+
 
 <div id="outline-container-org0000064" class="outline-5">
 <h5 id="org0000064"><span class="section-number-5">1.5.5.2.</span> inter_op_parallelism 性能</h5>
@@ -1127,10 +1131,6 @@ barrier 在更多线程时运行的时间更长, 进而导致 worker 运行时�
 <p>
 归根到底, 多线程时负责把 worker thread 的结果进行某种 reduction 的 thread 的工作量增大了, 导致 worker 线程等待时间变长&#x2026;
 </p>
-
-<p>
-根据, CPU 有再多的核, 也不可能把性能提高到 20 倍以上,结果就是多核的性能上限取决于单核的性能&#x2026;
-</p>
 </div>
 </div>
 
@@ -1180,8 +1180,8 @@ instruction) 变大, cache miss 增加.
 </div>
 </div>
 
-<div id="outline-container-org0000086" class="outline-4">
-<h4 id="org0000086"><span class="section-number-4">1.5.6.</span> 其它</h4>
+<div id="outline-container-org0000085" class="outline-4">
+<h4 id="org0000085"><span class="section-number-4">1.5.6.</span> 其它</h4>
 <div class="outline-text-4" id="text-1-5-6">
 </div>
 <div id="outline-container-org000007c" class="outline-5">
@@ -1223,6 +1223,8 @@ tensorflow 只会使用一个 (a single) cuda stream:
 <h4 id="org0000076"><span class="section-number-4">1.5.7.</span> TODO</h4>
 <div class="outline-text-4" id="text-1-5-7">
 <ol class="org-ol">
+<li>dataset num_parallel_calls 的 AUTOTUNE 机制</li>
+
 <li><p>
 intra/inter op palrallelism 的瓶颈在什么地方
 </p>
@@ -1270,7 +1272,7 @@ indirection, except for the problem of too many levels of indirection.
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2022-10-17 Mon 15:18<br />
-Last updated: 2022-10-31 Mon 11:03</p>
+Last updated: 2022-10-31 Mon 14:09</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
