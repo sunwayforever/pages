@@ -1067,7 +1067,7 @@ mkl 执行的结果为:
 <h6 id="org000006b"><span class="section-number-6">1.5.5.3.1.</span> 同步的影响</h6>
 <div class="outline-text-6" id="text-1-5-5-3-1">
 <p>
-对比 2/4/12/20 个线程的 threading 数据:
+对比 2/4/12 个线程的 threading 数据:
 </p>
 
 <p>
@@ -1101,35 +1101,13 @@ mkl 执行的结果为:
 </div>
 
 <p>
-20x:
-</p>
-
-
-<div id="org000006a" class="figure">
-<p><img src="../extra/eigen_vtune_barrier_20.png" alt="eigen_vtune_barrier_20.png" />
-</p>
-</div>
-
-<p>
-可以看到随着线程增加, eigen 的一个负责 <a href="https://en.wikipedia.org/wiki/Barrier_(computer_science)">barrier</a> 的线程的处理时间变长, 导致其它依赖于该 barrier 的 worker thread 的等待增加.
+可以看到随着线程增加, eigen 的一个负责 <a href="https://en.wikipedia.org/wiki/Barrier_(computer_science)">barrier</a> 的线程(图片中最底下那个线程)的处理时间基本不变 (~15ms)
 </p>
 
 <p>
 以 4x 为例, 绿色表示 wait, 其中 77630 使用的 cond 是一个 barrier, 前四个 worker
-thread 是生产者, barrier 是消费者. barrier 消费完数据后通知 worker thread 继续工作.
-</p>
-
-<p>
-当 worker thread 增多时, barrier 的工作量变大, 导致 worker thread 等待时间变长.
-</p>
-
-<p>
-2/4/12/20 个线程时 barrier 的 `等待/运行` 时间的比例分别为: 11.6/2.48/1.7/1.45, 即
-barrier 在更多线程时运行的时间更长, 进而导致 worker 运行时间变短.
-</p>
-
-<p>
-归根到底, 多线程时负责把 worker thread 的结果进行某种 reduction 的 thread 的工作量增大了, 导致 worker 线程等待时间变长&#x2026;
+thread 是生产者, barrier 是消费者. barrier 消费完数据后通知 worker thread 继续工作. barrier 负责把 worker thread 的结果进行某种 reduction 的工作是不变的, 相当于
+<a href="https://en.wikipedia.org/wiki/Amdahl%27s_law#:~:text=In%20computer%20architecture%2C%20Amdahl's%20law,system%20whose%20resources%20are%20improved.">Amdahl's Law</a> 中不能并行那部分.
 </p>
 
 <p>
@@ -1137,7 +1115,8 @@ barrier 在更多线程时运行的时间更长, 进而导致 worker 运行时�
 </p>
 
 <p>
-通过 tensorflow 2.2.0 的代码, TensorContractionThreadPool 的 evalProductImpl 有下面的注释, 但还不能确认和碰到的问题是同一个问题:
+TensorContractionThreadPool 的 evalProductImpl 有下面的注释, 是一个潜在的问题,
+但是和前面碰到的问题并是同一个问题:
 </p>
 
 <div class="org-src-container">
@@ -1152,6 +1131,18 @@ barrier 在更多线程时运行的时间更长, 进而导致 worker 运行时�
 <span class="org-comment-delimiter">// </span><span class="org-comment">TODO(ezhulenev): Add multilevel tree aggregation? Probably will make</span>
 <span class="org-comment-delimiter">// </span><span class="org-comment">sense only if number of threads &gt;= ~128?</span>
 </pre>
+</div>
+
+<p>
+前面的问题实际是并行 contraction 后紧接的一个单线程的 Col2im 导致的
+(tensorflow/core/kernels/conv_grad_input_ops.cc::Compute), 去掉这个 col2im 后
+wall time 从 0.106 变为 0.085 (即加速比从 9.4 变为 11.8)
+</p>
+
+
+<div id="org000006a" class="figure">
+<p><img src="../extra/cnn_col2im_benchmark.png" alt="cnn_col2im_benchmark.png" />
+</p>
 </div>
 </div>
 </div>
@@ -1296,7 +1287,7 @@ indirection, except for the problem of too many levels of indirection.
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2022-10-17 Mon 15:18<br />
-Last updated: 2022-11-01 Tue 14:19</p>
+Last updated: 2022-11-01 Tue 17:18</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
