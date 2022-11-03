@@ -69,8 +69,9 @@
 <li><a href="#org0000056">1.5.3. intra_op_parallelism_threads</a></li>
 <li><a href="#org0000059">1.5.4. OMP_NUM_THREADS</a></li>
 <li><a href="#org0000077">1.5.5. 测试</a></li>
-<li><a href="#org0000086">1.5.6. 其它</a></li>
-<li><a href="#org0000088">1.5.7. 后续工作</a></li>
+<li><a href="#org0000080">1.5.6. distributed training</a></li>
+<li><a href="#org0000088">1.5.7. 其它</a></li>
+<li><a href="#org000008b">1.5.8. 后续工作</a></li>
 </ul>
 </li>
 </ul>
@@ -867,8 +868,8 @@ generator.next()
 </div>
 </div>
 
-<div id="outline-container-org0000085" class="outline-5">
-<h5 id="org0000085"><span class="section-number-5">1.5.1.5.</span> 其它</h5>
+<div id="outline-container-org0000086" class="outline-5">
+<h5 id="org0000086"><span class="section-number-5">1.5.1.5.</span> 其它</h5>
 <div class="outline-text-5" id="text-1-5-1-5">
 <ul class="org-ul">
 <li>由于 dataset 容易成为训练时的瓶颈, 所以 nvidia 专门有一个 <a href="https://developer.nvidia.com/DALI">DALI</a> 库用来加速
@@ -926,6 +927,10 @@ mkl 算子的并行是通过 openmp 实现, OMP_NUM_THREADS 可以控制 openmp 
 <div id="outline-container-org0000077" class="outline-4">
 <h4 id="org0000077"><span class="section-number-4">1.5.5.</span> 测试</h4>
 <div class="outline-text-4" id="text-1-5-5">
+<p>
+<a href="https://github.com/sunwayforever/tf_cpu_benchmark">https://github.com/sunwayforever/tf_cpu_benchmark</a>
+</p>
+
 <p>
 通过测试一个简单的 mnist 模型, 有以下结论:
 </p>
@@ -1201,13 +1206,122 @@ instruction) 变大, cache miss 增加.
 </div>
 </div>
 
-<div id="outline-container-org0000086" class="outline-4">
-<h4 id="org0000086"><span class="section-number-4">1.5.6.</span> 其它</h4>
+<div id="outline-container-org0000080" class="outline-4">
+<h4 id="org0000080"><span class="section-number-4">1.5.6.</span> distributed training</h4>
 <div class="outline-text-4" id="text-1-5-6">
+<p>
+<a href="https://www.oreilly.com/content/distributed-tensorflow/">https://www.oreilly.com/content/distributed-tensorflow/</a>
+</p>
+
+<p>
+<a href="https://theaisummer.com/distributed-training/">https://theaisummer.com/distributed-training/</a>
+</p>
+
+<p>
+如果 intra_op_parallelism_threads 因为粒度太小无法更高效的并行, 那么分布式训练可以看做是粒度很大的并行: 它会把输入分成多份, 交给不同的机器或 GPU 处理, 然后再把梯度聚合. 虽然分布式训练针对的主要是集群, 但也许可以通过 <a href="https://www.tensorflow.org/tutorials/distribute/multi_worker_with_keras">multi worker</a> 利用本机的多个进程来并行
+</p>
+
+<p>
+在本机用 MultiWorkerMirroredStrategy 进行分布式训练, 性能比单机多线程提高 ~30%
+</p>
+
+<p>
+distributed training 有不同的方式:
+</p>
+
+<ol class="org-ol">
+<li><p>
+基于 data parallelism
+</p>
+
+<p>
+data parallelism 是指每个进程有完整的模型, 但是把数据分为多份 (shard) 去并行的训练, 然后把梯度聚合后再分发出去. 这个 `梯度聚合再分发` 的算法称为
+allreduce.
+</p>
+
+<p>
+data parallelism 又可以分成两类:
+</p>
+
+<ol class="org-ol">
+<li><p>
+同步
+</p>
+
+<p>
+例如 tensorflow 中 MultiWorkerMirroredStrategy. 所有的进程运行一个 batch
+后用某种 allreduce 算法来聚合梯度, 然后再继续下一个 batch. 所有进程需要同步其梯度, 若整个 cluster 中某个节点处理较慢, 则整个 cluster 都需要等待它.
+</p></li>
+
+<li><p>
+异步
+</p>
+
+<p>
+tensorflow 中的 ParameterServerStrategy 是异步的, 除了 worker 节点, 还有专门的 parameter server (ps) 节点, worker 异步的从 ps 取梯度, 计算完成后异步的把梯度上传给 ps
+</p></li>
+</ol></li>
+
+<li><p>
+基于 model parallelism
+</p>
+
+<p>
+当模型很大无法在单机上训练时, 可以使用基于 model parallelism 的方式来并行训练.
+</p>
+
+<p>
+<a href="https://github.com/tensorflow/mesh">https://github.com/tensorflow/mesh</a>
+</p></li>
+</ol>
 </div>
+
 <div id="outline-container-org000007c" class="outline-5">
-<h5 id="org000007c"><span class="section-number-5">1.5.6.1.</span> XLA 并行编译</h5>
+<h5 id="org000007c"><span class="section-number-5">1.5.6.1.</span> allreduce</h5>
 <div class="outline-text-5" id="text-1-5-6-1">
+<p>
+一个简单的 allreduce 场景:
+</p>
+
+<p>
+在`同步数据并行`的训练中, 10 个节点计算出梯度后, 每个节点都需要得到其它 9 个节点的梯度, 和自己的梯度平均一下做为真正的梯度, 简单的实现时有两个做法:
+</p>
+
+<ol class="org-ol">
+<li>每个节点都向所有节点广播</li>
+
+<li>存在一个中心服务器</li>
+</ol>
+
+<p>
+第一种方式通信量很大, 每二种方式有单点失败的问题. 还有一种优化的方式称为 ring
+allreduce
+</p>
+
+<p>
+<a href="https://tech.preferred.jp/en/blog/technologies-behind-distributed-deep-learning-allreduce/">https://tech.preferred.jp/en/blog/technologies-behind-distributed-deep-learning-allreduce/</a>
+</p>
+
+<p>
+另外, nvidia 的 nccl 和 intel 的 oneccl (collective commnications library) 都提供了优化的 allreduce 实现. tensorflow 的分布式训练可以使用 nccl, pytorch 则支持
+oneccl.
+</p>
+
+<p>
+在测试 MultiWorkerMirroredStrategy 时, 使用一个 worker 时耗时 7s, 使用四个
+worker 耗时变为 10s, 多出来的部分应该主要是 allreduce 的开销
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000088" class="outline-4">
+<h4 id="org0000088"><span class="section-number-4">1.5.7.</span> 其它</h4>
+<div class="outline-text-4" id="text-1-5-7">
+</div>
+<div id="outline-container-org0000082" class="outline-5">
+<h5 id="org0000082"><span class="section-number-5">1.5.7.1.</span> XLA 并行编译</h5>
+<div class="outline-text-5" id="text-1-5-7-1">
 <p>
 虽然 xla 有可能通过并行加速编译
 (<a href="https://groups.google.com/g/xla-dev/c/VZMMD44BC7Y">https://groups.google.com/g/xla-dev/c/VZMMD44BC7Y</a>), 但由于 xla 只需要编译一次,
@@ -1217,32 +1331,19 @@ instruction) 变大, cache miss 增加.
 </div>
 
 <div id="outline-container-org000007d" class="outline-5">
-<h5 id="org000007d"><span class="section-number-5">1.5.6.2.</span> 多个 cuda stream</h5>
-<div class="outline-text-5" id="text-1-5-6-2">
+<h5 id="org000007d"><span class="section-number-5">1.5.7.2.</span> 多个 cuda stream</h5>
+<div class="outline-text-5" id="text-1-5-7-2">
 <p>
 tensorflow 只会使用一个 (a single) cuda stream:
 <a href="https://github.com/tensorflow/tensorflow/issues/36634">https://github.com/tensorflow/tensorflow/issues/36634</a>
 </p>
 </div>
 </div>
-
-<div id="outline-container-org0000080" class="outline-5">
-<h5 id="org0000080"><span class="section-number-5">1.5.6.3.</span> distributed training</h5>
-<div class="outline-text-5" id="text-1-5-6-3">
-<p>
-<a href="https://www.oreilly.com/content/distributed-tensorflow/">https://www.oreilly.com/content/distributed-tensorflow/</a>
-</p>
-
-<p>
-如果 intra_op_parallelism_threads 因为粒度太小无法更高效的并行, 那么分布式训练可以看做是粒度很大的并行: 它会把输入分成多份, 交给不同的机器或 GPU 处理, 然后再把梯度聚合. 虽然分布式训练针对的主要是集群, 但也许可以通过 <a href="https://www.tensorflow.org/tutorials/distribute/multi_worker_with_keras">multi worker</a> 利用本机的多个进程来并行
-</p>
-</div>
-</div>
 </div>
 
-<div id="outline-container-org0000088" class="outline-4">
-<h4 id="org0000088"><span class="section-number-4">1.5.7.</span> 后续工作</h4>
-<div class="outline-text-4" id="text-1-5-7">
+<div id="outline-container-org000008b" class="outline-4">
+<h4 id="org000008b"><span class="section-number-4">1.5.8.</span> 后续工作</h4>
+<div class="outline-text-4" id="text-1-5-8">
 <ol class="org-ol">
 <li>dataset num_parallel_calls 的 AUTOTUNE 机制</li>
 
@@ -1295,7 +1396,7 @@ indirection, except for the problem of too many levels of indirection.
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2022-10-17 Mon 15:18<br />
-Last updated: 2022-11-02 Wed 12:13</p>
+Last updated: 2022-11-03 Thu 18:26</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
