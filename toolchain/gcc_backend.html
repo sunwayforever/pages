@@ -30,11 +30,11 @@
 <ul>
 <li><a href="#org00000a9">1.1. insn selection</a>
 <ul>
-<li><a href="#org0000002">1.1.1. gimple tree code</a></li>
+<li><a href="#org0000004">1.1.1. gimple tree code</a></li>
 <li><a href="#ID-cc581233-c9a4-47c9-b392-64e03af4b454">1.1.2. optab</a></li>
 <li><a href="#ID-5304f835-9c6a-49bc-89a5-ca01e2520167">1.1.3. machine desc</a></li>
 <li><a href="#ID-a354364f-e048-4d6f-b780-0271f16dfd6a">1.1.4. rtl</a></li>
-<li><a href="#org00000bd">1.1.5. example</a></li>
+<li><a href="#org00000bf">1.1.5. example</a></li>
 </ul>
 </li>
 <li><a href="#org00000aa">1.2. rtl optimization</a></li>
@@ -42,11 +42,11 @@
 <li><a href="#org00000af">1.4. register allocation</a></li>
 <li><a href="#org00000b2">1.5. code emission</a>
 <ul>
-<li><a href="#org0000096">1.5.1. backtrace</a></li>
+<li><a href="#org0000098">1.5.1. backtrace</a></li>
 <li><a href="#org000008a">1.5.2. final_scan_insn_1</a></li>
 <li><a href="#org00000a5">1.5.3. recog_memoized</a></li>
 <li><a href="#org00000a8">1.5.4. get_insn_template</a></li>
-<li><a href="#org00000ad">1.5.5. output_asm_insn</a></li>
+<li><a href="#org00000ae">1.5.5. output_asm_insn</a></li>
 </ul>
 </li>
 <li><a href="#org00000d0">1.6. misc</a>
@@ -131,8 +131,8 @@ insn selection 通过 `pass_expand` 完成, 目的是生成 gimple 对应的 rtl
 </ol>
 </div>
 
-<div id="outline-container-org0000002" class="outline-4">
-<h4 id="org0000002"><span class="section-number-4">1.1.1.</span> gimple tree code</h4>
+<div id="outline-container-org0000004" class="outline-4">
+<h4 id="org0000004"><span class="section-number-4">1.1.1.</span> gimple tree code</h4>
 <div class="outline-text-4" id="text-1-1-1">
 <p>
 <a href="retargeting_gcc_to_riscv.html#ID-93add5bb-995d-4276-94fa-c344283d3f53">gimple</a> 定义的 tree code 在 `tree.def` 中, 例如:
@@ -147,11 +147,66 @@ DEFTREECODE (ABS_EXPR, "abs_expr", tcc_unary, 1)
 </pre>
 
 <p>
-gimple tree code 中有些并没有直接对应的 C 语法 (例如 ABS_EXPR), 这些 tree code
-是通过 gimple 的 `Match-and-simplify patterns` 或其它一些 gimple optimization 来使用的, 例如:
+有些 tree code 并没有直接对应的 C 语法 (例如 ABS_EXPR, MAX_EXPR), 这些 tree code
+要么通过 gimple 的 `Match-and-simplify patterns` 或其它一些 gimple optimization
+来生成的, 要么通过 builtin 来使用, 例如:
+</p>
+
+<ul class="org-ul">
+<li><p>
+MAX_EXPR
+</p>
+
+<p>
+MAX_EXPR 可以通过优化 `a&gt;b?a:b` 或 `if (a&gt;b) {return a; } return b;` 得到:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-preprocessor">#define</span> <span class="org-function-name">A</span>(<span class="org-variable-name">a</span>, <span class="org-variable-name">b</span>) ((a) &gt; (b) ? (a) : (b))
+
+<span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]) {
+    <span class="org-type">int</span> <span class="org-variable-name">x</span> = argc;
+    <span class="org-type">int</span> <span class="org-variable-name">y</span> = -argc;    
+    <span class="org-type">int</span> <span class="org-variable-name">z</span> = A(x, y);
+    <span class="org-keyword">return</span> z;
+}
+</pre>
+</div>
+
+<p>
+生成的 gimple 为:
 </p>
 
 <pre class="example" id="org0000001">
+main (int argc, char * * argv)
+{
+  int D.1506;
+
+  {
+    int x;
+    int y;
+    int z;
+
+    x = argc;
+    y = -argc;
+    z = MAX_EXPR &lt;y, x&gt;;
+    D.1506 = z;
+    return D.1506;
+  }
+  D.1506 = 0;
+  return D.1506;
+}
+</pre></li>
+
+<li><p>
+ABS_EXPR
+</p>
+
+<p>
+abs 可以通过 `__builtin_fabs` 生成, 也可以通过优化 max(a,-a) 来生成:
+</p>
+
+<pre class="example" id="org0000002">
 match.pd:
 
 /* max(a,-a) -&gt; abs(a).  */
@@ -162,8 +217,26 @@ match.pd:
       || TYPE_OVERFLOW_UNDEFINED (type)))
   (abs @0)))
 </pre>
+
+<p>
+以前面的代码为例, 优化后的 gimple 会变成:
+</p>
+
+<pre class="example" id="org0000003">
+main (int argc, char * * argv)
+{
+  int z;
+
+  &lt;bb 2&gt; [local count: 1073741824]:
+  z_2 = ABS_EXPR &lt;argc_1(D)&gt;;
+  return z_2;
+
+}
+</pre></li>
+</ul>
 </div>
 </div>
+
 
 <div id="outline-container-ID-cc581233-c9a4-47c9-b392-64e03af4b454" class="outline-4">
 <h4 id="ID-cc581233-c9a4-47c9-b392-64e03af4b454"><span class="section-number-4">1.1.2.</span> optab</h4>
@@ -183,7 +256,7 @@ optab 的定义在 optabs.def, 它是 gimple 与 rtl 之间的桥梁:
 optabs.def 的部分内容:
 </p>
 
-<pre class="example" id="org0000005">
+<pre class="example" id="org0000007">
 OPTAB_NL(add_optab, "add$P$a3", PLUS, "add", '3', gen_int_fp_fixed_libfunc)
 OPTAB_NL(sub_optab, "sub$P$a3", MINUS, "sub", '3', gen_int_fp_fixed_libfunc)
 OPTAB_NL(smul_optab, "mul$Q$a3", MULT, "mul", '3', gen_int_fp_fixed_libfunc)
@@ -439,7 +512,7 @@ __divsf3. 这些函数是在 <a href="bare_metal.html#ID-27a07646-18c6-4504-b36e
 实际上 soft-float 与 hard-float 的区别就是是通过 optab_libfunc 机制来体现的:
 </p>
 
-<pre class="example" id="org000000c">
+<pre class="example" id="org000000e">
 (define_insn "div&lt;mode&gt;3"
   [(set (match_operand:ANYF           0 "register_operand" "=f")
     (div:ANYF (match_operand:ANYF 1 "register_operand" " f")
@@ -458,9 +531,9 @@ insn. 否则就会通过 optab_libfunc 产生对 __divsf3/__divdf3 的调用
 </div>
 
 
-<div id="outline-container-org00000d4" class="outline-5 references">
-<h5 id="org00000d4">Backlinks</h5>
-<div class="outline-text-5" id="text-org00000d4">
+<div id="outline-container-org00000d8" class="outline-5 references">
+<h5 id="org00000d8">Backlinks</h5>
+<div class="outline-text-5" id="text-org00000d8">
 <p>
 <a href="llvm_backend.html#ID-e60ce82f-6f66-44e0-adb5-cef752145625">LLVM Backend</a>
 (<i>LLVM Backend &gt; instruction selection &gt; SelectionDAGBuilder</i>):  其中 DAG 中 node 的类型例如 fadd 定义在 ISDOpcodes.h, 和 gcc <a href="#ID-cc581233-c9a4-47c9-b392-64e03af4b454">optab</a> 有些类似
@@ -469,9 +542,9 @@ insn. 否则就会通过 optab_libfunc 产生对 __divsf3/__divdf3 的调用
 
 
 
-<div id="outline-container-org0000010" class="outline-6 references">
-<h6 id="org0000010">Backlinks</h6>
-<div class="outline-text-6" id="text-org0000010">
+<div id="outline-container-org0000012" class="outline-6 references">
+<h6 id="org0000012">Backlinks</h6>
+<div class="outline-text-6" id="text-org0000012">
 <p>
 <a href="llvm_backend.html#ID-e60ce82f-6f66-44e0-adb5-cef752145625">LLVM Backend</a>
 (<i>LLVM Backend &gt; instruction selection &gt; SelectionDAGLegalize</i>):  如果 target 不支持 DAG 的某个 node, 需要在 legalize 时转换成和 target 支持的 node, 或者生成对 libcall 的调用 (类似于 gcc <a href="#ID-c1ff5b55-a6cd-41c5-aab9-248f52262030">optab_libfunc</a>), 这个过程是 target 相 关的.
@@ -532,7 +605,7 @@ code emission 阶段找到 rtl 对应的汇编
 md (例如 riscv.md) 是 backend 最核心的部分, 其中最重要的部分是 define_insn, 例如:
 </p>
 
-<pre class="example" id="org0000013">
+<pre class="example" id="org0000015">
 (define_insn "add&lt;mode&gt;3"
   [
   ;; -----------------------------
@@ -581,7 +654,7 @@ define_insn 有两个用法:
 例如 test.c 中的 `float y = x + x` 会先通过 addsf3 转换为下面的 rtl 代码:
 </p>
 
-<pre class="example" id="org0000014">
+<pre class="example" id="org0000016">
 (insn# 0 0 (set (reg:SF 48 f16)
         (plus:SF (reg:SF 48 f16)
             (reg:SF 49 f17))) test.c:5# {addsf3}
@@ -601,7 +674,7 @@ define_insn 有两个用法:
 与 define_insn 不同, 有些 insn 的功能是通过组合其它 insn 来完成的.
 </p>
 
-<pre class="example" id="org0000018">
+<pre class="example" id="org000001a">
 (define_expand "addsi3"
        [(match_operand:SI 0 "register_operand" "")
         (match_operand:SI 1 "register_operand" "")
@@ -660,7 +733,7 @@ statement) 负责通过 rtx 的 api (例如 emit_insn, gen_xxx) 生成 rtx
 predicate 是指 match_operand/match_operator 时可以指定的条件, 例如
 </p>
 
-<pre class="example" id="org0000035">
+<pre class="example" id="org0000036">
 (define_insn "adddi3"
   [(set (match_operand:DI 0 "register_operand" "=r,r")
     (plus:DI (match_operand:DI 1 "register_operand" " r,r")
@@ -673,7 +746,7 @@ predicate 是指 match_operand/match_operator 时可以指定的条件, 例如
 arith_operand 就是通过 define_predicate 指定的 predicate:
 </p>
 
-<pre class="example" id="org0000035">
+<pre class="example" id="org0000038">
 (define_predicate "arith_operand"
   (ior (match_operand 0 "const_arith_operand")
        (match_operand 0 "register_operand")))
@@ -720,7 +793,7 @@ match_xxx 生成各种 pattern 函数, 用来检测 rtl 是否 define_insn 匹�
 match_operand 用来 match operand, 例如:
 </p>
 
-<pre class="example" id="org000003c">
+<pre class="example" id="org000003e">
 (match_operand:SI      0           "register_operand"    "r")
 ----------------------------------------------------------------------
                &lt;mode&gt;  &lt;operand&gt;   &lt;predicate&gt;           &lt;constraints&gt;
@@ -749,7 +822,7 @@ match_scratch 在生成 rtl 时可以用来分配一个 scratch 寄存器, 在�
 match_scratch 的典型用法类似这样:
 </p>
 
-<pre class="example" id="org0000044">
+<pre class="example" id="org0000045">
 (define_insn "swapsi3"
 [
  (swap (match_operand:si 1 "register_operand")
@@ -784,9 +857,9 @@ mov %0, %1\nmov %1, %2\nmov %2, %0
 </div>
 
 
-<div id="outline-container-org0000059" class="outline-5 references">
-<h5 id="org0000059">Backlinks</h5>
-<div class="outline-text-5" id="text-org0000059">
+<div id="outline-container-org000005b" class="outline-5 references">
+<h5 id="org000005b">Backlinks</h5>
+<div class="outline-text-5" id="text-org000005b">
 <p>
 <a href="llvm_tablegen.html#ID-5e67daa8-ff56-4a3c-ac3c-de840f1abe46">LLVM TableGen</a>
 (<i>LLVM TableGen</i>):  target description 和 gcc <a href="#ID-5304f835-9c6a-49bc-89a5-ca01e2520167">machine description</a> 基本是类似, 它们都包含:
@@ -811,7 +884,7 @@ rtl (Register Transfer Language) 相当于 gcc LIR, 主要涉及到寄存器分�
 例如下面的 rtl:
 </p>
 
-<pre class="example" id="org000005d">
+<pre class="example" id="org000005e">
 (insn/f 40 39 41 (set (mem/c:DI (plus:DI (reg/f:DI 2 sp)
                     (const_int 24 [0x18])) [2  S8 A64])
             (reg/f:DI 8 s0)) "test.c":1:21)
@@ -822,8 +895,8 @@ rtl (Register Transfer Language) 相当于 gcc LIR, 主要涉及到寄存器分�
 </p>
 </div>
 
-<div id="outline-container-org000000e" class="outline-5">
-<h5 id="org000000e"><span class="section-number-5">1.1.4.1.</span> rtl.def</h5>
+<div id="outline-container-org0000060" class="outline-5">
+<h5 id="org0000060"><span class="section-number-5">1.1.4.1.</span> rtl.def</h5>
 <div class="outline-text-5" id="text-1-1-4-1">
 <p>
 和 optab 一样, rtl 也定义了一些基本操作, rtl.def 相当于 rtl 语言的词汇表, 前面提到的 `set`, `const_int`, `reg` 等都定义在 rtl.def 中.
@@ -833,7 +906,7 @@ rtl (Register Transfer Language) 相当于 gcc LIR, 主要涉及到寄存器分�
 例如:
 </p>
 
-<pre class="example" id="org000005d">
+<pre class="example" id="org0000060">
 DEF_RTL_EXPR(PLUS, "plus", "ee", RTX_COMM_ARITH)
 </pre>
 
@@ -875,8 +948,8 @@ gen_rtx_PLUS), 然后通过 c 代码来构造 rtx, 参考 md 中 `define_expand`
 </div>
 
 
-<div id="outline-container-org0000012" class="outline-5">
-<h5 id="org0000012"><span class="section-number-5">1.1.4.2.</span> constant expression</h5>
+<div id="outline-container-org0000064" class="outline-5">
+<h5 id="org0000064"><span class="section-number-5">1.1.4.2.</span> constant expression</h5>
 <div class="outline-text-5" id="text-1-1-4-2">
 <ul class="org-ul">
 <li>const_int</li>
@@ -887,7 +960,7 @@ gen_rtx_PLUS), 然后通过 c 代码来构造 rtx, 参考 md 中 `define_expand`
 label_ref
 </p>
 
-<pre class="example" id="org0000061">
+<pre class="example" id="org0000063">
 (define_insn "*branch&lt;mode&gt;"
   [(set (pc)
     (if_then_else
@@ -907,8 +980,8 @@ label_ref
 </div>
 </div>
 
-<div id="outline-container-org0000015" class="outline-5">
-<h5 id="org0000015"><span class="section-number-5">1.1.4.3.</span> register memory expression</h5>
+<div id="outline-container-org0000067" class="outline-5">
+<h5 id="org0000067"><span class="section-number-5">1.1.4.3.</span> register memory expression</h5>
 <div class="outline-text-5" id="text-1-1-4-3">
 <ul class="org-ul">
 <li>reg</li>
@@ -954,7 +1027,7 @@ float_truncate
 把 df truncate 成 sf:
 </p>
 
-<pre class="example" id="org000006c">
+<pre class="example" id="org000006d">
 (define_insn "truncdfsf2"
   [(set (match_operand:SF     0 "register_operand" "=f")
     (float_truncate:SF
@@ -984,7 +1057,7 @@ clobber
 clobber 是指 rtl 会隐式的修改这个寄存器, 例如:
 </p>
 
-<pre class="example" id="org000006f">
+<pre class="example" id="org0000071">
 (define_insn "call_internal"
   [(call (mem:SI (match_operand 0 "call_insn_operand" "l,S,U"))
      (match_operand 1 "" ""))
@@ -1013,7 +1086,7 @@ use
 use 是指 rtl 会隐式的读取这个寄存器, 防止前面针对这个寄存器的写操作被优化掉,例如:
 </p>
 
-<pre class="example" id="org0000070">
+<pre class="example" id="org0000072">
 (define_insn "simple_return_internal"
   [(simple_return)
    (use (match_operand 0 "pmode_register_operand" ""))]
@@ -1040,9 +1113,9 @@ parallel 比较像 lisp 的 prog?
 </div>
 
 
-<div id="outline-container-org0000074" class="outline-5 references">
-<h5 id="org0000074">Backlinks</h5>
-<div class="outline-text-5" id="text-org0000074">
+<div id="outline-container-org0000076" class="outline-5 references">
+<h5 id="org0000076">Backlinks</h5>
+<div class="outline-text-5" id="text-org0000076">
 <p>
 <a href="llvm_backend.html#ID-e60ce82f-6f66-44e0-adb5-cef752145625">LLVM Backend</a>
 (<i>LLVM Backend &gt; instruction selection &gt; DoInstructionSelection</i>):  把 SelectionDAG 看做 gcc <a href="#ID-a354364f-e048-4d6f-b780-0271f16dfd6a">rtl</a>, 则 isel 和 gcc 的 recog 过程非常类似. DoInstructionSelection 的作用是根据 target description (td) 中定义的 pattern 和 predicate 去匹配对应的target instruction
@@ -1052,8 +1125,8 @@ parallel 比较像 lisp 的 prog?
 </div>
 
 
-<div id="outline-container-org00000bd" class="outline-4">
-<h4 id="org00000bd"><span class="section-number-4">1.1.5.</span> example</h4>
+<div id="outline-container-org00000bf" class="outline-4">
+<h4 id="org00000bf"><span class="section-number-4">1.1.5.</span> example</h4>
 <div class="outline-text-4" id="text-1-1-5">
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-type">float</span> <span class="org-function-name">foo</span>(<span class="org-type">float</span> <span class="org-variable-name">x</span>) {
@@ -1087,8 +1160,8 @@ genoutput 扫描 md 生成. gen_addsf3 由 genemit 生成</li>
 </ol>
 </div>
 
-<div id="outline-container-org0000094" class="outline-5">
-<h5 id="org0000094"><span class="section-number-5">1.1.5.1.</span> backtrace</h5>
+<div id="outline-container-org0000096" class="outline-5">
+<h5 id="org0000096"><span class="section-number-5">1.1.5.1.</span> backtrace</h5>
 <div class="outline-text-5" id="text-1-1-5-1">
 <div class="org-src-container">
 <pre class="src src-rust">#0  gen_addsf3 (operand0=0x7fffffffb250, operand1=0x7ffff7786bb8, 
@@ -1125,7 +1198,7 @@ genoutput 扫描 md 生成. gen_addsf3 由 genemit 生成</li>
 <div id="outline-container-org0000078" class="outline-5">
 <h5 id="org0000078"><span class="section-number-5">1.1.5.2.</span> gimple code</h5>
 <div class="outline-text-5" id="text-1-1-5-2">
-<pre class="example" id="org000007a">
+<pre class="example" id="org000007c">
 float foo (float x)
 { 
   float D.1491;
@@ -1310,8 +1383,8 @@ rtl 最终由 <a href="gcc_pass.html#ID-813e2003-85c7-4b59-b221-541240951e12">pa
 </ol>
 </div>
 
-<div id="outline-container-org0000096" class="outline-4">
-<h4 id="org0000096"><span class="section-number-4">1.5.1.</span> backtrace</h4>
+<div id="outline-container-org0000098" class="outline-4">
+<h4 id="org0000098"><span class="section-number-4">1.5.1.</span> backtrace</h4>
 <div class="outline-text-4" id="text-1-5-1">
 <div class="org-src-container">
 <pre class="src src-rust">#0  get_insn_template (code=0, insn=0x7fffffffbc00) at ../.././riscv-gcc/gcc/final.<span class="org-variable-name">c</span>:2063
@@ -1375,7 +1448,7 @@ rtl 最终由 <a href="gcc_pass.html#ID-813e2003-85c7-4b59-b221-541240951e12">pa
 以 movdi_64bit 为例, 要匹配的 insn 为:
 </p>
 
-<pre class="example" id="org000009c">
+<pre class="example" id="org000009e">
 (insn/f 40 39 41
         (set (mem/c:DI (plus:DI (reg/f:DI 2 sp) (const_int 24 [0x18])) [2  S8 A64])
         (reg/f:DI 8 s0)) "test.c":1:21 
@@ -1456,7 +1529,7 @@ recog 的过程为:
 最终匹配的 insn_code 为 135, 对应 riscv.md 中的:
 </p>
 
-<pre class="example" id="org000009d">
+<pre class="example" id="org000009f">
 (define_insn "*movdi_64bit"
   [(set (match_operand:DI 0 "nonimmediate_operand" "=r,r,r, m,  *f,*f,*r,*f,*m")
     (match_operand:DI 1 "move_operand"         " r,T,m,rJ,*r*J,*m,*f,*f,*f"))]
@@ -1474,15 +1547,15 @@ recog 函数中各种判断实际是 genrecog 根据这个 movdi_64bit 的 match
 </div>
 </div>
 
-<div id="outline-container-org000009f" class="outline-5">
-<h5 id="org000009f"><span class="section-number-5">1.5.3.2.</span> addsf3 vs. adddi3</h5>
+<div id="outline-container-org00000a4" class="outline-5">
+<h5 id="org00000a4"><span class="section-number-5">1.5.3.2.</span> addsf3 vs. adddi3</h5>
 <div class="outline-text-5" id="text-1-5-3-2">
 <p>
 rtx 本身就是树形结构, 而 recog 可以看做是一个相同形状的决策树, 以 addsf3 和
 addi3 为例:
 </p>
 
-<pre class="example" id="org00000a1">
+<pre class="example" id="org00000a3">
 (define_insn "addsf3"
   [(set (match_operand:SF            0 "register_operand" "=f")
     (plus:SF (match_operand:SF 1 "register_operand" " f")
@@ -1600,8 +1673,8 @@ recog 针对 adddi3 的决策树是: set-&gt;plus-&gt;GET_MODE(operand[0])==DI
 </div>
 </div>
 
-<div id="outline-container-org00000ad" class="outline-4">
-<h4 id="org00000ad"><span class="section-number-4">1.5.5.</span> output_asm_insn</h4>
+<div id="outline-container-org00000ae" class="outline-4">
+<h4 id="org00000ae"><span class="section-number-4">1.5.5.</span> output_asm_insn</h4>
 <div class="outline-text-4" id="text-1-5-5">
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-type">void</span> <span class="org-function-name">output_asm_insn</span> (<span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">templ</span>, <span class="org-type">rtx</span> *<span class="org-variable-name">operands</span>):
@@ -1669,7 +1742,7 @@ recog 针对 adddi3 的决策树是: set-&gt;plus-&gt;GET_MODE(operand[0])==DI
 所以下面的 rtl:
 </p>
 
-<pre class="example" id="org00000ab">
+<pre class="example" id="org00000ad">
 (insn/f 40 39 41 (set (mem/c:DI (plus:DI (reg/f:DI 2 sp)
                 (const_int 24 [0x18])) [2  S8 A64])
         (reg/f:DI 8 s0)) "test.c":1:21)
@@ -1772,10 +1845,10 @@ hard double float
 </ul>
 </div>
 
-<div id="outline-container-org00000bf" class="outline-6">
-<h6 id="org00000bf"><span class="section-number-6">1.6.3.3.1.</span> example</h6>
+<div id="outline-container-org00000c1" class="outline-6">
+<h6 id="org00000c1"><span class="section-number-6">1.6.3.3.1.</span> example</h6>
 <div class="outline-text-6" id="text-1-6-3-3-1">
-<pre class="example" id="org00000bf">
+<pre class="example" id="org00000c0">
 $&gt; cat test.c
 
 extern float hello(float x);
@@ -1929,8 +2002,8 @@ cc1: error: ABI requires '-march=rv64'
 
 
 <ul class="org-ul">
-<li><a id="org00000c2"></a>Backlinks<br />
-<div class="outline-text-8" id="text-org00000c2">
+<li><a id="org00000c4"></a>Backlinks<br />
+<div class="outline-text-8" id="text-org00000c4">
 <p>
 <a href="gcc_target_hook.html#ID-348daca9-594f-412e-ade1-cb27386a7bcc">TARGET_CPU_CPP_BUILTINS</a>
 (<i>GCC Target Hook &gt; runtime target 相关 &gt; TARGET_CPU_CPP_BUILTINS</i>):  gcc 通过 <a href="#ID-f7666ebb-599a-4b96-b629-7868f9487023">march</a> 定义了 TARGET_MUL 等 macro, 但它们是给 gcc 使用的. 应用代码如果要 得到 TARGET_MUL 类似的功能, 需要使用 TARGET_CPU_CPP_BUILTINS 通过 builtin_define 定义的 __riscv_mul
@@ -1970,9 +2043,9 @@ cc1: error: ABI requires '-march=rv64'
 
 
 
-<div id="outline-container-org00000d8" class="outline-2 references">
-<h2 id="org00000d8">Backlinks</h2>
-<div class="outline-text-2" id="text-org00000d8">
+<div id="outline-container-org00000d9" class="outline-2 references">
+<h2 id="org00000d9">Backlinks</h2>
+<div class="outline-text-2" id="text-org00000d9">
 <p>
 <a href="gcc.html#ID-19df5597-4fd4-47a1-9534-f6e0c327e8d5">GCC</a>
 (<i>GCC &gt; Backend</i>):   <a href="gcc_backend.html#ID-02e7f924-9cf7-4e3d-8ceb-1765fd3a2bed">Backend</a>
@@ -1994,7 +2067,7 @@ cc1: error: ABI requires '-march=rv64'
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2022-03-24 Thu 12:17<br />
-Last updated: 2022-11-10 Thu 14:57</p>
+Last updated: 2022-11-10 Thu 17:06</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
