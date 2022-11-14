@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>GCC Prefetch</title>
+
+
+           <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/readtheorg.css"/>
+           <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+           <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+           <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+           <link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+           <link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">GCC Prefetch</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000004">1. GCC Prefetch</a>
+<ul>
+<li><a href="#org0000001">1.1. bisect 测试</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000004" class="outline-2">
+<h2 id="org0000004"><span class="section-number-2">1.</span> GCC Prefetch</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+当 backend 支持特定的 prefetch 指令时, gcc 可以通过 <a href="gcc_pass.html#ID-97a40ffd-1874-47c6-9920-4782c5a26311">pass_loop_prefetch</a> 自动
+prefetch 或通过 __builtin_prefetch 进行手动 pretch.
+</p>
+
+<p>
+为了测试 prfetch 指令对性能的影响, 需要设计一个 `cache 不友好` 的测试代码, 以便减小编译器的 insn schedule, 硬件的 out-of-order 以及硬件的 prefetch 等对结果造成的影响. 例如为了减少硬件 prefetch 的影响, 需要避免在代码中顺序访问内存.
+</p>
+
+<p>
+二分查找 (bisect) 是一个比较合适的测试程序
+</p>
+</div>
+
+<div id="outline-container-org0000001" class="outline-3">
+<h3 id="org0000001"><span class="section-number-3">1.1.</span> bisect 测试</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+<a href="https://stackoverflow.com/questions/7327994/prefetching-examples">https://stackoverflow.com/questions/7327994/prefetching-examples</a>
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdlib.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;time.h&gt;</span>
+
+<span class="org-type">int</span> <span class="org-function-name">bisect</span>(<span class="org-type">int</span> *<span class="org-variable-name">d</span>, <span class="org-type">int</span> <span class="org-variable-name">N</span>, <span class="org-type">int</span> <span class="org-variable-name">key</span>) {
+    <span class="org-type">int</span> <span class="org-variable-name">lo</span> = 0;
+    <span class="org-type">int</span> <span class="org-variable-name">hi</span> = N;
+    <span class="org-type">int</span> <span class="org-variable-name">mid</span> = 0;
+
+    <span class="org-keyword">while</span> (lo &lt; hi) {
+        mid = (lo + hi) / 2;
+<span class="org-preprocessor">#ifdef</span> DO_PREFETCH
+        __builtin_prefetch(&amp;d[(mid + 1 + hi) / 2], 0, 1);
+        __builtin_prefetch(&amp;d[(lo + mid) / 2], 0, 1);
+<span class="org-preprocessor">#endif</span>
+        <span class="org-keyword">if</span> (d[mid] == key) {
+            <span class="org-keyword">return</span> mid;
+        }
+        <span class="org-keyword">if</span> (d[mid] &lt; key) {
+            lo = mid + 1;
+        } <span class="org-keyword">else</span> {
+            hi = mid;
+        }
+    }
+    <span class="org-keyword">return</span> -1;
+}
+
+<span class="org-type">int</span> <span class="org-function-name">main</span>() {
+    <span class="org-type">int</span> <span class="org-variable-name">N</span> = 1024 * 1024 * 512;
+    <span class="org-type">int</span> *<span class="org-variable-name">data</span> = malloc(N * <span class="org-keyword">sizeof</span>(<span class="org-type">int</span>));
+    <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; N; i++) {
+        data[i] = i;
+    }
+    <span class="org-type">int</span> <span class="org-variable-name">N_LOOKUPS</span> = 1024 * 1024 * 8;
+    srand(0);
+    <span class="org-type">int</span> *<span class="org-variable-name">lookups</span> = malloc(N_LOOKUPS * <span class="org-keyword">sizeof</span>(<span class="org-type">int</span>));
+    <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; N_LOOKUPS; i++) {
+        lookups[i] = rand() % N;
+    }
+    <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; N_LOOKUPS; i++) {
+        bisect(data, N, lookups[i]);
+    }
+    free(data);
+    free(lookups);
+}
+</pre>
+</div>
+
+<p>
+在 `Intel(R) Core(TM) i5-10210U CPU @ 1.60GHz` 上测试结果为:
+</p>
+
+<pre class="example" id="org0000000">
+$&gt; gcc prefetch.c -DDO_PREFETCH -o with-prefetch -std=c11 -O3
+$&gt; gcc prefetch.c -o no-prefetch -std=c11 -O3
+
+$&gt; perf stat -e branch-misses,branches,L1-dcache-load-misses,L1-dcache-loads ./with-prefetch 
+
+ Performance counter stats for './with-prefetch':
+
+         5,821,103      branch-misses             #    0.51% of all branches          (74.99%)
+     1,149,572,392      branches                                                      (74.99%)
+       522,814,225      L1-dcache-load-misses     #   35.37% of all L1-dcache accesses  (75.03%)
+     1,478,028,379      L1-dcache-loads                                               (75.00%)
+
+       8.620298468 seconds time elapsed
+
+       8.103417000 seconds user
+       0.515962000 seconds sys
+
+
+$&gt; perf stat -e branch-misses,branches,L1-dcache-load-misses,L1-dcache-loads ./no-prefetch
+
+ Performance counter stats for './no-prefetch':
+
+       120,983,504      branch-misses             #    8.11% of all branches          (74.99%)
+     1,491,848,299      branches                                                      (75.00%)
+     1,119,953,933      L1-dcache-load-misses     #  110.77% of all L1-dcache accesses  (75.02%)
+     1,011,023,655      L1-dcache-loads                                               (74.99%)
+
+      13.078209613 seconds time elapsed
+
+      12.611553000 seconds user
+       0.463983000 seconds sys
+</pre>
+
+<p>
+可见 L1-dcache-load-misses 在 with-prefetch 时比 no-prefetch 要小.
+</p>
+
+<p>
+比较奇怪的是 branch-misses 的数据:
+</p>
+
+<p>
+由于 N_LOOKUPS 为 8M, N 为 512M, 所以 bisect 总的循环次数应该是
+\(8M*log_2(512M)=200M\), 这个数据和 no-prefetch 的 branch-misses 基本是一致的 (每次循环都有 50% 的概率猜错 `d[mid]&lt;key`), 但 with-prefetch 的 branmch-misses 为什么这么低?
+</p>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org0000007" class="outline-2 references">
+<h2 id="org0000007">Backlinks</h2>
+<div class="outline-text-2" id="text-org0000007">
+<p>
+<a href="gcc_backend.html#ID-02e7f924-9cf7-4e3d-8ceb-1765fd3a2bed">GCC Backend</a>
+(<i>GCC Backend &gt; misc &gt; target hook</i>):  - 后端是否支持某种指令 (例如 pass_loop_prefetch 优化依赖 TARGET_HAVE_PREFETCH 这   个 target macro 决定是否进行 <a href="gcc_prefetch.html#ID-f4a56dc8-fd25-4150-bb48-c7a247cb933b">prefetch</a>)   
+</p>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2022-11-14 Mon 12:48<br />
+Last updated: 2022-11-14 Mon 17:21</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>

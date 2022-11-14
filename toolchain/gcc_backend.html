@@ -34,7 +34,7 @@
 <li><a href="#ID-cc581233-c9a4-47c9-b392-64e03af4b454">1.1.2. optab</a></li>
 <li><a href="#ID-5304f835-9c6a-49bc-89a5-ca01e2520167">1.1.3. machine desc</a></li>
 <li><a href="#ID-a354364f-e048-4d6f-b780-0271f16dfd6a">1.1.4. rtl</a></li>
-<li><a href="#org00000c1">1.1.5. example</a></li>
+<li><a href="#org00000c2">1.1.5. example</a></li>
 </ul>
 </li>
 <li><a href="#org00000aa">1.2. rtl optimization</a></li>
@@ -42,11 +42,11 @@
 <li><a href="#org00000af">1.4. register allocation</a></li>
 <li><a href="#org00000b2">1.5. code emission</a>
 <ul>
-<li><a href="#org0000099">1.5.1. backtrace</a></li>
+<li><a href="#org0000098">1.5.1. backtrace</a></li>
 <li><a href="#org000008a">1.5.2. final_scan_insn_1</a></li>
-<li><a href="#org00000a5">1.5.3. recog_memoized</a></li>
-<li><a href="#org00000a8">1.5.4. get_insn_template</a></li>
-<li><a href="#org00000ae">1.5.5. output_asm_insn</a></li>
+<li><a href="#org00000a8">1.5.3. recog_memoized</a></li>
+<li><a href="#org00000ab">1.5.4. get_insn_template</a></li>
+<li><a href="#org00000b0">1.5.5. output_asm_insn</a></li>
 </ul>
 </li>
 <li><a href="#org00000d0">1.6. misc</a>
@@ -473,9 +473,29 @@ fadddf3 这个 rtx 会找到它也对应 add_optab 且 mode 为 df (double float
 <h5 id="ID-c1ff5b55-a6cd-41c5-aab9-248f52262030"><span class="section-number-5">1.1.2.2.</span> optab_libfunc</h5>
 <div class="outline-text-5" id="text-1-1-2-2">
 <p>
-gcc 通过 optab_handler 查找 optab 对应的 insn_code, 当它找不到 `optab +
-machmode` 对应的 insn 时, 会通过 optab_libfunc 生成对某个外部函数的调用, 例如
-__divsf3. 这些函数是在 <a href="bare_metal.html#ID-27a07646-18c6-4504-b36e-a5d63871a0d2">libgcc</a> 中实现的.
+gcc 通过 optab_handler 查找 optab 对应的 insn_code, 当它找不到 `optab+machmode`
+对应的 insn 时, 对于某些简单的 optab (例如 smax_optab), 会在代码中直接生成 rtl
+来代替 (例如 cbranch), 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-constant">expand_binop</span>:
+  <span class="org-keyword">case</span> MAX_EXPR:
+  <span class="org-keyword">case</span> MIN_EXPR:
+    <span class="org-function-name">expand_operands</span> (treeop0, treeop1,
+             target, &amp;op0, &amp;op1, EXPAND_NORMAL);
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">First try to do it with a special MIN or MAX instruction.</span>
+<span class="org-comment">   If that does not win, use a conditional jump to select the proper</span>
+<span class="org-comment">   value.</span><span class="org-comment-delimiter">  */</span>
+    this_optab = optab_for_tree_code (code, type, optab_default);
+    temp = expand_binop (mode, this_optab, op0, op1, target, unsignedp,
+             OPTAB_WIDEN);
+</pre>
+</div>
+
+<p>
+对于复杂的功能, 会通过 optab_libfunc 生成对某个外部函数的调用, 例如 __divsf3. 这些函数是在 <a href="bare_metal.html#ID-27a07646-18c6-4504-b36e-a5d63871a0d2">libgcc</a> 中实现的.
 </p>
 
 <div class="org-src-container">
@@ -532,9 +552,9 @@ insn. 否则就会通过 optab_libfunc 产生对 __divsf3/__divdf3 的调用
 </div>
 
 
-<div id="outline-container-org00000d9" class="outline-5 references">
-<h5 id="org00000d9">Backlinks</h5>
-<div class="outline-text-5" id="text-org00000d9">
+<div id="outline-container-org00000da" class="outline-5 references">
+<h5 id="org00000da">Backlinks</h5>
+<div class="outline-text-5" id="text-org00000da">
 <p>
 <a href="llvm_backend.html#ID-e60ce82f-6f66-44e0-adb5-cef752145625">LLVM Backend</a>
 (<i>LLVM Backend &gt; instruction selection &gt; SelectionDAGBuilder</i>):  其中 DAG 中 node 的类型例如 fadd 定义在 ISDOpcodes.h, 和 gcc <a href="#ID-cc581233-c9a4-47c9-b392-64e03af4b454">optab</a> 有些类似
@@ -1130,8 +1150,8 @@ parallel 比较像 lisp 的 prog?
 </div>
 
 
-<div id="outline-container-org00000c1" class="outline-4">
-<h4 id="org00000c1"><span class="section-number-4">1.1.5.</span> example</h4>
+<div id="outline-container-org00000c2" class="outline-4">
+<h4 id="org00000c2"><span class="section-number-4">1.1.5.</span> example</h4>
 <div class="outline-text-4" id="text-1-1-5">
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-type">float</span> <span class="org-function-name">foo</span>(<span class="org-type">float</span> <span class="org-variable-name">x</span>) {
@@ -1165,8 +1185,8 @@ genoutput 扫描 md 生成. gen_addsf3 由 genemit 生成</li>
 </ol>
 </div>
 
-<div id="outline-container-org0000098" class="outline-5">
-<h5 id="org0000098"><span class="section-number-5">1.1.5.1.</span> backtrace</h5>
+<div id="outline-container-org0000099" class="outline-5">
+<h5 id="org0000099"><span class="section-number-5">1.1.5.1.</span> backtrace</h5>
 <div class="outline-text-5" id="text-1-1-5-1">
 <div class="org-src-container">
 <pre class="src src-rust">#0  gen_addsf3 (operand0=0x7fffffffb250, operand1=0x7ffff7786bb8, 
@@ -1388,8 +1408,8 @@ rtl 最终由 <a href="gcc_pass.html#ID-813e2003-85c7-4b59-b221-541240951e12">pa
 </ol>
 </div>
 
-<div id="outline-container-org0000099" class="outline-4">
-<h4 id="org0000099"><span class="section-number-4">1.5.1.</span> backtrace</h4>
+<div id="outline-container-org0000098" class="outline-4">
+<h4 id="org0000098"><span class="section-number-4">1.5.1.</span> backtrace</h4>
 <div class="outline-text-4" id="text-1-5-1">
 <div class="org-src-container">
 <pre class="src src-rust">#0  get_insn_template (code=0, insn=0x7fffffffbc00) at ../.././riscv-gcc/gcc/final.<span class="org-variable-name">c</span>:2063
@@ -1442,10 +1462,50 @@ rtl 最终由 <a href="gcc_pass.html#ID-813e2003-85c7-4b59-b221-541240951e12">pa
 </div>
 </div>
 
-<div id="outline-container-org00000a5" class="outline-4">
-<h4 id="org00000a5"><span class="section-number-4">1.5.3.</span> recog_memoized</h4>
+<div id="outline-container-org00000a8" class="outline-4">
+<h4 id="org00000a8"><span class="section-number-4">1.5.3.</span> recog_memoized</h4>
 <div class="outline-text-4" id="text-1-5-3">
+<p>
+recog_memoized 的作用是根据 rtl 查找它对应的 insn_code, 查找的依据是 md 中声明的
+predicate.
+</p>
+
+<p>
+最简单的 recog 实现可以这样:
+</p>
+
+<p>
+针对一条 rtl, 与 md 中所有 insn 的 rtl 模板比较, 看哪一条 insn 匹配.
+</p>
+
+<p>
+但实际实现上 recog 采用的是类似于字典树 (<a href="https://en.wikipedia.org/wiki/Trie">trie</a>) 的方式:
+</p>
+
+<p>
+genrecog 工具会扫描 md 中所有的 insn, 根据 insn 声明的 predicate 构造一棵树, 例如:
+</p>
+
+<ul class="org-ul">
+<li>A 指令的 predicate 为 x, y, z</li>
+<li>B 指令的 predicate 为 x, y, k</li>
+</ul>
+
+<p>
+则 genrecog 会生成一棵这样的树:
+</p>
+
+<pre class="example" id="org000009e">
+x---&gt;y---&gt;z
+     |
+     +---&gt;k
+</pre>
+
+<p>
+genrecog 生成的 recog 函数会在这棵树上遍历来匹配 insn
+</p>
 </div>
+
 <div id="outline-container-org000008f" class="outline-5">
 <h5 id="org000008f"><span class="section-number-5">1.5.3.1.</span> movdi_64bit</h5>
 <div class="outline-text-5" id="text-1-5-3-1">
@@ -1453,7 +1513,7 @@ rtl 最终由 <a href="gcc_pass.html#ID-813e2003-85c7-4b59-b221-541240951e12">pa
 以 movdi_64bit 为例, 要匹配的 insn 为:
 </p>
 
-<pre class="example" id="org000009e">
+<pre class="example" id="org000009f">
 (insn/f 40 39 41
         (set (mem/c:DI (plus:DI (reg/f:DI 2 sp) (const_int 24 [0x18])) [2  S8 A64])
         (reg/f:DI 8 s0)) "test.c":1:21 
@@ -1534,7 +1594,7 @@ recog 的过程为:
 最终匹配的 insn_code 为 135, 对应 riscv.md 中的:
 </p>
 
-<pre class="example" id="org000009f">
+<pre class="example" id="org00000a0">
 (define_insn "*movdi_64bit"
   [(set (match_operand:DI 0 "nonimmediate_operand" "=r,r,r, m,  *f,*f,*r,*f,*m")
     (match_operand:DI 1 "move_operand"         " r,T,m,rJ,*r*J,*m,*f,*f,*f"))]
@@ -1545,22 +1605,17 @@ recog 的过程为:
   [(set_attr "move_type" "move,const,load,store,mtc,fpload,mfc,fmove,fpstore")
    (set_attr "mode" "DI")])
 </pre>
-
-<p>
-recog 函数中各种判断实际是 genrecog 根据这个 movdi_64bit 的 match_xxx 自动生成的
-</p>
 </div>
 </div>
 
-<div id="outline-container-org00000a4" class="outline-5">
-<h5 id="org00000a4"><span class="section-number-5">1.5.3.2.</span> addsf3 vs. adddi3</h5>
+<div id="outline-container-org00000a5" class="outline-5">
+<h5 id="org00000a5"><span class="section-number-5">1.5.3.2.</span> addsf3 vs. adddi3</h5>
 <div class="outline-text-5" id="text-1-5-3-2">
 <p>
-rtx 本身就是树形结构, 而 recog 可以看做是一个相同形状的决策树, 以 addsf3 和
-addi3 为例:
+recog 可以看做是一棵决策树, 以 addsf3 和addi3 为例:
 </p>
 
-<pre class="example" id="org00000a3">
+<pre class="example" id="org00000a4">
 (define_insn "addsf3"
   [(set (match_operand:SF            0 "register_operand" "=f")
     (plus:SF (match_operand:SF 1 "register_operand" " f")
@@ -1633,8 +1688,8 @@ recog 针对 adddi3 的决策树是: set-&gt;plus-&gt;GET_MODE(operand[0])==DI
 </div>
 </div>
 
-<div id="outline-container-org00000a8" class="outline-4">
-<h4 id="org00000a8"><span class="section-number-4">1.5.4.</span> get_insn_template</h4>
+<div id="outline-container-org00000ab" class="outline-4">
+<h4 id="org00000ab"><span class="section-number-4">1.5.4.</span> get_insn_template</h4>
 <div class="outline-text-4" id="text-1-5-4">
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-function-name">get_insn_template</span>(<span class="org-type">int</span> <span class="org-variable-name">code</span>, <span class="org-type">rtx_insn</span> *<span class="org-variable-name">insn</span>) {
@@ -1678,8 +1733,8 @@ recog 针对 adddi3 的决策树是: set-&gt;plus-&gt;GET_MODE(operand[0])==DI
 </div>
 </div>
 
-<div id="outline-container-org00000ae" class="outline-4">
-<h4 id="org00000ae"><span class="section-number-4">1.5.5.</span> output_asm_insn</h4>
+<div id="outline-container-org00000b0" class="outline-4">
+<h4 id="org00000b0"><span class="section-number-4">1.5.5.</span> output_asm_insn</h4>
 <div class="outline-text-4" id="text-1-5-5">
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-type">void</span> <span class="org-function-name">output_asm_insn</span> (<span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">templ</span>, <span class="org-type">rtx</span> *<span class="org-variable-name">operands</span>):
@@ -1747,7 +1802,7 @@ recog 针对 adddi3 的决策树是: set-&gt;plus-&gt;GET_MODE(operand[0])==DI
 所以下面的 rtl:
 </p>
 
-<pre class="example" id="org00000ad">
+<pre class="example" id="org00000ae">
 (insn/f 40 39 41 (set (mem/c:DI (plus:DI (reg/f:DI 2 sp)
                 (const_int 24 [0x18])) [2  S8 A64])
         (reg/f:DI 8 s0)) "test.c":1:21)
@@ -1782,8 +1837,7 @@ hook 和 target macro 提供的信息才能工作, 例如:
 </p>
 
 <ul class="org-ul">
-<li>后端是否支持某种指令 (例如 pass_data_loop_prefetch 优化依赖
-TARGET_HAVE_PREFETCH 这个 target macro)</li>
+<li>后端是否支持某种指令 (例如 pass_loop_prefetch 优化依赖 TARGET_HAVE_PREFETCH 这个 target macro 决定是否进行 <a href="gcc_prefetch.html#ID-f4a56dc8-fd25-4150-bb48-c7a247cb933b">prefetch</a>)</li>
 
 <li>后端是否支持某个 optab (例如 pass_cse_sincos 优化会依赖
 TARGET_OPTAB_SUPPORTED_P 把 pow(x,0.5) 优化成 sqrt(x))</li>
@@ -1868,10 +1922,10 @@ hard double float
 </ul>
 </div>
 
-<div id="outline-container-org00000c2" class="outline-6">
-<h6 id="org00000c2"><span class="section-number-6">1.6.3.3.1.</span> example</h6>
+<div id="outline-container-org00000c3" class="outline-6">
+<h6 id="org00000c3"><span class="section-number-6">1.6.3.3.1.</span> example</h6>
 <div class="outline-text-6" id="text-1-6-3-3-1">
-<pre class="example" id="org00000c0">
+<pre class="example" id="org00000c1">
 $&gt; cat test.c
 
 extern float hello(float x);
@@ -2025,8 +2079,8 @@ cc1: error: ABI requires '-march=rv64'
 
 
 <ul class="org-ul">
-<li><a id="org00000c4"></a>Backlinks<br />
-<div class="outline-text-8" id="text-org00000c4">
+<li><a id="org00000c5"></a>Backlinks<br />
+<div class="outline-text-8" id="text-org00000c5">
 <p>
 <a href="gcc_target_hook.html#ID-348daca9-594f-412e-ade1-cb27386a7bcc">TARGET_CPU_CPP_BUILTINS</a>
 (<i>GCC Target Hook &gt; runtime target 相关 &gt; TARGET_CPU_CPP_BUILTINS</i>):  gcc 通过 <a href="#ID-f7666ebb-599a-4b96-b629-7868f9487023">march</a> 定义了 TARGET_MUL 等 macro, 但它们是给 gcc 使用的. 应用代码如果要 得到 TARGET_MUL 类似的功能, 需要使用 TARGET_CPU_CPP_BUILTINS 通过 builtin_define 定义的 __riscv_mul
@@ -2066,9 +2120,9 @@ cc1: error: ABI requires '-march=rv64'
 
 
 
-<div id="outline-container-org00000da" class="outline-2 references">
-<h2 id="org00000da">Backlinks</h2>
-<div class="outline-text-2" id="text-org00000da">
+<div id="outline-container-org00000db" class="outline-2 references">
+<h2 id="org00000db">Backlinks</h2>
+<div class="outline-text-2" id="text-org00000db">
 <p>
 <a href="gcc.html#ID-19df5597-4fd4-47a1-9534-f6e0c327e8d5">GCC</a>
 (<i>GCC &gt; Backend</i>):   <a href="gcc_backend.html#ID-02e7f924-9cf7-4e3d-8ceb-1765fd3a2bed">Backend</a>
@@ -2090,7 +2144,7 @@ cc1: error: ABI requires '-march=rv64'
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2022-03-24 Thu 12:17<br />
-Last updated: 2022-11-11 Fri 14:12</p>
+Last updated: 2022-11-14 Mon 15:46</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
