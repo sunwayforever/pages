@@ -47,35 +47,44 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents" role="doc-toc">
 <ul>
-<li><a href="#org0000004">1. GCC Prefetch</a>
+<li><a href="#org000000c">1. GCC Prefetch</a>
 <ul>
 <li><a href="#org0000001">1.1. bisect 测试</a></li>
+<li><a href="#org0000006">1.2. linear search 测试</a></li>
+<li><a href="#org0000009">1.3. 总结</a></li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
+<p>
+n:PROPERTIES:
+:ID:       f4a56dc8-fd25-4150-bb48-c7a247cb933b
+</p>
+<p>
+:END:
+</p>
 
-<div id="outline-container-org0000004" class="outline-2">
-<h2 id="org0000004"><span class="section-number-2">1.</span> GCC Prefetch</h2>
+<div id="outline-container-org000000c" class="outline-2">
+<h2 id="org000000c"><span class="section-number-2">1.</span> GCC Prefetch</h2>
 <div class="outline-text-2" id="text-1">
 <p>
 当 backend 支持特定的 prefetch 指令时, gcc 可以通过 <a href="gcc_pass.html#ID-97a40ffd-1874-47c6-9920-4782c5a26311">pass_loop_prefetch</a> 自动
 prefetch 或通过 __builtin_prefetch 进行手动 pretch.
-</p>
-
-<p>
-为了测试 prfetch 指令对性能的影响, 需要设计一个 `cache 不友好` 的测试代码, 以便减小编译器的 insn schedule, 硬件的 out-of-order 以及硬件的 prefetch 等对结果造成的影响. 例如为了减少硬件 prefetch 的影响, 需要避免在代码中顺序访问内存.
-</p>
-
-<p>
-二分查找 (bisect) 是一个比较合适的测试程序
 </p>
 </div>
 
 <div id="outline-container-org0000001" class="outline-3">
 <h3 id="org0000001"><span class="section-number-3">1.1.</span> bisect 测试</h3>
 <div class="outline-text-3" id="text-1-1">
+<p>
+为了测试 prefetch 指令对性能的影响, 需要设计一个 `cache 不友好` 的测试代码, 以便减小编译器的 insn schedule, 硬件的 out-of-order 以及硬件的 prefetch 等对结果造成的影响. 例如为了减少硬件 prefetch 的影响, 需要避免在代码中顺序访问内存.
+</p>
+
+<p>
+二分查找 (bisect) 是一个比较合适的测试程序
+</p>
+
 <p>
 <a href="https://stackoverflow.com/questions/7327994/prefetching-examples">https://stackoverflow.com/questions/7327994/prefetching-examples</a>
 </p>
@@ -181,16 +190,104 @@ $&gt; perf stat -e branch-misses,branches,L1-dcache-load-misses,L1-dcache-loads 
 </p>
 </div>
 </div>
+
+<div id="outline-container-org0000006" class="outline-3">
+<h3 id="org0000006"><span class="section-number-3">1.2.</span> linear search 测试</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+由于 linear search 程序有明显的顺序访问内存的 pattern, 这里测试一下 `硬件
+prefetch` 和 `gcc 自动 prefetch` 是否有较好的性能.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdint.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdlib.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;time.h&gt;</span>
+
+<span class="org-preprocessor">#if</span><span class="org-negation-char"><span class="org-preprocessor">n</span></span><span class="org-preprocessor">def</span> STRIDE
+<span class="org-preprocessor">#define</span> <span class="org-variable-name">STRIDE</span> 64
+<span class="org-preprocessor">#endif</span>
+<span class="org-type">int</span> <span class="org-function-name">linear_search</span>(<span class="org-type">int</span> *<span class="org-variable-name">d</span>, <span class="org-type">int</span> <span class="org-variable-name">N</span>, <span class="org-type">int</span> <span class="org-variable-name">key</span>) {
+    <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; N; i++) {
+<span class="org-preprocessor">#ifdef</span> DO_PREFETCH
+        __builtin_prefetch(&amp;d[i + STRIDE], 0, 1);
+<span class="org-preprocessor">#endif</span>
+        <span class="org-keyword">if</span> (d[i] == key) {
+            <span class="org-keyword">return</span> i;
+        }
+    }
+    <span class="org-keyword">return</span> -1;
+}
+
+<span class="org-type">int</span> <span class="org-function-name">main</span>() {
+    <span class="org-type">int</span> <span class="org-variable-name">N</span> = 1024 * 1024 * 64;
+    <span class="org-type">int</span> *<span class="org-variable-name">data</span> = malloc(N * <span class="org-keyword">sizeof</span>(<span class="org-type">int</span>));
+    <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; N; i++) {
+        data[i] = i;
+    }
+    <span class="org-type">int</span> <span class="org-variable-name">N_LOOKUPS</span> = 512;
+    srand(0);
+    <span class="org-type">int</span> *<span class="org-variable-name">lookups</span> = malloc(N_LOOKUPS * <span class="org-keyword">sizeof</span>(<span class="org-type">int</span>));
+    <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; N_LOOKUPS; i++) {
+        lookups[i] = rand() % N;
+    }
+    <span class="org-type">int64_t</span> <span class="org-variable-name">total</span> = 0;
+    <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; N_LOOKUPS; i++) {
+        total += linear_search(data, N, lookups[i]);
+    }
+    free(data);
+    free(lookups);
+    printf(<span class="org-string">"%ld\n"</span>, total);
+}
+</pre>
 </div>
 
+<pre class="example" id="org0000004">
+$&gt; gcc prefetch.c -o no-prefetch -std=c11 -O3
+$&gt; /usr/bin/time -f "%e" ./no-prefetch
+8.49
 
-<div id="outline-container-org0000007" class="outline-2 references">
-<h2 id="org0000007">Backlinks</h2>
-<div class="outline-text-2" id="text-org0000007">
+$&gt; gcc prefetch.c -o auto-prefetch -std=c11 -O3 -fprefetch-loop-arrays
+$&gt; /usr/bin/time -f "%e" ./auto-prefetch
+11.56
+
+$&gt; gcc prefetch.c -DDO_PREFETCH -o with-prefetch -std=c11 -O3
+$&gt; /usr/bin/time -f "%e" ./with-prefetch
+6.52
+</pre>
+
 <p>
-<a href="gcc_backend.html#ID-02e7f924-9cf7-4e3d-8ceb-1765fd3a2bed">GCC Backend</a>
-(<i>GCC Backend &gt; misc &gt; target hook</i>):  - 后端是否支持某种指令 (例如 pass_loop_prefetch 优化依赖 TARGET_HAVE_PREFETCH 这   个 target macro 决定是否进行 <a href="gcc_prefetch.html#ID-f4a56dc8-fd25-4150-bb48-c7a247cb933b">prefetch</a>)   
+看起来和 `手动 prefetch` 相比, `gcc 自动 prefetch` 和 `硬件自动 prefetch` 都不太行, 即使测试程序有明显的顺序访问内存的 pattern.
 </p>
+
+<p>
+然后再对比一下 STRIDE 对手工 prefetch 的影响:
+</p>
+
+
+<div id="org0000005" class="figure">
+<p><img src="../extra/prefetch_stride.png" alt="prefetch_stride.png" />
+</p>
+</div>
+
+<p>
+TODO: 需要怎么解释 2~32 这一段异常的数据
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000009" class="outline-3">
+<h3 id="org0000009"><span class="section-number-3">1.3.</span> 总结</h3>
+<div class="outline-text-3" id="text-1-3">
+<ol class="org-ol">
+<li>gcc 的自动 prefetch 看起来不太行</li>
+
+<li>相对于依赖硬件 prefetch, 软件使用 prefetch 指令可以有效的提高性能</li>
+
+<li>不当的使用 prefetch 指令会降低性能</li>
+</ol>
+</div>
 </div>
 </div>
 </div>
@@ -198,7 +295,7 @@ $&gt; perf stat -e branch-misses,branches,L1-dcache-load-misses,L1-dcache-loads 
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2022-11-14 Mon 12:48<br />
-Last updated: 2022-11-14 Mon 17:21</p>
+Last updated: 2022-11-15 Tue 11:34</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
