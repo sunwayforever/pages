@@ -1,0 +1,373 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>Eigen</title>
+
+
+           <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/readtheorg.css"/>
+           <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+           <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+           <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+           <link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+           <link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">Eigen</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org000001a">1. Eigen</a>
+<ul>
+<li><a href="#org000000b">1.1. eigen 如何调用 SIMD</a>
+<ul>
+<li><a href="#org0000001">1.1.1. 非 SIMD 实现</a></li>
+<li><a href="#org0000005">1.1.2. SIMD 实现</a></li>
+<li><a href="#org0000008">1.1.3. Traversal</a></li>
+</ul>
+</li>
+<li><a href="#org000000e">1.2. eigen 需要的 SIMD 接口</a></li>
+<li><a href="#org0000017">1.3. GEBP kernel 需要的 SIMD 接口</a>
+<ul>
+<li><a href="#org0000011">1.3.1. madd</a></li>
+<li><a href="#ID-0966537c-81d8-477b-b891-9fe943b55d6e">1.3.2. prefetch</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000001a" class="outline-2">
+<h2 id="org000001a"><span class="section-number-2">1.</span> Eigen</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org000000b" class="outline-3">
+<h3 id="org000000b"><span class="section-number-3">1.1.</span> eigen 如何调用 SIMD</h3>
+<div class="outline-text-3" id="text-1-1">
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;Eigen/Dense&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;iostream&gt;</span>
+
+<span class="org-keyword">using</span> <span class="org-constant">Eigen</span>::<span class="org-constant">Vector4f</span>;
+
+<span class="org-type">int</span> <span class="org-function-name">main</span>() {
+    <span class="org-type">Vector4f</span> <span class="org-variable-name">a</span>, <span class="org-variable-name">b</span>;
+    a &lt;&lt; 1, 2, 3, 4;
+    b &lt;&lt; 1, 2, 3, 4;
+    a += b;
+    <span class="org-constant">std</span>::cout &lt;&lt; a &lt;&lt; <span class="org-constant">std</span>::endl;
+}
+</pre>
+</div>
+
+<p>
+eigen 通过大量应用 C++ 模板把许多计算放到了编译时.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-keyword">template</span>&lt;<span class="org-keyword">typename</span> <span class="org-type">Kernel</span>,
+         <span class="org-type">int</span> <span class="org-variable-name">Traversal</span> = <span class="org-constant">Kernel</span>::<span class="org-constant">AssignmentTraits</span>::Traversal,
+         <span class="org-type">int</span> <span class="org-variable-name">Unrolling</span> = <span class="org-constant">Kernel</span>::<span class="org-constant">AssignmentTraits</span>::Unrolling&gt;
+<span class="org-keyword">struct</span> <span class="org-type">dense_assignment_loop</span>;
+</pre>
+</div>
+
+<p>
+dense_assignment_loop 根据 Traversal 不同会调用到不同的实现.
+</p>
+</div>
+
+<div id="outline-container-org0000001" class="outline-4">
+<h4 id="org0000001"><span class="section-number-4">1.1.1.</span> 非 SIMD 实现</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+当 Traversal 是 LinearTraversal 时, 会调用到非 SIMD 版本:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">Kernel</span>&gt;
+<span class="org-keyword">struct</span> <span class="org-type">dense_assignment_loop</span>&lt;<span class="org-type">Kernel</span>, LinearTraversal, NoUnrolling&gt; {
+    EIGEN_DEVICE_FUNC <span class="org-keyword">static</span> EIGEN_STRONG_INLINE <span class="org-type">void</span> <span class="org-function-name">run</span>(<span class="org-type">Kernel</span>&amp; <span class="org-variable-name">kernel</span>) {
+        <span class="org-keyword">const</span> <span class="org-type">Index</span> <span class="org-variable-name">size</span> = kernel.size();
+        <span class="org-keyword">for</span> (<span class="org-type">Index</span> <span class="org-variable-name">i</span> = 0; i &lt; size; ++i) kernel.assignCoeff(i);
+    }
+};
+
+<span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">DstScalar</span>, <span class="org-keyword">typename</span> <span class="org-type">SrcScalar</span>&gt;
+<span class="org-keyword">struct</span> <span class="org-type">add_assign_op</span> {
+    <span class="org-type">void</span> <span class="org-function-name">assignCoeff</span>(<span class="org-type">DstScalar</span>&amp; <span class="org-variable-name">a</span>, <span class="org-keyword">const</span> <span class="org-type">SrcScalar</span>&amp; <span class="org-variable-name">b</span>) <span class="org-keyword">const</span> { a += b; }
+}
+</pre>
+</div>
+
+<p>
+backtrace:
+</p>
+
+<pre class="example" id="org0000000">
+#0  Eigen::internal::add_assign_op&lt;float, float&gt;::assignCoeff (this=0x7fffffffc167, a=@0x7fffffffc1c0: 1, b=@0x7fffffffc1d0: 1) at eigen-3.4.0/Eigen/src/Core/functors/AssignmentFunctors.h:50
+#1  0x0000555555557099 in Eigen::internal::generic_dense_assignment_kernel&lt;Eigen::internal::evaluator&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt;, Eigen::internal::evaluator&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt;, Eigen::internal::add_assign_op&lt;float, float&gt;, 0&gt;::assignCoeff (this=0x7fffffffc060, index=0) at eigen-3.4.0/Eigen/src/Core/AssignEvaluator.h:660
+#2  0x0000555555556fc7 in Eigen::internal::copy_using_evaluator_LinearTraversal_CompleteUnrolling&lt;Eigen::internal::generic_dense_assignment_kernel&lt;Eigen::internal::evaluator&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt;, Eigen::internal::evaluator&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt;, Eigen::internal::add_assign_op&lt;float, float&gt;, 0&gt;, 0, 4&gt;::run (kernel=...) at eigen-3.4.0/Eigen/src/Core/AssignEvaluator.h:247
+#3  0x0000555555556f3a in Eigen::internal::dense_assignment_loop&lt;Eigen::internal::generic_dense_assignment_kernel&lt;Eigen::internal::evaluator&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt;, Eigen::intern
+                                           ~~~~~~~~~~~~~~~~~~~~~~
+al::evaluator&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt;, Eigen::internal::add_assign_op&lt;float, float&gt;, 0&gt;, 1, 2&gt;::run (kernel=...) at eigen-3.4.0/Eigen/src/Core/AssignEvaluator.h:528
+
+#4  0x0000555555556df6 in Eigen::internal::call_dense_assignment_loop&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;, Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;, Eigen::internal::add_assign_op&lt;float, float&gt; &gt; (dst=..., src=..., 
+    func=...) at eigen-3.4.0/Eigen/src/Core/AssignEvaluator.h:784
+#5  0x0000555555556cda in Eigen::internal::Assignment&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;, Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;, Eigen::internal::add_assign_op&lt;float, float&gt;, Eigen::internal::Dense2Dense, void&gt;::run (dst=..., src=..., func=...) at eigen-3.4.0/Eigen/src/Core/AssignEvaluator.h:952
+#6  0x0000555555556b99 in Eigen::internal::call_assignment_no_alias&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;, Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;, Eigen::internal::add_assign_op&lt;float, float&gt; &gt; (dst=..., src=..., 
+    func=...) at eigen-3.4.0/Eigen/src/Core/AssignEvaluator.h:888
+#7  0x00005555555563b0 in Eigen::internal::call_assignment&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;, Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;, Eigen::internal::add_assign_op&lt;float, float&gt; &gt;(Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;&amp;, Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; const&amp;, Eigen::internal::add_assign_op&lt;float, float&gt; const&amp;, Eigen::internal::enable_if&lt;!Eigen::internal::evaluator_assume_aliasing&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;, Eigen::internal::evaluator_traits&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt;::Shape&gt;::value, void*&gt;::type) (dst=..., src=..., func=...) at eigen-3.4.0/Eigen/src/Core/AssignEvaluator.h:857
+#8  0x0000555555555c8e in Eigen::MatrixBase&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt;::operator+=&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt; (this=0x7fffffffc1c0, other=...)
+    at eigen-3.4.0/Eigen/src/Core/CwiseBinaryOp.h:177
+#9  0x000055555555554c in main () at matrix.cc:10
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000005" class="outline-4">
+<h4 id="org0000005"><span class="section-number-4">1.1.2.</span> SIMD 实现</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+当 Traversal 是 InnerVectorizedTraversal 时, 会调用到 SIMD 的版本:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">Kernel</span>&gt;
+<span class="org-keyword">struct</span> <span class="org-type">dense_assignment_loop</span>&lt;
+    <span class="org-type">Kernel</span>, InnerVectorizedTraversal, CompleteUnrolling&gt; {
+    EIGEN_DEVICE_FUNC <span class="org-keyword">static</span> EIGEN_STRONG_INLINE <span class="org-type">void</span> <span class="org-function-name">run</span>(<span class="org-type">Kernel</span>&amp; <span class="org-variable-name">kernel</span>) {
+        <span class="org-keyword">typedef</span> <span class="org-keyword">typename</span> <span class="org-constant">Kernel</span>::<span class="org-constant">DstEvaluatorType</span>::<span class="org-type">XprType</span> <span class="org-type">DstXprType</span>;
+        <span class="org-constant">copy_using_evaluator_innervec_CompleteUnrolling</span>&lt;
+            <span class="org-type">Kernel</span>, 0, <span class="org-constant">DstXprType</span>::SizeAtCompileTime&gt;::run(kernel);
+    }
+};
+
+<span class="org-comment-delimiter">// </span><span class="org-comment">run &#26368;&#32456;&#20250;&#35843;&#29992;&#21040;:</span>
+<span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">DstScalar</span>, <span class="org-keyword">typename</span> <span class="org-type">SrcScalar</span>&gt;
+<span class="org-keyword">struct</span> <span class="org-type">add_assign_op</span> {
+    <span class="org-keyword">template</span> &lt;<span class="org-type">int</span> <span class="org-variable-name">Alignment</span>, <span class="org-keyword">typename</span> <span class="org-type">Packet</span>&gt;
+    <span class="org-type">void</span> <span class="org-function-name">assignPacket</span>(<span class="org-type">DstScalar</span>* <span class="org-variable-name">a</span>, <span class="org-keyword">const</span> <span class="org-type">Packet</span>&amp; <span class="org-variable-name">b</span>) <span class="org-keyword">const</span> {
+        <span class="org-constant">internal</span>::pstoret&lt;<span class="org-type">DstScalar</span>, <span class="org-type">Packet</span>, Alignment&gt;(
+            a, <span class="org-constant">internal</span>::padd(<span class="org-constant">internal</span>::ploadt&lt;<span class="org-type">Packet</span>, Alignment&gt;(<span class="org-variable-name">a</span>), b));
+    }
+};
+
+<span class="org-comment-delimiter">// </span><span class="org-comment">&#20854;&#20013; internal::padd &#26159; arch &#20013;&#23450;&#20041;&#30340;:</span>
+<span class="org-keyword">template</span> &lt;&gt;
+<span class="org-type">Packet4f</span> <span class="org-function-name">padd</span>&lt;<span class="org-type">Packet4f</span>&gt;(<span class="org-keyword">const</span> <span class="org-type">Packet4f</span>&amp; <span class="org-variable-name">a</span>, <span class="org-keyword">const</span> <span class="org-type">Packet4f</span>&amp; <span class="org-variable-name">b</span>) {
+    <span class="org-keyword">return</span> _mm_add_ps(a, b);
+}
+</pre>
+</div>
+
+<p>
+backtrace 为:
+</p>
+
+<pre class="example" id="org0000004">
+#0  Eigen::internal::padd&lt;float __vector(4)&gt;(float __vector(4) const&amp;, float __vector(4) const&amp;) (a=..., b=...) at eigen-3.4.0/Eigen/src/Core/arch/SSE/PacketMath.h:291
+#1  0x000055555555730b in Eigen::internal::add_assign_op&lt;float, float&gt;::assignPacket&lt;16, float __vector(4)&gt;(float*, float __vector(4) const&amp;) const (this=0x7fffffffc167, a=0x7fffffffc1c0, b=...)
+at eigen-3.4.0/Eigen/src/Core/functors/AssignmentFunctors.h:54
+#2  0x00005555555571f6 in Eigen::internal::generic_dense_assignment_kernel&lt;Eigen::internal::evaluator&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt;, Eigen::internal::evaluator&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt;, Eigen::internal::add_assign_op&lt;float, float&gt;, 0&gt;::assignPacket&lt;16, 16, float __vector(4)&gt;(long, long) (this=0x7fffffffc060, row=0, col=0) at eigen-3.4.0/Eigen/src/Core/AssignEvaluator.h:675
+#3  0x0000555555557123 in Eigen::internal::generic_dense_assignment_kernel&lt;Eigen::internal::evaluator&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt;, Eigen::internal::evaluator&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt;, Eigen::internal::add_assign_op&lt;float, float&gt;, 0&gt;::assignPacketByOuterInner&lt;16, 16, float __vector(4)&gt;(long, long) (this=0x7fffffffc060, outer=0, inner=0) at eigen-3.4.0/Eigen/src/Core/AssignEvaluator.h:689
+#4  0x0000555555557056 in Eigen::internal::copy_using_evaluator_innervec_CompleteUnrolling&lt;Eigen::internal::generic_dense_assignment_kernel&lt;Eigen::internal::evaluator&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt;, Eigen::internal::evaluator&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt;, Eigen::internal::add_assign_op&lt;float, float&gt;, 0&gt;, 0, 4&gt;::run (kernel=...) at eigen-3.4.0/Eigen/src/Core/AssignEvaluator.h:279
+#5  0x0000555555556fc4 in Eigen::internal::dense_assignment_loop&lt;Eigen::internal::generic_dense_assignment_kernel&lt;Eigen::internal::evaluator&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt;, Eigen::internal::evaluator&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt;, Eigen::internal::add_assign_op&lt;float, float&gt;, 0&gt;, 2, 2&gt;::run (kernel=...) at eigen-3.4.0/Eigen/src/Core/AssignEvaluator.h:489
+                                           ~~~~~~~~~~~~~~~~~~~~~~
+#6  0x0000555555556e80 in Eigen::internal::call_dense_assignment_loop&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;, Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;, Eigen::internal::add_assign_op&lt;float, float&gt; &gt; (dst=..., src=..., 
+func=...) at eigen-3.4.0/Eigen/src/Core/AssignEvaluator.h:784
+#7  0x0000555555556d64 in Eigen::internal::Assignment&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;, Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;, Eigen::internal::add_assign_op&lt;float, float&gt;, Eigen::internal::Dense2Dense, void&gt;::run (dst=..., src=..., func=...) at eigen-3.4.0/Eigen/src/Core/AssignEvaluator.h:952
+#8  0x0000555555556c23 in Eigen::internal::call_assignment_no_alias&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;, Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;, Eigen::internal::add_assign_op&lt;float, float&gt; &gt; (dst=..., src=..., 
+func=...) at eigen-3.4.0/Eigen/src/Core/AssignEvaluator.h:888
+#9  0x000055555555643a in Eigen::internal::call_assignment&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;, Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;, Eigen::internal::add_assign_op&lt;float, float&gt; &gt;(Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;&amp;, Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; const&amp;, Eigen::internal::add_assign_op&lt;float, float&gt; const&amp;, Eigen::internal::enable_if&lt;!Eigen::internal::evaluator_assume_aliasing&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt;, Eigen::internal::evaluator_traits&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt;::Shape&gt;::value, void*&gt;::type) (dst=..., src=..., func=...) at eigen-3.4.0/Eigen/src/Core/AssignEvaluator.h:857
+#10 0x0000555555555d18 in Eigen::MatrixBase&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt;::operator+=&lt;Eigen::Matrix&lt;float, 4, 1, 0, 4, 1&gt; &gt; (this=0x7fffffffc1c0, other=...)
+at eigen-3.4.0/Eigen/src/Core/CwiseBinaryOp.h:177
+#11 0x000055555555554c in main () at matrix.cc:10
+</pre>
+
+<p>
+另外, 并非所有的 SIMD 都是通过 intrinsic 实现: 有些操作是通过 eigen 提供的
+GenericPacketMath.h 实现, 后者通过 gcc vector extension 间接使用 SIMD
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000008" class="outline-4">
+<h4 id="org0000008"><span class="section-number-4">1.1.3.</span> Traversal</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<p>
+Traversal 的值取决于 arch 中的 HasXXX 枚举值
+</p>
+
+<p>
+AssignEvaluator.h:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-keyword">template</span> &lt;
+    <span class="org-keyword">typename</span> <span class="org-type">DstEvaluator</span>, <span class="org-keyword">typename</span> <span class="org-type">SrcEvaluator</span>, <span class="org-keyword">typename</span> <span class="org-type">AssignFunc</span>,
+    <span class="org-type">int</span> <span class="org-variable-name">MaxPacketSize</span> = -1&gt;
+<span class="org-keyword">struct</span> <span class="org-type">copy_using_evaluator_traits</span> {
+   <span class="org-keyword">private</span>:
+    <span class="org-keyword">enum</span> {
+    <span class="org-variable-name">MightVectorize</span> = <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+                  &amp;&amp; <span class="org-type">bool</span>(<span class="org-constant">functor_traits</span>&lt;<span class="org-type">AssignFunc</span>&gt;::PacketAccess),
+                                                    <span class="org-comment-delimiter">//</span><span class="org-comment">~~~~~~~~~~~~~~ </span>
+    <span class="org-variable-name">MayInnerVectorize</span>  = MightVectorize &amp;&amp; <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+    };
+
+   <span class="org-keyword">public</span>:
+    <span class="org-keyword">enum</span> {
+        <span class="org-variable-name">Traversal</span> =  <span class="org-type">int</span>(<span class="org-constant">Dst</span>::SizeAtCompileTime) == 0 ? <span class="org-type">int</span>(AllAtOnceTraversal) 
+              : <span class="org-type">int</span>(MayInnerVectorize)   ? <span class="org-type">int</span>(InnerVectorizedTraversal)
+              <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+              : <span class="org-type">int</span>(MayLinearize)        ? <span class="org-type">int</span>(LinearTraversal)
+                                         : <span class="org-type">int</span>(DefaultTraversal),
+    };
+}
+</pre>
+</div>
+
+<p>
+AssignmentFunctors.h:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-keyword">template</span>&lt;<span class="org-keyword">typename</span> <span class="org-type">DstScalar</span>,<span class="org-keyword">typename</span> <span class="org-type">SrcScalar</span>&gt;
+<span class="org-keyword">struct</span> <span class="org-type">functor_traits</span>&lt;<span class="org-type">add_assign_op</span>&lt;<span class="org-type">DstScalar</span>,<span class="org-type">SrcScalar</span>&gt; &gt; {
+  <span class="org-keyword">enum</span> {
+    <span class="org-variable-name">Cost</span> = <span class="org-constant">NumTraits</span>&lt;<span class="org-type">DstScalar</span>&gt;::ReadCost + <span class="org-constant">NumTraits</span>&lt;<span class="org-type">DstScalar</span>&gt;::AddCost,
+    <span class="org-variable-name">PacketAccess</span> = <span class="org-constant">is_same</span>&lt;<span class="org-type">DstScalar</span>,<span class="org-type">SrcScalar</span>&gt;::value &amp;&amp; <span class="org-constant">packet_traits</span>&lt;<span class="org-type">DstScalar</span>&gt;::HasAdd
+                                                                                  <span class="org-comment-delimiter">//</span><span class="org-comment">~~~~~~~ </span>
+  };
+};
+</pre>
+</div>
+
+<p>
+PacketMath.h@SSE:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-keyword">template</span> &lt;&gt;
+<span class="org-keyword">struct</span> <span class="org-type">packet_traits</span>&lt;<span class="org-constant">Eigen</span>::half&gt; : <span class="org-type">default_packet_traits</span> {
+    <span class="org-keyword">enum</span> {
+        <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+        <span class="org-variable-name">HasAdd</span> = 1,
+        <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+    }
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+}
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000000e" class="outline-3">
+<h3 id="org000000e"><span class="section-number-3">1.2.</span> eigen 需要的 SIMD 接口</h3>
+</div>
+
+<div id="outline-container-org0000017" class="outline-3">
+<h3 id="org0000017"><span class="section-number-3">1.3.</span> GEBP kernel 需要的 SIMD 接口</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+GEBP (GEneral Block Panel kernel) 是 eigen 自己的 GEMM (GEneral Matrix Multiply)
+实现
+</p>
+</div>
+
+<div id="outline-container-org0000011" class="outline-4">
+<h4 id="org0000011"><span class="section-number-4">1.3.1.</span> madd</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<p>
+madd 是指 `c=a*b+c` 操作, gebp_kernel 依赖这个操作来加速 GEMM:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-keyword">template</span> &lt;<span class="org-keyword">typename</span> <span class="org-type">LhsPacketType</span>, <span class="org-keyword">typename</span> <span class="org-type">RhsPacketType</span>, <span class="org-keyword">typename</span> <span class="org-type">AccPacketType</span>&gt;
+EIGEN_STRONG_INLINE <span class="org-type">void</span> <span class="org-function-name">madd_impl</span>(
+    <span class="org-keyword">const</span> <span class="org-type">LhsPacketType</span>&amp; <span class="org-variable-name">a</span>, <span class="org-keyword">const</span> <span class="org-type">RhsPacketType</span>&amp; <span class="org-variable-name">b</span>, <span class="org-type">AccPacketType</span>&amp; <span class="org-variable-name">c</span>,
+    <span class="org-type">RhsPacketType</span>&amp; <span class="org-variable-name">tmp</span>, <span class="org-keyword">const</span> <span class="org-type">true_type</span>&amp;) <span class="org-keyword">const</span> {
+<span class="org-preprocessor">#ifdef</span> EIGEN_HAS_SINGLE_INSTRUCTION_MADD
+    c.v = pmadd(a, b.v, c.v);
+<span class="org-preprocessor">#else</span>
+    tmp = b;
+    tmp.v = pmul(a, tmp.v);
+    c = padd(c, tmp);
+<span class="org-preprocessor">#endif</span>
+}
+</pre>
+</div>
+
+<p>
+arch 如果支持 madd 类指令例如 FMA, 则需要定义 EIGEN_HAS_SINGLE_INSTRUCTION_MADD
+并提供 pmadd 的实现
+</p>
+</div>
+</div>
+
+<div id="outline-container-ID-0966537c-81d8-477b-b891-9fe943b55d6e" class="outline-4">
+<h4 id="ID-0966537c-81d8-477b-b891-9fe943b55d6e"><span class="section-number-4">1.3.2.</span> prefetch</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<p>
+gebp_kernel 会用 prefetch 指令来预读数据, 需要 arch 去提供 (例如 SSE 的
+`_mm_prefetch`) 或者使用 gcc 的 `__builtin_prefetch`
+</p>
+
+<p>
+<a href="https://eigen.tuxfamily.org/bz/show_bug.cgi?id=1578">https://eigen.tuxfamily.org/bz/show_bug.cgi?id=1578</a>
+</p>
+
+<p>
+<a href="http://eigen.tuxfamily.org/bz/show_bug.cgi?id=953">http://eigen.tuxfamily.org/bz/show_bug.cgi?id=953</a>
+</p>
+</div>
+
+
+<div id="outline-container-org0000014" class="outline-5 references">
+<h5 id="org0000014">Backlinks</h5>
+<div class="outline-text-5" id="text-org0000014">
+<p>
+<a href="../toolchain/gcc_prefetch.html#ID-f4a56dc8-fd25-4150-bb48-c7a247cb933b">GCC Prefetch</a>
+(<i>GCC Prefetch &gt; 其它</i>):  eigen 的 gebp kernel 使用了 <a href="#ID-0966537c-81d8-477b-b891-9fe943b55d6e">prefetch</a> 来提高 matmul 性能
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+
+
+<div id="outline-container-org000001d" class="outline-2 references">
+<h2 id="org000001d">Backlinks</h2>
+<div class="outline-text-2" id="text-org000001d">
+<p>
+<a href="../tensorflow/tensorflow_architecture_parallelism.html#ID-d4639ca8-9dbc-4207-a196-fc427b7e12fc">Tensorflow Architecture: Parallism</a>
+(<i>Tensorflow Architecture: Parallism &gt; kernels &gt; eigen</i>):  默认情况下 tensorflow 使用 <a href="eigen.html#ID-5b642561-2b6e-443b-8da6-73a227b47946">eigen</a>, eigen 是一个基于 c++ 模板的线性代数库, 和 BLAS (Basic Linear Algebra Subprograms) 功能类似. 它支持的特性包括:
+</p>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2022-11-17 Thu 15:19<br />
+Last updated: 2022-11-18 Fri 10:01</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
