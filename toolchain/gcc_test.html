@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>GCC Test</title>
+
+
+           <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/readtheorg.css"/>
+           <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+           <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+           <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+           <link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+           <link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">GCC Test</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000014">1. GCC Test</a>
+<ul>
+<li><a href="#org0000003">1.1. Overview</a></li>
+<li><a href="#org0000007">1.2. scan tree</a></li>
+<li><a href="#org000000b">1.3. scan rtl</a></li>
+<li><a href="#org000000e">1.4. scan assembler</a></li>
+<li><a href="#org0000011">1.5. 其它</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000014" class="outline-2">
+<h2 id="org0000014"><span class="section-number-2">1.</span> GCC Test</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org0000003" class="outline-3">
+<h3 id="org0000003"><span class="section-number-3">1.1.</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+GCC test 使用的是 <a href="https://www.gnu.org/software/dejagnu/manual/index.html">DejaGnu</a>, 后者是一个基于 `tcl/expect` 的测试框架.
+</p>
+
+<p>
+以 <a href="https://github.com/riscv-collab/riscv-gnu-toolchain">riscv-gnu-toolchain</a> 为例, 执行 test 的方法为:
+</p>
+
+<pre class="example" id="org0000000">
+$&gt; make -C build-gcc-newlib-stage2 check-gcc "RUNTESTFLAGS=riscv.exp" SIM=spike
+</pre>
+
+<p>
+其中 RUNTESTFLAGS 可以用来指定希望测试的具体的 testcase
+</p>
+
+<p>
+gcc test 的基本做法是:
+</p>
+
+<p>
+testcase 是正常的 c 代码, 但包含了一些 dejagnu 的注解, 这些注解包括:
+</p>
+
+<ol class="org-ol">
+<li>文件需要如何处理, 例如只编译, 或者编译完还需要运行, 或者需要 dump 出中间结果例如 gimple, rtl 或 asm</li>
+
+<li>检查结果, 例如编译和运行的结果, 或者 gimple, rtl, asm 是否包含特定的字符串等</li>
+</ol>
+
+<p>
+例如:
+</p>
+
+<pre class="example" id="org0000001">
+// 编译时需要指定 -mbranch-cost=10 参数
+/* { dg-options "-mbranch-cost=10 (HAS_MOVN)" } */
+/* { dg-skip-if "code quality test" { *-*-* } { "-O0" } { "" } } */
+NOMIPS16 int
+foo (int x, int y, int z, int k)
+{
+  return x == k ? x + y : z - x;
+}
+// 编译完成后需要保证生成的 as 中包含 movz 或 movn
+/* { dg-final { scan-assembler "\t(movz|movn)\t" } } */
+// 编译完成后需要保证生成的 as 中不包含 bnz 或 beq
+/* { dg-final { scan-assembler-not "\t(bne|beq)\t" } } */
+</pre>
+
+<p>
+上面的这个 testcase 要测试的内容是: mips 的 backend 在 branch cost 较大时是否能使用 movz/movn 指令来代替 bne/beq 指令.
+</p>
+
+<p>
+与之对应的是另一个 testcase:
+</p>
+
+<pre class="example" id="org0000002">
+/* { dg-options "-mbranch-cost=1 (HAS_MOVN)" } */
+/* { dg-skip-if "code quality test" { *-*-* } { "-O0" } { "" } } */
+NOMIPS16 int
+foo (int x, int y, int z, int k)
+{
+  return x == k ? x + y : z - x;
+}
+/* { dg-final { scan-assembler-not "\t(movz|movn)\t" } } */
+/* { dg-final { scan-assembler "\t(bnec?|beqc?)\t" } } */
+</pre>
+
+<p>
+所以 gcc test 主要的测试手段是检测生成的中间结果中是否包含某种关键字, 而不是全部匹配, 因为全部匹配非常容易测试失败.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000007" class="outline-3">
+<h3 id="org0000007"><span class="section-number-3">1.2.</span> scan tree</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+scan-tree-xxx 通过检测 gimple 的内容是否包含某种关键字来确定某个 gimple 优化是否正确, 例如:
+</p>
+
+<pre class="example" id="org0000006">
+/* { dg-do compile } */
+/* { dg-options "-O2 -fdump-tree-optimized" } */
+
+static inline int
+max (int a, int b)
+{
+  return a &lt; b ? b : a;
+}
+
+int
+test_00 (int a)
+{
+  return max (a, a + 8);
+}
+
+int
+test_01 (int a)
+{
+  return max (a, a - 8);
+}
+
+/* { dg-final { scan-tree-dump-not "MAX_EXPR" "optimized" } } */
+</pre>
+
+<p>
+这个 testcase 是指 `-O2` 时 `max(a,a+8)` 应该直接优化为 `a+8`, 而不是在 gimple
+中生成一个 `MAX_EXPR`
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000000b" class="outline-3">
+<h3 id="org000000b"><span class="section-number-3">1.3.</span> scan rtl</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+scan-rtl-xxx 通过检测 rtl 的内容是否包含某种关键字来确定某个 rtl 优化是否正确, 例如:
+</p>
+
+<pre class="example" id="org000000a">
+/* { dg-do compile { target { { aarch64*-*-* i?86-*-* x86_64-*-* } &amp;&amp; lp64 } } } */
+/* { dg-options "-fdump-rtl-ce1 -O2 --param max-rtl-if-conversion-unpredictable-cost=100" } */
+
+typedef long long s64;
+
+int
+foo (s64 a, s64 b, s64 c)
+{
+ s64 d = a - b;
+
+  if (d == 0)
+    return a + c;
+  else
+    return b + c + d;
+}
+
+/* This test can be reduced to just return a + c;  */
+/* { dg-final { scan-rtl-dump "3 true changes made" "ce1" } } */
+/* { dg-final { scan-assembler-not "sub\.*\tx\[0-9\]+, x\[0-9\]+, x\[0-9\]+\.*" { target { aarch64*-*-* } } } } */
+</pre>
+
+<p>
+这个 testcase 是为了测试 pass_rtl_ifcvt, 确定该函数的 `if` 能被优化掉, 变成 `return a+c`
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000000e" class="outline-3">
+<h3 id="org000000e"><span class="section-number-3">1.4.</span> scan assembler</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+scan-assembler-xxx 通过检测 as 的内容确定 backend 是否使用了某些汇编指令, 例如前面提到的 `movz`
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000011" class="outline-3">
+<h3 id="org0000011"><span class="section-number-3">1.5.</span> 其它</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+除了使用 `scan-xx` 的 `dg-final`, dejagnu 还提供了一些其它的测试原语, 例如:
+</p>
+
+<ul class="org-ul">
+<li>dg-timeout</li>
+<li>dg-error</li>
+<li>dg-warning</li>
+<li>dg-do</li>
+<li>dg-option</li>
+<li>dg-message</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2022-11-24 Thu 10:07<br />
+Last updated: 2022-11-24 Thu 11:34</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
