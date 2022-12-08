@@ -30,12 +30,13 @@
 <ul>
 <li><a href="#org0000000">1.1. Overview</a></li>
 <li><a href="#org0000003">1.2. Demo</a></li>
-<li><a href="#org0000043">1.3. libgomp</a>
+<li><a href="#org000004e">1.3. libgomp</a>
 <ul>
 <li><a href="#org000000a">1.3.1. parallel</a></li>
 <li><a href="#org0000027">1.3.2. sync</a></li>
 <li><a href="#org0000039">1.3.3. for</a></li>
 <li><a href="#org0000040">1.3.4. task</a></li>
+<li><a href="#org000004b">1.3.5. target</a></li>
 </ul>
 </li>
 <li><a href="#org0000055">1.4. Compiler Directive</a>
@@ -43,7 +44,7 @@
 <li><a href="#org0000049">1.4.1. Example</a></li>
 <li><a href="#org000004c">1.4.2. omplower</a></li>
 <li><a href="#org000004f">1.4.3. ompexp</a></li>
-<li><a href="#org0000052">1.4.4. omp-builtins</a></li>
+<li><a href="#org000005d">1.4.4. omp-builtins</a></li>
 </ul>
 </li>
 </ul>
@@ -60,7 +61,7 @@
 <h3 id="org0000000"><span class="section-number-3">1.1.</span> Overview</h3>
 <div class="outline-text-3" id="text-1-1">
 <p>
-OpenMP 包含两部分内容:
+OpenMP 主要包含两部分内容:
 </p>
 
 <ol class="org-ol">
@@ -102,8 +103,8 @@ GOMP_loop_nonmonotonic_dynamic_next 等
 </div>
 </div>
 
-<div id="outline-container-org0000043" class="outline-3">
-<h3 id="org0000043"><span class="section-number-3">1.3.</span> libgomp</h3>
+<div id="outline-container-org000004e" class="outline-3">
+<h3 id="org000004e"><span class="section-number-3">1.3.</span> libgomp</h3>
 <div class="outline-text-3" id="text-1-3">
 </div>
 <div id="outline-container-org000000a" class="outline-4">
@@ -1116,6 +1117,208 @@ reduction 的代码 (例如 hello_openmp 中的 pi_parallel_for) 基本相同
 </div>
 </div>
 </div>
+
+<div id="outline-container-org000004b" class="outline-4">
+<h4 id="org000004b"><span class="section-number-4">1.3.5.</span> target</h4>
+<div class="outline-text-4" id="text-1-3-5">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;omp.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span>() {
+    <span class="org-type">int</span> <span class="org-variable-name">x</span> = 1;
+<span class="org-preprocessor">#pragma</span> omp target map(tofrom : x)
+    <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; 10; i++) {
+        x += i;
+    }
+    printf(<span class="org-string">"x = %d\n"</span>, x);
+    <span class="org-keyword">return</span> 0;
+}
+</pre>
+</div>
+
+<p>
+openmp 从 4.0 开始支持 offload 到不同的 target, 例如 nvptx 和 amd gcn.
+</p>
+
+<p>
+整个过程与 <a href="../dpcpp.html#ID-20a0a544-85db-4e76-82bc-7c7fb7dc0d20">DPC++</a> 的 offload 类似, 以 nvptx 为例, 主要步骤是:
+</p>
+
+<ol class="org-ol">
+<li>gcc 编译出 block 对应的 ptx 汇编</li>
+
+<li>使用 mkoffload 生成一个头文件, 它会包含 ptx 汇编, 用于注册的初始化函数以及一些 mapping 信息, 确保运行时 gomp 可以找到对应的 ptx 并调用 cuda 去编译和执行它</li>
+</ol>
+</div>
+
+<div id="outline-container-org0000044" class="outline-5">
+<h5 id="org0000044"><span class="section-number-5">1.3.5.1.</span> GOMP_offload_register_ver</h5>
+<div class="outline-text-5" id="text-1-3-5-1">
+<p>
+GOMP_offload_register_ver 负责向 runtime 注册 offload 相关的信息
+</p>
+
+<p>
+通过 `&#x2013;save-temps` 可以看到这个生成的 offload 头文件:
+</p>
+
+<pre class="example" id="org0000043">
+$&gt; gcc test.c -O0 -fopenmp -fcf-protection=none -foffload=-misa=sm_35 -fno-stack-protector --save-temps
+$&gt; cat ccuL4e4U.i
+
+static const char ptx_code_0[] =
+ "// BEGIN PREAMBLE\n"
+ ".version 3.1\n"
+ ".target sm_35\n"
+ ".address_size 64\n"
+ "// BEGIN FUNCTION DECL: main$_omp_fn$0$impl\n"
+ ".func main$_omp_fn$0$impl (.param .u64 %in_ar0);\n"
+ "// BEGIN GLOBAL FUNCTION DECL: gomp_nvptx_main\n"
+ ".extern .func gomp_nvptx_main (.param .u64 %in_ar1, .param .u64 %in_ar2);\n"
+ "// BEGIN GLOBAL VAR DECL: __nvptx_stacks\n"
+ ".extern .shared .u64 __nvptx_stacks[32];\n"
+ "// BEGIN GLOBAL VAR DECL: __nvptx_uni\n"
+ ".extern .shared .u32 __nvptx_uni[32];\n"
+ "// END PREAMBLE\n"
+ ".visible .entry main$_omp_fn$0 (.param .u64 %arg, .param .u64 %stack, .param .u64 %sz)\n"
+ "{\n"
+ ".reg .u32 %r&lt;3&gt;;\n"
+ ".reg .u64 %R&lt;4&gt;;\n"
+        /* ... */
+ "mov.u32 %r0,%tid.y;\n"
+        /* ... */
+static const char ptx_code_19[] = ""  /* ... */
+
+static const struct ptx_obj {
+  const char *code;
+  long unsigned int size;
+} ptx_objs[] = {
+ {ptx_code_0, sizeof (ptx_code_0)},
+ {ptx_code_1, sizeof (ptx_code_1)},
+ {ptx_code_2, sizeof (ptx_code_2)},
+ {ptx_code_3, sizeof (ptx_code_3)},
+ {ptx_code_4, sizeof (ptx_code_4)},
+ {ptx_code_5, sizeof (ptx_code_5)},
+ {ptx_code_6, sizeof (ptx_code_6)},
+ {ptx_code_7, sizeof (ptx_code_7)},
+ {ptx_code_8, sizeof (ptx_code_8)},
+ {ptx_code_9, sizeof (ptx_code_9)},
+ {ptx_code_10, sizeof (ptx_code_10)},
+ {ptx_code_11, sizeof (ptx_code_11)},
+ {ptx_code_12, sizeof (ptx_code_12)},
+ {ptx_code_13, sizeof (ptx_code_13)},
+ {ptx_code_14, sizeof (ptx_code_14)},
+ {ptx_code_15, sizeof (ptx_code_15)},
+ {ptx_code_16, sizeof (ptx_code_16)},
+ {ptx_code_17, sizeof (ptx_code_17)},
+ {ptx_code_18, sizeof (ptx_code_18)},
+ {ptx_code_19, sizeof (ptx_code_19)}
+};
+
+static const char *const var_mappings[] = {
+};
+
+static const struct nvptx_fn {
+  const char *name;
+  unsigned short dim[3];
+} func_mappings[] = {
+
+ {"main$_omp_fn$0"}
+};
+
+static const struct nvptx_tdata {
+  const struct ptx_obj *ptx_objs;
+  unsigned ptx_num;
+  const char *const *var_names;
+  unsigned var_num;
+  const struct nvptx_fn *fn_names;
+  unsigned fn_num;
+} target_data = {
+  ptx_objs, sizeof (ptx_objs) / sizeof (ptx_objs[0]),
+  var_mappings, sizeof (var_mappings) / sizeof (var_mappings[0]),
+  func_mappings, sizeof (func_mappings) / sizeof (func_mappings[0])
+};
+
+extern void GOMP_offload_register_ver (unsigned, const void *, int, const void *);
+extern void GOMP_offload_unregister_ver (unsigned, const void *, int, const void *);
+
+extern const void *const __OFFLOAD_TABLE__[];
+
+static __attribute__((constructor)) void init (void)
+{
+  GOMP_offload_register_ver (0x10001, __OFFLOAD_TABLE__, 5 , &amp;target_data);
+};
+static __attribute__((destructor)) void fini (void)
+{
+  GOMP_offload_unregister_ver (0x10001, __OFFLOAD_TABLE__, 5 , &amp;target_data);
+};
+</pre>
+
+<p>
+通过注册的 target_data 中的 func_mappings 和 ptx_objs, 运行时可以找到函数 (例如
+main._omp_fn.0) 对应的 ptx code (例如 ptx_code_0)
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000048" class="outline-5">
+<h5 id="org0000048"><span class="section-number-5">1.3.5.2.</span> GOMP_target_ext</h5>
+<div class="outline-text-5" id="text-1-3-5-2">
+<pre class="example" id="org0000047">
+0000000000001169 &lt;main&gt;:
+    # ...
+    11a7:       6a 00                   pushq  $0x0
+    11a9:       4c 8d 0d 68 ee 06 00    lea    0x6ee68(%rip),%r9        # 70018 &lt;.omp_data_kinds.6.2657&gt;
+    11b0:       4c 8d 05 59 ee 06 00    lea    0x6ee59(%rip),%r8        # 70010 &lt;.omp_data_sizes.5.2656&gt;
+    11b7:       48 89 c1                mov    %rax,%rcx
+    11ba:       ba 01 00 00 00          mov    $0x1,%edx
+    11bf:       48 8d 35 2b 00 00 00    lea    0x2b(%rip),%rsi        # 11f1 &lt;main._omp_fn.0&gt;
+                                                                      ~~~~~~~~~~~~~~~~~~~~~~~
+    11c6:       bf ff ff ff ff          mov    $0xffffffff,%edi
+    11cb:       e8 60 fe ff ff          callq  1030 &lt;GOMP_target_ext@plt&gt;
+                                                     ~~~~~~~~~~~~~~~~~~~~
+                                                     GOMP_target_ext 会负责调用 ptx runtime 相关代码去找 main._omp_fn.0
+                                                     对应的 ptx code 并执行, 但如果没有成功, 可以 fallback 到 cpu 代码
+                                                     所以下面有 main._omp_fn.0 完整的 cpu 实现
+
+    11d0:       48 83 c4 20             add    $0x20,%rsp
+    11d4:       8b 45 d4                mov    -0x2c(%rbp),%eax
+    11d7:       89 c6                   mov    %eax,%esi
+    11d9:       48 8d 3d 24 0e 00 00    lea    0xe24(%rip),%rdi        # 2004 &lt;_IO_stdin_used+0x4&gt;
+    11e0:       b8 00 00 00 00          mov    $0x0,%eax
+    11e5:       e8 66 fe ff ff          callq  1050 &lt;printf@plt&gt;
+    11ea:       b8 00 00 00 00          mov    $0x0,%eax
+    11ef:       c9                      leaveq
+    11f0:       c3                      retq
+
+
+00000000000011f1 &lt;main._omp_fn.0&gt;:
+    11f1:       55                      push   %rbp
+    11f2:       48 89 e5                mov    %rsp,%rbp
+    11f5:       48 89 7d e8             mov    %rdi,-0x18(%rbp)
+    11f9:       c7 45 fc 00 00 00 00    movl   $0x0,-0x4(%rbp)
+    1200:       83 7d fc 09             cmpl   $0x9,-0x4(%rbp)
+                                        ~~~~~~~~~~~~~~~~~~~~~~ 循环 10 次
+    1204:       7f 1d                   jg     1223 &lt;main._omp_fn.0+0x32&gt;
+    1206:       48 8b 45 e8             mov    -0x18(%rbp),%rax
+    120a:       48 8b 00                mov    (%rax),%rax
+    120d:       8b 10                   mov    (%rax),%edx
+    120f:       8b 45 fc                mov    -0x4(%rbp),%eax
+    1212:       01 c2                   add    %eax,%edx
+    1214:       48 8b 45 e8             mov    -0x18(%rbp),%rax
+    1218:       48 8b 00                mov    (%rax),%rax
+    121b:       89 10                   mov    %edx,(%rax)
+    121d:       83 45 fc 01             addl   $0x1,-0x4(%rbp)
+    1221:       eb dd                   jmp    1200 &lt;main._omp_fn.0+0xf&gt;
+    1223:       5d                      pop    %rbp
+    1224:       c3                      retq
+    1225:       66 2e 0f 1f 84 00 00    nopw   %cs:0x0(%rax,%rax,1)
+    122c:       00 00 00
+    122f:       90                      nop
+</pre>
+</div>
+</div>
+</div>
 </div>
 
 <div id="outline-container-org0000055" class="outline-3">
@@ -1153,7 +1356,7 @@ gcc 对 openmp 的支持主要在两个 tree pass:
 </pre>
 </div>
 
-<pre class="example" id="org0000046">
+<pre class="example" id="org0000051">
 $&gt; riscv64-linux-gnu-gcc test.c -O2  -fopenmp -c -fno-stack-protector -fdump-tree-all
 </pre>
 
@@ -1161,7 +1364,7 @@ $&gt; riscv64-linux-gnu-gcc test.c -O2  -fopenmp -c -fno-stack-protector -fdump-
 test.c.007t.omplower:
 </p>
 
-<pre class="example" id="org0000047">
+<pre class="example" id="org0000052">
 ;; Function main (main, funcdef_no=23, decl_uid=2425, cgraph_uid=24, symbol_order=23)
 
 Introduced new external node (main._omp_fn.0/24).
@@ -1198,7 +1401,7 @@ main (int argc, char * * argv)
 test.c.013t.ompexp:
 </p>
 
-<pre class="example" id="org0000048">
+<pre class="example" id="org0000053">
 ;; Function main._omp_fn.0 (main._omp_fn.0, funcdef_no=24, decl_uid=2432, cgraph_uid=25, symbol_order=24)
 
 main._omp_fn.0 (void * .omp_data_i)
@@ -1302,8 +1505,8 @@ TBD
 </div>
 </div>
 
-<div id="outline-container-org0000052" class="outline-4">
-<h4 id="org0000052"><span class="section-number-4">1.4.4.</span> omp-builtins</h4>
+<div id="outline-container-org000005d" class="outline-4">
+<h4 id="org000005d"><span class="section-number-4">1.4.4.</span> omp-builtins</h4>
 <div class="outline-text-4" id="text-1-4-4">
 <p>
 生成代码中对 libgomp 函数的调用是以 builtin 的形式, 例如
@@ -1352,7 +1555,7 @@ TBD
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2022-12-06 Tue 17:50<br />
-Last updated: 2022-12-07 Wed 16:23</p>
+Last updated: 2022-12-08 Thu 18:31</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
