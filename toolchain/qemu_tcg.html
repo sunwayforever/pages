@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>QEMU TCG</title>
+
+
+           <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/readtheorg.css"/>
+           <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+           <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+           <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+           <link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+           <link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">QEMU TCG</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org000000f">1. QEMU TCG</a>
+<ul>
+<li><a href="#org0000002">1.1. decodetree</a></li>
+<li><a href="#org0000005">1.2. helper</a></li>
+<li><a href="#org0000008">1.3. backtrace</a></li>
+<li><a href="#org000000c">1.4. debug</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000000f" class="outline-2">
+<h2 id="org000000f"><span class="section-number-2">1.</span> QEMU TCG</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="https://www.linaro.org/blog/the-evolution-of-the-qemu-translator/">https://www.linaro.org/blog/the-evolution-of-the-qemu-translator/</a>
+</p>
+
+<p>
+<a href="https://github.com/airbus-seclab/qemu_blog/blob/main/tcg_p1.md">https://github.com/airbus-seclab/qemu_blog/blob/main/tcg_p1.md</a>
+</p>
+
+<p>
+TCG (tiny code generator) 是 qemu 执行 dynamic binary translation (DBT) 的组件,
+和编译器类似, 它也包括frontend, backend 和中间表示.
+</p>
+
+<p>
+以 x86 (host) 上执行 riscv (target) 指令为例, frontend 负责把 binary 中的 riscv
+指令翻译成中间表示, backend 负责把中间表示翻译成 x86 指令.
+</p>
+
+<p>
+当 host 与 target 相同时, qemu 会利用 kvm 等虚拟化技术而不再使用 TCG.
+</p>
+</div>
+
+<div id="outline-container-org0000002" class="outline-3">
+<h3 id="org0000002"><span class="section-number-3">1.1.</span> decodetree</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+decodetree 是一个 python 程序, 用来生成 tcg 的 frontend 入口. 以 x86 上执行
+riscv 指令为例, 针对每条 riscv 指令, 生成的代码会调用 target/riscv/translate.c
+中对应的代码, 生成对应的 tcg 中间表示. 然后 x86 后端负责把 tcg 中间表示翻译成
+x86 指令.
+</p>
+
+<pre class="example" id="org0000000">
+$&gt; cd qemu-7.1.0/target/riscv
+$&gt; python3 ../../scripts/decodetree.py insn32.decode --static-decode=decode_insn32
+</pre>
+
+<p>
+生成的代码大约是这样:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-type">bool</span> <span class="org-function-name">decode_insn32</span>(<span class="org-type">DisasContext</span> *<span class="org-variable-name">ctx</span>, <span class="org-type">uint32_t</span> <span class="org-variable-name">insn</span>) {
+    <span class="org-keyword">switch</span> (insn &amp; 0x0000007f) {
+        <span class="org-keyword">case</span> 0x00000003:
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">........ ........ ........ .0000011</span><span class="org-comment-delimiter"> */</span>
+            decode_insn32_extract_i(ctx, &amp;u.f_i, insn);
+            <span class="org-keyword">switch</span> ((insn &gt;&gt; 12) &amp; 0x7) {
+                <span class="org-keyword">case</span> 0x0:
+                    <span class="org-comment-delimiter">/* </span><span class="org-comment">........ ........ .000.... .0000011</span><span class="org-comment-delimiter"> */</span>
+                    <span class="org-comment-delimiter">/* </span><span class="org-comment">insn32.decode:125</span><span class="org-comment-delimiter"> */</span>
+                    <span class="org-keyword">if</span> (trans_lb(ctx, &amp;u.f_i)) <span class="org-keyword">return</span> <span class="org-constant">true</span>;
+                    <span class="org-keyword">break</span>;
+                    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+            }
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    }
+}
+</pre>
+</div>
+
+<p>
+decodetree.py 根据 insn32.decode 中写的指令格式来生成代码, insn32.decode 大约是这样:
+</p>
+
+<pre class="example" id="org0000001">
+addi     ............     ..... 000 ..... 0010011 @i
+vle8_v   ... 000 . 00000 ..... 000 ..... 0000111 @r2_nfvm
+mret     0011000    00010 00000 000 00000 1110011
+</pre>
+
+<p>
+如果要添加新的 riscv target 指令, 需要:
+</p>
+
+<ol class="org-ol">
+<li>修改 insn32.decode</li>
+<li>在 target/riscv/translate.c 中实现对应的 trans_xxx 函数</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000005" class="outline-3">
+<h3 id="org0000005"><span class="section-number-3">1.2.</span> helper</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+<a href="https://fulcronz27.wordpress.com/2014/06/09/qemu-call-a-custom-function-from-tcg/">https://fulcronz27.wordpress.com/2014/06/09/qemu-call-a-custom-function-from-tcg/</a>
+</p>
+
+<p>
+并非所有的 target 指令在 tcg 中都走 `target insn -&gt; tcg ir -&gt; host insn` 这条路径, 对于 tcg ir 不支持的指令(主要是一些 riscv extenstion 例如 fpu, bitmanip,
+vector, m128, vector 等和一些 privileged insn 例如 mret, wfi, tlb flush 以及 csr
+相关指令), 相关 insn 都会通过 helper 直接以外部函数的形式执行.
+</p>
+
+<p>
+riscv target 使用的 helper 有:
+</p>
+
+<ol class="org-ol">
+<li>fpu helper</li>
+<li>bitmanip helper</li>
+<li>crypto helper</li>
+<li>m128 helper</li>
+<li>vector helper</li>
+<li>op helper</li>
+</ol>
+
+<p>
+以 riscv fmadd_s 指令为例:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-function-name">trans_fmadd_s</span>(<span class="org-type">DisasContext</span> *<span class="org-variable-name">ctx</span>, <span class="org-type">arg_fmadd_s</span> *<span class="org-variable-name">a</span>):
+  TCGv_i64 dest = dest_fpr(ctx, a-&gt;rd);
+  <span class="org-type">TCGv_i64</span> <span class="org-variable-name">src1</span> = get_fpr_hs(ctx, a-&gt;rs1);
+  <span class="org-type">TCGv_i64</span> <span class="org-variable-name">src2</span> = get_fpr_hs(ctx, a-&gt;rs2);
+  <span class="org-type">TCGv_i64</span> <span class="org-variable-name">src3</span> = get_fpr_hs(ctx, a-&gt;rs3);
+
+  <span class="org-function-name">gen_set_rm</span>(ctx, a-&gt;rm);
+  <span class="org-function-name">gen_helper_fmadd_s</span>(dest, cpu_env, src1, src2, src3);
+  <span class="org-function-name">gen_set_fpr_hs</span>(ctx, a-&gt;rd, dest);
+  <span class="org-function-name">mark_fs_dirty</span>(ctx);
+  <span class="org-keyword">return</span> <span class="org-constant">true</span>;
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">gen_helper_fmadd_s &#26080;&#27861;&#30452;&#25509;&#25214;&#21040;&#23450;&#20041;, &#23427;&#26159;&#19968;&#31995;&#21015;&#23439;&#23637;&#24320;&#30340;&#32467;&#26524;</span><span class="org-comment-delimiter"> */</span>
+<span class="org-comment-delimiter">/* </span><span class="org-comment">include/exec/helper-gen.h</span><span class="org-comment-delimiter"> */</span>
+<span class="org-preprocessor">#define</span> <span class="org-function-name">DEF_HELPER_FLAGS_0</span>(<span class="org-variable-name">name</span>, <span class="org-variable-name">flags</span>, <span class="org-variable-name">ret</span>)                            \
+<span class="org-keyword">static</span> <span class="org-keyword">inline</span> <span class="org-type">void</span> <span class="org-function-name">glue</span>(gen_helper_, name)(<span class="org-type">dh_retvar_decl0</span>(<span class="org-variable-name">ret</span>))        \
+{                                                                       \
+  tcg_gen_callN(HELPER(name), dh_retvar(ret), 0, <span class="org-constant">NULL</span>);                 \
+}
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">&#26681;&#25454;&#21069;&#38754;&#30340;&#23439;, gen_helper_xxx &#20250;&#23637;&#24320;&#25104; tcg_gen_call_N(helper_xxx)</span><span class="org-comment-delimiter"> */</span>
+<span class="org-constant">gen_helper_fmadd_s</span>:
+  <span class="org-function-name">tcg_gen_callN</span>(helper_fmadd_s, ...);
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">target/riscv/fpu_helper.c</span><span class="org-comment-delimiter"> */</span>
+<span class="org-function-name">helper_fmadd_s</span>(<span class="org-type">CPURISCVState</span> *<span class="org-variable-name">env</span>, <span class="org-type">uint64_t</span> <span class="org-variable-name">frs1</span>, <span class="org-type">uint64_t</span> <span class="org-variable-name">frs2</span>,<span class="org-type">uint64_t</span> <span class="org-variable-name">frs3</span>):
+  <span class="org-comment-delimiter">/* </span><span class="org-comment">do_fmadd_s &#20250;&#30452;&#25509;&#35843;&#29992;&#21040; host &#30340; fmaf &#20989;&#25968; (&#22914;&#26524; host &#25903;&#25345; hard float)</span><span class="org-comment-delimiter"> */</span>
+  <span class="org-keyword">return</span> do_fmadd_s(env, frs1, frs2, frs3, 0);
+</pre>
+</div>
+
+<p>
+一般情况下给 target 添加自定义指令时都会采用 helper 的形式去实现 trans_xxx 函数,
+因为 target 自定义指令通常没有对应的 tcg ir.
+</p>
+
+<p>
+使用 helper 添加 riscv 指令的步骤是:
+</p>
+
+<ol class="org-ol">
+<li>参考 decodetree 部分, 添加新的 riscv 指令</li>
+<li>通过修改 `target/riscv/helper.h` 添加新的 helper 声明</li>
+<li>修改 `target/riscv/translate.c`, 实现 trans_xxx, 让它调用 gen_helper_xxx</li>
+<li>修改 `target/riscv/xxx_helper.c`, 实现 helper_xxx 函数</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000008" class="outline-3">
+<h3 id="org0000008"><span class="section-number-3">1.3.</span> backtrace</h3>
+<div class="outline-text-3" id="text-1-3">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-constant">cpu_exec</span>:
+  <span class="org-keyword">while</span> (<span class="org-negation-char">!</span>cpu_handle_exception(cpu, &amp;ret)):
+    <span class="org-keyword">while</span> (<span class="org-negation-char">!</span>cpu_handle_interrupt(cpu, &amp;last_tb)):
+      tb = tb_lookup(cpu, pc, cs_base, flags, cflags);
+      <span class="org-keyword">if</span> (tb == <span class="org-constant">NULL</span>):
+        tb = tb_gen_code(cpu, pc, cs_base, flags, cflags);
+        <span class="org-function-name">cpu_loop_exec_tb</span>(cpu, tb, &amp;last_tb, &amp;tb_exit);
+
+<span class="org-constant">tb_gen_code</span>:
+  <span class="org-function-name">gen_intermediate_code</span>(cpu, tb, max_insns);
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">target/riscv/translate.c</span><span class="org-comment-delimiter"> */</span>
+<span class="org-constant">gen_intermediate_code</span>: 
+  translator_loop(&amp;riscv_tr_ops, &amp;ctx.base, cs, tb, max_insns);
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">accel/tcg/translator.c</span><span class="org-comment-delimiter"> */</span>
+<span class="org-constant">translator_loop</span>:
+  <span class="org-keyword">while</span> (<span class="org-constant">true</span>):
+    ops-&gt;insn_start(db, cpu);
+    ops-&gt;translate_insn(db, cpu);
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">translate_insn &#26159; target tr ops &#37324;&#30340;&#20989;&#25968;&#25351;&#38024;</span><span class="org-comment-delimiter"> */</span>
+
+<span class="org-keyword">static</span> <span class="org-keyword">const</span> <span class="org-type">TranslatorOps</span> <span class="org-variable-name">riscv_tr_ops</span> = {
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    .translate_insn     = riscv_tr_translate_insn,
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+};
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">target/riscv/translate.c</span><span class="org-comment-delimiter"> */</span>
+<span class="org-constant">riscv_tr_translate_insn</span>:
+  <span class="org-function-name">decode_opc</span>(env, ctx, opcode16);
+    <span class="org-function-name">decode_insn32</span>(ctx, opcode32);
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">decode_insn32 &#26159; decodetree.py &#29983;&#25104;&#30340;&#20989;&#25968;</span><span class="org-comment-delimiter"> */</span>
+<span class="org-function-name">decode_insn32</span>(<span class="org-type">DisasContext</span> *<span class="org-variable-name">ctx</span>, <span class="org-type">uint32_t</span> <span class="org-variable-name">insn</span>):
+  <span class="org-keyword">switch</span> (insn &amp; 0x0000007f):
+    <span class="org-keyword">case</span> 0x00000013:
+      <span class="org-comment-delimiter">/* </span><span class="org-comment">........ ........ ........ .0010011</span><span class="org-comment-delimiter"> */</span>
+      <span class="org-keyword">switch</span> ((insn &gt;&gt; 12) &amp; 0x7) {
+      <span class="org-keyword">case</span> 0x0:
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">........ ........ .000.... .0010011</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">insn32.decode:133</span><span class="org-comment-delimiter"> */</span>
+        decode_insn32_extract_i(ctx, &amp;u.f_i, insn);
+        <span class="org-keyword">if</span> (trans_addi(ctx, &amp;u.f_i)) <span class="org-keyword">return</span> <span class="org-constant">true</span>;
+          <span class="org-keyword">break</span>;
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">target/riscv/insn_trans/trans_rvi.c.inc</span><span class="org-comment-delimiter"> */</span>
+trans_addi(<span class="org-type">DisasContext</span> *<span class="org-variable-name">ctx</span>, <span class="org-type">arg_addi</span> *<span class="org-constant">a</span>):
+  <span class="org-comment-delimiter">/* </span><span class="org-comment">tcg_gen_xxx &#29992;&#26469;&#29983;&#25104; tcg IR</span><span class="org-comment-delimiter"> */</span>
+  <span class="org-keyword">return</span> gen_arith_imm_fn(ctx, a, EXT_NONE, tcg_gen_addi_tl, gen_addi2_i128);
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000000c" class="outline-3">
+<h3 id="org000000c"><span class="section-number-3">1.4.</span> debug</h3>
+<div class="outline-text-3" id="text-1-4">
+<pre class="example" id="org000000b">
+$&gt; cat test.c
+int main(int argc, char *argv[]) { return argc + 1; }
+
+$&gt; riscv64-linux-gnu-gcc test.c -O0 -g -static
+
+$&gt; qemu-riscv64 -d in_asm,op,out_asm ./a.out
+
+IN: main
+...
+0x0000000000010444:  2785              addiw           a5,a5,1
+                                       ~~~~~~~~~~~~~~~~~~~~~~~
+                                       binary 中的 riscv 指令
+
+0x0000000000010446:  2781              sext.w          a5,a5
+...
+
+OP:
+ ...
+ ---- 0000000000010444
+ add_i64 tmp4,x15/a5,$0x1
+ ~~~~~~~~~~~~~~~~~~~~~~~~
+ addiw 通过 riscv frontend 翻译后的中间表示
+
+ ext32s_i64 x15/a5,tmp4
+
+ ---- 0000000000010446
+ mov_i64 tmp4,x15/a5
+ ext32s_i64 x15/a5,tmp4
+
+ ...
+
+OUT: [size=160]
+  -- guest addr 0x0000000000010430 + tb prologue
+ ...
+  -- guest addr 0x0000000000010440
+0x7fc4e8027207:  49 83 c4 ec              addq     $-0x14, %r12
+0x7fc4e802720b:  4d 63 24 24              movslq   (%r12), %r12
+  -- guest addr 0x0000000000010444
+0x7fc4e802720f:  49 ff c4                 incq     %r12
+                                          ~~~~~~~~~~~~~
+                                          add_i64 通过 x86 backend 翻译生成的 x86 指令
+
+0x7fc4e8027212:  4d 63 e4                 movslq   %r12d, %r12
+0x7fc4e8027215:  4c 89 65 78              movq     %r12, 0x78(%rbp)
+...
+</pre>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-01-04 Wed 11:10<br />
+Last updated: 2023-01-04 Wed 15:28</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
