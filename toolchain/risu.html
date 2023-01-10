@@ -1,0 +1,435 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>RISU</title>
+
+
+           <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/readtheorg.css"/>
+           <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+           <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+           <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+           <link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+           <link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">RISU</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org000001e">1. RISU</a>
+<ul>
+<li><a href="#org0000000">1.1. Overview</a></li>
+<li><a href="#org0000004">1.2. Usage</a></li>
+<li><a href="#org000001b">1.3. Implementation details</a>
+<ul>
+<li><a href="#org0000010">1.3.1. risu.c</a></li>
+<li><a href="#org0000013">1.3.2. risugen</a></li>
+<li><a href="#org0000018">1.3.3. xxx.risu</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000001e" class="outline-2">
+<h2 id="org000001e"><span class="section-number-2">1.</span> RISU</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="https://git.linaro.org/people/pmaydell/risu.git/">https://git.linaro.org/people/pmaydell/risu.git/</a>
+</p>
+</div>
+
+<div id="outline-container-org0000000" class="outline-3">
+<h3 id="org0000000"><span class="section-number-3">1.1.</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+RISU (Random Instruction Sequence generator for Userspace testing) 可以用来对比两个平台同样的的指令时结果是否一致, 例如可以用来测试 <a href="qemu_tcg.html#ID-fedb153b-c9a7-4ad1-a66e-e08b91173dd3">qemu</a> 结果是否正确.
+</p>
+
+<p>
+以 arm 平台为例, 它的基本做法是:
+</p>
+
+<ol class="org-ol">
+<li>使用 risugen 脚本随机生成一些指令, 放在 test.out 中</li>
+<li>在 native arm 平台上执行 risu (做为 master), 它会执行 test.out 中的指令</li>
+<li>在另一个平台例如 qemu 上执行 risu (做为 apprentice), 它同样执行 test.out 中的指令</li>
+<li>test.out 中的指令除了正常的 arm 指令, 还会插入一些特殊的 risuop, 这些 op 会触发 SIGILL</li>
+<li>master 和 apprentice 的 sighandler 会 catch SIGILL, 双方的 sighandler 通过
+socket 把数据 (当前寄存器和内存) 集中到 apprentice, 然后 apprentice 根据
+risuop 的不同执行不同的检查, 例如 OP_COMPARE (检查寄存器), OP_COMPAREMEM (检查内存)</li>
+<li>如果检查发现双方不一致, 说明 apprentice 实现有问题</li>
+</ol>
+
+<p>
+risu 主要用来检查每条指令执行后双方的寄存器以及内存是否一致, 所以它无法检查跳转指令, 也不支持特权指令.
+</p>
+
+<p>
+另外, risu 官方目前并不支持 mips 和 risc-v
+</p>
+</div>
+</div>
+
+
+<div id="outline-container-org0000004" class="outline-3">
+<h3 id="org0000004"><span class="section-number-3">1.2.</span> Usage</h3>
+<div class="outline-text-3" id="text-1-2">
+<pre class="example" id="org0000003">
+$&gt; cd risu; mkdir build; cd build
+$&gt; CROSS_PREFIX=arm-linux-gnueabihf- ../configure --static
+$&gt; make
+$&gt; ../risugen --numinsns 10 --pattern 'VSTM.*' ../arm.risu vstm.out
+
+# 正常情况下应该在一个 native arm 上执行, 这里只是测试, 所以用 qemu 
+$&gt; qemu-arm ./risu --master vstm.out
+master port 9191
+master: waiting for connection on port 9191...
+
+# 在另一个 shell 中
+$&gt; qemu-arm ./risu --host 127.0.0.1 vstm.out
+apprentice host 127.0.0.1 port 9191
+loading test image vstm.out...
+starting apprentice image at 0xff7ec000
+starting image
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org000001b" class="outline-3">
+<h3 id="org000001b"><span class="section-number-3">1.3.</span> Implementation details</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+risu 实现分为三部分:
+</p>
+
+<ol class="org-ol">
+<li>risu.c</li>
+<li>risugen perl 脚本</li>
+<li>risugen 针对不同平台的指令配置, 例如 arm.risu, 以及少量的支持性的平台相关代码,例如 <code>risu_reginfo_arm.c</code>, <code>risu_arm.c</code></li>
+</ol>
+</div>
+
+<div id="outline-container-org0000010" class="outline-4">
+<h4 id="org0000010"><span class="section-number-4">1.3.1.</span> risu.c</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<p>
+risu.c 同时实现了 master 和 apprentice 部分, 它的主要功能是:
+</p>
+
+<ol class="org-ol">
+<li>master 和 apprentice 通信</li>
+<li>通过 sighandler 触发通信和检查, 并且用 sighandler 的 ucontext 读写寄存器 (参考 <a href="../kernel/signal.html#ID-94de6f9d-a533-44a4-90ad-d74824f8b1d8">kernel signal</a>, <a href="../kernel/salsa_signal.html#ID-0847680b-f40d-4363-96bf-b03ea98564af">signal handling in DBT</a>)</li>
+<li>检查寄存器, 内存是否一致</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-function-name">main</span>():
+  <span class="org-comment-delimiter">/* </span><span class="org-comment">load_image &#30452;&#25509;&#29992; mmap &#25226; xxx.out load &#36827;&#34892;, &#19988;&#20837;&#21475;&#22320;&#22336;&#20445;&#23384;&#22312;</span>
+<span class="org-comment">   * image_start</span><span class="org-comment-delimiter"> */</span>
+  load_image();
+  <span class="org-keyword">if</span> (ismaster):
+    <span class="org-keyword">return</span> master();
+  <span class="org-keyword">else</span>:
+    <span class="org-keyword">return</span> apprentice();
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org000000a" class="outline-5">
+<h5 id="org000000a"><span class="section-number-5">1.3.1.1.</span> master</h5>
+<div class="outline-text-5" id="text-1-3-1-1">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-constant">master</span>:
+  set_sigill_handler(&amp;master_sigill);
+  <span class="org-function-name">image_start</span>();
+
+<span class="org-type">void</span> <span class="org-function-name">master_sigill</span>(<span class="org-type">int</span> <span class="org-variable-name">sig</span>, <span class="org-type">siginfo_t</span> *<span class="org-variable-name">si</span>, <span class="org-type">void</span> *<span class="org-variable-name">uc</span>):
+  send_register_info(uc);
+  <span class="org-function-name">advance_pc</span>(uc);
+
+<span class="org-function-name">send_register_info</span>(<span class="org-type">void</span> *<span class="org-variable-name">uc</span>):
+  <span class="org-comment-delimiter">/* </span><span class="org-comment">uc &#26159; ucontext, &#21253;&#21547; sigill &#21457;&#29983;&#26102; kernel stack &#37324;&#30340;&#23492;&#23384;&#22120;&#20449;&#24687;</span><span class="org-comment-delimiter"> */</span>
+  reginfo_init(&amp;ri[MASTER], uc);
+  <span class="org-comment-delimiter">/* </span><span class="org-comment">&#21457;&#29983; sigill &#27491;&#24120;&#24773;&#20917;&#19979;&#26159;&#22240;&#20026; image &#20013;&#30340; risuop &#23548;&#33268;&#30340;, &#36890;&#36807;</span>
+<span class="org-comment">   * ri-&gt;faulting_insn &#33719;&#24471;&#36825;&#20010; risuop</span><span class="org-comment-delimiter"> */</span>
+  op = get_risuop(&amp;ri[MASTER]);
+
+  header.magic = RISU_MAGIC;
+  header.pc = get_pc(&amp;ri[MASTER]);
+  header.risu_op = op;
+
+  <span class="org-keyword">switch</span> (op):
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">OP_COMPARE &#21644; OP_COMPAREMEM &#38656;&#35201; master &#25226; ri (register info) &#25110; memblock</span>
+<span class="org-comment">     * (memory) &#21457;&#36865;&#32473; apprentice</span><span class="org-comment-delimiter"> */</span>      
+    <span class="org-keyword">case</span> OP_TESTEND:
+    <span class="org-keyword">case</span> OP_COMPARE:
+    <span class="org-keyword">case</span> OP_SIGILL:
+        header.size = reginfo_size(&amp;ri[MASTER]);
+        extra = &amp;ri[MASTER];
+        <span class="org-keyword">break</span>;
+    <span class="org-keyword">case</span> OP_COMPAREMEM:
+        header.size = MEMBLOCKLEN;
+        extra = memblock;
+        <span class="org-keyword">break</span>;
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">OP_SETMEMBLOCK &#21644; OP_GETMEMBLOCK &#36825;&#20004;&#20010;&#24182;&#19981;&#38656;&#35201;&#21457;&#36865;&#20449;&#24687;&#32473; apprentice:</span>
+<span class="org-comment">     * &#23427;&#20204;&#26159;&#36127;&#36131;&#35753; memory &#30456;&#20851;&#25351;&#20196;&#33021;&#35835;&#20889;&#21040;&#27491;&#30830;&#30340;&#20869;&#23384;&#22320;&#22336;</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">case</span> OP_SETMEMBLOCK:
+    <span class="org-keyword">case</span> OP_GETMEMBLOCK:
+        header.size = 0;
+        extra = <span class="org-constant">NULL</span>;
+        <span class="org-keyword">break</span>;
+    <span class="org-keyword">default</span>:
+        <span class="org-function-name">abort</span>();
+
+
+  res = write_buffer(&amp;header, <span class="org-keyword">sizeof</span>(header));
+
+  <span class="org-keyword">if</span> (extra):
+    res = write_buffer(extra, header.size);
+
+  <span class="org-keyword">switch</span> (op):
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#36825;&#37324;&#20250;&#20026;&#20102;&#22788;&#29702; OP_SETMEMBLOCK &#21644; OP_GETMEMBLOCK</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">case</span> OP_COMPARE:
+    <span class="org-keyword">case</span> OP_SIGILL:
+    <span class="org-keyword">case</span> OP_COMPAREMEM:
+        <span class="org-keyword">break</span>;
+    <span class="org-keyword">case</span> OP_TESTEND:
+        <span class="org-keyword">return</span> RES_END;
+    <span class="org-keyword">case</span> OP_SETMEMBLOCK:
+        paramreg = get_reginfo_paramreg(&amp;ri[MASTER]);
+        memblock = (<span class="org-type">void</span> *)(<span class="org-type">uintptr_t</span>)paramreg;
+        <span class="org-keyword">break</span>;
+    <span class="org-keyword">case</span> OP_GETMEMBLOCK:
+        paramreg = get_reginfo_paramreg(&amp;ri[MASTER]);
+        <span class="org-function-name">set_ucontext_paramreg</span>(uc, paramreg + (<span class="org-type">uintptr_t</span>)memblock);
+        <span class="org-keyword">break</span>;
+    <span class="org-keyword">default</span>:
+        <span class="org-function-name">abort</span>();
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000007" class="outline-6">
+<h6 id="org0000007"><span class="section-number-6">1.3.1.1.1.</span> memblock</h6>
+<div class="outline-text-6" id="text-1-3-1-1-1">
+<p>
+所谓 memblock, 是指有一些指令需要读写 memory (例如 load/store 指令), 为了测试这些指令是否正确, 需要 risu 想办法给这些指令提供一块可以读写的 memory, 称为
+memblock.
+</p>
+
+<p>
+risu 的做法是:
+</p>
+
+<ol class="org-ol">
+<li>risugen 时通过 write_memblock_setup 函数在 image 开头预留了一段空间做为
+memblock, 并且插入一个 OP_SETMEMBLOCK 在运行时把该 memblock 的真实地址通过
+paramreg (例如 r0) 通知给 risu</li>
+
+<li>由于这个 memblock 是运行时才知道, 所以测试 memory 指令时, risugen 会先生成一个随机的 offset 在 paramreg 中, 然后通过一个 OP_GETMEMBLOCK 对 paramreg 进行修正: 把memblock 的真实地址加到 paramreg 中, 后续 memory 指令就可以读写
+paramreg 这个地址了</li>
+
+<li>每次 memory 相关指令后, 直接检查整个 memblock 就可以了</li>
+</ol>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org000000d" class="outline-5">
+<h5 id="org000000d"><span class="section-number-5">1.3.1.2.</span> apprentice</h5>
+<div class="outline-text-5" id="text-1-3-1-2">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-function-name">apprentice_sigill</span>(<span class="org-type">int</span> <span class="org-variable-name">sig</span>, <span class="org-type">siginfo_t</span> *<span class="org-variable-name">si</span>, <span class="org-type">void</span> *<span class="org-variable-name">uc</span>):
+  recv_and_compare_register_info(uc);
+  <span class="org-function-name">advance_pc</span>(uc);
+
+<span class="org-function-name">recv_and_compare_register_info</span>(<span class="org-type">void</span> *<span class="org-variable-name">uc</span>):
+  <span class="org-comment-delimiter">/* </span><span class="org-comment">ri[APPRENTICE] &#26159; apprentice &#33258;&#24049;&#30340; reg</span><span class="org-comment-delimiter"> */</span>
+  <span class="org-comment-delimiter">/* </span><span class="org-comment">ri[MASTER] &#26159; master &#20256;&#36807;&#26469;&#30340; reg</span><span class="org-comment-delimiter"> */</span>
+  reginfo_init(&amp;ri[APPRENTICE], uc);
+  recv_register_info(&amp;ri[MASTER]);
+  op = get_risuop(&amp;ri[APPRENTICE]);
+
+  <span class="org-keyword">switch</span> (op):
+    <span class="org-keyword">case</span> OP_COMPARE:
+    <span class="org-keyword">case</span> OP_TESTEND:
+    <span class="org-keyword">case</span> OP_SIGILL:
+      reginfo_is_eq(&amp;ri[MASTER], &amp;ri[APPRENTICE])      
+      <span class="org-keyword">break</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">OP_SETMEMBLOCK/OP_GETMEMBLOCK &#30340;&#23454;&#29616;&#19982; master &#19968;&#26679;</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">case</span> OP_SETMEMBLOCK:
+        paramreg = get_reginfo_paramreg(&amp;ri[APPRENTICE]);
+        memblock = (<span class="org-type">void</span> *)(<span class="org-type">uintptr_t</span>)paramreg;
+        <span class="org-keyword">break</span>;
+
+    <span class="org-keyword">case</span> OP_GETMEMBLOCK:
+        paramreg = get_reginfo_paramreg(&amp;ri[APPRENTICE]);
+        <span class="org-function-name">set_ucontext_paramreg</span>(uc, paramreg + (<span class="org-type">uintptr_t</span>)memblock);
+        <span class="org-keyword">break</span>;
+
+    <span class="org-keyword">case</span> OP_COMPAREMEM:
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">&#29992; memcpy memblock &#26469;&#27604;&#36739; memory</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">if</span> (memcmp(memblock, other_memblock, MEMBLOCKLEN) != 0) {
+            res = RES_MISMATCH_MEM;
+        }
+        <span class="org-keyword">break</span>;
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000013" class="outline-4">
+<h4 id="org0000013"><span class="section-number-4">1.3.2.</span> risugen</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<p>
+risugen 通过读 xxx.risu 生成包含多条随机指令和相应的 risuop 的 image.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-perl"><span class="org-constant">write_test_code</span>:
+  $<span class="org-variable-name">numinsns</span> = $<span class="org-variable-name">params</span>-&gt;{ <span class="org-string">'numinsns'</span> };
+  <span class="org-keyword">if</span> (grep { defined($<span class="org-variable-name">insn_details</span>{$<span class="org-variable-name">_</span>}-&gt;{blocks}-&gt;{<span class="org-string">"memory"</span>}) } @<span class="org-perl-non-scalar-variable">keys</span>):
+    write_memblock_setup();
+  <span class="org-keyword">for</span> <span class="org-keyword">my</span> $<span class="org-variable-name">i</span> (1..$<span class="org-variable-name">numinsns</span>):
+    gen_one_insn($<span class="org-variable-name">forcecond</span>, $<span class="org-variable-name">insn_details</span>{$<span class="org-variable-name">insn_enc</span>});
+    write_risuop($<span class="org-variable-name">OP_COMPARE</span>);
+
+<span class="org-keyword">sub</span> <span class="org-function-name">write_memblock_setup</span>():
+  <span class="org-keyword">my</span> $<span class="org-variable-name">align</span> = $<span class="org-variable-name">MAXALIGN</span>;
+  <span class="org-keyword">my</span> $<span class="org-variable-name">datalen</span> = 8192 + $<span class="org-variable-name">align</span>;
+  write_pc_adr(0, (4 * 4) + ($<span class="org-variable-name">align</span> - 1)); <span class="org-comment"># insn 1</span>
+  write_align_reg(0, $<span class="org-variable-name">align</span>);              <span class="org-comment"># insn 2</span>
+  <span class="org-comment"># NOTE: &#36890;&#36807; OP_SETMEMBLOCK &#25226; memblock &#30495;&#23454;&#22320;&#22336;&#36890;&#30693; risu</span>
+  write_risuop($<span class="org-variable-name">OP_SETMEMBLOCK</span>);           <span class="org-comment"># insn 3</span>
+  write_jump_fwd($<span class="org-variable-name">datalen</span>);                <span class="org-comment"># insn 4</span>
+
+  <span class="org-comment"># NOTE: &#22312; image &#39044;&#30041;&#31354;&#38388;</span>
+  <span class="org-keyword">for</span> (<span class="org-keyword">my</span> $<span class="org-variable-name">i</span> = 0; $<span class="org-variable-name">i</span> &lt; $<span class="org-variable-name">datalen</span> / 4; $<span class="org-variable-name">i</span>++):
+    insn32(rand(0xffffffff));
+
+<span class="org-keyword">sub</span> <span class="org-function-name">gen_one_insn</span>($$):
+  <span class="org-comment"># gen_one_insn &#26102;&#21069;&#38754;&#24050;&#32463;&#36890;&#36807; pattern &#25110; key &#30830;&#23450;&#20102;&#35201;&#29983;&#25104;&#21738;&#19968;&#26465;&#25351;&#20196;</span>
+  <span class="org-constant">INSN</span>: <span class="org-keyword">while</span>(1):
+  <span class="org-comment"># NOTE: &#25351;&#20196;&#20869;&#23481;&#26159;&#38543;&#26426;&#22635;&#20805;&#30340;</span>
+  <span class="org-keyword">my</span> $<span class="org-variable-name">insn</span> = int(rand(0xffffffff));
+  $<span class="org-variable-name">insn</span> &amp;= ~$<span class="org-variable-name">fixedbitmask</span>;
+  $<span class="org-variable-name">insn</span> |= $<span class="org-variable-name">fixedbits</span>;
+  <span class="org-keyword">if</span> (defined $<span class="org-variable-name">constraint</span>):
+    <span class="org-keyword">my</span> $<span class="org-variable-name">v</span> = eval_with_fields($<span class="org-variable-name">insnname</span>, $<span class="org-variable-name">insn</span>, $<span class="org-variable-name">rec</span>, <span class="org-string">"constraints"</span>, $<span class="org-variable-name">constraint</span>);
+    <span class="org-comment"># NOTE: &#22914;&#26524;&#19981;&#28385;&#36275; constraint, &#21017;&#37325;&#26032;&#24320;&#22987;</span>
+    <span class="org-keyword">if</span> (!$<span class="org-variable-name">v</span>):
+      <span class="org-keyword">next</span> <span class="org-constant">INSN</span>;
+  <span class="org-comment"># ....</span>
+  <span class="org-comment"># &#36825;&#26465;&#25351;&#20196;&#26159; memory &#25351;&#20196;</span>
+  <span class="org-keyword">if</span> (defined $<span class="org-variable-name">memblock</span>):
+    <span class="org-comment"># &#22312; arm.risu &#20013; memory &#21518;&#26159;&#19968;&#27573; perl &#20195;&#30721;, &#20363;&#22914;:</span>
+    <span class="org-comment">#</span>
+    <span class="org-comment"># VLD1_stoa A1a 1111 0100 1 d 10 rn:4 vd:4 11 00 sz:2 t a xm:4 \</span>
+    <span class="org-comment"># !constraints { ($d == 0 || $t == 0 || $vd != 0xf) &amp;&amp; $sz != 3 &amp;&amp; ($sz != 0 || $a != 1) &amp;&amp; ($rn != $xm); } \</span>
+    <span class="org-comment"># !memory { reg($rn); }</span>
+    <span class="org-comment">#</span>
+    <span class="org-comment"># &#20854;&#20013; reg($rn) &#36825;&#20010; perl &#20195;&#30721;&#22312;&#36825;&#37324;&#20250;&#29992;&#26469;&#29983;&#25104;&#29305;&#23450;&#30340;&#25351;&#20196;</span>
+    <span class="org-comment">#</span>
+    $<span class="org-variable-name">basereg</span> = eval_with_fields($<span class="org-variable-name">insnname</span>, $<span class="org-variable-name">insn</span>, $<span class="org-variable-name">rec</span>, <span class="org-string">"memory"</span>, $<span class="org-variable-name">memblock</span>);
+  <span class="org-comment"># &#36755;&#20986; insn &#21040; image &#20013;</span>
+  insn32($<span class="org-variable-name">insn</span>);
+  <span class="org-keyword">if</span> (defined $<span class="org-variable-name">memblock</span>):
+    <span class="org-comment"># NOTE: OP_COMPAREMEM</span>
+    write_risuop($<span class="org-variable-name">OP_COMPAREMEM</span>);
+
+<span class="org-keyword">sub</span> <span class="org-function-name">reg</span>($@):
+  <span class="org-keyword">my</span> ($<span class="org-variable-name">base</span>, @<span class="org-perl-non-scalar-variable">trashed</span>) = @<span class="org-perl-non-scalar-variable">_</span>;
+  write_get_offset();
+  <span class="org-comment"># &#25226; r0 &#20013;&#30340;&#22320;&#22336; mov &#21040; $base &#23492;&#23384;&#22120;&#20197;&#20415;&#25351;&#20196;&#33021;&#20351;&#29992;&#36825;&#27573;&#20869;&#23384;</span>
+  write_mov_rr($<span class="org-variable-name">base</span>, 0);
+  write_mov_ri(0, 0);
+
+<span class="org-keyword">sub</span> <span class="org-function-name">write_get_offset</span>():
+  <span class="org-comment"># &#38543;&#26426;&#29983;&#25104;&#19968;&#20010; memblock &#33539;&#22260;&#30001;&#30340; offset, &#36816;&#34892;&#26102;&#36890;&#36807; OP_GETMEMBLOCK &#20250;&#24471;&#21040;&#30495;&#27491;&#30340;&#22320;&#22336;</span>
+  <span class="org-keyword">my</span> $<span class="org-variable-name">offset</span> = (rand(2048 - 512) + 256) &amp; ~($<span class="org-variable-name">alignment_restriction</span> - 1);
+  write_mov_ri(0, $<span class="org-variable-name">offset</span>);
+  <span class="org-comment"># NOTE: OP_GETMEMBLOCK</span>
+  write_risuop($<span class="org-variable-name">OP_GETMEMBLOCK</span>);
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000018" class="outline-4">
+<h4 id="org0000018"><span class="section-number-4">1.3.3.</span> xxx.risu</h4>
+<div class="outline-text-4" id="text-1-3-3">
+<p>
+以 arm.risu 为例:
+</p>
+
+<p>
+risu 配置用来枚举所有的指令的名字, 格式, constraints 以及是否需要访问内存. 它的结构与 qemu 的 <a href="qemu_tcg.html#ID-378ef901-0a55-4204-963f-9d98e670e661">decodetree</a> 使用的 insn32.decode 有些类似. 
+</p>
+
+<p>
+例如:
+</p>
+
+<pre class="example" id="org0000016">
+VSTM A1a cond:4 110 p 1 d w 0 rn:4 vd:4 1011 00 imm:5 x \
+ !constraints { $p != 1 &amp;&amp; $imm != 0 &amp;&amp; $imm &lt;= 16 &amp;&amp; ((($d &lt;&lt; 4) | $vd) + $imm) &lt;= 32; } \
+ !memory { reg($rn); }
+
+VADD A1 1111 0010 0 d sz:2 vn:4 vd:4 1000 n q m 0 vm:4
+</pre>
+
+<p>
+以 VADD 为例, 它与 arm 手册中的定义是完全一致的:
+</p>
+
+
+<div id="org0000017" class="figure">
+<p><img src="../extra/arm_vadd.png" alt="arm_vadd.png" />
+</p>
+</div>
+
+<p>
+如果 risugen 生成指令时选择了 vadd 指令, 它会:
+</p>
+
+<ol class="org-ol">
+<li>首先生成一个随机的 32 bit 指令 insn</li>
+
+<li>根据上面的指令模板中的 0/1 把 insn 的相应 bit 置位/复位</li>
+
+<li>解析出 vn, vd, n, q, m, vm 等 field 的值, 如果指令模板中有指定 constraint, 则使用 field 值去测试 constraint 是否满足</li>
+
+<li>如果指令模板有指定 memory, 则使用 reg 等函数生成随机的地址, 并插入一些
+memblock 相关的 risuop: OP_SETMEMBLOCK, OP_GETMEMBLOCK 和 OP_COMPAREMEM</li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-01-10 Tue 14:16<br />
+Last updated: 2023-01-10 Tue 17:48</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
