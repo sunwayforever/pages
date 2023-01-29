@@ -75,8 +75,8 @@ GDB Remote Serial Protocal (RSP) 是一个简单的纯文本协议, 一般运行
 </p>
 
 <p>
-RSP 的 client 端运行在 host 设备上, 称为 stub. gdb 本身包含了 stub 的功能, 通过
-`target remote xxx` 命令就可以连接到 xxx 指定的 server
+RSP 的 client 端运行在 host 设备上. gdb 本身包含了 client 的功能, 通过`target
+remote xxx` 命令就可以连接到 xxx 指定的 server
 </p>
 
 <p>
@@ -121,7 +121,7 @@ RSP packet 格式都是 `$xxx#yy` 的形式, xxx 是真正的数据, yy 是 chec
 # server:
 gdbserver --remote-debug localhost:12345 test.elf
 
-# stub:
+# client:
 echo "target remote localhost:12345"&gt;/tmp/test.cmd
 gdb ./test.elf -x /tmp/test.cmd
 </pre>
@@ -131,7 +131,7 @@ gdb ./test.elf -x /tmp/test.cmd
 <h4 id="org000000f"><span class="section-number-4">1.3.1.</span> 读写 register</h4>
 <div class="outline-text-4" id="text-1-3-1">
 <p>
-stub 通过 <code>g</code> 读 register, 通过 <code>G</code> 或 <code>P</code> 写 register
+client 通过 <code>g</code> 读 register, 通过 <code>G</code> 或 <code>P</code> 写 register
 </p>
 </div>
 
@@ -139,7 +139,7 @@ stub 通过 <code>g</code> 读 register, 通过 <code>G</code> 或 <code>P</code
 <h5 id="org0000008"><span class="section-number-5">1.3.1.1.</span> 读 register</h5>
 <div class="outline-text-5" id="text-1-3-1-1">
 <pre class="example" id="org0000007">
-gdb stub:
+client:
 
 (gdb) info reg
 rax            0x0                 0
@@ -174,7 +174,7 @@ putpkt ("$0*}0*+70c2f*"7f0*}0*B1fdf7ff7f0*"020* 330*"2b0*}0*}0* 7f030*(f* 0*}0*}
 </pre>
 
 <ul class="org-ul">
-<li>stub 使用 <code>g</code> packet 读取所有寄存器的值</li>
+<li>client 使用 <code>g</code> packet 读取所有寄存器的值</li>
 
 <li><p>
 server 返回的的数据这样解释:
@@ -206,7 +206,7 @@ server 返回的的数据这样解释:
 <h5 id="org000000c"><span class="section-number-5">1.3.1.2.</span> 写 register</h5>
 <div class="outline-text-5" id="text-1-3-1-2">
 <pre class="example" id="org000000b">
-stub:
+client:
 
 p $rax=0x1
 
@@ -230,11 +230,11 @@ putpkt ("$010*}0*)70c2f*"7f0*}0*B1fdf7ff7f0*"020* 330*"2b0*}0*}0* 7f030*(f* 0*}0
 <h4 id="org0000013"><span class="section-number-4">1.3.2.</span> 读写内存</h4>
 <div class="outline-text-4" id="text-1-3-2">
 <p>
-stub 通过 <code>m</code> 读内存, 通过 <code>M</code> 或 <code>X</code> 写内存
+client 通过 <code>m</code> 读内存, 通过 <code>M</code> 或 <code>X</code> 写内存
 </p>
 
 <pre class="example" id="org0000012">
-gdb stub:
+client:
 x /xb 0x7fffffffc270
 x /xw 0x7fffffffc270
 x /2xb 0x7fffffffc270
@@ -261,7 +261,7 @@ putpkt ("$OK#9a"); [noack mode]
 </pre>
 
 <p>
-<code>x /N</code> 时 stub 使用了多个 m packet, 而不是一次读取大段内存
+<code>x /N</code> 时 client 使用了多个 m packet, 而不是一次读取大段内存
 </p>
 </div>
 </div>
@@ -270,11 +270,11 @@ putpkt ("$OK#9a"); [noack mode]
 <h4 id="org0000017"><span class="section-number-4">1.3.3.</span> break</h4>
 <div class="outline-text-4" id="text-1-3-3">
 <p>
-stub 通过 <code>Z</code> 设置断点, 通过 <code>z</code> 清除断点
+client 通过 <code>Z</code> 设置断点, 通过 <code>z</code> 清除断点
 </p>
 
 <pre class="example" id="org0000016">
-gdb stub:
+client:
 b main
 d br 1
 
@@ -299,7 +299,7 @@ putpkt ("$f3#99"); [noack mode]
 <h4 id="org000001b"><span class="section-number-4">1.3.4.</span> c</h4>
 <div class="outline-text-4" id="text-1-3-4">
 <pre class="example" id="org000001a">
-stub:
+client:
 c
 
 server:
@@ -317,15 +317,15 @@ putpkt ("$OK#9a"); [noack mode]
 </pre>
 
 <ul class="org-ul">
-<li>continue 之前设置的断点在 0x555555555149, continue 时 stub 先用 <code>Z0,555555555149,1</code> 在
+<li>continue 之前设置的断点在 0x555555555149, continue 时 client 先用 <code>Z0,555555555149,1</code> 在
 0x555555555149 设置断点</li>
 
-<li>stub 用 <code>vCont;c:p3f89c.-1</code> 开始 continue</li>
+<li>client 用 <code>vCont;c:p3f89c.-1</code> 开始 continue</li>
 
 <li>server step 后返回 <code>$T05swbreak:;06:80c1f*"7f0* ;07:68c1f*"7f0*
   ;10:49515*"550* ;thread:p3f89c.3f89c;core:0;#25</code>, 表示收到 SIGTRAP (05), 并且返回了一些有用的信息, 例如 06 寄存器的值是 0x7fffffffc180</li>
 
-<li>stub 用 <code>z0,555555555149,1</code> 删除了这个 break, 因为后续执行时会用
+<li>client 用 <code>z0,555555555149,1</code> 删除了这个 break, 因为后续执行时会用
 <code>Z0,555555555149,1</code> 重新设置断点</li>
 </ul>
 </div>
@@ -339,7 +339,7 @@ si 直接使用 <code>vCont;s</code> 即可
 </p>
 
 <pre class="example" id="org000001e">
-stub:
+client:
 
 (gdb) si
 0x000055555555512d      3       int foo(int init) {
@@ -363,11 +363,11 @@ getpkt ("qXfer:threads:read::0,1000");  [no ack sent]
 <h4 id="org0000025"><span class="section-number-4">1.3.6.</span> s</h4>
 <div class="outline-text-4" id="text-1-3-6">
 <p>
-step 是以高级语言的 stmt 为单位的 (而不是以指令为单位), 但 server 端由于没有符号信息, 无法知道 stmt 对应的指令的范围, 因为需要 stub 端通过 <code>vCont;r</code> packet 指定对应的指令的范围.
+step 是以高级语言的 stmt 为单位的 (而不是以指令为单位), 但 server 端由于没有符号信息, 无法知道 stmt 对应的指令的范围, 因为需要 client 端通过 <code>vCont;r</code> packet 指定对应的指令的范围.
 </p>
 
 <pre class="example" id="org0000022">
-stub:
+client:
 
 (gdb) b foo
 (gdb) c
@@ -398,7 +398,7 @@ putpkt ("$l&lt;threads&gt;
 </pre>
 
 <p>
-stub 会发送 <code>vCont;r555555555149,555555555158</code>, 表示 server 可以连续执行指令,直接指令不在 [0x555555555149,0x555555555158) 范围内, 这个范围实际上就是 foo 函数的
+client 会发送 <code>vCont;r555555555149,555555555158</code>, 表示 server 可以连续执行指令,直接指令不在 [0x555555555149,0x555555555158) 范围内, 这个范围实际上就是 foo 函数的
 prolog 对应的指令
 </p>
 
@@ -455,7 +455,7 @@ prolog 对应的指令
 </pre>
 
 <p>
-step 后 stub 的输出:
+step 后 client 的输出:
 </p>
 
 <pre class="example" id="org0000024">
@@ -486,7 +486,7 @@ putpkt ("$T0506:60c1f*"7f0* ;07:60c1f*"7f0* ;10:43515*"550* ;thread:p4546b.4546b
 <h6 id="org0000029"><span class="section-number-6">1.3.7.1.1.</span> file io</h6>
 <div class="outline-text-6" id="text-1-3-7-1-1">
 <pre class="example" id="org0000028">
-stub:
+client:
 remote put x y
 
 server:
@@ -502,7 +502,7 @@ putpkt ("$F0#76"); [noack mode]
 </pre>
 
 <p>
-把 stub 端的 x 文件复制为 server 端的 y 文件, 使用了 <code>vFile</code> packet
+把 client 端的 x 文件复制为 server 端的 y 文件, 使用了 <code>vFile</code> packet
 </p>
 </div>
 </div>
@@ -511,7 +511,7 @@ putpkt ("$F0#76"); [noack mode]
 <h6 id="org000002d"><span class="section-number-6">1.3.7.1.2.</span> mapping</h6>
 <div class="outline-text-6" id="text-1-3-7-1-2">
 <pre class="example" id="org000002c">
-stub:
+client:
 info proc mappings
 
 server:
@@ -558,7 +558,7 @@ putpkt ("$F0#76"); [noack mode]
 <h5 id="org0000034"><span class="section-number-5">1.3.7.2.</span> qSearch</h5>
 <div class="outline-text-5" id="text-1-3-7-2">
 <pre class="example" id="org0000033">
-stub:
+client:
 (gdb) x /20xb $rsp
 0x7fffffffc168: 0x78    0x51    0x55    0x55    0x55    0x55    0x00    0x00
 0x7fffffffc170: 0x78    0xc2    0xff    0xff    0xff    0x7f    0x00    0x00
@@ -589,7 +589,7 @@ putpkt ("$0#30"); [noack mode]
 <h5 id="org0000037"><span class="section-number-5">1.3.7.3.</span> qSupported</h5>
 <div class="outline-text-5" id="text-1-3-7-3">
 <p>
-gdb 启动时 stub 通过 <code>qSupported</code> packet 确定 server 支持的功能
+gdb 启动时 client 通过 <code>qSupported</code> packet 确定 server 支持的功能
 </p>
 </div>
 </div>
@@ -601,7 +601,7 @@ gdb 启动时 stub 通过 <code>qSupported</code> packet 确定 server 支持的
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-01-29 Sun 11:16<br />
-Last updated: 2023-01-29 Sun 16:17</p>
+Last updated: 2023-01-29 Sun 17:17</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
