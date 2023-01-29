@@ -1,0 +1,599 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>GDB Remote Serial Protocal</title>
+
+
+           <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/readtheorg.css"/>
+           <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+           <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+           <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+           <link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+           <link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">GDB Remote Serial Protocal</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000040">1. GDB Remote Serial Protocal</a>
+<ul>
+<li><a href="#org0000000">1.1. Overview</a></li>
+<li><a href="#org0000003">1.2. Packet</a></li>
+<li><a href="#org000003d">1.3. Example</a>
+<ul>
+<li><a href="#org000000f">1.3.1. 读写 register</a></li>
+<li><a href="#org0000013">1.3.2. 读写内存</a></li>
+<li><a href="#org0000017">1.3.3. break</a></li>
+<li><a href="#org000001b">1.3.4. c</a></li>
+<li><a href="#org000001f">1.3.5. si</a></li>
+<li><a href="#org0000025">1.3.6. s</a></li>
+<li><a href="#org000003a">1.3.7. 其它</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000040" class="outline-2">
+<h2 id="org0000040"><span class="section-number-2">1.</span> GDB Remote Serial Protocal</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="http://aosabook.org/en/gdb.html">http://aosabook.org/en/gdb.html</a>
+<a href="https://sourceware.org/gdb/onlinedocs/gdb/Remote-Protocol.html#Remote-Protocol">https://sourceware.org/gdb/onlinedocs/gdb/Remote-Protocol.html#Remote-Protocol</a>
+<a href="https://www.chciken.com/tlmboy/2022/04/03/gdb-z80.html">https://www.chciken.com/tlmboy/2022/04/03/gdb-z80.html</a>
+<a href="https://medium.com/swlh/implement-gdb-remote-debug-protocol-stub-from-scratch-1-a6ab2015bfc5">https://medium.com/swlh/implement-gdb-remote-debug-protocol-stub-from-scratch-1-a6ab2015bfc5</a>
+</p>
+</div>
+
+<div id="outline-container-org0000000" class="outline-3">
+<h3 id="org0000000"><span class="section-number-3">1.1.</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+GDB Remote Serial Protocal (RSP) 是一个简单的纯文本协议, 一般运行在串口或 tcp 上.
+</p>
+
+<p>
+RSP 的 client 端运行在 host 设备上, 称为 stub. gdb 本身包含了 stub 的功能, 通过
+`target remote xxx` 命令就可以连接到 xxx 指定的 server
+</p>
+
+<p>
+RSP 的 server 端运行在被调试的设备上, server 可以在遵守 RSP 协议的基础上自由开发,
+例如 qemu 和 openocd 自带的 server. 如果被调试的设备本身就有 gdb 的支持, 则可以使用 gdb 自带的 gdbserver, 例如 android 上的 gdbserver
+</p>
+
+<p>
+RSP server 只需要实现和 target 相关的功能, 例如读写内存, 读写寄存器, 设置断点等,
+不需要和符号处理相关的功能, 因此更容易实现, 也更容易运行在嵌入式设备上.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000003" class="outline-3">
+<h3 id="org0000003"><span class="section-number-3">1.2.</span> Packet</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+RSP packet 格式都是 `$xxx#yy` 的形式, xxx 是真正的数据, yy 是 checksum.
+</p>
+
+<p>
+由于 RSP 是纯文本的协议, 所以在 xxx 中传输二进制数据会有额外的要求
+(<a href="https://sourceware.org/gdb/onlinedocs/gdb/Overview.html#Overview">https://sourceware.org/gdb/onlinedocs/gdb/Overview.html#Overview</a>):
+</p>
+
+<ol class="org-ol">
+<li>数据以 base 16 形式的字符串表示</li>
+
+<li>如果数据是包含 `$`, `#`, 需要用 `}` 进行特殊的转义</li>
+
+<li>数据中通常有大量连续的重复数据, 例如 `(int64)0x1` 正常编码时为
+`0000000000000001`, 针对这种情况 RSP 设计了一种节省空间的编码方式, 这个数据最终会被编码成 `0*+1`</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org000003d" class="outline-3">
+<h3 id="org000003d"><span class="section-number-3">1.3.</span> Example</h3>
+<div class="outline-text-3" id="text-1-3">
+<pre class="example" id="org0000006">
+# server:
+gdbserver --remote-debug localhost:12345 test.elf
+
+# stub:
+echo "target remote localhost:12345"&gt;/tmp/test.cmd
+gdb ./test.elf -x /tmp/test.cmd
+</pre>
+</div>
+
+<div id="outline-container-org000000f" class="outline-4">
+<h4 id="org000000f"><span class="section-number-4">1.3.1.</span> 读写 register</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<p>
+stub 通过 <code>g</code> 读 register, 通过 <code>G</code> 或 <code>P</code> 写 register
+</p>
+</div>
+
+<div id="outline-container-org0000008" class="outline-5">
+<h5 id="org0000008"><span class="section-number-5">1.3.1.1.</span> 读 register</h5>
+<div class="outline-text-5" id="text-1-3-1-1">
+<pre class="example" id="org0000007">
+gdb stub:
+
+(gdb) info reg
+rax            0x0                 0
+rbx            0x0                 0
+rcx            0x0                 0
+rdx            0x0                 0
+rsi            0x0                 0
+rdi            0x0                 0
+rbp            0x0                 0x0
+rsp            0x7fffffffc270      0x7fffffffc270
+r8             0x0                 0
+r9             0x0                 0
+r10            0x0                 0
+r11            0x0                 0
+r12            0x0                 0
+r13            0x0                 0
+r14            0x0                 0
+r15            0x0                 0
+rip            0x7ffff7fd0100      0x7ffff7fd0100 &lt;_start&gt;
+eflags         0x200               [ IF ]
+cs             0x33                51
+ss             0x2b                43
+ds             0x0                 0
+es             0x0                 0
+fs             0x0                 0
+gs             0x0                 0
+
+gdb server:
+
+getpkt ("g");  [no ack sent]
+putpkt ("$0*}0*+70c2f*"7f0*}0*B1fdf7ff7f0*"020* 330*"2b0*}0*}0* 7f030*(f* 0*}0*}0*}0*}0*}0*c801f0* 3b0*}0*}0*}0*}0*}0*}0*}0*C#bf"); [noack mode]
+</pre>
+
+<ul class="org-ul">
+<li>stub 使用 <code>g</code> packet 读取所有寄存器的值</li>
+
+<li><p>
+server 返回的的数据这样解释:
+</p>
+
+<p>
+以开头的 <code>0*}0*+</code> 为例:
+</p>
+
+<ul class="org-ul">
+<li><code>0*}</code> 表示前面一个 0, 然后后面有 M 个重复的 0, M 等于 ord(<code>}</code>)-29=125-29=96</li>
+<li><code>0*+</code> 表示前面一个 0, 然后后面有 N 个重复的 0, N 等于 ord(<code>+</code>)-29=43-29=14</li>
+</ul>
+
+<p>
+所以开头一共有 1+96+1+14 = 112 个 0, 每个字符表示 4 bit, 即 448 bit, 表示
+448/64=7 个寄存器的值都是 0
+</p>
+
+<p>
+之所以用 <code>}</code> 和 <code>+</code> 两次来表示连续的 0, 是因为连续的 0 太多, 无法用一个 ascii
+表示
+</p></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000000c" class="outline-5">
+<h5 id="org000000c"><span class="section-number-5">1.3.1.2.</span> 写 register</h5>
+<div class="outline-text-5" id="text-1-3-1-2">
+<pre class="example" id="org000000b">
+stub:
+
+p $rax=0x1
+
+server:
+getpkt ("P0=0100000000000000");  [no ack sent]
+putpkt ("$#00"); [noack mode]
+getpkt ("G010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000070c2ffffff7f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001fdf7ff7f000000020000330000002b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007f03000000000000ffff0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000801f00003b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");  [no ack sent]
+putpkt ("$OK#9a"); [noack mode]
+getpkt ("g");  [no ack sent]
+putpkt ("$010*}0*)70c2f*"7f0*}0*B1fdf7ff7f0*"020* 330*"2b0*}0*}0* 7f030*(f* 0*}0*}0*}0*}0*}0*c801f0* 3b0*}0*}0*}0*}0*}0*}0*}0*C#1e"); [noack mode]
+</pre>
+
+<p>
+使用 <code>P</code> 可以修改单个寄存器, 使用 <code>G</code> 可以一次修改所有寄存器
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000013" class="outline-4">
+<h4 id="org0000013"><span class="section-number-4">1.3.2.</span> 读写内存</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<p>
+stub 通过 <code>m</code> 读内存, 通过 <code>M</code> 或 <code>X</code> 写内存
+</p>
+
+<pre class="example" id="org0000012">
+gdb stub:
+x /xb 0x7fffffffc270
+x /xw 0x7fffffffc270
+x /2xb 0x7fffffffc270
+set *(char*)0x7fffffffc270=0xab
+set *(short*)0x7fffffffc270=0xab
+
+gdb server:
+getpkt ("m7fffffffc270,1");  [no ack sent]
+putpkt ("$01#61"); [noack mode]
+
+getpkt ("m7fffffffc270,4");  [no ack sent]
+putpkt ("$010*"#dd"); [noack mode]
+
+getpkt ("m7fffffffc270,1");  [no ack sent]
+putpkt ("$01#61"); [noack mode]
+getpkt ("m7fffffffc271,1");  [no ack sent]
+putpkt ("$00#60"); [noack mode]
+
+getpkt ("X7fffffffc270,1:�");  [no ack sent]
+putpkt ("$OK#9a"); [noack mode]
+getpkt ("X7fffffffc270,2:�");  [no ack sent]
+putpkt ("$OK#9a"); [noack mode]
+
+</pre>
+
+<p>
+<code>x /N</code> 时 stub 使用了多个 m packet, 而不是一次读取大段内存
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000017" class="outline-4">
+<h4 id="org0000017"><span class="section-number-4">1.3.3.</span> break</h4>
+<div class="outline-text-4" id="text-1-3-3">
+<p>
+stub 通过 <code>Z</code> 设置断点, 通过 <code>z</code> 清除断点
+</p>
+
+<pre class="example" id="org0000016">
+gdb stub:
+b main
+d br 1
+
+gdb server:
+getpkt ("m555555555180,40");  [no ack sent]
+putpkt ("$8345f001817df00f270* 7eda8b45f4c9c3f30f1efa554889e54883ec10897dfc488975f08b45fc89c7e89af*"c9c3662e0f1f840*'f1f440* #1d"); [noack mode]
+getpkt ("m555555555192,1");  [no ack sent]
+putpkt ("$f3#99"); [noack mode]
+</pre>
+
+<p>
+设置 break 时 gdb server 用 m 读取了断点处的内存&#x2026;但并没有立即用 Z packet 设置断点. 而清除断点时没有任何操作.
+</p>
+
+<p>
+因为让 server 设置和清除断点的动作是在真正执行时才去做的.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000001b" class="outline-4">
+<h4 id="org000001b"><span class="section-number-4">1.3.4.</span> c</h4>
+<div class="outline-text-4" id="text-1-3-4">
+<pre class="example" id="org000001a">
+stub:
+c
+
+server:
+getpkt ("Z0,555555555149,1");  [no ack sent]
+putpkt ("$OK#9a"); [noack mode]
+getpkt ("vCont;c:p3f89c.-1");  [no ack sent]
+putpkt ("$T05swbreak:;06:80c1f*"7f0* ;07:68c1f*"7f0* ;10:49515*"550* ;thread:p3f89c.3f89c;core:0;#25"); [noack mode]
+getpkt ("qXfer:threads:read::0,1000");  [no ack sent]
+putpkt ("$l&lt;threads&gt;
+&lt;thread id="p3f89c.3f89c" core="0" name="test.elf"/&gt;
+&lt;/threads&gt;
+#6b"); [noack mode]
+getpkt ("z0,555555555149,1");  [no ack sent]
+putpkt ("$OK#9a"); [noack mode]
+</pre>
+
+<ul class="org-ul">
+<li>continue 之前设置的断点在 0x555555555149, continue 时 stub 先用 <code>Z0,555555555149,1</code> 在
+0x555555555149 设置断点</li>
+
+<li>stub 用 <code>vCont;c:p3f89c.-1</code> 开始 continue</li>
+
+<li>server step 后返回 <code>$T05swbreak:;06:80c1f*"7f0* ;07:68c1f*"7f0*
+  ;10:49515*"550* ;thread:p3f89c.3f89c;core:0;#25</code>, 表示收到 SIGTRAP (05), 并且返回了一些有用的信息, 例如 06 寄存器的值是 0x7fffffffc180</li>
+
+<li>stub 用 <code>z0,555555555149,1</code> 删除了这个 break, 因为后续执行时会用
+<code>Z0,555555555149,1</code> 重新设置断点</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000001f" class="outline-4">
+<h4 id="org000001f"><span class="section-number-4">1.3.5.</span> si</h4>
+<div class="outline-text-4" id="text-1-3-5">
+<p>
+si 直接使用 <code>vCont;s</code> 即可
+</p>
+
+<pre class="example" id="org000001e">
+stub:
+
+(gdb) si
+0x000055555555512d      3       int foo(int init) {
+(gdb) disass /m
+Dump of assembler code for function foo:
+3       int foo(int init) {
+   0x0000555555555129 &lt;+0&gt;:     endbr64
+=&gt; 0x000055555555512d &lt;+4&gt;:     push   %rbp
+   0x000055555555512e &lt;+5&gt;:     mov    %rsp,%rbp
+   0x0000555555555131 &lt;+8&gt;:     mov    %edi,-0x14(%rbp)
+
+server:
+getpkt ("vCont;s:p46eeb.46eeb;c:p46eeb.-1");  [no ack sent]
+putpkt ("$T0506:80c1f*"7f0* ;07:68c1f*"7f0* ;10:2d515*"550* ;thread:p46eeb.46eeb;core:3;#3f"); [noack mode]
+getpkt ("qXfer:threads:read::0,1000");  [no ack sent]
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000025" class="outline-4">
+<h4 id="org0000025"><span class="section-number-4">1.3.6.</span> s</h4>
+<div class="outline-text-4" id="text-1-3-6">
+<p>
+step 是以高级语言的 stmt 为单位的 (而不是以指令为单位), 但 server 端由于没有符号信息, 无法知道 stmt 对应的指令的范围, 因为需要 stub 端通过 <code>vCont;r</code> packet 指定对应的指令的范围.
+</p>
+
+<pre class="example" id="org0000022">
+stub:
+
+(gdb) b foo
+(gdb) c
+(gdb) s
+(gdb) disass /m
+Dump of assembler code for function foo:
+3       int foo(int init) {
+   0x0000555555555149 &lt;+0&gt;:     endbr64
+   0x000055555555514d &lt;+4&gt;:     push   %rbp
+   0x000055555555514e &lt;+5&gt;:     mov    %rsp,%rbp
+   0x0000555555555151 &lt;+8&gt;:     sub    $0x20,%rsp
+   0x0000555555555155 &lt;+12&gt;:    mov    %edi,-0x14(%rbp)
+
+4           int x = init;
+=&gt; 0x0000555555555158 &lt;+15&gt;:    mov    -0x14(%rbp),%eax
+   0x000055555555515b &lt;+18&gt;:    mov    %eax,-0xc(%rbp)
+
+
+server:
+getpkt ("vCont;r555555555149,555555555158:p40be4.40be4;c:p40be4.-1");  [no ack sent]
+putpkt ("$T0506:60c1f*"7f0* ;07:40c1f*"7f0* ;10:58515*"550* ;thread:p40be4.40be4;core:0;#99"); [noack mode]
+getpkt ("qXfer:threads:read::0,1000");  [no ack sent]
+putpkt ("$l&lt;threads&gt;
+&lt;thread id="p40be4.40be4" core="0" name="test.elf"/&gt;
+&lt;/threads&gt;
+#4f"); [noack mode]
+
+</pre>
+
+<p>
+stub 会发送 <code>vCont;r555555555149,555555555158</code>, 表示 server 可以连续执行指令,直接指令不在 [0x555555555149,0x555555555158) 范围内, 这个范围实际上就是 foo 函数的
+prolog 对应的指令
+</p>
+
+<p>
+如果要 step 的 stmt 是 `for` 这种形式, step 会比较复杂, 因为它需要根据运行的结果决定停在哪个地方, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">int</span> <span class="org-function-name">foo</span>(<span class="org-type">int</span> <span class="org-variable-name">init</span>) {
+    <span class="org-type">int</span> <span class="org-variable-name">x</span> = init;
+    <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; 10000; i++) {
+        x += i;
+    }
+    <span class="org-keyword">return</span> x;
+}
+</pre>
+</div>
+
+<p>
+在 `for ()` 处 step 前 disass 的数据:
+</p>
+
+<pre class="example" id="org0000023">
+(gdb) disass /m
+3       int foo(int init) {
+   0x0000555555555129 &lt;+0&gt;:     endbr64 
+   0x000055555555512d &lt;+4&gt;:     push   %rbp
+   0x000055555555512e &lt;+5&gt;:     mov    %rsp,%rbp
+   0x0000555555555131 &lt;+8&gt;:     mov    %edi,-0x14(%rbp)
+
+4           int x = init;
+   0x0000555555555134 &lt;+11&gt;:    mov    -0x14(%rbp),%eax
+   0x0000555555555137 &lt;+14&gt;:    mov    %eax,-0x8(%rbp)
+
+5           for (int i = 0; i &lt; 10000; i++) {
+=&gt; 0x000055555555513a &lt;+17&gt;:    movl   $0x0,-0x4(%rbp)
+   0x0000555555555141 &lt;+24&gt;:    jmp    0x55555555514d &lt;foo+36&gt;
+   0x0000555555555149 &lt;+32&gt;:    addl   $0x1,-0x4(%rbp)
+   0x000055555555514d &lt;+36&gt;:    cmpl   $0x270f,-0x4(%rbp)
+   0x0000555555555154 &lt;+43&gt;:    jle    0x555555555143 &lt;foo+26&gt;
+
+6               x += i;
+   0x0000555555555143 &lt;+26&gt;:    mov    -0x4(%rbp),%eax
+   0x0000555555555146 &lt;+29&gt;:    add    %eax,-0x8(%rbp)
+
+7           }
+8           return x;
+   0x0000555555555156 &lt;+45&gt;:    mov    -0x8(%rbp),%eax
+
+9       }
+   0x0000555555555159 &lt;+48&gt;:    pop    %rbp
+   0x000055555555515a &lt;+49&gt;:    retq   
+
+</pre>
+
+<p>
+step 后 stub 的输出:
+</p>
+
+<pre class="example" id="org0000024">
+getpkt ("vCont;r55555555513a,555555555141:p4546b.4546b;c:p4546b.-1");  [no ack sent]
+putpkt ("$T0506:60c1f*"7f0* ;07:60c1f*"7f0* ;10:41515*"550* ;thread:p4546b.4546b;core:1;#40"); [noack mode]
+getpkt ("vCont;r555555555141,555555555143:p4546b.4546b;c:p4546b.-1");  [no ack sent]
+putpkt ("$T0506:60c1f*"7f0* ;07:60c1f*"7f0* ;10:4d515*"550* ;thread:p4546b.4546b;core:1;#73"); [noack mode]
+getpkt ("vCont;r555555555149,555555555156:p4546b.4546b;c:p4546b.-1");  [no ack sent]
+putpkt ("$T0506:60c1f*"7f0* ;07:60c1f*"7f0* ;10:43515*"550* ;thread:p4546b.4546b;core:1;#42"); [noack mode]
+</pre>
+
+<p>
+这里使用了三个 <code>vCont</code> packet, 因为 `for` 的下一个 stmt 有两种可能: 一个是
+`x+=i`, 一个是 `return x`, 多个 packet 实际是在跟踪执行的结果
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000003a" class="outline-4">
+<h4 id="org000003a"><span class="section-number-4">1.3.7.</span> 其它</h4>
+<div class="outline-text-4" id="text-1-3-7">
+</div>
+<div id="outline-container-org0000030" class="outline-5">
+<h5 id="org0000030"><span class="section-number-5">1.3.7.1.</span> vFile</h5>
+<div class="outline-text-5" id="text-1-3-7-1">
+</div>
+<div id="outline-container-org0000029" class="outline-6">
+<h6 id="org0000029"><span class="section-number-6">1.3.7.1.1.</span> file io</h6>
+<div class="outline-text-6" id="text-1-3-7-1-1">
+<pre class="example" id="org0000028">
+stub:
+remote put x y
+
+server:
+getpkt ("vFile:setfs:0");  [no ack sent]
+putpkt ("$F0#76"); [noack mode]
+getpkt ("vFile:open:79,601,1c0");  [no ack sent]
+putpkt ("$F8#7e"); [noack mode]
+getpkt ("vFile:pwrite:8,0,x
+");  [no ack sent]
+putpkt ("$F2#78"); [noack mode]
+getpkt ("vFile:close:8");  [no ack sent]
+putpkt ("$F0#76"); [noack mode]
+</pre>
+
+<p>
+把 stub 端的 x 文件复制为 server 端的 y 文件, 使用了 <code>vFile</code> packet
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000002d" class="outline-6">
+<h6 id="org000002d"><span class="section-number-6">1.3.7.1.2.</span> mapping</h6>
+<div class="outline-text-6" id="text-1-3-7-1-2">
+<pre class="example" id="org000002c">
+stub:
+info proc mappings
+
+server:
+getpkt ("vFile:open:2f70726f632f3239323637322f6d617073,0,1c0");  [no ack sent]
+putpkt ("$F8#7e"); [noack mode]
+getpkt ("vFile:pread:8,47ff,0");  [no ack sent]
+putpkt ("$F819;5*"554000-5*%000 r--p 0*"00 103:02 2317316 *//home/sunway/download/xxx/test.elf
+5*%000-5*"556000 r-xp 0* 1000 103:02 2317316 *//home/sunway/download/xxx/test.elf
+5*"556000-5*"557000 r--p 0* 2000 103:02 2317316 *//home/sunway/download/xxx/test.elf
+5*"557000-5*"558000 r--p 0* 2000 103:02 2317316 *//home/sunway/download/xxx/test.elf
+5*"558000-5*"559000 rw-p 0* 3000 103:02 2317316 *//home/sunway/download/xxx/test.elf
+7f* 7da2000-7f* 7dc4000 r--p 0*"00 103:02 19535855 *./usr/lib/x86_64-linux-gnu/libc-2.31.so
+7f* 7dc4000-7f* 7f3c000 r-xp 00022000 103:02 19535855 *./usr/lib/x86_64-linux-gnu/libc-2.31.so
+7f* 7f3c000-7f* 7f8a000 r--p 0019a000 103:02 19535855 *./usr/lib/x86_64-linux-gnu/libc-2.31.so
+7f* 7f8a000-7f* 7f8e000 r--p 001e7000 103:02 19535855 *./usr/lib/x86_64-linux-gnu/libc-2.31.so
+7f* 7f8e000-7f* 7f90*  rw-p 001eb000 103:02 19535855 *./usr/lib/x86_64-linux-gnu/libc-2.31.so
+7f* 7f90* -7f* 7f96000 rw-p 0*"00 00:00 0
+7f* 7fc9000-7f* 7fcd000 r--p 0*"00 00:00 0 *6[vvar]
+7f* 7fcd000-7f* 7fcf000 r-xp 0*"00 00:00 0 *6[vdso]
+7f* 7fcf000-7f* 7fd0*  r--p 0*"00 103:02 19535838 *./usr/lib/x86_64-linux-gnu/ld-2.31.so
+7f* 7fd0* -7f* 7ff3000 r-xp 0* 1000 103:02 19535838 *./usr/lib/x86_64-linux-gnu/ld-2.31.so
+7f* 7ff3000-7f* 7ffb000 r--p 00024000 103:02 19535838 *./usr/lib/x86_64-linux-gnu/ld-2.31.so
+7f* 7ffc000-7f* 7ffd000 r--p 0002c000 103:02 19535838 *./usr/lib/x86_64-linux-gnu/ld-2.31.so
+7f* 7ffd000-7f* 7ffe000 rw-p 0002d000 103:02 19535838 *./usr/lib/x86_64-linux-gnu/ld-2.31.so
+7f* 7ffe000-7f* 7fff000 rw-p 0*"00 00:00 0
+7f*"dc000-7f*"ff000 rw-p 0*"00 00:00 0 *6[stack]
+f*&amp;60*!-f*&amp;601000 --xp 0*"00 00:00 0 *.[vsyscall]
+#f6"); [noack mode]
+getpkt ("vFile:pread:8,47ff,819");  [no ack sent]
+putpkt ("$F0;#b1"); [noack mode]
+getpkt ("vFile:close:8");  [no ack sent]
+putpkt ("$F0#76"); [noack mode]
+
+</pre>
+
+<p>
+`info proc mapping` 是通过 <code>vFile</code> 读取 `/proc/&lt;pid&gt;/maps` 实现的
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000034" class="outline-5">
+<h5 id="org0000034"><span class="section-number-5">1.3.7.2.</span> qSearch</h5>
+<div class="outline-text-5" id="text-1-3-7-2">
+<pre class="example" id="org0000033">
+stub:
+(gdb) x /20xb $rsp
+0x7fffffffc168: 0x78    0x51    0x55    0x55    0x55    0x55    0x00    0x00
+0x7fffffffc170: 0x78    0xc2    0xff    0xff    0xff    0x7f    0x00    0x00
+0x7fffffffc178: 0x00    0x00    0x00    0x00
+(gdb) find /b $rsp,+20,0x55
+0x7fffffffc16a
+0x7fffffffc16b
+0x7fffffffc16c
+0x7fffffffc16d
+4 patterns found.
+
+server:
+getpkt ("qSearch:memory:7fffffffc168;14;U");  [no ack sent]
+putpkt ("$1,7f*"fc16a#d7"); [noack mode]
+getpkt ("qSearch:memory:7fffffffc16b;11;U");  [no ack sent]
+putpkt ("$1,7f*"fc16b#d8"); [noack mode]
+getpkt ("qSearch:memory:7fffffffc16c;10;U");  [no ack sent]
+putpkt ("$1,7f*"fc16c#d9"); [noack mode]
+getpkt ("qSearch:memory:7fffffffc16d;f;U");  [no ack sent]
+putpkt ("$1,7f*"fc16d#da"); [noack mode]
+getpkt ("qSearch:memory:7fffffffc16e;e;U");  [no ack sent]
+putpkt ("$0#30"); [noack mode]
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000037" class="outline-5">
+<h5 id="org0000037"><span class="section-number-5">1.3.7.3.</span> qSupported</h5>
+<div class="outline-text-5" id="text-1-3-7-3">
+<p>
+gdb 启动时 stub 通过 <code>qSupported</code> packet 确定 server 支持的功能
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-01-29 Sun 11:16<br />
+Last updated: 2023-01-29 Sun 16:13</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
