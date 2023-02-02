@@ -1,0 +1,841 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>GDB Target Arch</title>
+
+
+           <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/readtheorg.css"/>
+           <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+           <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+           <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+           <link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+           <link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">GDB Target Arch</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org000003f">1. GDB Target Arch</a>
+<ul>
+<li><a href="#org0000001">1.1. Overview</a></li>
+<li><a href="#org0000005">1.2. target</a></li>
+<li><a href="#org0000009">1.3. gdbarch</a></li>
+<li><a href="#org000000e">1.4. target stack</a></li>
+<li><a href="#org0000019">1.5. backtrace</a>
+<ul>
+<li><a href="#org0000011">1.5.1. systemtap</a></li>
+<li><a href="#org0000016">1.5.2. info register</a></li>
+</ul>
+</li>
+<li><a href="#org000003c">1.6. Porting new arch</a>
+<ul>
+<li><a href="#org0000022">1.6.1. native debug</a></li>
+<li><a href="#org0000036">1.6.2. target &amp; gdbarch initialization</a></li>
+<li><a href="#org0000039">1.6.3. porting</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000003f" class="outline-2">
+<h2 id="org000003f"><span class="section-number-2">1.</span> GDB Target Arch</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="http://aosabook.org/en/gdb.html">http://aosabook.org/en/gdb.html</a>
+</p>
+
+<p>
+<a href="http://www.deansys.com/doc/gdbInternals/gdbint.html#SEC_Top">http://www.deansys.com/doc/gdbInternals/gdbint.html#SEC_Top</a>
+</p>
+
+<p>
+<a href="https://sourceware.org/gdb/current/onlinedocs/gdb.html/">https://sourceware.org/gdb/current/onlinedocs/gdb.html/</a>
+</p>
+</div>
+
+<div id="outline-container-org0000001" class="outline-3">
+<h3 id="org0000001"><span class="section-number-3">1.1.</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+gdb 的功能主要分为两大部分:
+</p>
+
+
+<div id="org0000000" class="figure">
+<p><img src="../extra/gdb.png" alt="gdb.png" />
+</p>
+</div>
+
+<ol class="org-ol">
+<li>symbol side, 主要是使用 <a href="dwarf.html#ID-618badba-9110-4ffa-8ac0-2514c27acf28">DWARF</a> 来解析符号</li>
+
+<li>target side, 其上层任务 (execution control, stack frame analysis 等) 都依赖于底层 target 的功能来实现. 例如, amd64_linux_nat_target 这个 target 是通过
+<a href="ptrace.html#ID-2122eef1-4afa-416d-9b64-944b78a97222">ptrace</a> 实现的, 而 remote_target 是通过 <a href="gdb_rsp.html#ID-3adc6d31-19da-4f05-8cce-80f3a2a19981">RSP</a> 实现的.</li>
+</ol>
+
+<p>
+target 代表可以用来 <code>读写数据</code> 和 <code>控制执行</code> 的底层实体, 例如:
+</p>
+
+<ol class="org-ol">
+<li>elf 文件</li>
+
+<li>core 文件</li>
+
+<li>gdb record 文件</li>
+
+<li>native process</li>
+
+<li><a href="gdb_rsp.html#ID-3adc6d31-19da-4f05-8cce-80f3a2a19981">gdbserver</a></li>
+</ol>
+
+<p>
+target 抽象是的不同的数据传输方法, 叫 transport 可能更好理解
+</p>
+
+<p>
+为了抽象不同的 arch, gdb 定义了 gdbarch 对象, 许多和 arch 相关的任务都是通过
+gdbarch 来执行
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000005" class="outline-3">
+<h3 id="org0000005"><span class="section-number-3">1.2.</span> target</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+所有 target 均派生自 target_ops, 其定义的接口主要有:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-keyword">struct</span> <span class="org-type">target_ops</span> : <span class="org-keyword">public</span> <span class="org-type">refcounted_object</span> {
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+    <span class="org-keyword">virtual</span> <span class="org-keyword">const</span> <span class="org-type">target_info</span> &amp;<span class="org-function-name">info</span>() <span class="org-keyword">const</span> = 0;
+    <span class="org-keyword">virtual</span> <span class="org-type">void</span> <span class="org-function-name">attach</span>(<span class="org-keyword">const</span> <span class="org-type">char</span> *, <span class="org-type">int</span>);
+    <span class="org-keyword">virtual</span> <span class="org-type">void</span> <span class="org-function-name">detach</span>(<span class="org-type">inferior</span> *, <span class="org-type">int</span>) TARGET_DEFAULT_IGNORE();
+    <span class="org-keyword">virtual</span> <span class="org-type">void</span> <span class="org-function-name">fetch_registers</span>(<span class="org-keyword">struct</span> <span class="org-type">regcache</span> *, <span class="org-type">int</span>);
+    <span class="org-keyword">virtual</span> <span class="org-type">void</span> <span class="org-function-name">store_registers</span>(<span class="org-keyword">struct</span> <span class="org-type">regcache</span> *, <span class="org-type">int</span>);
+    <span class="org-keyword">virtual</span> <span class="org-type">void</span> <span class="org-function-name">files_info</span>() TARGET_DEFAULT_IGNORE();
+    <span class="org-keyword">virtual</span> <span class="org-type">int</span> <span class="org-function-name">insert_breakpoint</span>(<span class="org-keyword">struct</span> <span class="org-type">gdbarch</span> *, <span class="org-keyword">struct</span> <span class="org-type">bp_target_info</span> *);
+    <span class="org-keyword">virtual</span> <span class="org-type">int</span> <span class="org-function-name">remove_breakpoint</span>(
+        <span class="org-keyword">struct</span> <span class="org-type">gdbarch</span> *, <span class="org-keyword">struct</span> <span class="org-type">bp_target_info</span> *, <span class="org-keyword">enum</span> <span class="org-type">remove_bp_reason</span>);
+    <span class="org-keyword">virtual</span> <span class="org-type">int</span> <span class="org-function-name">can_use_hw_breakpoint</span>(<span class="org-keyword">enum</span> <span class="org-type">bptype</span>, <span class="org-type">int</span>, <span class="org-type">int</span>);
+    <span class="org-keyword">virtual</span> <span class="org-type">int</span> <span class="org-function-name">ranged_break_num_registers</span>() TARGET_DEFAULT_RETURN(-1);
+    <span class="org-keyword">virtual</span> <span class="org-type">int</span> <span class="org-function-name">insert_hw_breakpoint</span>(<span class="org-keyword">struct</span> <span class="org-type">gdbarch</span> *, <span class="org-keyword">struct</span> <span class="org-type">bp_target_info</span> *);
+    <span class="org-keyword">virtual</span> <span class="org-type">int</span> <span class="org-function-name">remove_hw_breakpoint</span>(<span class="org-keyword">struct</span> <span class="org-type">gdbarch</span> *, <span class="org-keyword">struct</span> <span class="org-type">bp_target_info</span> *);
+
+    <span class="org-keyword">virtual</span> <span class="org-type">int</span> <span class="org-function-name">remove_watchpoint</span>(
+        CORE_ADDR, <span class="org-type">int</span>, <span class="org-keyword">enum</span> <span class="org-type">target_hw_bp_type</span>, <span class="org-keyword">struct</span> <span class="org-type">expression</span> *);
+    <span class="org-keyword">virtual</span> <span class="org-type">int</span> <span class="org-function-name">insert_watchpoint</span>(
+        CORE_ADDR, <span class="org-type">int</span>, <span class="org-keyword">enum</span> <span class="org-type">target_hw_bp_type</span>, <span class="org-keyword">struct</span> <span class="org-type">expression</span> *);
+
+    <span class="org-keyword">virtual</span> <span class="org-type">int</span> <span class="org-function-name">can_do_single_step</span>();
+    <span class="org-keyword">virtual</span> <span class="org-type">void</span> <span class="org-function-name">load</span>(<span class="org-keyword">const</span> <span class="org-type">char</span> *, <span class="org-type">int</span>) TARGET_DEFAULT_NORETURN(tcomplain());
+    <span class="org-keyword">virtual</span> <span class="org-type">bool</span> <span class="org-function-name">can_create_inferior</span>();
+    <span class="org-keyword">virtual</span> <span class="org-type">void</span> <span class="org-function-name">create_inferior</span>(
+        <span class="org-keyword">const</span> <span class="org-type">char</span> *, <span class="org-keyword">const</span> <span class="org-constant">std</span>::<span class="org-type">string</span> &amp;, <span class="org-type">char</span> **, <span class="org-type">int</span>);
+    <span class="org-keyword">virtual</span> <span class="org-type">bool</span> <span class="org-function-name">follow_fork</span>(<span class="org-type">bool</span>, <span class="org-type">bool</span>);
+    <span class="org-keyword">virtual</span> <span class="org-type">int</span> <span class="org-function-name">insert_exec_catchpoint</span>(<span class="org-type">int</span>) TARGET_DEFAULT_RETURN(1);
+    <span class="org-keyword">virtual</span> <span class="org-type">int</span> <span class="org-function-name">remove_exec_catchpoint</span>(<span class="org-type">int</span>) TARGET_DEFAULT_RETURN(1);
+    <span class="org-keyword">virtual</span> <span class="org-type">void</span> <span class="org-function-name">follow_exec</span>(<span class="org-keyword">struct</span> <span class="org-type">inferior</span> *, <span class="org-keyword">const</span> <span class="org-type">char</span> *);
+
+    <span class="org-keyword">virtual</span> <span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-function-name">thread_name</span>(<span class="org-type">thread_info</span> *) TARGET_DEFAULT_RETURN(<span class="org-constant">NULL</span>);
+    <span class="org-keyword">virtual</span> <span class="org-type">void</span> <span class="org-function-name">stop</span>(<span class="org-type">ptid_t</span>) TARGET_DEFAULT_IGNORE();
+    <span class="org-keyword">virtual</span> <span class="org-type">void</span> <span class="org-function-name">interrupt</span>() TARGET_DEFAULT_IGNORE();
+    <span class="org-keyword">virtual</span> <span class="org-type">void</span> <span class="org-function-name">pass_ctrlc</span>() TARGET_DEFAULT_FUNC(default_target_pass_ctrlc);
+
+    <span class="org-keyword">virtual</span> <span class="org-type">bool</span> <span class="org-function-name">has_all_memory</span>() { <span class="org-keyword">return</span> <span class="org-constant">false</span>; }
+    <span class="org-keyword">virtual</span> <span class="org-type">bool</span> <span class="org-function-name">has_memory</span>() { <span class="org-keyword">return</span> <span class="org-constant">false</span>; }
+    <span class="org-keyword">virtual</span> <span class="org-type">bool</span> <span class="org-function-name">has_stack</span>() { <span class="org-keyword">return</span> <span class="org-constant">false</span>; }
+    <span class="org-keyword">virtual</span> <span class="org-type">bool</span> <span class="org-function-name">has_registers</span>() { <span class="org-keyword">return</span> <span class="org-constant">false</span>; }
+    <span class="org-keyword">virtual</span> <span class="org-type">bool</span> <span class="org-function-name">has_execution</span>(<span class="org-type">inferior</span> *<span class="org-variable-name">inf</span>) { <span class="org-keyword">return</span> <span class="org-constant">false</span>; }
+
+    <span class="org-keyword">virtual</span> <span class="org-keyword">enum</span> <span class="org-type">target_xfer_status</span> <span class="org-function-name">xfer_partial</span>(
+        <span class="org-keyword">enum</span> <span class="org-type">target_object</span> <span class="org-variable-name">object</span>, <span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">annex</span>, <span class="org-type">gdb_byte</span> *<span class="org-variable-name">readbuf</span>,
+        <span class="org-keyword">const</span> <span class="org-type">gdb_byte</span> *<span class="org-variable-name">writebuf</span>, <span class="org-type">ULONGEST</span> <span class="org-variable-name">offset</span>, <span class="org-type">ULONGEST</span> <span class="org-variable-name">len</span>,
+        <span class="org-type">ULONGEST</span> *<span class="org-variable-name">xfered_len</span>);
+
+    <span class="org-keyword">virtual</span> <span class="org-type">ULONGEST</span> <span class="org-function-name">get_memory_xfer_limit</span>();
+
+    <span class="org-keyword">virtual</span> <span class="org-constant">std</span>::<span class="org-type">vector</span>&lt;mem_region&gt; <span class="org-function-name">memory_map</span>();
+
+    <span class="org-keyword">virtual</span> <span class="org-type">void</span> <span class="org-function-name">flash_erase</span>(<span class="org-type">ULONGEST</span> <span class="org-variable-name">address</span>, <span class="org-type">LONGEST</span> <span class="org-variable-name">length</span>);
+
+    <span class="org-keyword">virtual</span> <span class="org-type">int</span> <span class="org-function-name">search_memory</span>(
+        <span class="org-type">CORE_ADDR</span> <span class="org-variable-name">start_addr</span>, <span class="org-type">ULONGEST</span> <span class="org-variable-name">search_space_len</span>,
+        <span class="org-keyword">const</span> <span class="org-type">gdb_byte</span> *<span class="org-variable-name">pattern</span>, <span class="org-type">ULONGEST</span> <span class="org-variable-name">pattern_len</span>, <span class="org-type">CORE_ADDR</span> *<span class="org-variable-name">found_addrp</span>);
+
+    <span class="org-keyword">virtual</span> <span class="org-type">bool</span> <span class="org-function-name">can_execute_reverse</span>();
+
+    <span class="org-keyword">virtual</span> <span class="org-type">bool</span> <span class="org-function-name">supports_evaluation_of_breakpoint_conditions</span>();
+
+    <span class="org-keyword">virtual</span> <span class="org-type">void</span> <span class="org-function-name">dumpcore</span>(<span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">filename</span>) TARGET_DEFAULT_IGNORE();
+
+    <span class="org-keyword">virtual</span> <span class="org-type">int</span> <span class="org-function-name">fileio_open</span>(
+        <span class="org-keyword">struct</span> <span class="org-type">inferior</span> *<span class="org-variable-name">inf</span>, <span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">filename</span>, <span class="org-type">int</span> <span class="org-variable-name">flags</span>, <span class="org-type">int</span> <span class="org-variable-name">mode</span>,
+        <span class="org-type">int</span> <span class="org-variable-name">warn_if_slow</span>, <span class="org-type">int</span> *<span class="org-variable-name">target_errno</span>);
+
+    <span class="org-keyword">virtual</span> <span class="org-type">int</span> <span class="org-function-name">fileio_pwrite</span>(
+        <span class="org-type">int</span> <span class="org-variable-name">fd</span>, <span class="org-keyword">const</span> <span class="org-type">gdb_byte</span> *<span class="org-variable-name">write_buf</span>, <span class="org-type">int</span> <span class="org-variable-name">len</span>, <span class="org-type">ULONGEST</span> <span class="org-variable-name">offset</span>,
+        <span class="org-type">int</span> *<span class="org-variable-name">target_errno</span>);
+
+    <span class="org-keyword">virtual</span> <span class="org-type">int</span> <span class="org-function-name">fileio_pread</span>(
+        <span class="org-type">int</span> <span class="org-variable-name">fd</span>, <span class="org-type">gdb_byte</span> *<span class="org-variable-name">read_buf</span>, <span class="org-type">int</span> <span class="org-variable-name">len</span>, <span class="org-type">ULONGEST</span> <span class="org-variable-name">offset</span>,
+        <span class="org-type">int</span> *<span class="org-variable-name">target_errno</span>);
+
+    <span class="org-keyword">virtual</span> <span class="org-type">bool</span> <span class="org-function-name">info_proc</span>(<span class="org-keyword">const</span> <span class="org-type">char</span> *, <span class="org-keyword">enum</span> <span class="org-type">info_proc_what</span>);
+
+    <span class="org-keyword">virtual</span> <span class="org-keyword">enum</span> <span class="org-type">record_method</span> <span class="org-function-name">record_method</span>(<span class="org-type">ptid_t</span> <span class="org-variable-name">ptid</span>);
+    <span class="org-keyword">virtual</span> <span class="org-type">void</span> <span class="org-function-name">stop_recording</span>();
+    <span class="org-keyword">virtual</span> <span class="org-type">void</span> <span class="org-function-name">save_record</span>(<span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">filename</span>);
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+};
+</pre>
+</div>
+
+<p>
+可见 target 的接口主要和 <code>数据读写</code> 和 <code>执行控制</code> 有关, 比较重要的 target 有:
+</p>
+
+<ol class="org-ol">
+<li><p>
+inf_ptrace_target
+</p>
+
+<p>
+它是所有使用 ptrace 的 target 的基类, 例如 linux_nat_target
+</p></li>
+
+<li><p>
+remote_target
+</p>
+
+<p>
+它实现了 RSP client
+</p></li>
+</ol>
+
+<p>
+通过 <code>static const target_info</code> 关键字可以查到大约有多少种 target, 其它 target
+会从这些 target 派生出来, 例如 amd64_linux_nat_target 派生自 inf_child_target:
+</p>
+
+<pre class="example" id="org0000004">
+gdb-10.1/gdb/bfd-target.c:28:static const target_info target_bfd_target_info = {
+gdb-10.1/gdb/bsd-uthread.c:36:static const target_info bsd_uthread_target_info = {
+gdb-10.1/gdb/corelow.c:59:static const target_info core_target_info = {
+gdb-10.1/gdb/exec.c:55:static const target_info exec_target_info = {
+gdb-10.1/gdb/inf-child.c:42:static const target_info inf_child_target_info = {
+gdb-10.1/gdb/linux-thread-db.c:80:static const target_info thread_db_target_info = {
+gdb-10.1/gdb/record-btrace.c:48:static const target_info record_btrace_target_info = {
+gdb-10.1/gdb/record-full.c:259:static const target_info record_full_target_info = {
+gdb-10.1/gdb/record-full.c:293:static const target_info record_full_core_target_info = {
+gdb-10.1/gdb/remote-sim.c:115:static const target_info gdbsim_target_info = {
+gdb-10.1/gdb/remote.c:395:static const target_info remote_target_info = {
+gdb-10.1/gdb/remote.c:949:static const target_info extended_remote_target_info = {
+gdb-10.1/gdb/target.c:3196:static const target_info dummy_target_info = {
+gdb-10.1/gdb/tracectf.c:39:static const target_info ctf_target_info = {
+gdb-10.1/gdb/tracefile-tfile.c:44:static const target_info tfile_target_info = {
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000009" class="outline-3">
+<h3 id="org0000009"><span class="section-number-3">1.3.</span> gdbarch</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+target 负责传输数据 (例如读取所有寄存器的值), 但数据怎么解释却和 arch 相关, 例如:
+</p>
+
+<ul class="org-ul">
+<li>读到的寄存器数据如何映射到具体的寄存器 (多少个寄存器, 宽度多少, byte order 是什么, sp 在第几个寄存器)?</li>
+
+<li>读到的内存数据具体是什么指令?</li>
+</ul>
+
+<p>
+不同的 target 例如 remote_target, core_target, amd64_linux_nat_target 使用的
+gdbarch 可能会有许多相同的项, 例如当它们读取的都是 amd64 的数据时.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">struct</span> <span class="org-type">gdbarch</span> {
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">const</span> <span class="org-keyword">struct</span> <span class="org-type">bfd_arch_info</span> *<span class="org-variable-name">bfd_arch_info</span>;
+    <span class="org-keyword">enum</span> <span class="org-type">bfd_endian</span> <span class="org-variable-name">byte_order</span>;
+    <span class="org-keyword">enum</span> <span class="org-type">bfd_endian</span> <span class="org-variable-name">byte_order_for_code</span>;
+    <span class="org-keyword">enum</span> <span class="org-type">gdb_osabi</span> <span class="org-variable-name">osabi</span>;
+    <span class="org-keyword">const</span> <span class="org-keyword">struct</span> <span class="org-type">target_desc</span> *<span class="org-variable-name">target_desc</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">target specific vector.</span><span class="org-comment-delimiter">  */</span>
+    <span class="org-keyword">struct</span> <span class="org-type">gdbarch_tdep</span> *<span class="org-variable-name">tdep</span>;
+    <span class="org-type">gdbarch_dump_tdep_ftype</span> *<span class="org-variable-name">dump_tdep</span>;
+
+    <span class="org-type">int</span> <span class="org-variable-name">short_bit</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">int_bit</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">long_bit</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">long_long_bit</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">bfloat16_bit</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">half_bit</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">float_bit</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">double_bit</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">num_regs</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">num_pseudo_regs</span>;
+
+    <span class="org-type">int</span> <span class="org-variable-name">sp_regnum</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">pc_regnum</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">ps_regnum</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">fp0_regnum</span>;
+
+    <span class="org-type">gdbarch_read_pc_ftype</span> *<span class="org-variable-name">read_pc</span>;
+    <span class="org-type">gdbarch_write_pc_ftype</span> *<span class="org-variable-name">write_pc</span>;    
+    <span class="org-type">gdbarch_register_name_ftype</span> *<span class="org-variable-name">register_name</span>;
+    <span class="org-type">gdbarch_register_type_ftype</span> *<span class="org-variable-name">register_type</span>;
+    <span class="org-type">gdbarch_print_registers_info_ftype</span> *<span class="org-variable-name">print_registers_info</span>;
+    <span class="org-type">gdbarch_print_float_info_ftype</span> *<span class="org-variable-name">print_float_info</span>;
+    <span class="org-type">gdbarch_print_vector_info_ftype</span> *<span class="org-variable-name">print_vector_info</span>;
+
+    <span class="org-type">gdbarch_register_to_value_ftype</span> *<span class="org-variable-name">register_to_value</span>;
+    <span class="org-type">gdbarch_value_to_register_ftype</span> *<span class="org-variable-name">value_to_register</span>;
+    <span class="org-type">gdbarch_return_value_ftype</span> *<span class="org-variable-name">return_value</span>;
+
+    <span class="org-type">gdbarch_memory_insert_breakpoint_ftype</span> *<span class="org-variable-name">memory_insert_breakpoint</span>;
+    <span class="org-type">gdbarch_memory_remove_breakpoint_ftype</span> *<span class="org-variable-name">memory_remove_breakpoint</span>;
+    <span class="org-type">gdbarch_print_insn_ftype</span> *<span class="org-variable-name">print_insn</span>;
+
+    <span class="org-type">gdbarch_find_memory_regions_ftype</span> *<span class="org-variable-name">find_memory_regions</span>;
+    <span class="org-type">gdbarch_gen_return_address_ftype</span> *<span class="org-variable-name">gen_return_address</span>;
+    <span class="org-type">gdbarch_info_proc_ftype</span> *<span class="org-variable-name">info_proc</span>;
+    <span class="org-type">gdbarch_insn_is_call_ftype</span> *<span class="org-variable-name">insn_is_call</span>;
+    <span class="org-type">gdbarch_insn_is_ret_ftype</span> *<span class="org-variable-name">insn_is_ret</span>;
+    <span class="org-type">gdbarch_insn_is_jump_ftype</span> *<span class="org-variable-name">insn_is_jump</span>;
+    <span class="org-type">gdbarch_print_auxv_entry_ftype</span> *<span class="org-variable-name">print_auxv_entry</span>;
+    <span class="org-type">gdbarch_vsyscall_range_ftype</span> *<span class="org-variable-name">vsyscall_range</span>;
+    <span class="org-type">gdbarch_gcc_target_options_ftype</span> *<span class="org-variable-name">gcc_target_options</span>;
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+};
+</pre>
+</div>
+
+<p>
+gdbarch 并不像 target 那样针对不同的 target 有不同的派生, 它使用组合
+(composition) 的方式:
+</p>
+
+<p>
+以 amd64_linux_nat_target 为例:
+</p>
+
+<ol class="org-ol">
+<li>它使用了 <code>amd64-tdep.c</code> 中定义的 gdbarch 为基准的 gdbarch</li>
+
+<li>使用 <code>linux-tdep.c</code> 对 gdbarch 做了补充.</li>
+
+<li>它自己针对 gdbarch 又做了补充</li>
+</ol>
+
+<p>
+简单的说, gdbarch 抽象了对数据的处理, target 抽象了对数据的读写, 因此很多时候
+gdbarch 会封装对 target 的调用
+</p>
+
+<p>
+假设一种测试场景, linux host 通过 gdbserver 调试 linux client, 以 <code>info proc
+mapping</code> 为例:
+</p>
+
+<ol class="org-ol">
+<li>remote_target 对应的 gdbarch 是 amd64_linux_nat_target. 由于所有 linux 的
+mapping 都是通过读 <code>/proc/&lt;pid&gt;/maps</code> 实现的, 因此 gdbarch 的 info_proc 由
+<code>linux_tdep.c</code> 中 linux_info_proc 实现, 后者会去读 maps, 然后按 linux 的方式解析它</li>
+
+<li>linux_info_proc 读取 maps 涉及到数据的传输, 通过 target_fileio_read_alloc (而不是直接 open, read) 这个 target_ops 实现的, 后者由 remote_target 实现, 最终会发送 <code>vFile:open</code> 到 gdbserver</li>
+</ol>
+
+<p>
+从接口调用的角度, gdbarch 与 target 的关系大致是这样的:
+</p>
+
+<pre class="example" id="org0000008">
+             +--&gt; arch_config
+             |
+gdb +---&gt; gdbarch &lt;--(data)--&gt; target
+    |                            ^
+    |                            |
+    +---------(control)----------+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org000000e" class="outline-3">
+<h3 id="org000000e"><span class="section-number-3">1.4.</span> target stack</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+gdb 有一个 target stack 的概念:
+</p>
+
+<p>
+gdb 加载 elf 后会 push 一个 exec_target 到 target stack, 使得即使不运行也可以执行一些操作, 例如:
+</p>
+
+<pre class="example" id="org000000c">
+~/download/xxx#[15:15:01]@sunway-t14&gt; gdb test.elf 
+(gdb) b main
+Breakpoint 1 at 0x115b: file test.c, line 11.
+(gdb) x 0x115b
+0x115b &lt;main&gt;:  0xfa1e0ff3
+</pre>
+
+<p>
+开始 run 后, 会再 push 一个 amd64_linux_nat_target, 这时 target 相关的操作会由栈顶的 amd64_linux_nat_target 来处理.
+</p>
+
+<pre class="example" id="org000000d">
+(gdb) r
+Starting program: /home/sunway/download/xxx/test.elf 
+
+Breakpoint 1, main (argc=0, argv=0x7fffffffc330) at test.c:11
+11      int main(int argc, char* argv[]) { return foo(argc); }
+(gdb) x 0x115b
+0x115b: Cannot access memory at address 0x115b
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000019" class="outline-3">
+<h3 id="org0000019"><span class="section-number-3">1.5.</span> backtrace</h3>
+<div class="outline-text-3" id="text-1-5">
+</div>
+<div id="outline-container-org0000011" class="outline-4">
+<h4 id="org0000011"><span class="section-number-4">1.5.1.</span> systemtap</h4>
+<div class="outline-text-4" id="text-1-5-1">
+<p>
+使用 systemtap 可以方便的打印 backtrace, 例如这个脚本:
+</p>
+
+<p>
+backtrace.sh:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-shell"><span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/</span><span class="org-keyword">bash</span>
+<span class="org-keyword">while </span><span class="org-builtin">getopts</span> <span class="org-string">'f:c:'</span> opt; <span class="org-keyword">do</span>
+  <span class="org-keyword">case</span> <span class="org-string">"$opt"</span><span class="org-keyword"> in</span>
+    f)
+      <span class="org-variable-name">function</span>=<span class="org-string">"$OPTARG"</span>
+      ;;
+    c)
+      <span class="org-variable-name">cmd</span>=<span class="org-string">"$OPTARG"</span>
+      ;;
+
+    ?|h)
+      <span class="org-builtin">echo</span> <span class="org-string">"Usage: $(</span><span class="org-sh-quoted-exec">basename $0</span><span class="org-string">) [-f function] [-c cmd] "</span>
+      <span class="org-keyword">exit</span> 1
+      ;;
+  <span class="org-keyword">esac</span>
+<span class="org-keyword">done</span>
+
+<span class="org-keyword">if</span> [[ <span class="org-string">"${function}z"</span> == <span class="org-string">"z"</span> || <span class="org-string">"${cmd}z"</span> == <span class="org-string">"z"</span> ]]; <span class="org-keyword">then</span>
+      <span class="org-builtin">echo</span> <span class="org-string">"Usage: $(</span><span class="org-sh-quoted-exec">basename $0</span><span class="org-string">) [-f function] [-c cmd] "</span>
+      <span class="org-keyword">exit</span> 1
+<span class="org-keyword">fi</span>
+
+sudo stap -e <span class="org-string">"probe process.function(\"$function\") {print_ubacktrace(); }"</span> -c <span class="org-string">"$cmd"</span>
+</pre>
+</div>
+
+<p>
+ubuntu 自带的 systemtap 有问题, 可以从 <a href="https://sourceware.org/git/systemtap.git">https://sourceware.org/git/systemtap.git</a>
+下载后自己编译.
+</p>
+
+<p>
+使用 systemtap 打印 backtrace 需要被调试的程序有符号信息. 另外 systemtap 的
+<code>process.function</code> 可以使用 pattern, 例如 <code>backtrace.sh -f "target_*" -c "xxx"</code>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000016" class="outline-4">
+<h4 id="org0000016"><span class="section-number-4">1.5.2.</span> info register</h4>
+<div class="outline-text-4" id="text-1-5-2">
+<p>
+使用 remote target 执行 <code>info reg</code> 时的 backtrace
+</p>
+
+<pre class="example" id="org0000014">
+$&gt; cat /tmp/test.cmd
+target remote localhost:12345
+info reg
+
+$&gt; backtrace.sh -f "fetch_registers"  -c "/usr/local/bin/gdb ./test.elf -x /tmp/test.cmd --batch"
+ 0x56025fbc8970 : _ZN13remote_target15fetch_registersEP8regcachei+0x0/0x210 [/usr/local/bin/gdb]
+ 0x56025fc3a381 : _Z22target_fetch_registersP8regcachei+0x31/0x70 [/usr/local/bin/gdb]
+ 0x56025fba836a : _ZN8regcache10raw_updateEi+0x3a/0x50 [/usr/local/bin/gdb]
+ 0x56025fba840e : _ZN17readable_regcache8raw_readEiPh+0x1e/0xb0 [/usr/local/bin/gdb]
+ 0x56025fba873d : _ZN17readable_regcache17cooked_read_valueEi+0x9d/0x150 [/usr/local/bin/gdb]
+ 0x56025fbd9b66 : _ZL28sentinel_frame_prev_registerP10frame_infoPPvi+0x16/0x40 [/usr/local/bin/gdb]
+ 0x56025fa858e7 : _Z27frame_unwind_register_valueP10frame_infoi+0x47/0x2d0 [/usr/local/bin/gdb]
+ 0x56025fc8d8e4 : _Z16value_fetch_lazyP5value+0x1c4/0x6d0 [/usr/local/bin/gdb]
+ 0x56025fa813c6 : _Z17value_of_registeriP10frame_info+0x66/0x80 [/usr/local/bin/gdb]
+ 0x56025fac6578 : _Z28default_print_registers_infoP7gdbarchP7ui_fileP10frame_infoii+0x78/0xe0 [/usr/local/bin/gdb]
+ 0x56025f9c81aa : _Z8cmd_funcP16cmd_list_elementPKci+0x3a/0x70 [/usr/local/bin/gdb]
+ 0x56025fc45828 : _Z15execute_commandPKci+0x7f8/0xa20 [/usr/local/bin/gdb]
+ 0x56025fa73175 : _Z15command_handlerPKc+0x85/0xd0 [/usr/local/bin/gdb]
+ 0x56025fc4684f : _Z17read_command_fileP8_IO_FILE+0x3f/0x60 [/usr/local/bin/gdb]
+ 0x56025f9d0c19 : _Z16script_from_fileP8_IO_FILEPKc+0x119/0x1d0 [/usr/local/bin/gdb]
+ 0x56025f9c3bbb : _ZL25source_script_with_searchPKcii+0xfb/0x1f0 [/usr/local/bin/gdb]
+ 0x56025fb16ee0 : _ZL20catch_command_errorsPFvPKciES0_i+0x20/0x50 [/usr/local/bin/gdb]
+ 0x56025fb185c9 : _ZL15captured_main_1P18captured_main_args+0xd59/0x1640 [/usr/local/bin/gdb]
+ 0x56025fb18ebf : _Z8gdb_mainP18captured_main_args+0xf/0x40 [/usr/local/bin/gdb]
+ 0x56025f933a30 : main+0x40/0x60 [/usr/local/bin/gdb]
+</pre>
+
+<p>
+c++filt 处理后为:
+</p>
+
+<pre class="example" id="org0000015">
+remote_target::fetch_registers(regcache*, int)
+target_fetch_registers(regcache*, int)
+regcache::raw_update(int)
+readable_regcache::raw_read(int, unsigned char*)
+readable_regcache::cooked_read_value(int)
+sentinel_frame_prev_register(frame_info*, void**, int)
+frame_unwind_register_value(frame_info*, int)
+value_fetch_lazy(value*)
+value_of_register(int, frame_info*)
+default_print_registers_info(gdbarch*, ui_file*, frame_info*, int, int)
+cmd_func(cmd_list_element*, char const*, int)
+execute_command(char const*, int)
+command_handler(char const*)
+read_command_file(_IO_FILE*)
+script_from_file(_IO_FILE*, char const*)
+source_script_with_search(char const*, int, int)
+catch_command_errors(void (*)(char const*, int), char const*, int)
+captured_main_1(captured_main_args*)
+gdb_main(captured_main_args*)
+</pre>
+
+<ol class="org-ol">
+<li><code>cmd</code> 相关的代码在 <code>infcmd.c</code>, 它调用了 <code>gdbarch_print_registers_info</code></li>
+<li>i386 的 gdbarch 使用默认的 <code>default_print_registers_info</code>,</li>
+<li>default_print_registers_info 使用了 regcache, 然后调用到 remote_target::fetch_registers</li>
+<li>remote_target 发送 <code>g</code> RSP packet</li>
+</ol>
+
+<p>
+gdbarch 中的 default_xxx 使得 gdbarch 有点像 <code>基于组合 (composition) 的抽象类</code>
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000003c" class="outline-3">
+<h3 id="org000003c"><span class="section-number-3">1.6.</span> Porting new arch</h3>
+<div class="outline-text-3" id="text-1-6">
+</div>
+<div id="outline-container-org0000022" class="outline-4">
+<h4 id="org0000022"><span class="section-number-4">1.6.1.</span> native debug</h4>
+<div class="outline-text-4" id="text-1-6-1">
+<p>
+gdb 运行在 host arch, 被调试程序运行在 target arch, 大多数情况下 host arch 与
+target arch 相同, 称为 native debug
+</p>
+
+<p>
+有时 host arch 与 target arch 会不同, 例如 x86 上的 gdb 可以查看 riscv 的 elf 或
+coredump 的内容, 或者 x86 上的 gdb 通过 gdbserver 可以调试 riscv 的进程
+</p>
+</div>
+
+<div id="outline-container-org000001c" class="outline-5">
+<h5 id="org000001c"><span class="section-number-5">1.6.1.1.</span> nat</h5>
+<div class="outline-text-5" id="text-1-6-1-1">
+<p>
+gdb 主要是以 native debug 为主, <code>xxx-nat.c</code> 定义了不同的 native target, 例如
+<code>amd64-linux-nat.c</code> 定义了 amd64 linux 的 native target.
+</p>
+
+<p>
+native target 在 <code>xxx-nat.c</code> 中定义, 其它的 target 例如 core_target 定义在
+<code>corelow.c</code>, remote_target 定义在 <code>remote.c</code>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000001f" class="outline-5">
+<h5 id="org000001f"><span class="section-number-5">1.6.1.2.</span> tdep</h5>
+<div class="outline-text-5" id="text-1-6-1-2">
+<p>
+<code>xxx-tdep.c</code> 主要用来定义 gdbarch, 它不是 native target 专用的, 因为其它 target
+也需要这部分信息.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000036" class="outline-4">
+<h4 id="org0000036"><span class="section-number-4">1.6.2.</span> target &amp; gdbarch initialization</h4>
+<div class="outline-text-4" id="text-1-6-2">
+<p>
+以 amd64_linux_nat_target 为例, 说明 target 与 gdbarch 的初始化过程. 
+</p>
+</div>
+
+<div id="outline-container-org0000025" class="outline-5">
+<h5 id="org0000025"><span class="section-number-5">1.6.2.1.</span> init.c</h5>
+<div class="outline-text-5" id="text-1-6-2-1">
+<p>
+编译 gdb 时, 如果 configure 时指定了 <code>host</code> 和 <code>target</code> 相同, configure
+(gdb/gdb/configure.nat) 会把对应的 o 文件 (例如 amd64-linux-nat.o,
+x86-linux-nat.o 等) 带入到 Makefile 中参与编译 , 同时 Makefile 会根据 nat 对应的
+o 文件找到源文件, 扫描其中的 <code>_initialize</code> 函数
+</p>
+
+<p>
+根据 configure 指定的 target, configure (gdb/gdb/configure.tgt) 会把 target 对应的 o 文件 (例如 i386-tdep.o, amd64_tdep.o, amd64-linux-tdep.o 等) 引入 Makefile,
+同时扫描其 <code>_initialize</code> 函数
+</p>
+
+<p>
+最终 configure 会在 <code>init.c</code> 中生成如下的内容:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">void</span> <span class="org-function-name">initialize_all_files</span>(<span class="org-type">void</span>) {
+    _initialize_i386_tdep();
+    _initialize_amd64_tdep();
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    _initialize_linux_tdep();
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    _initialize_amd64_linux_nat ();
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+}
+</pre>
+</div>
+
+<p>
+其中的 <code>_initialize_xxx</code> 都来自 configure 时扫描的结果, 确定了 gdb 支持的唯一的
+native target 和多个 target arch
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000028" class="outline-5">
+<h5 id="org0000028"><span class="section-number-5">1.6.2.2.</span> init native target</h5>
+<div class="outline-text-5" id="text-1-6-2-2">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">void</span> <span class="org-function-name">_initialize_amd64_linux_nat</span>() {
+    linux_target = &amp;the_amd64_linux_nat_target;
+    add_inf_child_target(linux_target);
+}
+</pre>
+</div>
+
+<p>
+<code>add_inf_child_target</code> 导致 gdb 执行 <code>r</code> 命令时, 会使用 amd64_linux_nat_target
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000033" class="outline-5">
+<h5 id="org0000033"><span class="section-number-5">1.6.2.3.</span> init tdep</h5>
+<div class="outline-text-5" id="text-1-6-2-3">
+</div>
+<div id="outline-container-org000002c" class="outline-6">
+<h6 id="org000002c"><span class="section-number-6">1.6.2.3.1.</span> register gdbarch</h6>
+<div class="outline-text-6" id="text-1-6-2-3-1">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">void</span> <span class="org-function-name">_initialize_amd64_linux_tdep</span>() {
+    gdbarch_register_osabi(
+        bfd_arch_i386, bfd_mach_x86_64, GDB_OSABI_LINUX, amd64_linux_init_abi);
+    gdbarch_register_osabi(
+        bfd_arch_i386, bfd_mach_x64_32, GDB_OSABI_LINUX,
+        amd64_x32_linux_init_abi);
+}
+</pre>
+</div>
+
+<p>
+_initialize_amd64_linux_tdep 只是注册了一个回调函数 (amd64_linux_init_abi), 后者的调用时通过 target 完成的, 因为 target 知道它对应哪个 gdbarch,  例如 core_target
+根据 corefile 的 arch, remote_target 根据 server 端的信息
+</p>
+
+<p>
+backtrace:
+</p>
+
+<pre class="example" id="org000002b">
+amd64_linux_init_abi(gdbarch_info, gdbarch*)
+i386_gdbarch_init(gdbarch_info, gdbarch_list*)
+gdbarch_find_by_info(gdbarch_info)
+set_gdbarch_from_file(bfd*)
+exec_file_attach(char const*, int)
+catch_command_errors(void (*)(char const*, int), char const*, int)
+captured_main_1(captured_main_args*)
+gdb_main(captured_main_args*)
+main
+</pre>
+
+<p>
+其中 i386_gdbarch_init 是 <code>i386-tdep.c</code> 中定义的针对 i386 的 init 函数, 通过
+<code>register_gdbarch_init (bfd_arch_i386, i386_gdbarch_init)</code> 注册. init 时先找到这人回调, 然后再通过它调用到针对具体 mach (x86_64) 和 osabi (linux) 的
+amd64_linux_init_abi
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000030" class="outline-6">
+<h6 id="org0000030"><span class="section-number-6">1.6.2.3.2.</span> target description</h6>
+<div class="outline-text-6" id="text-1-6-2-3-2">
+<p>
+<code>gdbarch_find_by_info</code> 使用的 info 来自 target 的 target_description
+</p>
+
+<pre class="example" id="org000002f">
+allocate_target_description()
+amd64_create_target_description(unsigned long, bool, bool, bool)
+amd64_linux_read_description(unsigned long, bool)
+x86_linux_nat_target::read_description()
+target_find_description()
+post_create_inferior(target_ops*, int)
+run_command_1(char const*, int, run_how)
+cmd_func(cmd_list_element*, char const*, int)
+execute_command(char const*, int)
+command_handler(char const*)
+read_command_file(_IO_FILE*)
+script_from_file(_IO_FILE*, char const*)
+source_script_with_search(char const*, int, int)
+catch_command_errors(void (*)(char const*, int), char const*, int)
+captured_main_1(captured_main_args*)
+gdb_main(captured_main_args*)
+main
+</pre>
+
+<p>
+其中 <code>amd64_create_target_description</code> 定义在 amd64_linux_nat_target 中
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">target_desc</span> *<span class="org-function-name">amd64_create_target_description</span>(
+    <span class="org-type">uint64_t</span> <span class="org-variable-name">xcr0</span>, <span class="org-type">bool</span> <span class="org-variable-name">is_x32</span>, <span class="org-type">bool</span> <span class="org-variable-name">is_linux</span>, <span class="org-type">bool</span> <span class="org-variable-name">segments</span>) {
+    <span class="org-type">target_desc</span> *<span class="org-variable-name">tdesc</span> = allocate_target_description();
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">gdbarch init &#38656;&#35201;&#30340;&#20449;&#24687;: i386, x86_64, linux &#20174; target description &#37117;&#21487;&#20197;</span>
+<span class="org-comment">     * &#24471;&#21040;</span><span class="org-comment-delimiter"> */</span>
+    set_tdesc_architecture(tdesc, is_x32 ? <span class="org-string">"i386:x64-32"</span> : <span class="org-string">"i386:x86-64"</span>);
+    <span class="org-keyword">if</span> (is_linux) set_tdesc_osabi(tdesc, <span class="org-string">"GNU/Linux"</span>);    
+    <span class="org-type">long</span> <span class="org-variable-name">regnum</span> = 0;
+
+    <span class="org-keyword">if</span> (is_x32)
+        regnum = create_feature_i386_x32_core(tdesc, regnum);
+    <span class="org-keyword">else</span>
+        regnum = create_feature_i386_64bit_core(tdesc, regnum);
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+
+    <span class="org-keyword">return</span> tdesc;
+}
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000039" class="outline-4">
+<h4 id="org0000039"><span class="section-number-4">1.6.3.</span> porting</h4>
+<div class="outline-text-4" id="text-1-6-3">
+<p>
+porting 一个新的 arch 大约需要:
+</p>
+
+<ol class="org-ol">
+<li><p>
+binutils
+</p>
+
+<p>
+gdb 的 disass 依赖 opcodes, 解析符号依赖 <a href="bfd.html#ID-7569396e-eef7-485b-a1eb-8a545dec44ba">bfd</a>
+</p></li>
+
+<li><p>
+os
+</p>
+
+<p>
+native debug 依赖 ptrace 这类系统调用
+</p></li>
+
+<li><p>
+xxx-tdep
+</p>
+
+<p>
+需要定义 gdbarch, 实现其中定义的回调函数.
+</p>
+
+<p>
+例如 riscv-tdep.c, riscv-linux-tdep.c
+</p></li>
+
+<li><p>
+xxx-nat
+</p>
+
+<p>
+需要实现 target_ops
+</p>
+
+<p>
+例如 riscv-linux-nat.c
+</p></li>
+
+<li><p>
+配置 configure
+</p>
+
+<p>
+修改 configure (configure.nat, configure.tgt), 以完成初始化
+</p></li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org0000042" class="outline-2 references">
+<h2 id="org0000042">Backlinks</h2>
+<div class="outline-text-2" id="text-org0000042">
+<p>
+<a href="gdb.html#ID-714daa8c-1c22-4514-82c8-b944f02700df">GDB</a>
+(<i>GDB &gt; GDB Target Arch</i>):   <a href="gdb_target_arch.html#ID-853d6271-a0b6-4ae0-bba1-667a2a3d8505">GDB Target Arch</a>
+</p>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-01-30 Mon 17:01<br />
+Last updated: 2023-02-02 Thu 11:48</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
