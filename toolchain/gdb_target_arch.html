@@ -32,10 +32,11 @@
 <li><a href="#org0000005">1.2. target</a></li>
 <li><a href="#org0000009">1.3. gdbarch</a></li>
 <li><a href="#org000000e">1.4. target stack</a></li>
-<li><a href="#org0000019">1.5. backtrace</a>
+<li><a href="#org000001e">1.5. backtrace</a>
 <ul>
 <li><a href="#org0000011">1.5.1. systemtap</a></li>
 <li><a href="#org0000016">1.5.2. info register</a></li>
+<li><a href="#org000001b">1.5.3. insert breakpoint</a></li>
 </ul>
 </li>
 <li><a href="#org000003c">1.6. porting new arch</a>
@@ -251,6 +252,17 @@ gdb-10.1/gdb/target.c:3196:static const target_info dummy_target_info = {
 gdb-10.1/gdb/tracectf.c:39:static const target_info ctf_target_info = {
 gdb-10.1/gdb/tracefile-tfile.c:44:static const target_info tfile_target_info = {
 </pre>
+
+<p>
+其中:
+</p>
+
+<ul class="org-ul">
+<li><code>corelow.c</code> 对应 gdb 的 <code>target core</code> 命令</li>
+<li><code>exec.c</code> 对应 <code>target exec</code></li>
+<li><code>inf-child.c</code> 对应 <code>target native</code></li>
+<li><code>remote.c</code> 对应 <code>target remote</code></li>
+</ul>
 </div>
 </div>
 
@@ -416,8 +428,8 @@ Breakpoint 1, main (argc=0, argv=0x7fffffffc330) at test.c:11
 </div>
 </div>
 
-<div id="outline-container-org0000019" class="outline-3">
-<h3 id="org0000019"><span class="section-number-3">1.5.</span> backtrace</h3>
+<div id="outline-container-org000001e" class="outline-3">
+<h3 id="org000001e"><span class="section-number-3">1.5.</span> backtrace</h3>
 <div class="outline-text-3" id="text-1-5">
 </div>
 <div id="outline-container-org0000011" class="outline-4">
@@ -533,13 +545,63 @@ gdb_main(captured_main_args*)
 
 <ol class="org-ol">
 <li><code>cmd</code> 相关的代码在 <code>infcmd.c</code>, 它调用了 <code>gdbarch_print_registers_info</code></li>
-<li>i386 的 gdbarch 使用默认的 <code>default_print_registers_info</code>,</li>
-<li>default_print_registers_info 使用了 regcache, 然后调用到 remote_target::fetch_registers</li>
+
+<li>i386 的 gdbarch 使用默认的 <code>default_print_registers_info</code></li>
+
+<li>default_print_registers_info 使用了 regcache, 然后调用到
+remote_target::fetch_registers</li>
+
 <li>remote_target 发送 <code>g</code> RSP packet</li>
+
+<li>fetch_registers 会根据 gdbarch 里关于 register 的信息 (num_regs,
+register_size 等) 使用 RSP packet 的数据来填充 regcache</li>
 </ol>
+</div>
+</div>
+
+<div id="outline-container-org000001b" class="outline-4">
+<h4 id="org000001b"><span class="section-number-4">1.5.3.</span> insert breakpoint</h4>
+<div class="outline-text-4" id="text-1-5-3">
+<pre class="example" id="org0000019">
+$&gt; cat test.cmd
+b main
+r
+
+$&gt; backtrace.sh -f "xfer_partial"  -c "/usr/local/bin/gdb ./test.elf -x ./test.cmd --batch"
+ 0x55adc0ca7a20 : _ZN16linux_nat_target12xfer_partialE13target_objectPKcPhPKhmmPm+0x0/0x550 [/usr/local/bin/gdb]
+ 0x55adc0dd92c9 : _Z23raw_memory_xfer_partialP10target_opsPhPKhmlPm+0x79/0x120 [/usr/local/bin/gdb]
+ 0x55adc0dd99ba : _Z19target_xfer_partialP10target_ops13target_objectPKcPhPKhmmPm+0x3da/0x4c0 [/usr/local/bin/gdb]
+ 0x55adc0dda231 : _Z26target_write_with_progressP10target_ops13target_objectPKcPKhmlPFvmPvES6_+0xf1/0x140 [/usr/local/bin/gdb]
+ 0x55adc0dda32e : _Z23target_write_raw_memorymPKhl+0x3e/0x50 [/usr/local/bin/gdb]
+ 0x55adc0cd2aa0 : _Z32default_memory_insert_breakpointP7gdbarchP14bp_target_info+0xc0/0xf0 [/usr/local/bin/gdb]
+ 0x55adc0b337d2 : _ZL20bkpt_insert_locationP11bp_location+0x62/0xa0 [/usr/local/bin/gdb]
+ 0x55adc0b42656 : _ZL18insert_bp_locationP11bp_locationP7ui_filePiS3_S3_+0xc6/0x1480 [/usr/local/bin/gdb]
+ 0x55adc0b469e5 : _ZL27update_global_location_list16ugll_insert_mode+0x8c5/0x1070 [/usr/local/bin/gdb]
+ 0x55adc0b47889 : _ZL35update_global_location_list_nothrow16ugll_insert_mode+0x9/0x20 [/usr/local/bin/gdb]
+ ...
+</pre>
+
+<pre class="example" id="org000001a">
+linux_nat_target::xfer_partial
+raw_memory_xfer_partial
+target_xfer_partial
+target_write_with_progress
+target_write_raw_memory
+default_memory_insert_breakpoint
+bkpt_insert_location
+insert_bp_location
+update_global_location_list
+update_global_location_list_nothrow
+...
+</pre>
 
 <p>
-gdbarch 中的 default_xxx 使得 gdbarch 有点像 <code>基于组合 (composition) 的抽象类</code>
+breakpoint 每次在执行时 (run, cont, step, &#x2026;) 会重新插入一次, 因为每次执行完都会被删除 (参考 <a href="gdb_rsp.html#ID-3adc6d31-19da-4f05-8cce-80f3a2a19981">GDB Remote Serial Protocal</a>::Example::break)
+</p>
+
+<p>
+可以看到 native debug 时 breakpoint 是通过写内存实现 (xfer_partial) 的 (参考
+<a href="gdb_breakpoint.html#ID-6fbacffb-275e-438e-9f37-c829e23dce10">breakpoint</a>)
 </p>
 </div>
 </div>
@@ -683,7 +745,7 @@ _initialize_amd64_linux_tdep 只是注册了一个回调函数 (amd64_linux_init
 backtrace:
 </p>
 
-<pre class="example" id="org000002b">
+<pre class="example" id="org0000030">
 amd64_linux_init_abi(gdbarch_info, gdbarch*)
 i386_gdbarch_init(gdbarch_info, gdbarch_list*)
 gdbarch_find_by_info(gdbarch_info)
@@ -723,14 +785,14 @@ amd64_linux_init_abi
 </div>
 </div>
 
-<div id="outline-container-org0000030" class="outline-6">
-<h6 id="org0000030"><span class="section-number-6">1.6.2.3.2.</span> target description</h6>
+<div id="outline-container-org0000035" class="outline-6">
+<h6 id="org0000035"><span class="section-number-6">1.6.2.3.2.</span> target description</h6>
 <div class="outline-text-6" id="text-1-6-2-3-2">
 <p>
 <code>gdbarch_find_by_info</code> 使用的 info 来自 target 的 target_description
 </p>
 
-<pre class="example" id="org000002f">
+<pre class="example" id="org0000034">
 allocate_target_description()
 amd64_create_target_description(unsigned long, bool, bool, bool)
 amd64_linux_read_description(unsigned long, bool)
@@ -857,7 +919,7 @@ xxx-nat
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-01-30 Mon 17:01<br />
-Last updated: 2023-02-02 Thu 17:25</p>
+Last updated: 2023-02-03 Fri 11:38</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
