@@ -1,0 +1,610 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>Spike</title>
+
+
+           <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/readtheorg.css"/>
+           <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+           <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+           <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+           <link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+           <link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">Spike</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000027">1. Spike</a>
+<ul>
+<li><a href="#org000001e">1.1. interpreter</a>
+<ul>
+<li><a href="#org0000003">1.1.1. register</a></li>
+<li><a href="#org0000006">1.1.2. init</a></li>
+<li><a href="#org0000018">1.1.3. execute</a></li>
+<li><a href="#org000001b">1.1.4. 添加新的指令</a></li>
+</ul>
+</li>
+<li><a href="#org0000021">1.2. htif</a></li>
+<li><a href="#org0000024">1.3. pk</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000027" class="outline-2">
+<h2 id="org0000027"><span class="section-number-2">1.</span> Spike</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+基于 <a href="https://github.com/riscv/riscv-isa-sim.git">https://github.com/riscv/riscv-isa-sim.git</a>, commit: 1cfffe
+</p>
+</div>
+
+<div id="outline-container-org000001e" class="outline-3">
+<h3 id="org000001e"><span class="section-number-3">1.1.</span> interpreter</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+spike 和 qemu 类似, 但它不像 <a href="qemu_tcg.html#ID-fedb153b-c9a7-4ad1-a66e-e08b91173dd3">QEMU TCG</a> 那样执行二进制翻译: 它通过一个 interpreter
+在 host 上执行 riscv 指令
+</p>
+
+<p>
+interpreter 的核心是一个 loop:
+</p>
+
+<ol class="org-ol">
+<li><p>
+fetch
+</p>
+
+<p>
+通过虚拟的 mmu 来执行
+</p></li>
+
+<li><p>
+decode
+</p>
+
+<p>
+spike 并没有像 qemu/objdump/gdb 一样使用 binutils 来解析指令, 但也是用的类似的机制: 根据每条指令的 mask 和 match 来匹配二进制指令
+</p></li>
+
+<li><p>
+execute
+</p>
+
+<p>
+由于 spike 不需要进行二进制翻译, 所以指令执行通过一个简单的回调即可, 例如
+<code>rv64i_addi</code> 函数用来执行 addi 指令
+</p></li>
+</ol>
+
+<p>
+spike 通过 DECLARE_INSN 完成 decode 和 execute 所需的相关信息 (mask, match,
+callback) 的注册
+</p>
+</div>
+
+<div id="outline-container-org0000003" class="outline-4">
+<h4 id="org0000003"><span class="section-number-4">1.1.1.</span> register</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+binutils 的 opcodes 用来定义支持的 opcode, 对应的 mask 和 match. spike 通过
+riscv.mk.in 和 encoding.h 来实现.
+</p>
+
+<p>
+riscv.mk.in 是 automake 的输入, 做为 Makefile 的模板. 指令列表定义在这里.
+</p>
+
+<pre class="example" id="org0000000">
+riscv_insn_ext_i = \
+    add \
+    addi \
+    addiw \
+    addw \
+    and \
+    andi \
+    auipc \
+    beq \
+    bge \
+    bgeu \
+    ...
+
+riscv_insn_list = \
+    $(riscv_insn_ext_a) \
+    $(riscv_insn_ext_c) \
+    $(riscv_insn_ext_i) \
+    ...
+
+insn_list.h: $(src_dir)/riscv/riscv.mk.in
+    for insn in $(foreach insn,$(riscv_insn_list),$(subst .,_,$(insn))) ; do \
+        printf 'DEFINE_INSN(%s)\n' "$${insn}" ; \
+    done &gt; $@.tmp
+    mv $@.tmp $@    
+</pre>
+
+<p>
+make 时生成的 insn_list.h:
+</p>
+
+<pre class="example" id="org0000001">
+...
+DEFINE_INSN(addi)
+DEFINE_INSN(addiw)
+...
+</pre>
+
+<p>
+使用 insn_list.h 完成指令的注册:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-type">void</span> <span class="org-constant">processor_t</span>::<span class="org-function-name">register_base_instructions</span>() {
+<span class="org-preprocessor">#define</span> <span class="org-function-name">DECLARE_INSN</span>(<span class="org-variable-name">name</span>, <span class="org-variable-name">match</span>, <span class="org-variable-name">mask</span>)                       \
+    insn_bits_t name##_match = (match), name##_mask = (mask); \
+    <span class="org-type">bool</span> <span class="org-variable-name">name</span>##_supported = <span class="org-constant">true</span>;
+
+<span class="org-preprocessor">#include</span> <span class="org-string">"encoding.h"</span>
+<span class="org-preprocessor">#undef</span> DECLARE_INSN
+
+<span class="org-preprocessor">#define</span> <span class="org-function-name">DEFINE_INSN</span>(<span class="org-variable-name">name</span>)                                          \
+    <span class="org-keyword">extern</span> reg_t rv32i_##name(<span class="org-type">processor_t</span>*, insn_t, reg_t);        \
+    <span class="org-keyword">extern</span> reg_t rv64i_##name(<span class="org-type">processor_t</span>*, insn_t, reg_t);        \
+    <span class="org-keyword">extern</span> reg_t rv32e_##name(<span class="org-type">processor_t</span>*, insn_t, reg_t);        \
+    <span class="org-keyword">extern</span> reg_t rv64e_##name(<span class="org-type">processor_t</span>*, insn_t, reg_t);        \
+    register_insn((insn_desc_t){                                   \
+        name##_supported, name##_match, name##_mask, rv32i_##name, \
+        rv64i_##name, rv32e_##name, rv64e_##name});
+<span class="org-preprocessor">#include</span> <span class="org-string">"insn_list.h"</span>
+<span class="org-preprocessor">#undef</span> DEFINE_INSN
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+}
+
+<span class="org-type">void</span> <span class="org-constant">processor_t</span>::<span class="org-function-name">register_insn</span>(<span class="org-type">insn_desc_t</span> <span class="org-variable-name">desc</span>) {
+    instructions.push_back(desc);
+}
+</pre>
+</div>
+
+<p>
+其中 DEFINE_INSN 需要的 xxx_supported, xxx_match, xxx_mask 定义在 encoding.h 中
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+<span class="org-preprocessor">#define</span> <span class="org-variable-name">MATCH_ADDI</span> 0x13
+<span class="org-preprocessor">#define</span> <span class="org-variable-name">MASK_ADDI</span>  0x707f
+<span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+DECLARE_INSN(addi, MATCH_ADDI, MASK_ADDI)
+<span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+</pre>
+</div>
+
+<p>
+DEFINE_INSN 还需要 rv64i_xxx 等函数, 它们定义在 build/xxx.cc 中, 但这个文件是编译时生成的
+</p>
+
+<pre class="example" id="org0000002">
+$(riscv_gen_srcs): %.cc: insns/%.h insn_template.cc
+    sed 's/NAME/$(subst .cc,,$@)/' $(src_dir)/riscv/insn_template.cc | sed 's/OPCODE/$(call get_opcode,$(src_dir)/riscv/encoding.h,$(subst .cc,,$@))/' &gt; $@
+</pre>
+
+<p>
+即 make 进会根据 riscv_insn_list 找到 insns 下的 xxx.h, 然后根据
+<code>riscv/insn_template.cc</code> 生成 xxx.cc, 里面会 rv64i_xxx 的定义
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000006" class="outline-4">
+<h4 id="org0000006"><span class="section-number-4">1.1.2.</span> init</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span>** <span class="org-variable-name">argv</span>)
+  <span class="org-comment-delimiter">// </span>
+  <span class="org-type">sim_t</span> <span class="org-variable-name">s</span>(&amp;cfg, halted,
+      mems, plugin_devices, htif_args, dm_config, log_path, dtb_enabled, dtb_file, cmd_file);        
+    <span class="org-keyword">for</span> (<span class="org-type">size_t</span> <span class="org-variable-name">i</span> = 0; i &lt; cfg-&gt;nprocs(); i++): 
+      procs[i] = <span class="org-keyword">new</span> <span class="org-type">processor_t</span>(&amp;isa, cfg-&gt;varch(), <span class="org-keyword">this</span>, cfg-&gt;hartids()[i], halted, log_file.get(), sout_);
+        register_base_instructions();
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000018" class="outline-4">
+<h4 id="org0000018"><span class="section-number-4">1.1.3.</span> execute</h4>
+<div class="outline-text-4" id="text-1-1-3">
+</div>
+<div id="outline-container-org0000009" class="outline-5">
+<h5 id="org0000009"><span class="section-number-5">1.1.3.1.</span> host</h5>
+<div class="outline-text-5" id="text-1-1-3-1">
+<p>
+spike 执行时分为 host 和 target 两部分, host 和 target 可以用不同的 thread 来实现, 但默认配置下它们是通过 <a href="../tech/coroutine.html#ID-054e8734-5bc9-4d12-8714-a3e39e9e92ce">coroutine</a> 实现的 (swapcontext)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-comment-delimiter">// </span><span class="org-comment">spike.cc</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span>** <span class="org-variable-name">argv</span>)
+  <span class="org-comment-delimiter">// </span>
+  <span class="org-type">sim_t</span> <span class="org-variable-name">s</span>(&amp;cfg, halted,
+      mems, plugin_devices, htif_args, dm_config, log_path, dtb_enabled, dtb_file,
+      cmd_file);        
+  <span class="org-keyword">auto</span> <span class="org-variable-name">return_code</span> = s.run();
+
+<span class="org-comment-delimiter">// </span><span class="org-comment">sim.cc</span>
+<span class="org-type">int</span> <span class="org-constant">sim_t</span>::<span class="org-function-name">run</span>() {
+  host = <span class="org-constant">context_t</span>::current();
+  target.init(sim_thread_main, <span class="org-keyword">this</span>);
+  <span class="org-keyword">return</span> <span class="org-constant">htif_t</span>::run();
+}
+</pre>
+</div>
+
+<p>
+其中 htif (Host Target InterFace) 用来沟通 host 与 target, 例如, target 的 pk
+(proxy kernel) 通过 htif 让 host 响应 target 发起的 syscall
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-type">int</span> <span class="org-constant">htif_t</span>::<span class="org-function-name">run</span>(): 
+  <span class="org-keyword">if</span> (tohost_addr == 0) {
+    <span class="org-keyword">while</span> (<span class="org-constant">true</span>)
+      idle();
+  }
+  <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+
+<span class="org-type">void</span> <span class="org-constant">sim_t</span>::<span class="org-function-name">idle</span>():
+  target.switch_to();
+  <span class="org-comment-delimiter">// </span><span class="org-comment">~~~~~~~~~~~~~~~~</span>
+    swapcontext(prev-&gt;context.get(), context.get())
+      sim_thread_main()
+        <span class="org-constant">sim_t</span>::main()
+
+<span class="org-constant">sim_t</span>::<span class="org-function-name">main</span>() : 
+  <span class="org-keyword">while</span> (<span class="org-negation-char">!</span>done()): 
+    step(INTERLEAVE);
+
+<span class="org-type">void</span> <span class="org-constant">sim_t</span>::<span class="org-function-name">step</span>(<span class="org-type">size_t</span> <span class="org-variable-name">n</span>): 
+    <span class="org-keyword">for</span> (<span class="org-type">size_t</span> <span class="org-variable-name">i</span> = 0, <span class="org-variable-name">steps</span> = 0; i &lt; n; i += steps):
+    steps = <span class="org-constant">std</span>::min(n - i, INTERLEAVE - current_step);
+    procs[current_proc]-&gt;step(steps);
+
+    current_step += steps;
+    <span class="org-keyword">if</span> (current_step == INTERLEAVE): 
+      current_step = 0;
+      procs[current_proc]-&gt;get_mmu()-&gt;yield_load_reservation();
+      host-&gt;switch_to();
+      <span class="org-comment-delimiter">// </span><span class="org-comment">~~~~~~~~~~~~~~~</span>
+</pre>
+</div>
+
+<p>
+target 执行一定 step 后, 会通过 host 的 switch_to 切换到 host, 后者对应
+<code>htif_t::run</code>, 会处理和 fromhost, tohost 相关的功能:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-type">int</span> <span class="org-constant">htif_t</span>::<span class="org-function-name">run</span>():
+  <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+  <span class="org-keyword">while</span> (<span class="org-negation-char">!</span>signal_exit &amp;&amp; exitcode == 0)
+  {
+    <span class="org-type">uint64_t</span> <span class="org-variable-name">tohost</span>;
+
+    <span class="org-keyword">try</span> {
+      <span class="org-keyword">if</span> ((tohost = from_target(mem.read_uint64(tohost_addr))) != 0)
+        mem.write_uint64(tohost_addr, <span class="org-constant">target_endian</span>&lt;<span class="org-type">uint64_t</span>&gt;::zero);
+    } <span class="org-keyword">catch</span> (<span class="org-type">mem_trap_t</span>&amp; <span class="org-variable-name">t</span>) {
+      bad_address(<span class="org-string">"accessing tohost"</span>, t.get_tval());
+    }
+
+    <span class="org-keyword">try</span> {
+      <span class="org-keyword">if</span> (tohost != 0) {
+        <span class="org-type">command_t</span> <span class="org-variable-name">cmd</span>(mem, tohost, fromhost_callback);
+        device_list.handle_command(cmd);
+      } <span class="org-keyword">else</span> {
+        idle();
+      }
+      device_list.tick();
+    }
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+  }
+
+  stop();
+
+  <span class="org-keyword">return</span> exit_code();
+}
+</pre>
+</div>
+
+<p>
+假设 target 是 pk, 希望调用 sys_write 这个 syscall:
+</p>
+
+<ol class="org-ol">
+<li>target::step 会把 sys_write 对应的信息以特定的编码写到 tohost memory 中</li>
+
+<li>target 会 switch_to host, host 从 idle 处开始执行</li>
+
+<li>host 从 tohost buffer 拿到具体的信息放在 mem 中</li>
+
+<li>host 调用 device 的 handle_command, 在初始化时注册的 syscall_proxy 这个
+device 会响应这个 cmd, 最终代理执行这个 sys_write</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000015" class="outline-5">
+<h5 id="org0000015"><span class="section-number-5">1.1.3.2.</span> target</h5>
+<div class="outline-text-5" id="text-1-1-3-2">
+<p>
+target 端执行的代码在 <code>processor_t::step</code>, 用来处理 target 指令的
+fetch/decode/execute
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-type">void</span> <span class="org-constant">processor_t</span>::<span class="org-function-name">step</span>(<span class="org-type">size_t</span> <span class="org-variable-name">n</span>): 
+  <span class="org-keyword">while</span> (n &gt; 0) {
+    <span class="org-type">size_t</span> <span class="org-variable-name">instret</span> = 0;
+    <span class="org-type">reg_t</span> <span class="org-variable-name">pc</span> = state.pc;
+    <span class="org-type">mmu_t</span>* <span class="org-variable-name">_mmu</span> = mmu;
+
+    <span class="org-keyword">while</span> (instret &lt; n):
+      <span class="org-type">insn_fetch_t</span> <span class="org-variable-name">fetch</span> = mmu-&gt;load_insn(pc);
+      pc = execute_insn(<span class="org-keyword">this</span>, pc, fetch);
+    n -= instret;
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org000000c" class="outline-6">
+<h6 id="org000000c"><span class="section-number-6">1.1.3.2.1.</span> load_insn</h6>
+<div class="outline-text-6" id="text-1-1-3-2-1">
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-type">insn_fetch_t</span> <span class="org-function-name">load_insn</span>(<span class="org-type">reg_t</span> <span class="org-variable-name">addr</span>): 
+  <span class="org-type">icache_entry_t</span> <span class="org-variable-name">entry</span>;
+  <span class="org-keyword">return</span> refill_icache(addr, &amp;entry)-&gt;data;
+
+<span class="org-type">icache_entry_t</span>* <span class="org-function-name">refill_icache</span>(<span class="org-type">reg_t</span> <span class="org-variable-name">addr</span>, <span class="org-type">icache_entry_t</span>* <span class="org-variable-name">entry</span>): 
+  <span class="org-keyword">auto</span> <span class="org-variable-name">tlb_entry</span> = translate_insn_addr(addr);
+  <span class="org-type">insn_bits_t</span> <span class="org-variable-name">insn</span> = from_le(*(<span class="org-type">uint16_t</span>*)(tlb_entry.host_offset + addr));
+  <span class="org-type">int</span> <span class="org-variable-name">length</span> = insn_length(insn);
+
+  <span class="org-keyword">if</span> (likely(length == 4)) {
+    insn |= (<span class="org-type">insn_bits_t</span>)from_le(*(<span class="org-keyword">const</span> <span class="org-type">int16_t</span>*)translate_insn_addr_to_host(addr + 2)) &lt;&lt; 16;
+  } <span class="org-keyword">else</span> { <span class="org-comment-delimiter">// </span><span class="org-comment">... }</span>
+
+  <span class="org-type">insn_fetch_t</span> <span class="org-variable-name">fetch</span> = {proc-&gt;decode_insn(insn), insn};
+  entry-&gt;tag = addr;
+  entry-&gt;next = &amp;icache[icache_index(addr + length)];
+  entry-&gt;data = fetch;
+  <span class="org-keyword">return</span> entry;
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000000f" class="outline-6">
+<h6 id="org000000f"><span class="section-number-6">1.1.3.2.2.</span> decode_insn</h6>
+<div class="outline-text-6" id="text-1-1-3-2-2">
+<p>
+decode_insn 扫描 register_base_instructions 注册的 insn_desc_t, 查找与
+mask/match 匹配的指令, 返回到对应的 callback 例如 rv64i_addi
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-type">insn_func_t</span> <span class="org-constant">processor_t</span>::<span class="org-function-name">decode_insn</span>(<span class="org-type">insn_t</span> <span class="org-variable-name">insn</span>):
+  <span class="org-type">int</span> <span class="org-variable-name">cnt</span> = 0;
+  <span class="org-type">insn_desc_t</span>* <span class="org-variable-name">p</span> = &amp;instructions[0];
+  <span class="org-keyword">while</span> ((insn.bits() &amp; p-&gt;mask) != p-&gt;match || <span class="org-negation-char">!</span>desc.func(xlen, rve))
+    p++, cnt++;
+  desc = *p;
+
+  <span class="org-keyword">if</span> (p-&gt;mask != 0 &amp;&amp; p &gt; &amp;instructions[0]) {
+    <span class="org-keyword">if</span> (p-&gt;match != (p - 1)-&gt;match &amp;&amp; p-&gt;match != (p + 1)-&gt;match) {
+      <span class="org-comment-delimiter">// </span><span class="org-comment">move to front of opcode list to reduce miss penalty</span>
+      <span class="org-keyword">while</span> (--p &gt;= &amp;instructions[0])
+        *(p + 1) = *p;
+        instructions[0] = desc;
+
+    opcode_cache[idx] = desc;
+    opcode_cache[idx].match = insn.bits();
+
+  <span class="org-keyword">return</span> desc.func(xlen, rve);
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000012" class="outline-6">
+<h6 id="org0000012"><span class="section-number-6">1.1.3.2.3.</span> execute_insn</h6>
+<div class="outline-text-6" id="text-1-1-3-2-3">
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-type">reg_t</span> <span class="org-function-name">execute_insn</span>(<span class="org-type">processor_t</span>* <span class="org-variable-name">p</span>, <span class="org-type">reg_t</span> <span class="org-variable-name">pc</span>, <span class="org-type">insn_fetch_t</span> <span class="org-variable-name">fetch</span>)
+  <span class="org-keyword">return</span> fetch.func(p, fetch.insn, pc);
+</pre>
+</div>
+
+<p>
+其中 fetch.func 对应具体的指令实现, 以 rv64i_addi 为例:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-type">reg_t</span> <span class="org-function-name">rv64i_addi</span>(<span class="org-type">processor_t</span>* <span class="org-variable-name">p</span>, <span class="org-type">insn_t</span> <span class="org-variable-name">insn</span>, <span class="org-type">reg_t</span> <span class="org-variable-name">pc</span>) {
+<span class="org-preprocessor">#define</span> <span class="org-variable-name">xlen</span> 64
+    <span class="org-type">reg_t</span> <span class="org-variable-name">npc</span> = sext_xlen(pc + insn_length(MATCH_ADDI));
+<span class="org-preprocessor">#include</span> <span class="org-string">"insns/addi.h"</span>
+<span class="org-preprocessor">#undef</span> xlen
+    <span class="org-keyword">return</span> npc;
+}
+</pre>
+</div>
+
+<p>
+<code>insns/addi.h</code> 的内容为:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++">WRITE_RD(sext_xlen(RS1 + insn.i_imm()));
+</pre>
+</div>
+
+<p>
+WRITE_RD 最终会修改 <code>processor-&gt;state_t-&gt;XPR</code>, 以模拟修改寄存器的操作
+</p>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000001b" class="outline-4">
+<h4 id="org000001b"><span class="section-number-4">1.1.4.</span> 添加新的指令</h4>
+<div class="outline-text-4" id="text-1-1-4">
+<p>
+添加新的指令时有两种选择:
+</p>
+
+<ol class="org-ol">
+<li>把它做为 base instruction
+
+<ul class="org-ul">
+<li>修改 riscv.mk.in 中指令的列表,</li>
+
+<li>添加 insns/xxx.h</li>
+
+<li>为了支持 debug, 还需要修改 disasm/disasm.cc, 添加针对 xxx 指令的部分</li>
+</ul></li>
+
+<li>使用 spike 自带的 extension 机制, 可以参考 riscv/extension.h</li>
+</ol>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000021" class="outline-3">
+<h3 id="org0000021"><span class="section-number-3">1.2.</span> htif</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+htif 是 Host Target InterFace, 代码在 fesvr 目录 (Front End SerVeR), spike 通过它可以与 host 交互:
+</p>
+
+<ol class="org-ol">
+<li>读取 host 的数据</li>
+
+<li>发送数据给 host</li>
+</ol>
+
+<p>
+有了这个 IO 通道, 可以完成一些更复杂的功能, 例如:
+</p>
+
+<ol class="org-ol">
+<li>target 通知 host 程序执行结果并返回结果</li>
+
+<li>target 要求 host 执行 syscall</li>
+</ol>
+
+<p>
+例如
+<a href="https://github.com/sunwayforever/code/blob/master/hello_world/hello_baremetal/riscv/main.c">https://github.com/sunwayforever/code/blob/master/hello_world/hello_baremetal/riscv/main.c</a>,
+通过把 tohost 置为 1, 可以通知 host 停止模拟并返回结果
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000024" class="outline-3">
+<h3 id="org0000024"><span class="section-number-3">1.3.</span> pk</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+spike 可以直接运行 bare-metal 程序 (例如
+<a href="https://github.com/sunwayforever/code/tree/master/hello_world/hello_baremetal/riscv">https://github.com/sunwayforever/code/tree/master/hello_world/hello_baremetal/riscv</a>).
+</p>
+
+<p>
+如果要运行非 bare-metal 程序, 则需要 pk (Proxy Kernel), 为非 bare-metal 的 riscv
+程序提供一个基本的执行环境, 类似于 qemu 的 user-mode emulation. 例如:
+</p>
+
+<ol class="org-ol">
+<li>bootloader</li>
+
+<li>中断向量</li>
+
+<li>加载 elf</li>
+
+<li>支持 syscall, 主要是 IO 和 memory 相关</li>
+</ol>
+
+<p>
+pk 本身可以响应一部分 syscall, 例如 sys_dup, 但有一些 syscall 例如 sys_write 需要通过 htif 由 host 去执行
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">ssize_t</span> <span class="org-function-name">sys_write</span>(<span class="org-type">int</span> <span class="org-variable-name">fd</span>, <span class="org-keyword">const</span> <span class="org-type">char</span>* <span class="org-variable-name">buf</span>, <span class="org-type">size_t</span> <span class="org-variable-name">n</span>) {
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">if</span> (f) {
+        <span class="org-keyword">for</span> (<span class="org-type">size_t</span> <span class="org-variable-name">total</span> = 0;;) {
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+            r = file_write(f, kbuf, cur);
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+        }
+    }
+    <span class="org-keyword">return</span> r;
+}
+
+<span class="org-type">ssize_t</span> <span class="org-function-name">file_write</span>(<span class="org-type">file_t</span>* <span class="org-variable-name">f</span>, <span class="org-keyword">const</span> <span class="org-type">void</span>* <span class="org-variable-name">buf</span>, <span class="org-type">size_t</span> <span class="org-variable-name">size</span>) {
+    <span class="org-keyword">return</span> frontend_syscall(SYS_write, f-&gt;kfd, kva2pa(buf), size, 0, 0, 0, 0);
+}
+
+<span class="org-type">long</span> <span class="org-function-name">frontend_syscall</span>(
+    <span class="org-type">long</span> <span class="org-variable-name">n</span>, <span class="org-type">uint64_t</span> <span class="org-variable-name">a0</span>, <span class="org-type">uint64_t</span> <span class="org-variable-name">a1</span>, <span class="org-type">uint64_t</span> <span class="org-variable-name">a2</span>, <span class="org-type">uint64_t</span> <span class="org-variable-name">a3</span>, <span class="org-type">uint64_t</span> <span class="org-variable-name">a4</span>,
+    <span class="org-type">uint64_t</span> <span class="org-variable-name">a5</span>, <span class="org-type">uint64_t</span> <span class="org-variable-name">a6</span>) {
+    <span class="org-keyword">static</span> <span class="org-keyword">volatile</span> <span class="org-type">uint64_t</span> <span class="org-variable-name">magic_mem</span>[8];
+
+    <span class="org-keyword">static</span> <span class="org-type">spinlock_t</span> <span class="org-variable-name">lock</span> = SPINLOCK_INIT;
+    spinlock_lock(&amp;lock);
+
+    magic_mem[0] = n;
+    magic_mem[1] = a0;
+    magic_mem[2] = a1;
+    magic_mem[3] = a2;
+    magic_mem[4] = a3;
+    magic_mem[5] = a4;
+    magic_mem[6] = a5;
+    magic_mem[7] = a6;
+
+    htif_syscall(kva2pa_maybe(magic_mem));
+
+    <span class="org-type">long</span> <span class="org-variable-name">ret</span> = magic_mem[0];
+
+    spinlock_unlock(&amp;lock);
+    <span class="org-keyword">return</span> ret;
+}
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-02-15 Wed 10:22<br />
+Last updated: 2023-02-15 Wed 15:54</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
