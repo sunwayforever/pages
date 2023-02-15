@@ -26,7 +26,7 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents" role="doc-toc">
 <ul>
-<li><a href="#org0000027">1. Spike</a>
+<li><a href="#org000002a">1. Spike</a>
 <ul>
 <li><a href="#org000001e">1.1. interpreter</a>
 <ul>
@@ -38,17 +38,18 @@
 </li>
 <li><a href="#org0000021">1.2. htif</a></li>
 <li><a href="#org0000024">1.3. pk</a></li>
+<li><a href="#org0000027">1.4. boot</a></li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-org0000027" class="outline-2">
-<h2 id="org0000027"><span class="section-number-2">1.</span> Spike</h2>
+<div id="outline-container-org000002a" class="outline-2">
+<h2 id="org000002a"><span class="section-number-2">1.</span> Spike</h2>
 <div class="outline-text-2" id="text-1">
 <p>
-基于 <a href="https://github.com/riscv/riscv-isa-sim.git">https://github.com/riscv/riscv-isa-sim.git</a>, commit: 1cfffe
+基于 <a href="https://github.com/riscv/riscv-isa-sim.git">https://github.com/riscv/riscv-isa-sim.git</a>, master 分支, commit: 1cfffe
 </p>
 </div>
 
@@ -220,8 +221,15 @@ $(riscv_gen_srcs): %.cc: insns/%.h insn_template.cc
     <span class="org-keyword">for</span> (<span class="org-type">size_t</span> <span class="org-variable-name">i</span> = 0; i &lt; cfg-&gt;nprocs(); i++): 
       procs[i] = <span class="org-keyword">new</span> <span class="org-type">processor_t</span>(&amp;isa, cfg-&gt;varch(), <span class="org-keyword">this</span>, cfg-&gt;hartids()[i], halted, log_file.get(), sout_);
         register_base_instructions();
+        mmu = <span class="org-keyword">new</span> <span class="org-type">mmu_t</span>(sim, <span class="org-keyword">this</span>);
+        <span class="org-keyword">for</span> (<span class="org-keyword">auto</span> <span class="org-variable-name">e</span> : isa-&gt;get_extensions()) register_extension(e.second);
+        reset();
 </pre>
 </div>
+
+<p>
+其中 reset 会把 target pc 设置为 DEFAULT_RSTVEC (0x00001000), 这是 target 指令的首地址, 位于 bootrom
+</p>
 </div>
 </div>
 
@@ -260,7 +268,12 @@ spike 执行时分为 host 和 target 两部分, host 和 target 可以用不同
 </p>
 
 <div class="org-src-container">
-<pre class="src src-C++"><span class="org-type">int</span> <span class="org-constant">htif_t</span>::<span class="org-function-name">run</span>(): 
+<pre class="src src-C++"><span class="org-type">int</span> <span class="org-constant">htif_t</span>::<span class="org-function-name">run</span>():
+  start();
+    load_program();
+    <span class="org-comment-delimiter">// </span><span class="org-comment">&#21069;&#38754; sim_t &#21021;&#22987;&#21270;&#26102;&#24050;&#32463;&#35774;&#32622;&#20102; target pc &#21040; bootrom &#30340; DEFAULT_RSTVEC (0x00001000) &#22788;</span>
+    reset();
+      set_rom();
   <span class="org-keyword">if</span> (tohost_addr == 0) {
     <span class="org-keyword">while</span> (<span class="org-constant">true</span>)
       idle();
@@ -597,13 +610,66 @@ pk 本身可以响应一部分 syscall, 例如 sys_dup, 但有一些 syscall 例
 </div>
 </div>
 </div>
+
+<div id="outline-container-org0000027" class="outline-3">
+<h3 id="org0000027"><span class="section-number-3">1.4.</span> boot</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+spike 定义了 abstract_device_t, 其实现包括 mem_t, rom_device_t, mmio_device_t,
+bus_t, 每个 device 需要指定其对应的地址范围, 后续 target 对相应内存的访问会被
+relay 到不同的 device.
+</p>
+
+<p>
+htif_t::run 会调用 set_rom 设置 bootrom 的内容:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C++"><span class="org-type">void</span> <span class="org-constant">sim_t</span>::<span class="org-function-name">set_rom</span>() {
+    <span class="org-keyword">const</span> <span class="org-type">int</span> <span class="org-variable-name">reset_vec_size</span> = 8;
+
+    <span class="org-type">reg_t</span> <span class="org-variable-name">start_pc</span> = cfg-&gt;start_pc.value_or(get_entry_point());
+
+    <span class="org-type">uint32_t</span> <span class="org-variable-name">reset_vec</span>[reset_vec_size] = {
+        0x297,                                         <span class="org-comment-delimiter">// </span><span class="org-comment">auipc  t0,0x0</span>
+        0x28593 + (reset_vec_size * 4 &lt;&lt; 20),          <span class="org-comment-delimiter">// </span><span class="org-comment">addi   a1, t0, &amp;dtb</span>
+        0xf1402573,                                    <span class="org-comment-delimiter">// </span><span class="org-comment">csrr   a0, mhartid</span>
+        get_core(0)-&gt;get_xlen() == 32 ? 0x0182a283u :  <span class="org-comment-delimiter">// </span><span class="org-comment">lw     t0,24(t0)</span>
+            0x0182b283u,                               <span class="org-comment-delimiter">// </span><span class="org-comment">ld     t0,24(t0)</span>
+        0x28067,                                       <span class="org-comment-delimiter">// </span><span class="org-comment">jr     t0</span>
+        0,
+        (<span class="org-type">uint32_t</span>)(start_pc &amp; 0xffffffff),
+        (<span class="org-type">uint32_t</span>)(start_pc &gt;&gt; 32)};
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+    <span class="org-constant">std</span>::<span class="org-type">vector</span>&lt;<span class="org-type">char</span>&gt; <span class="org-variable-name">rom</span>(
+        (<span class="org-type">char</span>*)reset_vec, (<span class="org-type">char</span>*)reset_vec + <span class="org-keyword">sizeof</span>(reset_vec));
+
+    rom.insert(rom.end(), dtb.begin(), dtb.end());
+    <span class="org-keyword">const</span> <span class="org-type">int</span> <span class="org-variable-name">align</span> = 0x1000;
+    rom.resize((rom.size() + align - 1) / align * align);
+
+    boot_rom.reset(<span class="org-keyword">new</span> <span class="org-type">rom_device_t</span>(rom));
+    bus.add_device(DEFAULT_RSTVEC, boot_rom.get());
+}
+</pre>
+</div>
+
+<ol class="org-ol">
+<li>sim_t 初始化时已经把 target pc 设置为 DEFAULT_RSTVEC (0x00001000)</li>
+
+<li>bus.add_device 后 target 针对 DEFAULT_RSTVEC 地址的访问会读取到 bootrom 的数据</li>
+
+<li>bootrom 把 elf 的 entry (start_pc) 直接写到 reset_vec 中, 所以 bootrom 启动后会跳转到 elf 的 entry, 完成启动</li>
+</ol>
+</div>
+</div>
 </div>
 </div>
 <div id="postamble" class="status">
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-02-15 Wed 10:22<br />
-Last updated: 2023-02-15 Wed 15:54</p>
+Last updated: 2023-02-15 Wed 17:50</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
