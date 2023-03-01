@@ -250,8 +250,13 @@ guest 都能操作它.
 </ol>
 
 <p>
-kvm 的许多操作都是通过读写 VMCS 实现的, 例如 KVM_SET_SREGS 实际就是修改了 VMCS
-中 guest state 中的 sreg 部分, 例如:
+VMCS 的作用有:
+</p>
+
+<ul class="org-ul">
+<li><p>
+kvm 的许多操作都是通过读写 VMCS 实现的, 例如 KVM_SET_SREGS 实际就是修改了
+VMCS 中 guest state 中的 sreg 部分, 例如:
 </p>
 
 <div class="org-src-container">
@@ -262,15 +267,15 @@ kvm 的许多操作都是通过读写 VMCS 实现的, 例如 KVM_SET_SREGS 实�
       <span class="org-function-name">vmx_asm2</span>(vmwrite, <span class="org-string">"r"</span>(field), <span class="org-string">"rm"</span>(value), field, value);
   <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
 </pre>
-</div>
+</div></li>
 
-<p>
-kvm_run 结构体中的 exit_reason 等也是从 VMCS 复制过来的.
-</p>
+<li>VMCS 同时也控制着 non-root 模式下 guest 怎么运行, 例如执行哪些指令时需要通过VM
+Exit 退回到 root 模式</li>
 
-<p>
-后续 guest 执行时会通过 VMCS 恢复 guest 上下文, 从而读到修改后寄存器值
-</p>
+<li>kvm_run 结构体中的 exit_reason 等也是从 VMCS 复制过来的.</li>
+
+<li>guest 执行时会通过 VMCS 恢复 guest 上下文, 从而读到修改后寄存器值</li>
+</ul>
 </div>
 
 <div id="outline-container-org0000000" class="outline-4">
@@ -369,19 +374,28 @@ ops-&gt;create_vcpu_thread 为 kvm_start_vcpu_thread, 最终会执行 kvm_cpu_ex
 </p>
 
 <p>
-软件虚拟化时 guest 运行在 ring1, hypervisor 运行在 ring 0, 当 guest 执行特权指令或 io时, 有两种情况:
+软件虚拟化大约分成几种情况:
 </p>
+
+<ol class="org-ol">
+<li>guest 和 hypervisor 都运行在 ring 3, hypervisor 通过模拟来执行每一条 guest 指令, 例如 spike</li>
+
+<li>guest 运行在 ring 3, hypervisor 通过 driver 运行在 ring 0, guest 可以直接大部分指令, 但是当 guest 执行特权指令时, 有两种情况:
 
 <ol class="org-ol">
 <li>处理器会发生 trap, hypervisor 处理这个 trap</li>
 
-<li>处理器不会发生 trap (例如 x86 上的 popf), 这时需要 hypervisor 提前把 popf 翻译或解释成 trap 指令, 或者直接修改 guest 代码, 让它用 trap 代替前面的指令 (半虚拟化,
-paravirtualization)</li>
+<li>处理器不会发生 trap (例如 x86 上的 popf), 这时需要 hypervisor 提前把 popf
+翻译, 解释或 patch 成 trap 指令, 例如 virtualbox</li>
+
+<li>处理器不会发生 trap, 需要直接修改 guest 代码, 让它用 trap 代替前面的指令,
+即半虚拟化 (paravirtualization)</li>
+</ol></li>
 </ol>
 
 <p>
-硬件虚拟化时, guest 运行在 ring0, 大部分特权指令都不是问题, 但某些特定指令或 io
-还是需要 guest 能 VMEXIT 以便 hypervisor 接手处理.
+硬件虚拟化时, guest 运行在 ring0, 大部分特权指令都不是问题, 但某些特定指令例如
+IO 或 MMU 相关的指令还是需要 guest 能 VMEXIT 以便 hypervisor 接手做特殊处理.
 </p>
 </div>
 </div>
@@ -391,7 +405,7 @@ paravirtualization)</li>
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-02-27 Mon 16:59<br />
-Last updated: 2023-03-01 Wed 11:43</p>
+Last updated: 2023-03-01 Wed 13:49</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
