@@ -418,13 +418,14 @@ guest 有自己的页表, 但页表查到的 GPA 并不是真正的物理地址.
 <ol class="org-ol">
 <li>GVA -&gt; GPA 由 guest 页表负责</li>
 
-<li>HVA -&gt; HPA 由 host 页表负责</li>
-
 <li>GPA -&gt; HVA 由 host 自己维护, 例如 kvm 中的 KVM_SET_MEMORY_REGION</li>
+
+<li>HVA -&gt; HPA 由 host 页表负责</li>
 </ol>
 
 <p>
-通过 VMX 的 EPT (Extended Page Tables) 可以完成 GPA -&gt; HPA 的过程.
+通过 VMX 的 EPT (Extended Page Tables) 或软件的 shadow page table 可以快速完成
+GPA -&gt; HPA 的过程.
 </p>
 </div>
 </div>
@@ -449,11 +450,20 @@ guest 有自己的页表, 但页表查到的 GPA 并不是真正的物理地址.
 </p>
 
 <p>
-kvm 默认的 IO 处理方式是模拟的: guest 每一个 IO 操作都产生 VMEXIT, hypervisor 进行 IO 并把数据通过 kvm_run 返回给 guest
+kvm 默认的 IO 处理方式是模拟的:
 </p>
 
+<ol class="org-ol">
+<li>对于 pio (Programmed IO), 处理器的 trap 导致 VMEXIT, userspace hypervisor 进行 IO 并把数据通过 kvm_run 返回给 guest</li>
+
+<li>对于 mmio (Memory Mapped IO), shadow page fault 导致 VMEXIT, kvm 负责确认
+memory 访问来自 mmio page, 在 kvm_run 中构造 KVM_EXIT_MMIO 数据 (pa,
+is_write, data, len), 通过 VMEXIT 返回给 userspace hypervisor 处理. 同时 kvm
+不会填充 shadow page table, 确保下次 mmio 还可以触发 page fault</li>
+</ol>
+
 <p>
-virtio 的处理方式是半虚拟化的: virtio 通过 guest 端的 virtio front-end driver 打包 IO 请求, 通过一次 VMEXIT 发送给 hypervisor 端的 back-end driver, 双方用 ring
+qemu virtio 的处理方式是半虚拟化的: virtio 通过 guest 端的 virtio front-end driver 打包 IO 请求, 通过一次 VMEXIT 发送给 hypervisor 端的 back-end driver, 双方用 ring
 buffer 交换数据
 </p>
 
@@ -468,7 +478,7 @@ buffer 交换数据
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-02-27 Mon 16:59<br />
-Last updated: 2023-03-01 Wed 16:27</p>
+Last updated: 2023-03-02 Thu 11:35</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
