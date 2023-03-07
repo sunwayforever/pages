@@ -26,7 +26,7 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents" role="doc-toc">
 <ul>
-<li><a href="#org0000036">1. Spike</a>
+<li><a href="#org0000039">1. Spike</a>
 <ul>
 <li><a href="#org000002a">1.1. interpreter</a>
 <ul>
@@ -39,14 +39,15 @@
 <li><a href="#org000002d">1.2. htif</a></li>
 <li><a href="#org0000030">1.3. pk</a></li>
 <li><a href="#org0000033">1.4. boot</a></li>
+<li><a href="#org0000036">1.5. force-riscv</a></li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-org0000036" class="outline-2">
-<h2 id="org0000036"><span class="section-number-2">1.</span> Spike</h2>
+<div id="outline-container-org0000039" class="outline-2">
+<h2 id="org0000039"><span class="section-number-2">1.</span> Spike</h2>
 <div class="outline-text-2" id="text-1">
 <p>
 基于 <a href="https://github.com/riscv/riscv-isa-sim.git">https://github.com/riscv/riscv-isa-sim.git</a>, master 分支, commit: 1cfffe
@@ -746,13 +747,86 @@ htif_t::run 会调用 set_rom 设置 bootrom 的内容:
 </ol>
 </div>
 </div>
+
+<div id="outline-container-org0000036" class="outline-3">
+<h3 id="org0000036"><span class="section-number-3">1.5.</span> force-riscv</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+<a href="https://github.com/openhwgroup/force-riscv">https://github.com/openhwgroup/force-riscv</a>
+</p>
+
+<p>
+force-riscv 是一个 RISC-V 的 ISG (instruction stream generator), 但它内置了一个名为 handcar 的模拟器, handcar 基于 spike 改写, 添加了一些功能例如提供了读写寄存器的接口.
+</p>
+
+<p>
+由于它内置了一个模拟器, 所以 fore-riscv 在生成随机指令时是可以用一些 `运行时` 的信息来控制指令的生成, 例如:
+</p>
+
+<ol class="org-ol">
+<li>根据寄存器的值生成不同的指令</li>
+
+<li>生成对齐或非对齐的数据访问</li>
+
+<li>生成指令访问指定的虚拟地址</li>
+</ol>
+
+<p>
+force-riscv 通过 python api 来控制生成什么样的指令, 例如指定使用特定的寄存器
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span class="org-keyword">from</span> riscv.EnvRISCV <span class="org-keyword">import</span> EnvRISCV
+<span class="org-keyword">from</span> riscv.GenThreadRISCV <span class="org-keyword">import</span> GenThreadRISCV
+<span class="org-keyword">from</span> base.Sequence <span class="org-keyword">import</span> Sequence
+
+
+<span class="org-keyword">class</span> <span class="org-type">MySequence</span>(Sequence):
+    <span class="org-keyword">def</span> <span class="org-function-name">generate</span>(<span class="org-keyword">self</span>, <span class="org-operator">**</span>kargs):
+        <span class="org-comment-delimiter"># </span><span class="org-comment">&#36890;&#36807; handcar &#32473; x5 &#36171;&#20540;</span>
+        <span class="org-keyword">self</span>.initializeRegister(<span class="org-string">"x5"</span>, 0x123)
+        <span class="org-comment-delimiter"># </span><span class="org-comment">&#29983;&#25104;&#38543;&#26426;&#30340; addi &#25351;&#20196;</span>
+        <span class="org-keyword">self</span>.genInstruction(<span class="org-string">"ADDI##RISCV"</span>)
+        <span class="org-comment-delimiter"># </span><span class="org-comment">&#25351;&#23450; addi &#20351;&#29992; x5, &#19988; imm &#20351;&#29992;&#29305;&#23450;&#33539;&#22260;&#30340;&#38543;&#26426;&#20540;</span>
+        <span class="org-keyword">self</span>.genInstruction(<span class="org-string">"ADDI##RISCV"</span>, {<span class="org-string">"rs1"</span>: 5, <span class="org-string">"simm12"</span>: <span class="org-string">"0x123-0x126"</span>, <span class="org-string">"rd"</span>: 5})
+        (<span class="org-variable-name">reg_value</span>, <span class="org-variable-name">value_valid</span>) <span class="org-operator">=</span> <span class="org-keyword">self</span>.readRegister(<span class="org-string">"x5"</span>)
+        <span class="org-comment-delimiter"># </span><span class="org-comment">&#26681;&#25454; x5 &#30340;&#20540;&#29983;&#25104;&#19981;&#21516;&#30340;&#25351;&#20196;</span>
+        <span class="org-keyword">if</span> reg_value <span class="org-operator">==</span> 0x123:
+            <span class="org-keyword">self</span>.genInstruction(<span class="org-string">"ADD##RISCV"</span>, {<span class="org-string">"rs1"</span>: 5, <span class="org-string">"rs2"</span>: 5, <span class="org-string">"rd"</span>: 5})
+        <span class="org-keyword">else</span>:
+            <span class="org-keyword">self</span>.genInstruction(<span class="org-string">"ADD##RISCV"</span>, {<span class="org-string">"rs1"</span>: 5, <span class="org-string">"rs2"</span>: 6, <span class="org-string">"rd"</span>: 5})
+
+        <span class="org-comment-delimiter"># </span><span class="org-comment">handcar &#26412;&#36523;&#37197;&#32622;&#20102;&#39029;&#34920; (&#21442;&#32771; riscv/arch_data/paging/ &#19979;&#30340; xml), &#36825;&#37324;&#21487;</span>
+        <span class="org-comment-delimiter"># </span><span class="org-comment">&#20197;&#29983;&#25104;&#38024;&#23545;&#25351;&#23450; va &#30340;&#20869;&#23384;&#35775;&#38382;</span>
+        <span class="org-variable-name">target_addr</span> <span class="org-operator">=</span> <span class="org-keyword">self</span>.genVA(Range <span class="org-operator">=</span> <span class="org-string">"0x10000-0x10000"</span>)
+        <span class="org-keyword">self</span>.genInstruction(<span class="org-string">"LD##RISCV"</span>,{<span class="org-string">"LSTarget"</span>: target_addr})
+
+        <span class="org-keyword">self</span>.genInstruction(<span class="org-string">"SRA##RISCV"</span>)
+
+<span class="org-variable-name">MainSequenceClass</span> <span class="org-operator">=</span> MySequence
+<span class="org-variable-name">GenThreadClass</span> <span class="org-operator">=</span> GenThreadRISCV
+<span class="org-variable-name">EnvClass</span> <span class="org-operator">=</span> EnvRISCV
+</pre>
+</div>
+
+<p>
+python api 可以使用的指令 (例如 ADD##RISCV) 及配置 (例如 rs1, simm12) 在
+riscv/arch_data/instr/ 下的 xml 里可以找到
+</p>
+
+<p>
+另外, force-riscv 生成的 elf 里并不仅仅包含 python api (例如上面
+Sequence::generate) 生成的指令, 它还会自己生成一些初始化的代码, 例如完成寄存器的初始化, 初始化中断和页表等.
+</p>
+</div>
+</div>
 </div>
 </div>
 <div id="postamble" class="status">
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-02-15 Wed 10:22<br />
-Last updated: 2023-03-06 Mon 10:34</p>
+Last updated: 2023-03-07 Tue 14:57</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
