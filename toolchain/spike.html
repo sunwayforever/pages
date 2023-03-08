@@ -647,52 +647,121 @@ spike 可以直接运行 bare-metal 程序 (例如
 </ol>
 
 <p>
-pk 本身可以响应一部分 syscall, 例如 sys_dup, 但有一些 syscall 例如 sys_write 需要通过 htif 由 host 去执行
+pk 本身可以响应一部分 syscall, 例如 sys_dup, 但有一些 syscall 需要通过 htif 由
+host 去执行, 以 sys_write 为例:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-C"><span class="org-type">ssize_t</span> <span class="org-function-name">sys_write</span>(<span class="org-type">int</span> <span class="org-variable-name">fd</span>, <span class="org-keyword">const</span> <span class="org-type">char</span>* <span class="org-variable-name">buf</span>, <span class="org-type">size_t</span> <span class="org-variable-name">n</span>) {
-    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
-    <span class="org-keyword">if</span> (f) {
-        <span class="org-keyword">for</span> (<span class="org-type">size_t</span> <span class="org-variable-name">total</span> = 0;;) {
-            <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
-            r = file_write(f, kbuf, cur);
-            <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
-        }
-    }
-    <span class="org-keyword">return</span> r;
-}
+<pre class="src src-C"><span class="org-comment-delimiter">/* </span><span class="org-comment">-------</span><span class="org-comment-delimiter"> */</span>
+<span class="org-type">void</span> <span class="org-function-name">boot_loader</span>(<span class="org-type">uintptr_t</span> <span class="org-variable-name">dtb</span>):
+  uintptr_t kernel_stack_top = pk_vm_init();
+  <span class="org-keyword">extern</span> <span class="org-type">char</span> <span class="org-variable-name">trap_entry</span>;
+  <span class="org-function-name">write_csr</span>(stvec, pa2kva(&amp;trap_entry));
+  <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
 
-<span class="org-type">ssize_t</span> <span class="org-function-name">file_write</span>(<span class="org-type">file_t</span>* <span class="org-variable-name">f</span>, <span class="org-keyword">const</span> <span class="org-type">void</span>* <span class="org-variable-name">buf</span>, <span class="org-type">size_t</span> <span class="org-variable-name">size</span>) {
-    <span class="org-keyword">return</span> frontend_syscall(SYS_write, f-&gt;kfd, kva2pa(buf), size, 0, 0, 0, 0);
-}
+<span class="org-comment-delimiter">/* </span><span class="org-comment">-------</span><span class="org-comment-delimiter"> */</span>
+<span class="org-constant">trap_entry</span>:
+  <span class="org-type">csrrw</span> <span class="org-variable-name">sp</span>, <span class="org-variable-name">sscratch</span>, <span class="org-variable-name">sp</span>
+  bnez sp, 1f
+  csrr sp, sscratch
+1:addi sp,sp,-320
+  save_tf
+  move  a0,sp
+  jal handle_trap
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">-------</span><span class="org-comment-delimiter"> */</span>
+<span class="org-type">void</span> <span class="org-function-name">handle_trap</span>(<span class="org-type">trapframe_t</span>* <span class="org-variable-name">tf</span>):
+  <span class="org-keyword">if</span> ((<span class="org-type">intptr_t</span>)tf-&gt;cause &lt; 0)
+    <span class="org-keyword">return</span> handle_interrupt(tf);
+
+  <span class="org-keyword">typedef</span> <span class="org-type">void</span> (*<span class="org-type">trap_handler</span>)(<span class="org-type">trapframe_t</span>*);
+
+  <span class="org-keyword">const</span> <span class="org-keyword">static</span> <span class="org-type">trap_handler</span> <span class="org-variable-name">trap_handlers</span>[] = {
+    [CAUSE_MISALIGNED_FETCH] = handle_misaligned_fetch,
+    [CAUSE_FETCH_ACCESS] = handle_instruction_access_fault,
+    [CAUSE_LOAD_ACCESS] = handle_load_access_fault,
+    [CAUSE_STORE_ACCESS] = handle_store_access_fault,
+    [CAUSE_FETCH_PAGE_FAULT] = handle_fault_fetch,
+    [CAUSE_ILLEGAL_INSTRUCTION] = handle_illegal_instruction,
+    [CAUSE_USER_ECALL] = handle_syscall,
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+  };
+  <span class="org-type">trap_handler</span> <span class="org-variable-name">f</span> = (<span class="org-type">void</span>*)<span class="org-function-name">pa2kva</span>(<span class="org-type">trap_handlers</span>[tf-&gt;cause]);
+  <span class="org-function-name">f</span>(tf);
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">-------</span><span class="org-comment-delimiter"> */</span>
+<span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">handle_syscall</span>(<span class="org-type">trapframe_t</span>* <span class="org-variable-name">tf</span>):
+  tf-&gt;gpr[10] = do_syscall(tf-&gt;gpr[10], tf-&gt;gpr[11], tf-&gt;gpr[12], tf-&gt;gpr[13],
+                           tf-&gt;gpr[14], tf-&gt;gpr[15], tf-&gt;gpr[17]);
+  tf-&gt;epc += 4;
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">-------</span><span class="org-comment-delimiter"> */</span>
+<span class="org-type">long</span> <span class="org-function-name">do_syscall</span>(<span class="org-type">long</span> <span class="org-variable-name">a0</span>, <span class="org-type">long</span> <span class="org-variable-name">a1</span>, <span class="org-type">long</span> <span class="org-variable-name">a2</span>, <span class="org-type">long</span> <span class="org-variable-name">a3</span>, <span class="org-type">long</span> <span class="org-variable-name">a4</span>, <span class="org-type">long</span> <span class="org-variable-name">a5</span>, <span class="org-type">unsigned</span> <span class="org-type">long</span> <span class="org-variable-name">n</span>):
+  <span class="org-keyword">const</span> <span class="org-keyword">static</span> <span class="org-type">void</span>* syscall_table[] = {
+    [SYS_exit] = sys_exit,
+    [SYS_exit_group] = sys_exit,
+    [SYS_read] = sys_read,
+    [SYS_pread] = sys_pread,
+    [SYS_write] = sys_write,
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+  };
+
+  <span class="org-type">syscall_t</span> <span class="org-variable-name">f</span> = 0;
+  <span class="org-keyword">if</span> (n &lt; ARRAY_SIZE(syscall_table))
+    f = syscall_table[n];
+  <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>f)
+    <span class="org-keyword">return</span> sys_stub_nosys();
+  f = (<span class="org-type">void</span>*)<span class="org-function-name">pa2kva</span>(f);
+  <span class="org-keyword">return</span> f(a0, a1, a2, a3, a4, a5, n);
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">-------</span><span class="org-comment-delimiter"> */</span>
+<span class="org-type">ssize_t</span> <span class="org-function-name">sys_write</span>(<span class="org-type">int</span> <span class="org-variable-name">fd</span>, <span class="org-keyword">const</span> <span class="org-type">char</span>* <span class="org-variable-name">buf</span>, <span class="org-type">size_t</span> <span class="org-variable-name">n</span>):
+  <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+  <span class="org-keyword">if</span> (f):
+    <span class="org-keyword">for</span> (<span class="org-type">size_t</span> <span class="org-variable-name">total</span> = 0;;):
+      <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+      r = file_write(f, kbuf, cur);
+      <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">return</span> r;
+
+
+<span class="org-type">ssize_t</span> <span class="org-function-name">file_write</span>(<span class="org-type">file_t</span>* <span class="org-variable-name">f</span>, <span class="org-keyword">const</span> <span class="org-type">void</span>* <span class="org-variable-name">buf</span>, <span class="org-type">size_t</span> <span class="org-variable-name">size</span>):
+  <span class="org-keyword">return</span> frontend_syscall(SYS_write, f-&gt;kfd, kva2pa(buf), size, 0, 0, 0, 0);
+
 
 <span class="org-type">long</span> <span class="org-function-name">frontend_syscall</span>(
     <span class="org-type">long</span> <span class="org-variable-name">n</span>, <span class="org-type">uint64_t</span> <span class="org-variable-name">a0</span>, <span class="org-type">uint64_t</span> <span class="org-variable-name">a1</span>, <span class="org-type">uint64_t</span> <span class="org-variable-name">a2</span>, <span class="org-type">uint64_t</span> <span class="org-variable-name">a3</span>, <span class="org-type">uint64_t</span> <span class="org-variable-name">a4</span>,
-    <span class="org-type">uint64_t</span> <span class="org-variable-name">a5</span>, <span class="org-type">uint64_t</span> <span class="org-variable-name">a6</span>) {
-    <span class="org-keyword">static</span> <span class="org-keyword">volatile</span> <span class="org-type">uint64_t</span> <span class="org-variable-name">magic_mem</span>[8];
+    <span class="org-type">uint64_t</span> <span class="org-variable-name">a5</span>, <span class="org-type">uint64_t</span> <span class="org-variable-name">a6</span>):
+  <span class="org-keyword">static</span> <span class="org-keyword">volatile</span> uint64_t magic_mem[8];
 
-    <span class="org-keyword">static</span> <span class="org-type">spinlock_t</span> <span class="org-variable-name">lock</span> = SPINLOCK_INIT;
-    spinlock_lock(&amp;lock);
+  <span class="org-keyword">static</span> <span class="org-type">spinlock_t</span> <span class="org-variable-name">lock</span> = SPINLOCK_INIT;
+  spinlock_lock(&amp;lock);
 
-    magic_mem[0] = n;
-    magic_mem[1] = a0;
-    magic_mem[2] = a1;
-    magic_mem[3] = a2;
-    magic_mem[4] = a3;
-    magic_mem[5] = a4;
-    magic_mem[6] = a5;
-    magic_mem[7] = a6;
+  <span class="org-type">magic_mem</span>[0] = n;
+  <span class="org-type">magic_mem</span>[1] = a0;
+  <span class="org-type">magic_mem</span>[2] = a1;
+  <span class="org-type">magic_mem</span>[3] = a2;
+  <span class="org-type">magic_mem</span>[4] = a3;
+  <span class="org-type">magic_mem</span>[5] = a4;
+  <span class="org-type">magic_mem</span>[6] = a5;
+  <span class="org-type">magic_mem</span>[7] = a6;
 
-    htif_syscall(kva2pa_maybe(magic_mem));
+  <span class="org-function-name">htif_syscall</span>(<span class="org-type">kva2pa_maybe</span>(<span class="org-variable-name">magic_mem</span>));
 
-    <span class="org-type">long</span> <span class="org-variable-name">ret</span> = magic_mem[0];
+  <span class="org-type">long</span> <span class="org-variable-name">ret</span> = magic_mem[0];
 
-    spinlock_unlock(&amp;lock);
-    <span class="org-keyword">return</span> ret;
-}
+  spinlock_unlock(&amp;lock);
+  <span class="org-keyword">return</span> ret;
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">-------</span><span class="org-comment-delimiter"> */</span>
+<span class="org-type">void</span> <span class="org-function-name">htif_syscall</span>(<span class="org-type">uintptr_t</span> <span class="org-variable-name">arg</span>):
+  do_tohost_fromhost(0, 0, arg);
 </pre>
 </div>
+
+<p>
+后续 htif 对 tohost 的处理参考 <a href="#org0000009">host</a>
+</p>
 </div>
 </div>
 
@@ -888,7 +957,7 @@ Sequence::generate) 生成的指令, 它还会自己生成一些初始化的代�
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-02-15 Wed 10:22<br />
-Last updated: 2023-03-07 Tue 19:16</p>
+Last updated: 2023-03-08 Wed 10:50</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
