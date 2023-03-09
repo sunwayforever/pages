@@ -38,7 +38,7 @@
 </li>
 <li><a href="#org000002d">1.2. htif</a></li>
 <li><a href="#org0000030">1.3. pk</a></li>
-<li><a href="#org0000033">1.4. boot</a></li>
+<li><a href="#ID-59d328ce-9af1-437d-adf3-8078782f078d">1.4. boot</a></li>
 <li><a href="#org0000037">1.5. commit log</a></li>
 <li><a href="#org000003a">1.6. force-riscv</a></li>
 </ul>
@@ -765,8 +765,8 @@ host 去执行, 以 sys_write 为例:
 </div>
 </div>
 
-<div id="outline-container-org0000033" class="outline-3">
-<h3 id="org0000033"><span class="section-number-3">1.4.</span> boot</h3>
+<div id="outline-container-ID-59d328ce-9af1-437d-adf3-8078782f078d" class="outline-3">
+<h3 id="ID-59d328ce-9af1-437d-adf3-8078782f078d"><span class="section-number-3">1.4.</span> boot</h3>
 <div class="outline-text-3" id="text-1-4">
 <p>
 spike 定义了 abstract_device_t, 其实现包括 mem_t, rom_device_t, mmio_device_t,
@@ -785,12 +785,21 @@ htif_t::run 会调用 set_rom 设置 bootrom 的内容:
     <span class="org-type">reg_t</span> <span class="org-variable-name">start_pc</span> = cfg-&gt;start_pc.value_or(get_entry_point());
 
     <span class="org-type">uint32_t</span> <span class="org-variable-name">reset_vec</span>[reset_vec_size] = {
-        0x297,                                         <span class="org-comment-delimiter">// </span><span class="org-comment">auipc  t0,0x0</span>
+        <span class="org-comment-delimiter">// </span><span class="org-comment">auipc  t0,0x0, &#30456;&#24403;&#20110; t0 = pc + (0x0&lt;&lt;12) = pc</span>
+        0x297,
+        <span class="org-comment-delimiter">// </span><span class="org-comment">&#25353;&#32422;&#23450; a1 &#38656;&#35201;&#20445;&#23384; dtb &#30340;&#22320;&#22336;. &#36825;&#37324;&#30340; dtb &#26159;&#32039;&#25384;&#22312; reset_vec &#20043;&#21518;&#30340;:</span>
+        <span class="org-comment-delimiter">// </span><span class="org-comment">rom.insert(rom.end(), dtb.begin(), dtb.end()).</span>
+        <span class="org-comment-delimiter">// </span><span class="org-comment">reset_vec_size*4&lt;&lt;20 &#26159;&#22240;&#20026; addi &#25351;&#20196;&#37324; imm &#25918;&#22312;&#39640; 12 &#20301;</span>
         0x28593 + (reset_vec_size * 4 &lt;&lt; 20),          <span class="org-comment-delimiter">// </span><span class="org-comment">addi   a1, t0, &amp;dtb</span>
         0xf1402573,                                    <span class="org-comment-delimiter">// </span><span class="org-comment">csrr   a0, mhartid</span>
+        <span class="org-comment-delimiter">// </span><span class="org-comment">&#21518;&#38754;&#30340; start_pc &#25152;&#22312;&#30340;&#20301;&#32622;&#19982; reset_vec &#24320;&#22836;&#30340;&#20301;&#32622; (t0) &#30456;&#24046; 24 byte</span>
         get_core(0)-&gt;get_xlen() == 32 ? 0x0182a283u :  <span class="org-comment-delimiter">// </span><span class="org-comment">lw     t0,24(t0)</span>
             0x0182b283u,                               <span class="org-comment-delimiter">// </span><span class="org-comment">ld     t0,24(t0)</span>
         0x28067,                                       <span class="org-comment-delimiter">// </span><span class="org-comment">jr     t0</span>
+        <span class="org-comment-delimiter">// </span><span class="org-comment">&#36825;&#37324;&#25554;&#20837;&#19968;&#20010; 0, &#26159;&#20026;&#20102;&#35753; start_pc &#19982; reset_vec &#24320;&#22836;&#30340;&#20301;&#32622;&#30456;&#24046; 24 byte</span>
+        <span class="org-comment-delimiter">// </span><span class="org-comment">(&#32780;&#19981;&#26159; 20 byte), &#20197;&#20415; start_pc &#30340;&#20301;&#32622;&#26159; 8 byte &#23545;&#40784;&#30340; (ld &#38656;&#35201;&#35775;&#38382; 8</span>
+        <span class="org-comment-delimiter">// </span><span class="org-comment">byte &#23545;&#40784;&#30340;&#22320;&#22336;, reset_vec &#30340;&#22320;&#22336; DEFAULT_RSTVEC &#24050;&#32463;&#26159; 8 byte &#23545;&#40784;&#30340;,</span>
+        <span class="org-comment-delimiter">// </span><span class="org-comment">&#20877;&#21152;&#19978; 24 &#24471;&#21040;&#30340; start_pc &#22320;&#22336;&#20063;&#20250;&#26159;&#23545;&#40784;&#30340;)</span>
         0,
         (<span class="org-type">uint32_t</span>)(start_pc &amp; 0xffffffff),
         (<span class="org-type">uint32_t</span>)(start_pc &gt;&gt; 32)};
@@ -814,6 +823,8 @@ htif_t::run 会调用 set_rom 设置 bootrom 的内容:
 <li>bus.add_device 后 target 针对 DEFAULT_RSTVEC 地址的访问会读取到 bootrom 的数据</li>
 
 <li>bootrom 把 elf 的 entry (start_pc) 直接写到 reset_vec 中, 所以 bootrom 启动后会跳转到 elf 的 entry, 完成启动</li>
+
+<li>启动时按约定需要把 dtb 放在 a1 中, 参考 <a href="../riscv/riscv_boot_flow.html#ID-8acc5186-ea66-4a8d-996f-c1582145ae7c">dtb</a></li>
 </ol>
 </div>
 </div>
@@ -837,7 +848,7 @@ commit log 需要:
 找开 commit log 后, 针对寄存器和内存的读写操作的结果都会被记录下来, 例如:
 </p>
 
-<pre class="example" id="org0000036">
+<pre class="example" id="org0000033">
 core   0: 3 0x0000000000001000 (0x00000297) x 5 0x0000000000001000
 core   0: 3 0x0000000000001004 (0x02028593) x11 0x0000000000001020
 core   0: 3 0x0000000000001008 (0xf1402573) x10 0x0000000000000000
@@ -957,7 +968,7 @@ Sequence::generate) 生成的指令, 它还会自己生成一些初始化的代�
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-02-15 Wed 10:22<br />
-Last updated: 2023-03-08 Wed 10:50</p>
+Last updated: 2023-03-09 Thu 10:08</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
