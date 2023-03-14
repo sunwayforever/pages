@@ -216,9 +216,9 @@ End of assembler dump.
 </div>
 
 
-<div id="outline-container-org000005d" class="outline-5 references">
-<h5 id="org000005d">Backlinks</h5>
-<div class="outline-text-5" id="text-org000005d">
+<div id="outline-container-org000005c" class="outline-5 references">
+<h5 id="org000005c">Backlinks</h5>
+<div class="outline-text-5" id="text-org000005c">
 <p>
 <a href="gcc_branch_prediction.html#ID-3a32de5b-6de3-46a4-9d45-e40ea92ad0d4">GCC Branch Prediction</a>
 (<i>GCC Branch Prediction &gt; __builtin_expect</i>):   <a href="#ID-42c2d562-efef-41ad-8674-7366e42de19c">__builtin_expect</a>
@@ -414,12 +414,6 @@ init builtin
 
 <p>
 init builtin 的作用是让 frontend 能识别出某个函数是 builtin
-</p>
-
-<p>
-riscv builtin 的 init 是通过 TARGET_INIT_BUILTINS 这个 target hook, 即
-riscv_init_builtins 完成, 这个函数会扫描 riscv_builtins 数组, 后者由
-DIRECT_BUILTIN 填充
 </p></li>
 
 <li><p>
@@ -427,8 +421,7 @@ expand builtin
 </p>
 
 <p>
-riscv builtin 的 expand 由 TARGET_EXPAND_BUILTIN 即 riscv_expand_builtin 来完成. riscv_expand_builtin_direct 函数会扫描 riscv_builtins 数组, 直接用
-builtin 的名字或其它信息找到对应的 insn icode, 不需要用 optab.
+expand builtin 的作用是找到 builtin 对应的 md 中的 insn
 </p></li>
 </ol>
 
@@ -443,19 +436,23 @@ builtin 的名字或其它信息找到对应的 insn icode, 不需要用 optab.
 <h4 id="org0000044"><span class="section-number-4">1.5.1.</span> riscv_build_function_type</h4>
 <div class="outline-text-4" id="text-1-5-1">
 <p>
-function type 即 ftype, 代表函数的 prototype
-</p>
-
-<p>
 为了让 frontend 在解析代码时能认出某个函数是 builtin, 需要告诉它这些函数的
 fndecl (即 signature), fndecl 包含两部分:
 </p>
 
 <ol class="org-ol">
-<li>ftype (function type)</li>
+<li>function type</li>
 
 <li>function name</li>
 </ol>
+
+<p>
+function type 即 ftype, 代表函数的 prototype.
+</p>
+
+<p>
+backend 用 DIRECT_BUILTIN 定义 builtin 时使用 riscv_function_type 枚举类型定义了不同的 ftype, 例如 RISCV_SI_FTYPE_SI
+</p>
 
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-keyword">enum</span> <span class="org-type">riscv_function_type</span> {
@@ -477,18 +474,11 @@ DEF_RISCV_FTYPE (2, (V4HI, V4QI, V4QI))
 
 <span class="org-comment-delimiter">/* </span><span class="org-comment">&#20197; DEF_RISCV_FTYPE (1, (SI, SI)) &#20026;&#20363;, &#23427;&#20250;&#23637;&#24320;&#20026;:</span>
 <span class="org-comment"> * RISCV_SI_FTYPE_SI, &#34920;&#31034;&#35813;&#20989;&#25968;&#21407;&#22411;&#26159; int x(int)</span><span class="org-comment-delimiter"> */</span>
-
 </pre>
 </div>
 
 <p>
-这里定义的 riscv_function_type 代表函数原型, backend 用 DIRECT_BUILTIN 定义 builtin
-时会用到它
-</p>
-
-<p>
-为了让 riscv_function_type 枚举类型能对应到 frontend 解析出来函数原型 (gimple
-tree node), 需要定义它们之间的对应关系
+riscv_build_function_type 的任务是把定义 builtin 时使用的 riscv_function_type 枚举类型 (例如 RISCV_SI_FTYPE_SI) 转换为 frontend 认识的 tree code
 </p>
 
 <div class="org-src-container">
@@ -550,7 +540,7 @@ riscv_init_builtins
  <span class="org-keyword">for</span> (<span class="org-type">size_t</span> <span class="org-variable-name">i</span> = 0; i &lt; ARRAY_SIZE (riscv_builtins); i++) {
       <span class="org-keyword">const</span> <span class="org-keyword">struct</span> <span class="org-type">riscv_builtin_description</span> *<span class="org-variable-name">d</span> = &amp;riscv_builtins[i];
       <span class="org-keyword">if</span> (d-&gt;avail ()):
-        <span class="org-comment-delimiter">// </span><span class="org-comment">&#21069;&#38754;&#25552;&#21040;&#30340;  riscv_build_function_type</span>
+        <span class="org-comment-delimiter">// </span><span class="org-comment">&#21069;&#38754;&#25552;&#21040;&#30340; riscv_build_function_type</span>
         tree type = riscv_build_function_type (d-&gt;prototype);
         <span class="org-type">size_t</span> <span class="org-variable-name">fcode</span> = i;
         <span class="org-comment-delimiter">// </span><span class="org-comment">NOTE: add_builtin_function &#26159; backend &#19982; frontend &#20851;&#32852;&#26368;&#37325;&#35201;&#30340;&#19968;&#27493;:</span>
@@ -562,7 +552,7 @@ riscv_init_builtins
 </div>
 
 <p>
-riscv_builtins 是通过 DIRECT_BUILTIN 填充的:
+其中 riscv_builtins 是通过 DIRECT_BUILTIN 填充的:
 </p>
 
 <div class="org-src-container">
@@ -576,7 +566,7 @@ riscv_builtins 是通过 DIRECT_BUILTIN 填充的:
 
 <span class="org-comment-delimiter">/* </span><span class="org-comment">DIRECT_BUILTIN &#23637;&#24320;&#21518;&#20026;:</span><span class="org-comment-delimiter"> */</span>
 { CODE_FOR_riscv_ave_si, <span class="org-string">"__builtin_riscv_ave_si"</span>, RISCV_BUILTIN_DIRECT, RISCV_SI_FTYPE_SI_SI, riscv_builtin_avail_dsp32}
-<span class="org-comment-delimiter">/*</span><span class="org-comment">|icode                  |name                                          |ftype                |avail</span><span class="org-comment-delimiter">   */</span>
+<span class="org-comment-delimiter">/*</span><span class="org-comment">|d-&gt;icode              |d-&gt;name                                        |d-&gt;prototype         |d-&gt;avail()</span><span class="org-comment-delimiter">   */</span>
 
 <span class="org-comment-delimiter">/* </span><span class="org-comment">CODE_FOR_riscv_ave_si &#30452;&#25509;&#23545;&#24212;&#30528; md &#20013; insn &#30340;&#23450;&#20041;, &#36825;&#20010; enum &#30001; genopinit &#29983;&#25104;</span><span class="org-comment-delimiter"> */</span>
 (define_insn <span class="org-string">"riscv_ave_&lt;mode&gt;"</span>
@@ -684,7 +674,7 @@ tree
 </div></li>
 
 <li><p>
-backend 可以使用 RISCV_ATYPE_V4SI 这种 mode 来构造 ftype 以及 fndecl
+backend 可以使用 RISCV_ATYPE_V4SI 这种 mode 来构造 ftype (以及 fndecl)
 </p>
 
 <div class="org-src-container">
@@ -698,24 +688,17 @@ backend 可以使用 RISCV_ATYPE_V4SI 这种 mode 来构造 ftype 以及 fndecl
 <div id="outline-container-org0000053" class="outline-4">
 <h4 id="org0000053"><span class="section-number-4">1.5.6.</span> Recap</h4>
 <div class="outline-text-4" id="text-1-5-6">
+<p>
+riscv_builtins 是核心的数据结构, 它由 DIRECT_BUILTIN 构造, 包含了以下信息:
+</p>
+
 <ol class="org-ol">
-<li>需要定义 builtin 对应的 fndecl 以便 frontend 能识别出 builtin</li>
+<li>builtin 对应的 fndecl, 这部分由 riscv_init_builtins 负责处理, 通过
+riscv_build_function_type, add_builtin_function 等函数把 ftype 等枚举类型转换成 tree node. frontend 在 expand_expr 时会根据 tree node 识别出 builtin</li>
 
-<li>需要定义 builtin 对应的 md 中的 insn 以便 backend 能找到它对应的 insn</li>
+<li>builtin 对应的 insn, 这部分由 riscv_expand_builtin 负责处理, backend 根据
+icode 找到 builtin 对应的 insn</li>
 </ol>
-
-<p>
-这两个信息都保存在通过 DIRECT_BUILTIN 构造的 riscv_builtins 中.
-</p>
-
-<p>
-前者由 riscv_init_builtins 负责, 通过 riscv_build_function_type,
-add_builtin_function 等函数.
-</p>
-
-<p>
-后者由 riscv_expand_builtin 负责.
-</p>
 </div>
 </div>
 
@@ -734,9 +717,9 @@ add_builtin_function 等函数.
 
 
 
-<div id="outline-container-org000005c" class="outline-2 references">
-<h2 id="org000005c">Backlinks</h2>
-<div class="outline-text-2" id="text-org000005c">
+<div id="outline-container-org000005d" class="outline-2 references">
+<h2 id="org000005d">Backlinks</h2>
+<div class="outline-text-2" id="text-org000005d">
 <p>
 <a href="gcc.html#ID-19df5597-4fd4-47a1-9534-f6e0c327e8d5">GCC</a>
 (<i>GCC &gt; Builtin</i>):   <a href="gcc_builtin.html#ID-b9dd7f04-f7f7-4a70-8f00-9e446df3339e">Builtin</a>
@@ -753,7 +736,7 @@ add_builtin_function 等函数.
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2017-08-04 Fri 00:00<br />
-Last updated: 2023-03-14 Tue 14:12</p>
+Last updated: 2023-03-14 Tue 17:29</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
