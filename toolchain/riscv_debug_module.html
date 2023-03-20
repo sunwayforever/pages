@@ -1,0 +1,546 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>Riscv Debug Module</title>
+
+
+           <link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+           <link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+           <link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+           <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+           <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+           <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+           <link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+           <link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">Riscv Debug Module</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000021">1. RISC-V Debug Module</a>
+<ul>
+<li><a href="#org0000000">1.1. Overview</a></li>
+<li><a href="#org0000003">1.2. remote bitbang</a></li>
+<li><a href="#org0000006">1.3. jtag_dtm</a></li>
+<li><a href="#org000001e">1.4. dm</a>
+<ul>
+<li><a href="#org000000c">1.4.1. dmi_write</a></li>
+<li><a href="#org000000f">1.4.2. dmi_read</a></li>
+<li><a href="#org000001b">1.4.3. debug_mode</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000021" class="outline-2">
+<h2 id="org0000021"><span class="section-number-2">1.</span> RISC-V Debug Module</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="https://github.com/riscv/riscv-debug-spec/blob/master/riscv-debug-stable.pdf">https://github.com/riscv/riscv-debug-spec/blob/master/riscv-debug-stable.pdf</a>
+</p>
+
+<p>
+debug module (DM) spec 描述的是 riscv 如何支持 jtag.
+</p>
+
+<p>
+spike 的相关代码涉及到几个不同的组件:
+</p>
+
+<ol class="org-ol">
+<li>remote bitbang, 用来与 jtag 通信</li>
+<li>dtm (debug transport module), 解析 jtag 数据</li>
+<li>dm (debug module), 与 hart 直接通信</li>
+</ol>
+</div>
+
+<div id="outline-container-org0000000" class="outline-3">
+<h3 id="org0000000"><span class="section-number-3">1.1.</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+以一个简单的读寄存器的操作为例, 说明 dm 的过程:
+</p>
+
+<ol class="org-ol">
+<li>guest 每次 step 之后会通过 remote_bitbang 的 tick 函数看是否有 jtag 命令</li>
+
+<li>jtag_dtm 解析 remote_bitbang 收到的 jtag 命令. jtag 只有四根信号线, dtm 会用一个状态机来解析数据</li>
+
+<li>dtm 解析到一个 dr, op 为 DMI_OP_WRITE, address 为 DM_DMCONTROL, value 为
+DM_DMCONTROL_HALTREQ, 导致 processor step 时通过 enter_debug_mode 进行 debug
+mode, pc 跳转到 DEBUG_ROM_ENTRY</li>
+
+<li>jtag_dtm 解析另一个 dr, op 为 DMI_OP_WRITE, address 为 DM_COMMAND, value 为要执行的 command</li>
+
+<li>dm 通过 perform_abstract_command 执行这个 command, 发现它是 register access</li>
+
+<li>dm 执行 `读 x0` 的 abstract command 的方法是把 `sd x0,
+debug_data_start(zero)`指令写到 debug_abstract_start 处, debug_mode 会执行到这段代码, 把 x0 的值写到了debug_data_start.</li>
+
+<li>dtm 解析另一个 dr, op 为 DMI_OP_READ, 且 address 为 DM_DATA0, 其中 DM_DATA0
+对应 debug_data_start. dm 从 debug_data_start 读出数据, 放到 dr, 最后通过
+jtag_dtm 的状态机把数据返回给 remote_bitbang</li>
+
+<li>jtag_dtm 解析到另一个 dr, DMI_OP_WRITE(DM_DMCONTROL, DM_DMCONTROL_RESUMEREQ),
+表示要 resume, guest 会通过 debug_rom 中的 dret 指令退出 debug_mode</li>
+</ol>
+
+<p>
+整个过程的核心是:
+</p>
+
+<ol class="org-ol">
+<li>dm 把请求对应的指令写入 debug_abstract_start</li>
+
+<li>guest 进入 debug_mode 执行 debug_abstract_start 处的代码, 结果写到了
+debug_data_start</li>
+
+<li>dm 从 debug_data_start 读到结果</li>
+</ol>
+
+<p>
+上面的例子是基于 abstract command 的做法, 实际上 dm 还支持 progbuf 的方式:
+</p>
+
+<p>
+jtag 通过 dr 向 DM_PROGBUF0 直接写入代码, 从 DM_DATA0 读到结果. 
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000003" class="outline-3">
+<h3 id="org0000003"><span class="section-number-3">1.2.</span> remote bitbang</h3>
+<div class="outline-text-3" id="text-1-2">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">void</span> <span class="org-variable-name">sim_t</span>::main():
+  <span class="org-keyword">while</span> (<span class="org-negation-char">!</span>done()):
+    step(INTERLEAVE);
+    <span class="org-keyword">if</span> (remote_bitbang):
+        remote_bitbang-&gt;tick();
+
+<span class="org-type">void</span> <span class="org-variable-name">remote_bitbang_t</span>::tick():
+  <span class="org-keyword">if</span> (client_fd &gt; 0):
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#24050;&#32463;&#26377; openocd &#36830;&#25509;</span><span class="org-comment-delimiter"> */</span>
+    execute_commands();
+  <span class="org-keyword">else</span>:
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#38750;&#38459;&#22622;&#24335;&#30340;&#31561;&#24453; openocd</span><span class="org-comment-delimiter"> */</span>
+    this-&gt;accept();
+
+<span class="org-type">void</span> <span class="org-variable-name">remote_bitbang_t</span>::execute_commands():
+  <span class="org-keyword">while</span> (1):
+    uint8_t command = recv_buf[recv_start];
+    <span class="org-comment-delimiter">// </span><span class="org-comment">jtag &#31471;&#30340; remote bitbang &#39537;&#21160;&#25226;&#25226;&#21629;&#20196;&#32534;&#30721;&#25104;&#19968;&#31995;&#21015;&#30340; 01234..., &#23545;&#24212;&#19981;&#21516;</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">pin &#19978;&#30340;&#20449;&#21495;, &#19968;&#20010;&#31616;&#21333;&#30340;&#21629;&#20196;&#38656;&#35201;&#32534;&#30721;&#25104;&#35768;&#22810; set_pins &#21629;&#20196;, &#29992;&#26469;&#34920;&#31034;&#19968;&#31995;&#21015;</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">&#30340;&#29366;&#24577;&#21464;&#21270;, &#20363;&#22914;:</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">&#29366;&#24577;1: &#20934;&#22791;&#24320;&#22987;&#20256;&#36882;&#19968;&#20010; dr;</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">&#29366;&#24577;2: dr &#30340; bit ++ &#26159; x;</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">&#29366;&#24577;2: dr &#30340; bit ++ &#26159; y;</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">&#29366;&#24577;2: dr &#30340; bit ++ &#26159; z;</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">&#29366;&#24577;3: dr &#20256;&#36882;&#23436;&#27605;, &#24320;&#22987;&#25191;&#34892;...</span>
+    <span class="org-keyword">switch</span> (command):
+      <span class="org-keyword">case</span> <span class="org-string">'B'</span>: <span class="org-comment-delimiter">/* </span><span class="org-comment">fprintf(stderr, "*BLINK*\n");</span><span class="org-comment-delimiter"> */</span> <span class="org-keyword">break</span>;
+      <span class="org-keyword">case</span> <span class="org-string">'b'</span>: <span class="org-comment-delimiter">/* </span><span class="org-comment">fprintf(stderr, "_______\n");</span><span class="org-comment-delimiter"> */</span> <span class="org-keyword">break</span>;
+      <span class="org-keyword">case</span> <span class="org-string">'r'</span>: tap-&gt;reset(); <span class="org-keyword">break</span>;
+      <span class="org-keyword">case</span> <span class="org-string">'0'</span>: tap-&gt;set_pins(0, 0, 0); <span class="org-keyword">break</span>;
+      <span class="org-keyword">case</span> <span class="org-string">'1'</span>: tap-&gt;set_pins(0, 0, 1); <span class="org-keyword">break</span>;
+      <span class="org-keyword">case</span> <span class="org-string">'2'</span>: tap-&gt;set_pins(0, 1, 0); <span class="org-keyword">break</span>;
+      <span class="org-keyword">case</span> <span class="org-string">'3'</span>: tap-&gt;set_pins(0, 1, 1); <span class="org-keyword">break</span>;
+      <span class="org-keyword">case</span> <span class="org-string">'4'</span>: tap-&gt;set_pins(1, 0, 0); <span class="org-keyword">break</span>;
+      <span class="org-keyword">case</span> <span class="org-string">'5'</span>: tap-&gt;set_pins(1, 0, 1); <span class="org-keyword">break</span>;
+      <span class="org-keyword">case</span> <span class="org-string">'6'</span>: tap-&gt;set_pins(1, 1, 0); <span class="org-keyword">break</span>;
+      <span class="org-keyword">case</span> <span class="org-string">'7'</span>: tap-&gt;set_pins(1, 1, 1); <span class="org-keyword">break</span>;
+      <span class="org-comment-delimiter">// </span><span class="org-comment">tdo &#34920;&#31034; data out, &#19982; tdi &#19968;&#26679;, &#23427;&#19968;&#27425;&#21482;&#33021;&#34920;&#31034;&#19968;&#20010; bit, &#20026;&#20102;&#35835;&#20986;&#19968;&#20010;</span>
+      <span class="org-comment-delimiter">// </span><span class="org-comment">dr,&#38656;&#35201;&#29992;&#22810;&#20010; set_pins(&#29992;&#26469;&#23545; dr &#31227;&#20301;&#21518;&#24471;&#21040;&#19968;&#20010; tdo) &#21644; tdo() &#35843;&#29992;</span>
+      <span class="org-keyword">case</span> <span class="org-string">'R'</span>: <span class="org-type">send_buf</span>[send_offset++] = tap-&gt;tdo() ? <span class="org-string">'1'</span> : <span class="org-string">'0'</span>; <span class="org-keyword">break</span>;
+      <span class="org-keyword">case</span> <span class="org-string">'Q'</span>: quit = <span class="org-constant">true</span>; <span class="org-keyword">break</span>;
+      <span class="org-keyword">default</span>:
+
+    <span class="org-type">unsigned</span> <span class="org-variable-name">sent</span> = 0;
+    <span class="org-keyword">while</span> (sent &lt; send_offset):
+      ssize_t bytes = write(client_fd, send_buf + sent, send_offset);
+      sent += bytes;
+
+    recv_end = read(client_fd, recv_buf, buf_size);
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000006" class="outline-3">
+<h3 id="org0000006"><span class="section-number-3">1.3.</span> jtag_dtm</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+jtag_dtm 会把前面的 set_pins 等转换成 dmi_read, dmi_write 等, 其核心的逻辑是处理
+set_pins 表示的状态机, 用来读取和发送 dr
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">void</span> <span class="org-variable-name">jtag_dtm_t</span>::set_pins(<span class="org-type">bool</span> <span class="org-variable-name">tck</span>, <span class="org-type">bool</span> <span class="org-variable-name">tms</span>, bool tdi) {
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: set_pins &#26159;&#19968;&#20010;&#29366;&#24577;&#26426;, &#19968;&#20010;&#31616;&#21333;&#30340;&#36890;&#36807;&#23427;&#35835;&#21462; dr &#26102;&#29366;&#24577;&#30340;&#21464;&#21270;:</span>
+<span class="org-comment">     * TEST_LOGIN_RESET -&gt; RUN_TEST_IDLE -&gt; SELECT_DR_SCAN -&gt; CAPTURE_DR -&gt;</span>
+<span class="org-comment">     * SHIFT_DR -&gt; SHIFT_DR -&gt; SHIFT_DR -&gt; ... -&gt; EXIT1_DR -&gt; UPDATE_DR -&gt;</span>
+<span class="org-comment">     * RUN_TEST_IDLE</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">const</span> <span class="org-type">jtag_state_t</span> <span class="org-variable-name">next</span>[16][2] = {
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">TEST_LOGIC_RESET</span><span class="org-comment-delimiter"> */</span> {RUN_TEST_IDLE, TEST_LOGIC_RESET},
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">RUN_TEST_IDLE</span><span class="org-comment-delimiter"> */</span> {RUN_TEST_IDLE, SELECT_DR_SCAN},
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">SELECT_DR_SCAN</span><span class="org-comment-delimiter"> */</span> {CAPTURE_DR, SELECT_IR_SCAN},
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">CAPTURE_DR</span><span class="org-comment-delimiter"> */</span> {SHIFT_DR, EXIT1_DR},
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">SHIFT_DR</span><span class="org-comment-delimiter"> */</span> {SHIFT_DR, EXIT1_DR},
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">EXIT1_DR</span><span class="org-comment-delimiter"> */</span> {PAUSE_DR, UPDATE_DR},
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">PAUSE_DR</span><span class="org-comment-delimiter"> */</span> {PAUSE_DR, EXIT2_DR},
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">EXIT2_DR</span><span class="org-comment-delimiter"> */</span> {SHIFT_DR, UPDATE_DR},
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">UPDATE_DR</span><span class="org-comment-delimiter"> */</span> {RUN_TEST_IDLE, SELECT_DR_SCAN},
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">SELECT_IR_SCAN</span><span class="org-comment-delimiter"> */</span> {CAPTURE_IR, TEST_LOGIC_RESET},
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">CAPTURE_IR</span><span class="org-comment-delimiter"> */</span> {SHIFT_IR, EXIT1_IR},
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">SHIFT_IR</span><span class="org-comment-delimiter"> */</span> {SHIFT_IR, EXIT1_IR},
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">EXIT1_IR</span><span class="org-comment-delimiter"> */</span> {PAUSE_IR, UPDATE_IR},
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">PAUSE_IR</span><span class="org-comment-delimiter"> */</span> {PAUSE_IR, EXIT2_IR},
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">EXIT2_IR</span><span class="org-comment-delimiter"> */</span> {SHIFT_IR, UPDATE_IR},
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">UPDATE_IR</span><span class="org-comment-delimiter"> */</span> {RUN_TEST_IDLE, SELECT_DR_SCAN}};
+
+    <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>_tck &amp;&amp; tck) {
+        <span class="org-keyword">switch</span> (_state) {
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#30001;&#20110; tdi &#19968;&#27425;&#21482;&#33021;&#20256;&#36755;&#19968;&#20010; bit, &#25152;&#20197;&#36890;&#36807;&#22810;&#20010; SHIFT_DR &#25165;&#33021;&#25343;</span>
+<span class="org-comment">             * &#21040;&#26368;&#32456;&#30340; dr</span><span class="org-comment-delimiter"> */</span>
+            <span class="org-keyword">case</span> SHIFT_DR:
+                dr &gt;&gt;= 1;
+                dr |= (<span class="org-type">uint64_t</span>)_tdi &lt;&lt; (dr_length - 1);
+                <span class="org-keyword">break</span>;
+        }
+        _state = next[_state][_tms];
+
+    } <span class="org-keyword">else</span> {
+        <span class="org-comment-delimiter">// </span><span class="org-comment">Negative clock edge. TDO is updated.</span>
+        <span class="org-keyword">switch</span> (_state) {
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+            <span class="org-keyword">case</span> CAPTURE_DR:
+                capture_dr();
+                <span class="org-keyword">break</span>;
+            <span class="org-keyword">case</span> SHIFT_DR:
+                _tdo = dr &amp; 1;
+                <span class="org-keyword">break</span>;
+            <span class="org-keyword">case</span> UPDATE_DR:
+                update_dr();
+                <span class="org-keyword">break</span>;
+        }
+    }
+    _tck = tck;
+    _tms = tms;
+    _tdi = tdi;
+}
+</pre>
+</div>
+
+<p>
+update_dr 会把收到的 tdi 组合成 dr 后把它解析成 dmi_read 或 dmi_write 调用.
+capture_dr 会把 dmi_read 的结果 (dmi) 保存到 dr, 以便通过多个 tdo 发送出去.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000001e" class="outline-3">
+<h3 id="org000001e"><span class="section-number-3">1.4.</span> dm</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+dm 负责执行 dmi_read/dmi_write, read 和 write 时操作的是 Debug Module Registers,
+例如:
+</p>
+
+<ol class="org-ol">
+<li>data0, &#x2026;, data 11</li>
+<li>dmcontrol</li>
+<li>command</li>
+<li>hartinfo</li>
+<li>progbuf0, &#x2026;, progbuf15</li>
+<li>&#x2026;</li>
+</ol>
+
+<p>
+spike 使用不同的 buffer 表示这些寄存器, 例如 data0 在 debug_data_start, progbuf0
+在 debug_progbuf_start.
+</p>
+</div>
+
+<div id="outline-container-org000000c" class="outline-4">
+<h4 id="org000000c"><span class="section-number-4">1.4.1.</span> dmi_write</h4>
+<div class="outline-text-4" id="text-1-4-1">
+<div class="org-src-container">
+<pre class="src src-C">bool <span class="org-type">debug_module_t</span>::dmi_write(<span class="org-type">unsigned</span> <span class="org-variable-name">address</span>, uint32_t value) {
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: jtag &#20250;&#36890;&#36807;&#35835;&#21462; data0...&#33719;&#24471; abstract command &#25110; progbuf &#30340;&#36755;&#20986;, &#22240;</span>
+<span class="org-comment">     * &#20026;&#23427;&#20204;&#20250;&#25226;&#32467;&#26524;&#20889;&#21040; DM_DATA0...</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">if</span> (address &gt;= DM_DATA0 &amp;&amp; address &lt; DM_DATA0 + abstractcs.datacount) {
+        <span class="org-type">unsigned</span> <span class="org-variable-name">i</span> = address - DM_DATA0;
+        write32(dmdata, address - DM_DATA0, value);
+        <span class="org-keyword">return</span> <span class="org-constant">true</span>;
+    } <span class="org-keyword">else</span> <span class="org-keyword">if</span> (
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: progbuf &#20801;&#35768; jtags &#30452;&#25509;&#25351;&#23450;&#38656;&#35201;&#22312; debug_mode &#25191;&#34892;&#30340;&#20195;&#30721;</span><span class="org-comment-delimiter"> */</span>
+        address &gt;= DM_PROGBUF0 &amp;&amp; address &lt; DM_PROGBUF0 + config.progbufsize) {
+        <span class="org-type">unsigned</span> <span class="org-variable-name">i</span> = address - DM_PROGBUF0;
+
+        write32(program_buffer, i, value);
+
+        <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>abstractcs.busy &amp;&amp; ((abstractauto.autoexecprogbuf &gt;&gt; i) &amp; 1)) {
+            perform_abstract_command();
+        }
+        <span class="org-keyword">return</span> <span class="org-constant">true</span>;
+
+    } <span class="org-keyword">else</span> {
+        <span class="org-keyword">switch</span> (address) {
+            <span class="org-keyword">case</span> DM_DMCONTROL: {
+                dmcontrol.haltreq = get_field(value, DM_DMCONTROL_HALTREQ);
+                dmcontrol.resumereq = get_field(value, DM_DMCONTROL_RESUMEREQ);
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-keyword">for</span> (<span class="org-type">unsigned</span> <span class="org-variable-name">i</span> = 0; i &lt; nprocs; i++) {
+                    <span class="org-keyword">if</span> (hart_selected(i)) {
+                        <span class="org-type">processor_t</span> *<span class="org-variable-name">proc</span> = processor(i);
+                        <span class="org-keyword">if</span> (proc) {
+                            <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: halt_request &#20250;&#23548;&#33268; guest &#22312; while (1)</span>
+<span class="org-comment">                             * step() &#36827;&#34892; debug_mode</span><span class="org-comment-delimiter"> */</span>
+                            proc-&gt;halt_request = dmcontrol.haltreq
+                                                     ? proc-&gt;HR_REGULAR
+                                                     : proc-&gt;HR_NONE;
+                            <span class="org-keyword">if</span> (dmcontrol.resumereq) {
+                                debug_rom_flags[i] |=
+                                    (1 &lt;&lt; DEBUG_ROM_FLAG_RESUME);
+                                hart_state[i].resumeack = <span class="org-constant">false</span>;
+                            }
+                        }
+                    }
+                }
+            }
+                <span class="org-keyword">return</span> <span class="org-constant">true</span>;
+
+            <span class="org-keyword">case</span> DM_COMMAND:
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#35835;&#20889;&#23492;&#23384;&#22120;&#26159;&#36890;&#36807; command &#36827;&#34892;&#30340;</span><span class="org-comment-delimiter"> */</span>
+                command = value;
+                <span class="org-keyword">return</span> perform_abstract_command();
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+        }
+    }
+    <span class="org-keyword">return</span> <span class="org-constant">false</span>;
+}
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000009" class="outline-5">
+<h5 id="org0000009"><span class="section-number-5">1.4.1.1.</span> perform_abstract_command</h5>
+<div class="outline-text-5" id="text-1-4-1-1">
+<p>
+dm 执行 jtags 指令有两种方式:
+</p>
+
+<ol class="org-ol">
+<li>通过解释 command</li>
+
+<li>通过执行 progbuf</li>
+</ol>
+
+<p>
+spike 实现上把 abstract command 转换成具体的指令让 debug_mode 去执行
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C">bool <span class="org-type">debug_module_t</span>::perform_abstract_command() {
+    <span class="org-comment-delimiter">// </span><span class="org-comment">register access</span>
+    <span class="org-type">unsigned</span> <span class="org-variable-name">size</span> = get_field(command, AC_ACCESS_REGISTER_AARSIZE);
+    <span class="org-type">bool</span> <span class="org-variable-name">write</span> = get_field(command, AC_ACCESS_REGISTER_WRITE);
+    <span class="org-type">unsigned</span> <span class="org-variable-name">regno</span> = get_field(command, AC_ACCESS_REGISTER_REGNO);
+
+    <span class="org-type">unsigned</span> <span class="org-variable-name">i</span> = 0;
+    <span class="org-keyword">if</span> (get_field(command, AC_ACCESS_REGISTER_TRANSFER)) {
+        <span class="org-keyword">if</span> (regno &gt;= 0x1000 &amp;&amp; regno &lt; 0x1020) {
+            <span class="org-type">unsigned</span> <span class="org-variable-name">regnum</span> = regno - 0x1000;
+            <span class="org-keyword">switch</span> (size) {
+                <span class="org-keyword">case</span> 2:
+                    <span class="org-keyword">if</span> (write)
+                        <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#38024;&#23545; read/write regnum, &#22312; debug_abstract &#22788;&#24320;</span>
+<span class="org-comment">                         * &#22987;&#29983;&#25104;&#20102;&#23545;&#24212;&#30340; lw/sw &#25351;&#20196;, &#19988;&#32467;&#26524;&#20889;&#22312;</span>
+<span class="org-comment">                         * debug_data_start, debug_data_start &#23545;&#24212;&#30340;&#23454;&#38469;&#23601;&#26159;</span>
+<span class="org-comment">                         * data0 (&#22240;&#20026; debug_module &#26412;&#36523;&#26159;&#19968;&#20010; mem_t, &#21442;&#32771;&#23427;&#30340;</span>
+<span class="org-comment">                         * load/store &#20989;&#25968;)</span><span class="org-comment-delimiter"> */</span>
+                        write32(
+                            debug_abstract, i++,
+                            lw(regnum, ZERO, debug_data_start));
+                    <span class="org-keyword">else</span>
+                        write32(
+                            debug_abstract, i++,
+                            sw(regnum, ZERO, debug_data_start));
+                    <span class="org-keyword">break</span>;
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-keyword">default</span>:
+                    abstractcs.cmderr = CMDERR_NOTSUP;
+                    <span class="org-keyword">return</span> <span class="org-constant">true</span>;
+            }
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+        }
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    }
+    <span class="org-keyword">if</span> (get_field(command, AC_ACCESS_REGISTER_POSTEXEC)) {
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#36825;&#37324;&#20250;&#29983;&#25104;&#25351;&#20196;&#36339;&#21040; debug_progbuf, &#20197;&#25903;&#25345; progbuf &#21151;&#33021;</span><span class="org-comment-delimiter"> */</span>
+        write32(
+            debug_abstract, i,
+            jal(ZERO, debug_progbuf_start - debug_abstract_start - 4 * i));
+        i++;
+    } <span class="org-keyword">else</span> {
+        write32(debug_abstract, i++, ebreak());
+    }
+    debug_rom_flags[dmcontrol.hartsel] |= 1 &lt;&lt; DEBUG_ROM_FLAG_GO;
+    <span class="org-keyword">return</span> <span class="org-constant">true</span>;
+}
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000000f" class="outline-4">
+<h4 id="org000000f"><span class="section-number-4">1.4.2.</span> dmi_read</h4>
+<div class="outline-text-4" id="text-1-4-2">
+<p>
+dmi_read 相对 dmi_write 比较简单, 它用来读取 dm register, 特别的, 通过读取
+DM_HARTINFO 可以得到 data0 的地址, 以便写 progbuf 时可以指定这个地址, 因为后续可以通过 dmi_read 读 data0 从而得到 progbuf 的结果
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000001b" class="outline-4">
+<h4 id="org000001b"><span class="section-number-4">1.4.3.</span> debug_mode</h4>
+<div class="outline-text-4" id="text-1-4-3">
+<p>
+dmi_write 时会生成指令在 debug_abstract 处, 执行时跳转到这里是通过 debug_mode
+</p>
+</div>
+
+<div id="outline-container-org0000012" class="outline-5">
+<h5 id="org0000012"><span class="section-number-5">1.4.3.1.</span> debug_abstract_start</h5>
+<div class="outline-text-5" id="text-1-4-3-1">
+<div class="org-src-container">
+<pre class="src src-C">debug_module_t::debug_module_t(<span class="org-type">sim_t</span> *<span class="org-variable-name">sim</span>, <span class="org-keyword">const</span> debug_module_config_t &amp;config)
+    : {
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    write32(
+        debug_rom_whereto, 0,
+        jal(ZERO, debug_abstract_start - DEBUG_ROM_WHERETO));
+    reset();
+}
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#20854;&#20013; debug_rom_whereto &#23545;&#24212; DEBUG_ROM_WHERETO (0x300) &#22320;&#22336;&#30340;&#25968;&#25454;</span><span class="org-comment-delimiter"> */</span>
+<span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#32780; 0x300 &#22312; debug_rom.S &#23545;&#24212;&#30340; whereto &#36825;&#20010;&#31526;&#21495;</span><span class="org-comment-delimiter">  */</span>
+bool <span class="org-type">debug_module_t</span>::load(<span class="org-type">reg_t</span> <span class="org-variable-name">addr</span>, <span class="org-type">size_t</span> <span class="org-variable-name">len</span>, <span class="org-type">uint8_t</span> *<span class="org-variable-name">bytes</span>) {
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">if</span> (addr &gt;= DEBUG_ROM_WHERETO &amp;&amp; (addr + len) &lt;= (DEBUG_ROM_WHERETO + 4)) {
+        memcpy(bytes, debug_rom_whereto + addr - DEBUG_ROM_WHERETO, len);
+        <span class="org-keyword">return</span> <span class="org-constant">true</span>;
+    }
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">return</span> <span class="org-constant">false</span>;
+}
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000015" class="outline-5">
+<h5 id="org0000015"><span class="section-number-5">1.4.3.2.</span> enter_debug_mode</h5>
+<div class="outline-text-5" id="text-1-4-3-2">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">void</span> <span class="org-variable-name">processor_t</span>::step(size_t n) {
+    <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>state.debug_mode) {
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: DM_DMCONTROL_HALTREQ</span><span class="org-comment-delimiter">  */</span>
+        <span class="org-keyword">if</span> (halt_request == HR_REGULAR) {
+            enter_debug_mode(DCSR_CAUSE_DEBUGINT);
+        }
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    }
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">execute_insn</span><span class="org-comment-delimiter"> */</span>
+}
+
+<span class="org-type">void</span> <span class="org-variable-name">processor_t</span>::enter_debug_mode(uint8_t cause) {
+    state.debug_mode = <span class="org-constant">true</span>;
+    state.dcsr-&gt;write_cause_and_prv(cause, state.prv);
+    set_privilege(PRV_M);
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#22312;&#36864;&#20986; debug_mode &#26102;&#38656;&#35201;&#29992;&#21040; dpc</span><span class="org-comment-delimiter"> */</span>
+    state.dpc-&gt;write(state.pc);
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: DEBUG_ROM_ENTRY &#26159; debug_rom.S &#20013;&#30340; _entry</span><span class="org-comment-delimiter"> */</span>
+    state.pc = DEBUG_ROM_ENTRY;
+}
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000018" class="outline-5">
+<h5 id="org0000018"><span class="section-number-5">1.4.3.3.</span> debug_rom.S</h5>
+<div class="outline-text-5" id="text-1-4-3-3">
+<p>
+debug_rom.S 是 enter_debug_mode 时使用的 rom, 它会跳转到 debug_abstract_start:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm">    <span class="org-keyword">.option</span> norvc
+    <span class="org-keyword">.global</span> entry
+    <span class="org-keyword">.global</span> exception
+
+<span class="org-function-name">entry</span>:
+    <span class="org-keyword">jal</span> zero, _entry
+<span class="org-function-name">resume</span>:
+    <span class="org-keyword">jal</span> zero, _resume
+
+    # NOTE: _entry &#22320;&#22336;&#26159; DEBUG_ROM_ENTRY, &#23427;&#26159; enter_debug_mode &#26102;&#25351;&#23450;&#30340; pc
+<span class="org-function-name">_entry</span>:
+    <span class="org-keyword">fence</span>
+    <span class="org-keyword">csrw</span> CSR_DSCRATCH, s0  <span class="org-comment-delimiter">// </span><span class="org-comment">Save s0 to allow signaling MHARTID</span>
+<span class="org-function-name">entry_loop</span>:
+    <span class="org-keyword">csrr</span> s0, CSR_MHARTID
+    <span class="org-keyword">sw</span>   s0, DEBUG_ROM_HALTED(zero)
+    <span class="org-keyword">lbu</span>  s0, DEBUG_ROM_FLAGS(s0) <span class="org-comment-delimiter">// </span><span class="org-comment">1 byte flag per hart. Only one hart advances here.</span>
+    <span class="org-keyword">andi</span> s0, s0, (1 &lt;&lt; DEBUG_ROM_FLAG_GO)
+    # NOTE: going &#20250;&#25191;&#34892; abstract command
+    <span class="org-keyword">bnez</span> s0, going
+    # ...
+    <span class="org-keyword">jal</span>  zero, entry_loop
+
+<span class="org-function-name">going</span>:
+    # ...
+    # NOTE: whereto &#37324;&#30340;&#25351;&#20196;&#26159; debug_module_t &#21021;&#22987;&#21270;&#26102;&#20889;&#20837;&#30340; jal debug_abstract_start
+    <span class="org-keyword">jalr</span> zero, zero, <span class="org-variable-name">%lo</span>(whereto) 
+
+<span class="org-function-name">_resume</span>:
+    # ...
+    #NOTE: dret &#20250;&#36864;&#20986; debug_mode
+    <span class="org-keyword">dret</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-03-20 Mon 11:41<br />
+Last updated: 2023-03-20 Mon 18:07</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
