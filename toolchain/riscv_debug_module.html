@@ -39,7 +39,8 @@
 <ul>
 <li><a href="#org000000c">1.4.1. dmi_write</a></li>
 <li><a href="#org000000f">1.4.2. dmi_read</a></li>
-<li><a href="#org000001b">1.4.3. debug_mode</a></li>
+<li><a href="#org0000013">1.4.3. example</a></li>
+<li><a href="#org000001b">1.4.4. debug_mode</a></li>
 </ul>
 </li>
 </ul>
@@ -66,7 +67,7 @@ spike 的相关代码涉及到几个不同的组件:
 <ol class="org-ol">
 <li>remote bitbang, 用来与 jtag 通信</li>
 <li>dtm (debug transport module), 解析 jtag 数据</li>
-<li>dm (debug module), 与 hart 直接通信</li>
+<li>dm (debug module), 控制 hart 执行 debug 动作</li>
 </ol>
 </div>
 
@@ -80,7 +81,7 @@ spike 的相关代码涉及到几个不同的组件:
 <ol class="org-ol">
 <li>guest 每次 step 之后会通过 remote_bitbang 的 tick 函数看是否有 jtag 命令</li>
 
-<li>jtag_dtm 解析 remote_bitbang 收到的 jtag 命令. jtag 只有四根信号线, dtm 会用一个状态机来解析数据</li>
+<li>jtag_dtm 解析 remote_bitbang 收到的 jtag 命令. jtag 只有四根信号线, dtm 会用一个状态机来解析数据, 得到 jtag dr (data register) 数据</li>
 
 <li>dtm 解析到一个 dr, op 为 DMI_OP_WRITE, address 为 DM_DMCONTROL, value 为
 DM_DMCONTROL_HALTREQ, 导致 processor step 时通过 enter_debug_mode 进行 debug
@@ -248,10 +249,11 @@ set_pins 表示的状态机, 用来读取和发送 dr
 </pre>
 </div>
 
-<p>
-update_dr 会把收到的 tdi 组合成 dr 后把它解析成 dmi_read 或 dmi_write 调用.
-capture_dr 会把 dmi_read 的结果 (dmi) 保存到 dr, 以便通过多个 tdo 发送出去.
-</p>
+<ul class="org-ul">
+<li>update_dr 会把收到的 tdi 组合成 dr 后把它解析成 dmi_read 或 dmi_write 调用</li>
+
+<li>capture_dr 会把 dmi_read 的结果 (dmi) 保存到 dr, 以便通过多个 tdo 发送出去</li>
+</ul>
 </div>
 </div>
 
@@ -264,7 +266,7 @@ dm 负责执行 dmi_read/dmi_write, read 和 write 时操作的是 Debug Module 
 </p>
 
 <ol class="org-ol">
-<li>data0, &#x2026;, data 11</li>
+<li>data0, &#x2026;, data11</li>
 <li>dmcontrol</li>
 <li>command</li>
 <li>hartinfo</li>
@@ -416,22 +418,80 @@ spike 实现上把 abstract command 转换成具体的指令让 debug_mode 去�
 <div class="outline-text-4" id="text-1-4-2">
 <p>
 dmi_read 相对 dmi_write 比较简单, 它用来读取 dm register, 特别的, 通过读取
-DM_HARTINFO 可以得到 data0 的地址, 以便写 progbuf 时可以指定这个地址, 因为后续可以通过 dmi_read 读 data0 从而得到 progbuf 的结果
+DM_HARTINFO 可以得到 data0 的地址, 以便写 progbuf 时可以指定这个地址, 后续可以通过 dmi_read 读 data0 从而得到 progbuf 的结果
 </p>
 </div>
 </div>
 
-<div id="outline-container-org000001b" class="outline-4">
-<h4 id="org000001b"><span class="section-number-4">1.4.3.</span> debug_mode</h4>
+<div id="outline-container-org0000013" class="outline-4">
+<h4 id="org0000013"><span class="section-number-4">1.4.3.</span> example</h4>
 <div class="outline-text-4" id="text-1-4-3">
+<p>
+使用 dmi_write 和 dmi_read 查看寄存器的例子:
+</p>
+
+<p>
+测试环境参考
+<a href="https://github.com/riscv-software-src/riscv-isa-sim#debugging-with-gdb">https://github.com/riscv-software-src/riscv-isa-sim#debugging-with-gdb</a>
+</p>
+
+<pre class="example" id="org0000012">
+gdb:
+
+(gdb) info reg                         
+ra             0x0      0x0            
+sp             0x0      0x0            
+gp             0x0      0x0            
+tp             0x0      0x0            
+t0             0x10110000       269549568
+t1             0x0      0              
+t2             0x0      0              
+fp             0x0      0x0            
+s1             0x0      0              
+a0             0x0      0              
+a1             0x1020   4128           
+a2             0x0      0
+a3             0x0      0
+a4             0x0      0
+a5             0x10110000       269549568
+
+dm:
+
+dmi_write(0x17, 0x321005)
+dmi_read(0x16) -&gt; 0x2000002
+dmi_read(0x5) -&gt; 0x0
+dmi_read(0x4) -&gt; 0x10110000
+...
+dmi_write(0x17, 0x32100f)
+dmi_read(0x16) -&gt; 0x2000002
+dmi_read(0x5) -&gt; 0x0
+dmi_read(0x4) -&gt; 0x10110000
+</pre>
+
+<ul class="org-ul">
+<li>0x17 是 DM_COMMAND</li>
+
+<li>0x321005 表示要读取 gpr 且 regno 为 5, 对应 t0 (x5)</li>
+
+<li>0x32100f 表示要读取 gpr 且 regno 为 15, 对应 a5 (x15)</li>
+
+<li>0x5 是读取 data1, 0x4 是读取 data0, 因为 perform_abstract_command 会把结果写到
+data0&#x2026; 中</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000001b" class="outline-4">
+<h4 id="org000001b"><span class="section-number-4">1.4.4.</span> debug_mode</h4>
+<div class="outline-text-4" id="text-1-4-4">
 <p>
 dmi_write 时会生成指令在 debug_abstract 处, 执行时跳转到这里是通过 debug_mode
 </p>
 </div>
 
-<div id="outline-container-org0000012" class="outline-5">
-<h5 id="org0000012"><span class="section-number-5">1.4.3.1.</span> debug_abstract_start</h5>
-<div class="outline-text-5" id="text-1-4-3-1">
+<div id="outline-container-org0000016" class="outline-5">
+<h5 id="org0000016"><span class="section-number-5">1.4.4.1.</span> debug_abstract_start</h5>
+<div class="outline-text-5" id="text-1-4-4-1">
 <div class="org-src-container">
 <pre class="src src-C">debug_module_t::debug_module_t(<span class="org-type">sim_t</span> *<span class="org-variable-name">sim</span>, <span class="org-keyword">const</span> debug_module_config_t &amp;config)
     : {
@@ -459,8 +519,8 @@ bool <span class="org-type">debug_module_t</span>::load(<span class="org-type">r
 </div>
 
 <div id="outline-container-org0000015" class="outline-5">
-<h5 id="org0000015"><span class="section-number-5">1.4.3.2.</span> enter_debug_mode</h5>
-<div class="outline-text-5" id="text-1-4-3-2">
+<h5 id="org0000015"><span class="section-number-5">1.4.4.2.</span> enter_debug_mode</h5>
+<div class="outline-text-5" id="text-1-4-4-2">
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-type">void</span> <span class="org-variable-name">processor_t</span>::step(size_t n) {
     <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>state.debug_mode) {
@@ -488,8 +548,8 @@ bool <span class="org-type">debug_module_t</span>::load(<span class="org-type">r
 </div>
 
 <div id="outline-container-org0000018" class="outline-5">
-<h5 id="org0000018"><span class="section-number-5">1.4.3.3.</span> debug_rom.S</h5>
-<div class="outline-text-5" id="text-1-4-3-3">
+<h5 id="org0000018"><span class="section-number-5">1.4.4.3.</span> debug_rom.S</h5>
+<div class="outline-text-5" id="text-1-4-4-3">
 <p>
 debug_rom.S 是 enter_debug_mode 时使用的 rom, 它会跳转到 debug_abstract_start:
 </p>
@@ -539,7 +599,7 @@ debug_rom.S 是 enter_debug_mode 时使用的 rom, 它会跳转到 debug_abstrac
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-03-20 Mon 11:41<br />
-Last updated: 2023-03-20 Mon 19:16</p>
+Last updated: 2023-03-21 Tue 10:51</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
