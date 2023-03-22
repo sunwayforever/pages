@@ -409,12 +409,15 @@ spike 实现上把 abstract command 转换成具体的指令让 debug_mode 去�
         <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
     }
     <span class="org-keyword">if</span> (get_field(command, AC_ACCESS_REGISTER_POSTEXEC)) {
-        <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#36825;&#37324;&#20250;&#29983;&#25104;&#25351;&#20196;&#36339;&#21040; debug_progbuf, &#20197;&#25903;&#25345; progbuf &#21151;&#33021;</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#36825;&#37324;&#20250;&#29983;&#25104;&#25351;&#20196;&#36339;&#21040; debug_progbuf, &#20197;&#25903;&#25345; progbuf &#21151;&#33021;, &#19988; jtag</span>
+<span class="org-comment">         * &#38656;&#35201;&#20445;&#35777; progbuf &#26368;&#21518;&#38656;&#35201;&#20197; ebreak &#32467;&#26463;</span><span class="org-comment-delimiter"> */</span>
         write32(
             debug_abstract, i,
             jal(ZERO, debug_progbuf_start - debug_abstract_start - 4 * i));
         i++;
     } <span class="org-keyword">else</span> {
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: ebreak &#20250;&#23548;&#33268; debug_abstract &#25191;&#34892;&#23436;&#21518;&#36339;&#36716;&#21040; debug_rom &#30340; entry</span>
+<span class="org-comment">         * &#20197;&#37325;&#26032;&#24320;&#22987; loop</span><span class="org-comment-delimiter"> */</span>
         write32(debug_abstract, i++, ebreak());
     }
     debug_rom_flags[dmcontrol.hartsel] |= 1 &lt;&lt; DEBUG_ROM_FLAG_GO;
@@ -602,6 +605,32 @@ debug_rom.S 是 enter_debug_mode 时使用的 rom, 它会跳转到 debug_abstrac
     <span class="org-keyword">dret</span>
 </pre>
 </div>
+
+<p>
+另外, 当 debug_abstract (及 progbuf) 执行完以后, 其最后一个指令必然是 ebreak,
+spike 针对 ebreak 有特殊的处理:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-comment-delimiter">/* </span><span class="org-comment">ebreak.h:</span><span class="org-comment-delimiter"> */</span>
+<span class="org-type">throw</span> <span class="org-function-name">trap_breakpoint</span>(STATE.v, pc);
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">processor.cc:</span><span class="org-comment-delimiter"> */</span>
+<span class="org-type">void</span> <span class="org-variable-name">processor_t</span>::take_trap(trap_t&amp; t, reg_t epc) {
+    <span class="org-keyword">if</span> (state.debug_mode) {
+        <span class="org-keyword">if</span> (t.cause() == CAUSE_BREAKPOINT) {
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: debug_abstract &#25110; progbuf &#25191;&#34892;&#23436;&#20197;&#21518;&#37325;&#26032;&#24320;&#22987; debug_rom &#30340;</span>
+<span class="org-comment">             * loop</span><span class="org-comment-delimiter"> */</span>
+            state.pc = DEBUG_ROM_ENTRY;
+        } <span class="org-keyword">else</span> {
+            state.pc = DEBUG_ROM_TVEC;
+        }
+        <span class="org-keyword">return</span>;
+    }
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+}
+</pre>
+</div>
 </div>
 </div>
 </div>
@@ -612,7 +641,7 @@ debug_rom.S 是 enter_debug_mode 时使用的 rom, 它会跳转到 debug_abstrac
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-03-20 Mon 11:41<br />
-Last updated: 2023-03-21 Tue 14:24</p>
+Last updated: 2023-03-22 Wed 10:37</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
