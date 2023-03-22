@@ -43,6 +43,13 @@
 <li><a href="#org000001b">1.4.4. debug_mode</a></li>
 </ul>
 </li>
+<li><a href="#org0000034">1.5. debug support</a>
+<ul>
+<li><a href="#org0000025">1.5.1. access register</a></li>
+<li><a href="#org0000028">1.5.2. step</a></li>
+<li><a href="#org0000031">1.5.3. breakpoint</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
@@ -635,13 +642,180 @@ spike 针对 ebreak 有特殊的处理:
 </div>
 </div>
 </div>
+
+<div id="outline-container-org0000034" class="outline-3">
+<h3 id="org0000034"><span class="section-number-3">1.5.</span> debug support</h3>
+<div class="outline-text-3" id="text-1-5">
+</div>
+<div id="outline-container-org0000025" class="outline-4">
+<h4 id="org0000025"><span class="section-number-4">1.5.1.</span> access register</h4>
+<div class="outline-text-4" id="text-1-5-1">
+<p>
+读寄存器需要使用 abstract command 或 progbuf, 结果写在 data0 中, 通过
+dmi_read(data0) 返回结果
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000028" class="outline-4">
+<h4 id="org0000028"><span class="section-number-4">1.5.2.</span> step</h4>
+<div class="outline-text-4" id="text-1-5-2">
+<ol class="org-ol">
+<li>先向 dcsr 写入 DCSR_STEP, 表示需要单步执行.</li>
+
+<li><p>
+dret 会根据 dcsr 设置 state.STEP_STEPPING flag
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-function-name">require</span>(STATE.debug_mode);
+<span class="org-function-name">set_pc_and_serialize</span>(STATE.dpc-&gt;read());
+p-&gt;set_privilege(STATE.dcsr-&gt;prv);
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">We're not in Debug Mode anymore.</span><span class="org-comment-delimiter"> */</span>
+STATE.debug_mode = <span class="org-constant">false</span>;
+
+<span class="org-keyword">if</span> (STATE.dcsr-&gt;step) STATE.single_step = STATE.STEP_STEPPING;
+</pre>
+</div></li>
+
+<li><p>
+processor step 时会根据这个 flag 重新进入 debug_mode
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">void</span> <span class="org-variable-name">processor_t</span>::step(size_t n) {
+    <span class="org-keyword">while</span> (n &gt; 0) {
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">if</span> (unlikely(slow_path())) {
+            <span class="org-comment-delimiter">// </span><span class="org-comment">Main simulation loop, slow path.</span>
+            <span class="org-keyword">while</span> (instret &lt; n) {
+                <span class="org-keyword">if</span> (unlikely(
+                        <span class="org-negation-char">!</span>state.serialized &amp;&amp;
+                        state.single_step == state.STEP_STEPPED)) {
+                    state.single_step = state.STEP_NONE;
+                    <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>state.debug_mode) {
+                        enter_debug_mode(DCSR_CAUSE_STEP);
+                        <span class="org-keyword">break</span>;
+                    }
+                }
+
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#36890;&#36807; STEPPING, STEPPED &#20004;&#20010;&#29366;&#24577;&#26469;&#25903;&#25345;</span>
+<span class="org-comment">                 * step-&gt;debug-&gt;step-&gt;debug</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-keyword">if</span> (unlikely(state.single_step == state.STEP_STEPPING)) {
+                    state.single_step = state.STEP_STEPPED;
+                }
+
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+                pc = execute_insn(this, pc, fetch);
+            }
+        }
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    }
+}
+</pre>
+</div></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000031" class="outline-4">
+<h4 id="org0000031"><span class="section-number-4">1.5.3.</span> breakpoint</h4>
+<div class="outline-text-4" id="text-1-5-3">
+<p>
+software breakpoint 通过 ebreak 支持, hardware breakpoint 通过 dm trigger 实现
+</p>
+</div>
+
+<div id="outline-container-org000002b" class="outline-5">
+<h5 id="org000002b"><span class="section-number-5">1.5.3.1.</span> ebreak</h5>
+<div class="outline-text-5" id="text-1-5-3-1">
+<p>
+debug mode 下执行 ebreak (例如 debug_abstract 末尾自动插入的 ebreak) 会导致
+debug mode 重新开始 loop.
+</p>
+
+<p>
+普通模式下执行 ebreak 会导致 guest 进行 debug mode. 所以 debugger 可以通过修改指令为 ebreak 来设置断点.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-comment-delimiter">/* </span><span class="org-comment">ebreak.h</span><span class="org-comment-delimiter"> */</span>
+<span class="org-type">throw</span> <span class="org-function-name">trap_breakpoint</span>(STATE.v, pc);
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">processor.cc</span><span class="org-comment-delimiter"> */</span>
+
+<span class="org-type">void</span> <span class="org-variable-name">processor_t</span>::take_trap(trap_t&amp; t, reg_t epc) {
+    <span class="org-keyword">if</span> (t.cause() == CAUSE_BREAKPOINT &amp;&amp;
+        ((state.prv == PRV_M &amp;&amp; state.dcsr-&gt;ebreakm) ||
+         (state.prv == PRV_S &amp;&amp; state.dcsr-&gt;ebreaks) ||
+         (state.prv == PRV_U &amp;&amp; state.dcsr-&gt;ebreaku))) {
+        enter_debug_mode(DCSR_CAUSE_SWBP);
+        <span class="org-keyword">return</span>;
+    }
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+}
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000002e" class="outline-5">
+<h5 id="org000002e"><span class="section-number-5">1.5.3.2.</span> trigger</h5>
+<div class="outline-text-5" id="text-1-5-3-2">
+<p>
+通过操作 tselect, tdata1 等 csr 来设置 trigger 的 action, match 等信息. 然后 mmu
+在访存时会处理这些 trigger
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">inline</span> <span class="org-type">tlb_entry_t</span> <span class="org-function-name">translate_insn_addr</span>(<span class="org-type">reg_t</span> <span class="org-variable-name">addr</span>) {
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">if</span> (tlb_insn_tag[vpn % TLB_ENTRIES] == (vpn | TLB_CHECK_TRIGGERS)) {
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+        triggers::action_t action;
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: trigger &#26159;&#21542;&#19982; addr match</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">auto</span> <span class="org-variable-name">match</span> = proc-&gt;TM.memory_access_match(
+            &amp;action, triggers::OPERATION_EXECUTE, addr, from_target(*ptr));
+        <span class="org-keyword">if</span> (match != triggers::MATCH_NONE) {
+            throw <span class="org-type">triggers</span>::matched_t(
+                triggers::OPERATION_EXECUTE, addr, from_target(*ptr), action);
+        }
+    }
+    <span class="org-keyword">return</span> result;
+}
+
+<span class="org-type">void</span> <span class="org-variable-name">processor_t</span>::step(size_t n) {
+    <span class="org-keyword">while</span> (n &gt; 0) {
+        <span class="org-type">size_t</span> <span class="org-variable-name">instret</span> = 0;
+        <span class="org-type">reg_t</span> <span class="org-variable-name">pc</span> = state.pc;
+        <span class="org-type">mmu_t</span>* <span class="org-variable-name">_mmu</span> = mmu;
+
+        try {
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">execute_insn...</span><span class="org-comment-delimiter"> */</span>
+        } catch (triggers::matched_t&amp; t) {
+            <span class="org-keyword">switch</span> (t.action) {
+                <span class="org-keyword">case</span> triggers::ACTION_DEBUG_MODE:
+                    enter_debug_mode(DCSR_CAUSE_HWBP);
+                    <span class="org-keyword">break</span>;
+                    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+            }
+        }
+    }
+}
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
 </div>
 </div>
 <div id="postamble" class="status">
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-03-20 Mon 11:41<br />
-Last updated: 2023-03-22 Wed 10:37</p>
+Last updated: 2023-03-22 Wed 17:33</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
