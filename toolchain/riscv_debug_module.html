@@ -736,7 +736,12 @@ debug mode 重新开始 loop.
 </p>
 
 <p>
-普通模式下执行 ebreak 会导致 guest 进行 debug mode. 所以 debugger 可以通过修改指令为 ebreak 来设置断点.
+普通模式下执行 ebreak 会导致 guest 进行 debug mode. 所以 debugger 可以通过修改指令为 ebreak 来设置 software break.
+</p>
+
+<p>
+另外, gdb native debug 时 ebreak 需要触发 trap 而不是进入 debug mode (类似于 x86
+的 int3, 参考 <a href="gdb_breakpoint.html#ID-6fbacffb-275e-438e-9f37-c829e23dce10">GDB Breakpoint</a>), 这个通过 dcsr 可以配置
 </p>
 
 <div class="org-src-container">
@@ -748,6 +753,8 @@ debug mode 重新开始 loop.
 <span class="org-type">void</span> <span class="org-variable-name">processor_t</span>::take_trap(trap_t&amp; t, reg_t epc) {
     <span class="org-keyword">if</span> (t.cause() == CAUSE_BREAKPOINT &amp;&amp;
         ((state.prv == PRV_M &amp;&amp; state.dcsr-&gt;ebreakm) ||
+         <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: ebreak &#26159;&#36827;&#20837; debug mode &#36824;&#26159;&#20316;&#20026; trap &#26159;&#36890;&#36807; dcsr &#37197;&#32622;&#30340;,</span>
+<span class="org-comment">          * &#20351;&#29992; jtags &#26102;&#38656;&#35201;&#37197;&#32622;&#35813;&#39033;, &#20351;&#29992; gdb native debug &#26102;&#21017;&#19981;&#33021;&#37197;&#32622;&#35813;&#39033;</span><span class="org-comment-delimiter"> */</span>
          (state.prv == PRV_S &amp;&amp; state.dcsr-&gt;ebreaks) ||
          (state.prv == PRV_U &amp;&amp; state.dcsr-&gt;ebreaku))) {
         enter_debug_mode(DCSR_CAUSE_SWBP);
@@ -760,11 +767,11 @@ debug mode 重新开始 loop.
 </div>
 </div>
 
-<div id="outline-container-org000002e" class="outline-5">
-<h5 id="org000002e"><span class="section-number-5">1.5.3.2.</span> trigger</h5>
+<div id="outline-container-org000002f" class="outline-5">
+<h5 id="org000002f"><span class="section-number-5">1.5.3.2.</span> trigger</h5>
 <div class="outline-text-5" id="text-1-5-3-2">
 <p>
-通过操作 tselect, tdata1 等 csr 来设置 trigger 的 action, match 等信息. 然后 mmu
+通过操作 tselect, tdata1, tdata2 等 csr 来设置 trigger 的 action, match 等信息. 然后 mmu
 在访存时会处理这些 trigger
 </p>
 
@@ -805,6 +812,48 @@ debug mode 重新开始 loop.
 }
 </pre>
 </div>
+
+<p>
+例如:
+</p>
+
+<pre class="example" id="org000002e">
+# gdb
+(gdb) hbreak *0x10110000
+(gdb) hbreak *0x10110004
+
+# dm
+# 通过 abstract command 写 tselect 寄存器 (7a0), 选择 trigger 0
+dmi_write(0x5, 0x0)
+dmi_write(0x4, 0x0)
+dmi_write(0x17, 0x3307a0)
+
+# 通过 abstract command 写 tdata0 (7a1)
+dmi_read(0x16) -&gt; 0x2000002
+dmi_write(0x5, 0x28000000)
+dmi_write(0x4, 0x105c)
+dmi_write(0x17, 0x3307a1)
+
+# 通过 abstract command 写 tdata1 (7a2), 写入的是要 break 的地址
+dmi_write(0x5, 0x0)
+dmi_write(0x4, 0x10110000)
+dmi_write(0x17, 0x3307a2)
+
+# 通过 abstract command 写 tselect 寄存器 (7a0), 选择 trigger 1
+dmi_write(0x5, 0x0)
+dmi_write(0x4, 0x1)
+dmi_write(0x17, 0x3307a0)
+
+# 通过 abstract command 写 tdata0 (7a1)
+dmi_write(0x5, 0x28000000)
+dmi_write(0x4, 0x105c)
+dmi_write(0x17, 0x3307a1)
+
+# 通过 abstract command 写 tdata1 (7a2), 写入的是要 break 的地址
+dmi_write(0x5, 0x0)
+dmi_write(0x4, 0x10110004)
+dmi_write(0x17, 0x3307a2)
+</pre>
 </div>
 </div>
 </div>
@@ -815,7 +864,7 @@ debug mode 重新开始 loop.
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-03-20 Mon 11:41<br />
-Last updated: 2023-03-22 Wed 17:33</p>
+Last updated: 2023-03-23 Thu 10:45</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
