@@ -46,7 +46,7 @@
 <li><a href="#org0000038">1.5. debug with debug module</a>
 <ul>
 <li><a href="#org0000025">1.5.1. access register</a></li>
-<li><a href="#org0000028">1.5.2. step</a></li>
+<li><a href="#org0000029">1.5.2. step</a></li>
 <li><a href="#org0000031">1.5.3. breakpoint</a></li>
 <li><a href="#org0000035">1.5.4. debug module vs. gdb native debug</a></li>
 </ul>
@@ -658,8 +658,8 @@ write(data0)/dmi_read(data0) 提供参数/返回结果
 </div>
 </div>
 
-<div id="outline-container-org0000028" class="outline-4">
-<h4 id="org0000028"><span class="section-number-4">1.5.2.</span> step</h4>
+<div id="outline-container-org0000029" class="outline-4">
+<h4 id="org0000029"><span class="section-number-4">1.5.2.</span> step</h4>
 <div class="outline-text-4" id="text-1-5-2">
 <ol class="org-ol">
 <li>先通过 access register 向 dcsr 写入 DCSR_STEP, 表示需要单步执行.</li>
@@ -717,6 +717,42 @@ processor step 时会根据这个 flag 重新进入 debug mode
 </pre>
 </div></li>
 </ol>
+
+<p>
+例如:
+</p>
+
+<pre class="example" id="org0000028">
+# gdb:
+0x0000000010110004 in main () at rot13.c:8
+8           while (wait)
+(gdb) p wait=1
+$1 = 1
+(gdb) si
+[riscv.cpu] Found 4 triggers
+0x0000000010110008      8           while (wait)
+(gdb) si
+8           while (wait)
+(gdb) c
+Continuing.
+
+# dm
+dmi_write(0x5, 0x0)
+# NOTE: 0x4000b107 是写入的 dcsr 的值, 其 bit 2 为 1, 表示 step
+dmi_write(0x4, 0x4000b107)
+# NOTE: 7b0 是 dcsr
+dmi_write(0x17, 0x3307b0)
+resume hart 0
+# ...
+dmi_write(0x5, 0x0)
+# NOTE: 0x4000b103 的 bit 2 为 0, 表示不再 step
+dmi_write(0x4, 0x4000b103)
+dmi_write(0x17, 0x3307b0)
+</pre>
+
+<p>
+另外, 通过 trigger 的 icount 看起来也可以实现 hw step
+</p>
 </div>
 </div>
 
@@ -768,8 +804,8 @@ debug mode 重新开始 loop.
 </div>
 </div>
 
-<div id="outline-container-org000002f" class="outline-5">
-<h5 id="org000002f"><span class="section-number-5">1.5.3.2.</span> trigger</h5>
+<div id="outline-container-org0000030" class="outline-5">
+<h5 id="org0000030"><span class="section-number-5">1.5.3.2.</span> trigger</h5>
 <div class="outline-text-5" id="text-1-5-3-2">
 <p>
 通过操作 tselect, tdata1, tdata2 等 csr 来设置 trigger 的 action, match 等信息. 然后 mmu
@@ -818,7 +854,7 @@ debug mode 重新开始 loop.
 例如:
 </p>
 
-<pre class="example" id="org000002e">
+<pre class="example" id="org000002f">
 # gdb
 (gdb) hbreak *0x10110000
 (gdb) hbreak *0x10110004
@@ -863,27 +899,20 @@ dmi_write(0x17, 0x3307a2)
 <h4 id="org0000035"><span class="section-number-4">1.5.4.</span> debug module vs. gdb native debug</h4>
 <div class="outline-text-4" id="text-1-5-4">
 <p>
-correct me if I'm wrong:
-</p>
-
-<p>
-gdb native debug 使用 ptrace, 后者并不依赖 debug module:
+debug module 是做为 external debugger (jtag) 的 stub 来使用的. gdb native debug
+使用 ptrace, 并不依赖 debug module:
 </p>
 
 <ol class="org-ol">
-<li>access register 可以使用 kernel stack 里保存的上下文</li>
+<li>access register 使用 kernel stack 里保存的上下文</li>
 
-<li>step 和 breakpoint 通常是软件实现的, 例如修改内存插入 ebreak 指令</li>
+<li>step 和 breakpoint 通常是软件实现的, 例如修改内存插入 ebreak 指令. 有时可以使用 hw step 和 hw breakpoint 支持, 但 RISC-V 的 hw step (dcsr-&gt;step) 和 hw
+breakpoint (trigger) 会进入 debug mode, 不会产生 trap</li>
 </ol>
 </div>
 </div>
 </div>
 </div>
-
-
-
-
-
 
 
 <div id="outline-container-org000003b" class="outline-2 references">
@@ -905,7 +934,7 @@ gdb native debug 使用 ptrace, 后者并不依赖 debug module:
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-03-20 Mon 11:41<br />
-Last updated: 2023-03-23 Thu 17:50</p>
+Last updated: 2023-03-24 Fri 11:48</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
