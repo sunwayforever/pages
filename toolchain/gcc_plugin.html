@@ -30,19 +30,23 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents" role="doc-toc">
 <ul>
-<li><a href="#org000000a">1. GCC Plugin</a>
+<li><a href="#org000000d">1. GCC Plugin</a>
 <ul>
 <li><a href="#org0000000">1.1. overview</a></li>
-<li><a href="#org0000004">1.2. tree</a></li>
-<li><a href="#org0000007">1.3. example</a></li>
+<li><a href="#org0000007">1.2. tree</a>
+<ul>
+<li><a href="#org0000004">1.2.1. gimple</a></li>
+</ul>
+</li>
+<li><a href="#org000000a">1.3. example</a></li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-org000000a" class="outline-2">
-<h2 id="org000000a"><span class="section-number-2">1.</span> GCC Plugin</h2>
+<div id="outline-container-org000000d" class="outline-2">
+<h2 id="org000000d"><span class="section-number-2">1.</span> GCC Plugin</h2>
 <div class="outline-text-2" id="text-1">
 <p>
 <a href="https://gcc.gnu.org/onlinedocs/gcc-4.5.0/gccint/Plugins.html#Plugins">https://gcc.gnu.org/onlinedocs/gcc-4.5.0/gccint/Plugins.html#Plugins</a>
@@ -50,6 +54,10 @@
 
 <p>
 <a href="https://jongy.github.io/2020/04/25/gcc-assert-introspect.html">https://jongy.github.io/2020/04/25/gcc-assert-introspect.html</a>
+</p>
+
+<p>
+<a href="https://codesynthesis.com/~boris/blog//2010/05/03/parsing-cxx-with-gcc-plugin-part-1/">https://codesynthesis.com/~boris/blog//2010/05/03/parsing-cxx-with-gcc-plugin-part-1/</a>
 </p>
 </div>
 
@@ -77,7 +85,13 @@ PLUGIN_FINISH_PARSE_FUNCTION
 解析完函数的 GENERIC 后, 参数为 func_decl
 </p></li>
 
-<li>PLUGIN_PASS_MANAGER_SETUP</li>
+<li><p>
+PLUGIN_PASS_MANAGER_SETUP
+</p>
+
+<p>
+添加一个 pass
+</p></li>
 
 <li><p>
 PLUGIN_FINISH_TYPE
@@ -142,8 +156,8 @@ PLUGIN_OVERRIDE_GATE
 </div>
 </div>
 
-<div id="outline-container-org0000004" class="outline-3">
-<h3 id="org0000004"><span class="section-number-3">1.2.</span> tree</h3>
+<div id="outline-container-org0000007" class="outline-3">
+<h3 id="org0000007"><span class="section-number-3">1.2.</span> tree</h3>
 <div class="outline-text-3" id="text-1-2">
 <p>
 <a href="https://gcc.gnu.org/onlinedocs/gcc-4.1.1/gccint/Trees.html#Trees">https://gcc.gnu.org/onlinedocs/gcc-4.1.1/gccint/Trees.html#Trees</a>
@@ -159,7 +173,7 @@ AST
 </p>
 
 <p>
-gcc frontend 的输出是 AST (abstract syntax tree), 对应具体的语言, 输出 c 语言中的 `for` 会对应 `FOR_STMT`, 定义在 c-common.def 中
+gcc frontend 的输出是 AST (abstract syntax tree), 对应具体的语言, 例如 c 语言中的 `for` 会对应 `FOR_STMT`, 定义在 c-common.def 中
 </p></li>
 
 <li><p>
@@ -167,7 +181,7 @@ GENERIC
 </p>
 
 <p>
-gcc 会先把语言相关的 AST 转换成通用的 GENERIC, c 语言中的 `FOR_STMT` 会被转换成通用的 `LOOP_EXPR`, 定义在 tree.def 中
+gcc 会把语言相关的 AST 转换成通用的 GENERIC, c 语言中的 `FOR_STMT` 会被转换成通用的 `LOOP_EXPR`, 定义在 tree.def 中
 </p></li>
 
 <li><p>
@@ -308,9 +322,18 @@ gcc 的 tree 类型相当于一个接口, 各个具体的 tree 类型相当于�
 </div>
 
 <p>
-即 tree_int_cst 的派生树为: <code>base &lt;- typed &lt;- int_cst</code>, 如果要访问一个 int_cst
-类型的 tree 的 val 成员, 需要通过 <code>x.int_cst.val</code>. 如果要访问 int_cst 的 code, 需要通过 <code>x.int_cst.typed.base.code</code> 或者 <code>x.base.code</code>, 因为 union 的原因,
-<code>x.int_cst.typed.base</code> 和 <code>x.base</code> 实际是相同的地址.
+即 tree_int_cst 的派生树为: <code>base &lt;- typed &lt;- int_cst</code>:
+</p>
+
+<ul class="org-ul">
+<li>通过 <code>x.int_cst.val</code> 访问一个 int_cst tree 的 val 成员,</li>
+
+<li>通过 <code>x.int_cst.typed.base.code</code> 或者 <code>x.base.code</code> 访问 int_cst 的 tree code</li>
+</ul>
+
+<p>
+因为 union 的原因, <code>x.int_cst.typed.base</code> 和 <code>x.base</code> 实际是相同的地址. gcc 用
+union 模拟了 c++ 的对象模型, 具体的可以参考 <a href="https://citeseerx.ist.psu.edu/document?repid=rep1&amp;type=pdf&amp;doi=160489e8b12cd9a44cbff0cd85fb6aa05437d1ac">Inside The C++ Object Model</a>
 </p>
 
 <p>
@@ -358,16 +381,31 @@ build_string_literal, &#x2026;</li>
 </div>
 
 <p>
-另外, <a href="http://icps.u-strasbg.fr/~pop/gcc-ast.html">http://icps.u-strasbg.fr/~pop/gcc-ast.html</a> 这里用图片展示了几个简单的 AST
-结构, 但是由于 gcc 版本的原因, 有些可能会有变化, 可以先通过 <code>debug_tree</code> 打印出
-tree 的结构, 然后看看看用哪个宏或函数可以操作关心的数据, 具体需要去查找 <code>tree.h</code>
-和 <code>gimple.h</code>
+另外, <a href="http://icps.u-strasbg.fr/~pop/gcc-ast.html">http://icps.u-strasbg.fr/~pop/gcc-ast.html</a> 用图片展示了几个简单的 AST 结构,
+但是由于 gcc 版本的原因, 有些可能会有变化, 可以先通过 <code>debug_tree</code> 打印出tree 的结构, 然后看看看用哪个宏或函数可以操作关心的数据, 具体需要去查找 <code>tree.h</code> 和
+<code>gimple.h</code>
+</p>
+</div>
+
+<div id="outline-container-org0000004" class="outline-4">
+<h4 id="org0000004"><span class="section-number-4">1.2.1.</span> gimple</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+操作 AST 和 GENERIC 都是用宏操作 union 的方式, 但 gimple 不再用 tree (或者
+union), 而不是用 c++ class 来描述类型的层次结构, 例如 gimple, gcall, gassign, 相应的提供了和 tree 的宏类似的函数访问其成员, 例如 gimple_code (对应 TREE_CODE),
+gimple_get_lhs (对应 TREE_OPERAND), &#x2026;
+</p>
+
+<p>
+但 gimple 并没有完全代替 tree, 它主要是针对 <code>stmt</code> 提供了另一个封装, 其它部分(例如 name, type, decl 等) 还会用 tree 来表示, 例如 gimple_get_lhs 返回的仍然是一个
+tree (一个 var_decl)
 </p>
 </div>
 </div>
+</div>
 
-<div id="outline-container-org0000007" class="outline-3">
-<h3 id="org0000007"><span class="section-number-3">1.3.</span> example</h3>
+<div id="outline-container-org000000a" class="outline-3">
+<h3 id="org000000a"><span class="section-number-3">1.3.</span> example</h3>
 <div class="outline-text-3" id="text-1-3">
 <ul class="org-ul">
 <li><p>
@@ -418,7 +456,7 @@ gdb 使用 plugin 在动态编译 c 代码时做一些修改
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-03-30 Thu 16:03<br />
-Last updated: 2023-04-04 Tue 16:14</p>
+Last updated: 2023-04-04 Tue 17:21</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
