@@ -1,0 +1,425 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>GCC Plugin</title>
+
+
+           <link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+           <link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+           <link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+           <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+           <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+           <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+           <link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+           <link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">GCC Plugin</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org000000a">1. GCC Plugin</a>
+<ul>
+<li><a href="#org0000000">1.1. overview</a></li>
+<li><a href="#org0000004">1.2. tree</a></li>
+<li><a href="#org0000007">1.3. example</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000000a" class="outline-2">
+<h2 id="org000000a"><span class="section-number-2">1.</span> GCC Plugin</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="https://gcc.gnu.org/onlinedocs/gcc-4.5.0/gccint/Plugins.html#Plugins">https://gcc.gnu.org/onlinedocs/gcc-4.5.0/gccint/Plugins.html#Plugins</a>
+</p>
+
+<p>
+<a href="https://jongy.github.io/2020/04/25/gcc-assert-introspect.html">https://jongy.github.io/2020/04/25/gcc-assert-introspect.html</a>
+</p>
+</div>
+
+<div id="outline-container-org0000000" class="outline-3">
+<h3 id="org0000000"><span class="section-number-3">1.1.</span> overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+gcc plugin 在 gcc 中定义了许多 hook (event), 用户可以在 so 中实现对应的 callback
+来影响 gcc 的行为, 例如修改 AST 或添加 tree pass 或 rtl pass 来修改 gimple 或
+rtl. 通过 plugin 可以添加 instrumentation 或进行静态代码分析.
+</p>
+
+<p>
+gcc 支持的 event 在 plugin.def 中, 主要包括以下几个 event:
+</p>
+
+<ul class="org-ul">
+<li>PLUGIN_START_PARSE_FUNCTION</li>
+
+<li><p>
+PLUGIN_FINISH_PARSE_FUNCTION
+</p>
+
+<p>
+解析完函数的 GENERIC 后, 参数为 func_decl
+</p></li>
+
+<li>PLUGIN_PASS_MANAGER_SETUP</li>
+
+<li><p>
+PLUGIN_FINISH_TYPE
+</p>
+
+<p>
+解析完一个 type 后, 例如 struct x {}. 调用这个 hook 的参数是 type 对应的 tree
+</p></li>
+
+<li><p>
+PLUGIN_FINISH_DECL
+</p>
+
+<p>
+解析完一个 decl 后, 例如 int x. 参数为对应的 decl, 例如 var_decl 或 param_decl
+</p></li>
+
+<li>PLUGIN_FINISH_UNIT</li>
+
+<li><p>
+PLUGIN_PRE_GENERICIZE
+</p>
+
+<p>
+解析完函数的 AST 后, 参数为 func_decl.
+</p></li>
+
+<li>PLUGIN_ATTRIBUTES</li>
+
+<li>PLUGIN_START_UNIT</li>
+
+<li>PLUGIN_PRAGMAS</li>
+
+<li><p>
+PLUGIN_ALL_PASSES_START
+</p>
+
+<p>
+第一个 pass 之前, 没有参数
+</p></li>
+
+<li><p>
+PLUGIN_ALL_PASSES_END
+</p>
+
+<p>
+最后一个 pass 之后, 没有参数
+</p></li>
+
+<li><p>
+PLUGIN_OVERRIDE_GATE
+</p>
+
+<p>
+每个 pass 执行前, 参数为 gate 原始的结果, 通过它可以控制 pass 是否执行
+</p></li>
+
+<li>PLUGIN_PASS_EXECUTION</li>
+
+<li>PLUGIN_INCLUDE_FILE</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000004" class="outline-3">
+<h3 id="org0000004"><span class="section-number-3">1.2.</span> tree</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+<a href="https://gcc.gnu.org/onlinedocs/gcc-4.1.1/gccint/Trees.html#Trees">https://gcc.gnu.org/onlinedocs/gcc-4.1.1/gccint/Trees.html#Trees</a>
+</p>
+
+<p>
+有三种不同的 HIR 都会使用 tree 来表示, 只不过它们使用的节点类型会有些差别:
+</p>
+
+<ol class="org-ol">
+<li><p>
+AST
+</p>
+
+<p>
+gcc frontend 的输出是 AST (abstract syntax tree), 对应具体的语言, 输出 c 语言中的 `for` 会对应 `FOR_STMT`, 定义在 c-common.def 中
+</p></li>
+
+<li><p>
+GENERIC
+</p>
+
+<p>
+gcc 会先把语言相关的 AST 转换成通用的 GENERIC, c 语言中的 `FOR_STMT` 会被转换成通用的 `LOOP_EXPR`, 定义在 tree.def 中
+</p></li>
+
+<li><p>
+gimple
+</p>
+
+<p>
+gcc 会把 GENERIC 转换成 GIMPLE 交给后续 gimple_opt_pass, `LOOP_EXPR` 会转换成
+`GIMPLE_GOTO`, 定义在 gimple.def 中
+</p></li>
+</ol>
+
+<p>
+例如一个 function 的声明部分对应的 tree 通过 <code>debug_tree</code> 函数打印出来的 GENERIC
+为:
+</p>
+
+<pre class="example" id="org0000003">
+&lt;function_decl 0x7fe180089400 main
+
+   type &lt;function_type 0x7fe180085888
+       type &lt;integer_type 0x7fe17ff745e8 int public SI
+           size &lt;integer_cst 0x7fe17ff5bee8 constant 32&gt;
+           unit-size &lt;integer_cst 0x7fe17ff5bf00 constant 4&gt;
+           align:32 warn_if_not_align:0 symtab:0 alias-set -1 canonical-type 0x7fe17ff745e8 precision:32 min &lt;integer_cst 0x7fe17ff5bea0 -2147483648&gt; max &lt;integer_cst 0x7fe17ff5beb8 2147483647&gt;
+           pointer_to_this &lt;pointer_type 0x7fe17ff7c9d8&gt;&gt;
+       QI
+       size &lt;integer_cst 0x7fe17ff5bd98 constant 8&gt;
+       unit-size &lt;integer_cst 0x7fe17ff5bdb0 constant 1&gt;
+       align:8 warn_if_not_align:0 symtab:0 alias-set -1 canonical-type 0x7fe180085888
+       arg-types &lt;tree_list 0x7fe180092500 value &lt;integer_type 0x7fe17ff745e8 int&gt;
+           chain &lt;tree_list 0x7fe1800924d8 value &lt;pointer_type 0x7fe1800857e0&gt;
+               chain &lt;tree_list 0x7fe17ff707d0 value &lt;void_type 0x7fe17ff74f18 void&gt;&gt;&gt;&gt;&gt;
+
+   public static QI test.c:2:5 align:8 warn_if_not_align:0 initial &lt;block 0x7fe18008e420&gt;
+
+   result &lt;result_decl 0x7fe17ff68bb8 D.1913 type &lt;integer_type 0x7fe17ff745e8 int&gt;
+       ignored SI test.c:2:5 size &lt;integer_cst 0x7fe17ff5bee8 32&gt; unit-size &lt;integer_cst 0x7fe17ff5bf00 4&gt;
+       align:32 warn_if_not_align:0 context &lt;function_decl 0x7fe180089400 main&gt;&gt;
+
+   arguments
+       &lt;parm_decl 0x7fe1800b0000 argc type &lt;integer_type 0x7fe17ff745e8 int&gt;
+       SI test.c:2:14 size &lt;integer_cst 0x7fe17ff5bee8 32&gt; unit-size &lt;integer_cst 0x7fe17ff5bf00 4&gt;
+       align:32 warn_if_not_align:0 context &lt;function_decl 0x7fe180089400 main&gt; arg-type &lt;integer_type 0x7fe17ff745e8 int&gt;
+
+       chain
+
+       &lt;parm_decl 0x7fe1800b0080 argv type &lt;pointer_type 0x7fe1800857e0&gt;
+           unsigned decl_0 DI test.c:2:26
+           size &lt;integer_cst 0x7fe17ff5bca8 constant 64&gt;
+           unit-size &lt;integer_cst 0x7fe17ff5bcc0 constant 8&gt;
+           align:64 warn_if_not_align:0 context &lt;function_decl 0x7fe180089400 main&gt; arg-type &lt;pointer_type 0x7fe1800857e0&gt;&gt;&gt;
+
+   struct-function 0x7fe1800b1000&gt;
+</pre>
+
+<p>
+它包含了函数声明的所有信息: 函数的名字, 参数和返回值的名字和类型
+</p>
+
+<p>
+这里面所有的 <code>&lt;&gt;</code> 都表示不同 tree 类型, 例如:
+</p>
+
+<ul class="org-ul">
+<li>function_decl</li>
+<li>function_type</li>
+<li>integer_type</li>
+<li>integer_cst</li>
+<li>result_decl</li>
+<li>parm_decl</li>
+</ul>
+
+<p>
+这个 function_decl 相当于如下的伪代码:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C">function_decl {
+    .name = <span class="org-string">"main"</span>, 
+    .type = function_type {
+        .type = integer_type {
+            .size = integer_cst {
+                .val = 32, 
+            }
+            ...
+        }
+        ...
+    },
+    .result = result_decl {
+        .type = integer_type {
+        }
+    }
+    .arguments = chain(
+        param_decl {
+            .name = <span class="org-string">"argc"</span>,
+            ...
+        },
+        param_decl {
+            .name = <span class="org-string">"argv"</span>,
+            ...
+        }
+    );
+}
+</pre>
+</div>
+
+<p>
+gcc 的 tree 类型相当于一个接口, 各个具体的 tree 类型相当于抽象类或具体的派生类,
+但这种类的层次关系是通过 c 的 union 和 struct 来实现的.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">union</span> <span class="org-type">tree_node</span> {
+    <span class="org-keyword">struct</span> <span class="org-type">tree_base</span> <span class="org-variable-name">base</span>;
+    <span class="org-keyword">struct</span> <span class="org-type">tree_typed</span> <span class="org-variable-name">typed</span>;
+    <span class="org-keyword">struct</span> <span class="org-type">tree_common</span> <span class="org-variable-name">common</span>;
+    <span class="org-keyword">struct</span> <span class="org-type">tree_int_cst</span> <span class="org-variable-name">int_cst</span>;
+    <span class="org-keyword">struct</span> <span class="org-type">tree_poly_int_cst</span> <span class="org-variable-name">poly_int_cst</span>;
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+};
+
+<span class="org-keyword">struct</span> <span class="org-type">tree_typed</span> {
+    <span class="org-keyword">struct</span> <span class="org-type">tree_base</span> <span class="org-variable-name">base</span>;
+    <span class="org-type">tree</span> <span class="org-variable-name">type</span>;
+};
+
+<span class="org-keyword">struct</span> <span class="org-type">tree_common</span> {
+    <span class="org-keyword">struct</span> <span class="org-type">tree_typed</span> <span class="org-variable-name">typed</span>;
+    <span class="org-type">tree</span> <span class="org-variable-name">chain</span>;
+};
+
+<span class="org-keyword">struct</span> <span class="org-type">tree_int_cst</span> {
+    <span class="org-keyword">struct</span> <span class="org-type">tree_typed</span> <span class="org-variable-name">typed</span>;
+    <span class="org-type">HOST_WIDE_INT</span> <span class="org-variable-name">val</span>[1];
+};
+</pre>
+</div>
+
+<p>
+即 tree_int_cst 的派生树为: <code>base &lt;- typed &lt;- int_cst</code>, 如果要访问一个 int_cst
+类型的 tree 的 val 成员, 需要通过 <code>x.int_cst.val</code>. 如果要访问 int_cst 的 code, 需要通过 <code>x.int_cst.typed.base.code</code> 或者 <code>x.base.code</code>, 因为 union 的原因,
+<code>x.int_cst.typed.base</code> 和 <code>x.base</code> 实际是相同的地址.
+</p>
+
+<p>
+gcc 提供了大量的宏和函数来方便访问不同类型的 tree 中的数据, 例如:
+</p>
+
+<ol class="org-ol">
+<li>TREE_CODE, 适用于所有的 tree 类型, 返回 x.base.code, 即 tree code</li>
+
+<li>TREE_TYPE, 适用于继承自 tree_typed 的类型, 返回 x.typed.type, 例如 function
+decl 对应的 type</li>
+
+<li>TREE_CHAIN 用来获得 chain 中的下一个 node, 例如前面的 arguments</li>
+
+<li>TREE_OPERAND, 适用于继承自 tree_exp 类型, 获得 exp 的 operand</li>
+
+<li>DECL_XXX, 适用于 decl 类的 tree, 例如 function_decl, var_decl 等, 获得 decl
+相关信息, 例如 DECL_NAME, DECL_RESULT, DECL_ARGUMENTS</li>
+
+<li>TYPE_XXX, 获得 type 具体的信息, 例如 TYPE_NAME, TYPE_SIZE</li>
+
+<li>IDENTIFIER_POINTER, 适用于继承自 tree_identifier 的类型, 得到其 identifier 字符串, 例如 IDENTIFIER_POINTER(DECL_NAME(function_decl)) 可以得到函数声明的名字</li>
+
+<li>DECL_SAVED_TREE 用来得到 function_decl 的函数体</li>
+
+<li>tree_stmt_iterator 访问 statement_list 中的 stmt</li>
+
+<li>debug_tree 可以 dump 整个 tree</li>
+
+<li>walk_tree 可以 walk 整个 tree, 以遍历 tree 的 list, vec, operand 等</li>
+
+<li>build_xxx 可以构造新的 tree, 例如 build_int_cst, build_fn_decl,
+build_string_literal, &#x2026;</li>
+</ol>
+
+<p>
+以前面的 function_decl 为例:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-function-name">assert</span>(<span class="org-type">TREE_CODE</span>(<span class="org-variable-name">TREE_TYPE</span>(<span class="org-type">DECL_RESULT</span>(<span class="org-variable-name">x</span>))) == INTEGER_TYPE);
+<span class="org-function-name">assert</span>(strcmp(<span class="org-type">IDENTIFIER_POINTER</span>(<span class="org-variable-name">DECL_NAME</span>(<span class="org-type">DECL_ARGUMENTS</span>(<span class="org-variable-name">x</span>))), <span class="org-string">"argc"</span>) == 0);
+<span class="org-function-name">assert</span>(TREE_INT_CST_ELT(<span class="org-type">TYPE_SIZE</span>(<span class="org-variable-name">TREE_TYPE</span>(x)), 0) == 32);
+</pre>
+</div>
+
+<p>
+另外, <a href="http://icps.u-strasbg.fr/~pop/gcc-ast.html">http://icps.u-strasbg.fr/~pop/gcc-ast.html</a> 这里用图片展示了几个简单的 AST
+结构, 但是由于 gcc 版本的原因, 有些可能会有变化, 可以先通过 <code>debug_tree</code> 打印出
+tree 的结构, 然后看看看用哪个宏或函数可以操作关心的数据, 具体需要去查找 <code>tree.h</code>
+和 <code>gimple.h</code>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000007" class="outline-3">
+<h3 id="org0000007"><span class="section-number-3">1.3.</span> example</h3>
+<div class="outline-text-3" id="text-1-3">
+<ul class="org-ul">
+<li><p>
+给全局变量生成 getter 和 setter
+</p>
+
+<p>
+<a href="https://github.com/sunwayforever/code/tree/master/hello_world/hello_gcc_plugin/finish_decl">https://github.com/sunwayforever/code/tree/master/hello_world/hello_gcc_plugin/finish_decl</a>
+</p></li>
+
+<li><p>
+在函数入口插入 trace 调用
+</p>
+
+<p>
+<a href="https://github.com/sunwayforever/code/tree/master/hello_world/hello_gcc_plugin/start_unit">https://github.com/sunwayforever/code/tree/master/hello_world/hello_gcc_plugin/start_unit</a>
+</p></li>
+
+<li><p>
+比较 AST/GENERIC/GIMPLE 的差别
+</p>
+
+<p>
+<a href="https://github.com/sunwayforever/code/tree/master/hello_world/hello_gcc_plugin/tree">https://github.com/sunwayforever/code/tree/master/hello_world/hello_gcc_plugin/tree</a>
+</p></li>
+
+<li><p>
+linux kernel 中使用的 plugin
+</p>
+
+<p>
+<a href="https://kernel.googlesource.com/pub/scm/linux/kernel/git/kees/linux/+/refs/heads/kspp/gcc-plugin/constify/scripts/gcc-plugins">https://kernel.googlesource.com/pub/scm/linux/kernel/git/kees/linux/+/refs/heads/kspp/gcc-plugin/constify/scripts/gcc-plugins</a>
+</p></li>
+
+<li><p>
+gdb 使用 plugin 在动态编译 c 代码时做一些修改
+</p>
+
+<p>
+<a href="https://sourceware.org/gdb/onlinedocs/gdb/Compiling-and-Injecting-Code.html">https://sourceware.org/gdb/onlinedocs/gdb/Compiling-and-Injecting-Code.html</a>
+</p></li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-03-30 Thu 16:03<br />
+Last updated: 2023-04-04 Tue 16:14</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
