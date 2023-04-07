@@ -32,16 +32,17 @@
 <ul>
 <li><a href="#org0000041">1. Spike</a>
 <ul>
-<li><a href="#org000002a">1.1. interpreter</a>
+<li><a href="#org000002d">1.1. interpreter</a>
 <ul>
 <li><a href="#org0000003">1.1.1. register</a></li>
 <li><a href="#org0000006">1.1.2. init</a></li>
 <li><a href="#org0000024">1.1.3. execute</a></li>
 <li><a href="#org0000027">1.1.4. 添加新的指令</a></li>
+<li><a href="#org000002a">1.1.5. interrupt</a></li>
 </ul>
 </li>
-<li><a href="#org000002d">1.2. htif</a></li>
-<li><a href="#org0000030">1.3. pk</a></li>
+<li><a href="#org0000030">1.2. htif</a></li>
+<li><a href="#org0000033">1.3. pk</a></li>
 <li><a href="#ID-59d328ce-9af1-437d-adf3-8078782f078d">1.4. boot</a></li>
 <li><a href="#org0000034">1.5. commit log</a></li>
 <li><a href="#org0000037">1.6. debug module</a></li>
@@ -65,8 +66,8 @@
 </p>
 </div>
 
-<div id="outline-container-org000002a" class="outline-3">
-<h3 id="org000002a"><span class="section-number-3">1.1.</span> interpreter</h3>
+<div id="outline-container-org000002d" class="outline-3">
+<h3 id="org000002d"><span class="section-number-3">1.1.</span> interpreter</h3>
 <div class="outline-text-3" id="text-1-1">
 <p>
 spike 和 qemu 类似, 但它不像 <a href="qemu_tcg.html#ID-fedb153b-c9a7-4ad1-a66e-e08b91173dd3">QEMU TCG</a> 那样执行二进制翻译: 它通过一个 interpreter
@@ -600,10 +601,69 @@ p-&gt;set_privilege(prev_prv);
 </ol>
 </div>
 </div>
+
+<div id="outline-container-org000002a" class="outline-4">
+<h4 id="org000002a"><span class="section-number-4">1.1.5.</span> interrupt</h4>
+<div class="outline-text-4" id="text-1-1-5">
+<p>
+ecall, ebreak 等指令以及 mmu 等触发的同步的 interrupt 在 step 时通过 try catch
+直接可以处理.
+</p>
+
+<p>
+为了模拟外部的异步的中断, spike 提供了一个 clint 模块, 针对它的内存读写指令会反映到 mip 寄存器:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C">bool <span class="org-type">clint_t</span>::store(<span class="org-type">reg_t</span> <span class="org-variable-name">addr</span>, <span class="org-type">size_t</span> <span class="org-variable-name">len</span>, <span class="org-keyword">const</span> <span class="org-type">uint8_t</span>* <span class="org-variable-name">bytes</span>) {
+    <span class="org-keyword">if</span> (addr &gt;= MSIP_BASE &amp;&amp;
+        addr + len &lt;= MSIP_BASE + procs.size() * <span class="org-keyword">sizeof</span>(msip_t)) {
+        std::vector&lt;msip_t&gt; msip(procs.size());
+        std::vector&lt;msip_t&gt; mask(procs.size(), 0);
+        memcpy((<span class="org-type">uint8_t</span>*)&amp;msip[0] + addr - MSIP_BASE, bytes, len);
+        memset((<span class="org-type">uint8_t</span>*)&amp;mask[0] + addr - MSIP_BASE, 0xff, len);
+        <span class="org-keyword">for</span> (<span class="org-type">size_t</span> <span class="org-variable-name">i</span> = 0; i &lt; procs.size(); ++i) {
+            <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>(mask[i] &amp; 0xFF)) <span class="org-keyword">continue</span>;
+            procs[i]-&gt;state.mip-&gt;backdoor_write_with_mask(MIP_MSIP, 0);
+            <span class="org-comment-delimiter">/*</span><span class="org-comment">~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</span><span class="org-comment-delimiter">*/</span>
+            <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>!(msip[i] &amp; 1))
+                procs[i]-&gt;state.mip-&gt;backdoor_write_with_mask(
+                    MIP_MSIP, MIP_MSIP);
+        }
+    }
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">return</span> <span class="org-constant">true</span>;
+}
+</pre>
 </div>
 
-<div id="outline-container-org000002d" class="outline-3">
-<h3 id="org000002d"><span class="section-number-3">1.2.</span> htif</h3>
+<p>
+step 时会读取 mip 以触发外部中断:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">void</span> <span class="org-variable-name">processor_t</span>::step(size_t n) {
+    <span class="org-keyword">while</span> (n &gt; 0) {
+        try {
+            take_pending_interrupt();
+            take_interrupt(state.mip-&gt;read() &amp; state.mie-&gt;read());
+                          <span class="org-comment-delimiter">/*</span><span class="org-comment">~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</span><span class="org-comment-delimiter">*/</span>
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+            execute_insn();
+            catch (trap_t&amp; t) {
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+            }
+        }
+    }
+}
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000030" class="outline-3">
+<h3 id="org0000030"><span class="section-number-3">1.2.</span> htif</h3>
 <div class="outline-text-3" id="text-1-2">
 <p>
 htif 是 Host Target InterFace, 代码在 fesvr 目录 (Front End SerVeR), spike 通过它可以与 host 交互:
@@ -633,8 +693,8 @@ htif 是 Host Target InterFace, 代码在 fesvr 目录 (Front End SerVeR), spike
 </div>
 </div>
 
-<div id="outline-container-org0000030" class="outline-3">
-<h3 id="org0000030"><span class="section-number-3">1.3.</span> pk</h3>
+<div id="outline-container-org0000033" class="outline-3">
+<h3 id="org0000033"><span class="section-number-3">1.3.</span> pk</h3>
 <div class="outline-text-3" id="text-1-3">
 <p>
 spike 可以直接运行 bare-metal 程序 (例如
@@ -858,7 +918,7 @@ commit log 需要:
 找开 commit log 后, 针对寄存器和内存的读写操作的结果都会被记录下来, 例如:
 </p>
 
-<pre class="example" id="org0000033">
+<pre class="example" id="org0000036">
 core   0: 3 0x0000000000001000 (0x00000297) x 5 0x0000000000001000
 core   0: 3 0x0000000000001004 (0x02028593) x11 0x0000000000001020
 core   0: 3 0x0000000000001008 (0xf1402573) x10 0x0000000000000000
@@ -1006,7 +1066,7 @@ handcar 相对于 spike 主要改动:
 spike 原来的逻辑是:
 </p>
 
-<pre class="example" id="org000003d">
+<pre class="example" id="org0000040">
 host:               |    guest:
                     |
 while (true):       |    while(true):
@@ -1051,7 +1111,7 @@ mmio_plugin_t, mem_t, rom_device_t 等不再使用, 也不再支持 <code>-m</co
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-02-15 Wed 10:22<br />
-Last updated: 2023-03-23 Thu 17:00</p>
+Last updated: 2023-04-07 Fri 14:15</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
