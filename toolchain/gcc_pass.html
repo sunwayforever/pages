@@ -49,8 +49,8 @@
 <li><a href="#org0000026">1.3.11. pass_sink_code</a></li>
 <li><a href="#org0000029">1.3.12. pass_nrv</a></li>
 <li><a href="#org000002c">1.3.13. pass_return_slot</a></li>
-<li><a href="#org000003b">1.3.14. loop</a></li>
-<li><a href="#org000003e">1.3.15. pass_lim</a></li>
+<li><a href="#org0000043">1.3.14. loop</a></li>
+<li><a href="#org0000046">1.3.15. pass_lim</a></li>
 <li><a href="#org0000041">1.3.16. pass_linear_transform</a></li>
 </ul>
 </li>
@@ -287,9 +287,9 @@ branch_cost 较大时, 才会应用这个优化.
 </div>
 
 
-<div id="outline-container-org0000020" class="outline-5 references">
-<h5 id="org0000020">Backlinks</h5>
-<div class="outline-text-5" id="text-org0000020">
+<div id="outline-container-org0000083" class="outline-5 references">
+<h5 id="org0000083">Backlinks</h5>
+<div class="outline-text-5" id="text-org0000083">
 <p>
 <a href="gcc_cost.html#ID-f497b668-4fa4-4876-845b-134dd50783e2">branch_cost</a>
 (<i>GCC Cost &gt; mtune &gt; riscv_tune_param &gt; branch_cost</i>):  另外, <a href="#ID-5ca8cde0-446c-44da-b8fc-88510806ace8">pass_data_tree_ifcombine</a> 也会考虑 branch_cost 的影响: 当 branch_cost 较大 时, 会把 `if (a) {if (b) {}}` 优化成 `if (a&amp;b)`
@@ -315,8 +315,8 @@ branch_cost 较大时, 才会应用这个优化.
 <h4 id="org000002c"><span class="section-number-4">1.3.13.</span> <a href="gcc_return_slot.html#ID-801a952f-ac2b-4551-946a-105d06d13446">pass_return_slot</a></h4>
 </div>
 
-<div id="outline-container-org000003b" class="outline-4">
-<h4 id="org000003b"><span class="section-number-4">1.3.14.</span> loop</h4>
+<div id="outline-container-org0000043" class="outline-4">
+<h4 id="org0000043"><span class="section-number-4">1.3.14.</span> loop</h4>
 <div class="outline-text-4" id="text-1-3-14">
 </div>
 <div id="outline-container-org000002f" class="outline-5">
@@ -347,11 +347,285 @@ branch_cost 较大时, 才会应用这个优化.
 </div>
 </div>
 </div>
+
+
+<div id="outline-container-org0000040" class="outline-5">
+<h5 id="org0000040"><span class="section-number-5">1.3.14.5.</span> pass_ch</h5>
+<div class="outline-text-5" id="text-1-3-14-5">
+<p>
+pass_ch 指针对 loop 的 copy header 优化, 它会把
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">while</span> (cond) {
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+}
+</pre>
 </div>
 
+<p>
+优化成
+</p>
 
-<div id="outline-container-org000003e" class="outline-4">
-<h4 id="org000003e"><span class="section-number-4">1.3.15.</span> pass_lim</h4>
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">do</span> {
+    <span class="org-comment-delimiter">/*  */</span>
+} <span class="org-keyword">while</span> (cond)
+</pre>
+</div>
+
+<p>
+的形式. 若首次循环时 cond 并一定成立, 则需要 copy 这个 cond 到循环的外部, 用一个额外的判断避免优化前后执行结果不一致
+</p>
+
+<p>
+例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-comment-delimiter">// </span><span class="org-comment">2023-03-30 10:22</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;string.h&gt;</span>
+<span class="org-keyword">volatile</span> <span class="org-type">int</span> <span class="org-variable-name">data</span>[3] = {1, 2, 3};
+<span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]) {
+    <span class="org-keyword">volatile</span> <span class="org-type">int</span> *<span class="org-variable-name">x</span> = data;
+    <span class="org-type">int</span> <span class="org-variable-name">a</span> = 0x1;
+    <span class="org-type">int</span> <span class="org-variable-name">b</span> = 0x2;
+    <span class="org-type">int</span> <span class="org-variable-name">c</span> = 0x3;
+    <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; 3; i++) {
+        *x = a;
+        <span class="org-keyword">if</span> (*x != data[0]) {
+            <span class="org-keyword">return</span> 1;
+        }
+        *x = b;
+        <span class="org-keyword">if</span> (*x != data[1]) {
+            <span class="org-keyword">return</span> 1;
+        }
+        *x = c;
+        <span class="org-keyword">if</span> (*x != data[2]) {
+            <span class="org-keyword">return</span> 1;
+        }
+    }
+    <span class="org-keyword">return</span> 0;
+}
+</pre>
+</div>
+
+<p>
+ch 优化前的 gimple 为:
+</p>
+
+<pre class="example" id="org000003b">
+__attribute__((access ("^1[ ]", )))
+int main (int argc, char * * argv)
+{
+  ...
+  &lt;bb 2&gt; [local count: 333062948]:
+  goto &lt;bb 7&gt;; [100.00%]
+  ~~~~~~~~~~~~~~~~~~~~~~
+    先跳到 bb 7  以判断循环条件是否成立
+
+  &lt;bb 3&gt; [local count: 805306369]:
+  MEM[(volatile int *)&amp;data] ={v} 1;
+  _1 ={v} MEM[(volatile int *)&amp;data];
+  _2 ={v} data[0];
+  if (_1 != _2)
+    goto &lt;bb 8&gt;; [2.75%]
+  else
+    goto &lt;bb 4&gt;; [97.25%]
+
+  &lt;bb 4&gt; [local count: 783160441]:
+  MEM[(volatile int *)&amp;data] ={v} 2;
+  _3 ={v} MEM[(volatile int *)&amp;data];
+  _4 ={v} data[1];
+  if (_3 != _4)
+    goto &lt;bb 8&gt;; [2.75%]
+  else
+    goto &lt;bb 5&gt;; [97.25%]
+
+  &lt;bb 5&gt; [local count: 761623526]:
+  MEM[(volatile int *)&amp;data] ={v} 3;
+  _5 ={v} MEM[(volatile int *)&amp;data];
+  _6 ={v} data[2];
+  if (_5 != _6)
+    goto &lt;bb 8&gt;; [2.75%]
+  else
+    goto &lt;bb 6&gt;; [97.25%]
+
+  &lt;bb 6&gt; [local count: 740678875]:
+  i_16 = i_7 + 1;
+
+  &lt;bb 7&gt; [local count: 1073741824]:
+  if (i_7 != 3)
+    goto &lt;bb 3&gt;; [75.00%]
+    ~~~~~~~~~~~~
+      bb 3 是循环体
+
+  else
+    goto &lt;bb 8&gt;; [25.00%]
+
+  &lt;bb 8&gt; [local count: 333062949]:
+  return _8;
+
+}
+</pre>
+
+<p>
+应用 ch 优化后:
+</p>
+
+<pre class="example" id="org000003c">
+__attribute__((access ("^1[ ]", )))
+int main (int argc, char * * argv)
+{
+  ...  
+  &lt;bb 2&gt; [local count: 333062948]:
+
+  &lt;bb 3&gt; [local count: 805306369]:
+  MEM[(volatile int *)&amp;data] ={v} 1;
+  _1 ={v} MEM[(volatile int *)&amp;data];
+  _2 ={v} data[0];
+
+  if (_1 != _2)
+    goto &lt;bb 7&gt;; [2.75%]
+  else
+    goto &lt;bb 4&gt;; [97.25%]
+  ~~~~~~~~~~~~~~~~~~~~~~~~
+    直接进入了循环体, 因为循环初始条件是成立的, 这样少了一次对循环条件的判断
+
+  &lt;bb 4&gt; [local count: 783160441]:
+  MEM[(volatile int *)&amp;data] ={v} 2;
+  _3 ={v} MEM[(volatile int *)&amp;data];
+  _4 ={v} data[1];
+  if (_3 != _4)
+    goto &lt;bb 7&gt;; [2.75%]
+  else
+    goto &lt;bb 5&gt;; [97.25%]
+
+  &lt;bb 5&gt; [local count: 761623526]:
+  MEM[(volatile int *)&amp;data] ={v} 3;
+  _5 ={v} MEM[(volatile int *)&amp;data];
+  _6 ={v} data[2];
+  if (_5 != _6)
+    goto &lt;bb 7&gt;; [2.75%]
+  else
+    goto &lt;bb 6&gt;; [97.25%]
+
+  &lt;bb 6&gt; [local count: 740678876]:
+  i_16 = i_18 + 1;
+  if (i_16 != 3)
+    goto &lt;bb 3&gt;; [75.00%]
+  else
+    goto &lt;bb 7&gt;; [25.00%]
+
+  &lt;bb 7&gt; [local count: 333062949]:
+  return _8;
+}
+</pre>
+
+<p>
+如果把代码中的判断条件修改成:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 1; i &lt; argc; i++) {
+}
+</pre>
+</div>
+
+<p>
+则 pass_ch 就需要生成一个 copy header, 以避免首次循环时条件不成立的情况:
+</p>
+
+<pre class="example" id="org000003d">
+main (int argc, char * * argv)
+{
+  ...
+  &lt;bb 2&gt; [local count: 113328204]:
+  if (argc_12(D) &gt; 1)
+    goto &lt;bb 3&gt;; [97.25%]
+    ~~~~~~~~~~~~~~~~~~~~
+      这里通过 copy header 增加了一个额外的判断, 确定后续 while 可以修改成 do while
+  else
+    goto &lt;bb 7&gt;; [2.75%]
+
+  &lt;bb 3&gt; [local count: 1044213925]:
+  MEM[(volatile int *)&amp;data] ={v} 1;
+  _1 ={v} MEM[(volatile int *)&amp;data];
+  _2 ={v} data[0];
+  if (_1 != _2)
+    goto &lt;bb 7&gt;; [2.75%]
+  else
+    goto &lt;bb 4&gt;; [97.25%]
+
+  &lt;bb 4&gt; [local count: 1015498041]:
+  MEM[(volatile int *)&amp;data] ={v} 2;
+  _3 ={v} MEM[(volatile int *)&amp;data];
+  _4 ={v} data[1];
+  if (_3 != _4)
+    goto &lt;bb 7&gt;; [2.75%]
+  else
+    goto &lt;bb 5&gt;; [97.25%]
+
+  &lt;bb 5&gt; [local count: 987571844]:
+  MEM[(volatile int *)&amp;data] ={v} 3;
+  _5 ={v} MEM[(volatile int *)&amp;data];
+  _6 ={v} data[2];
+  if (_5 != _6)
+    goto &lt;bb 7&gt;; [2.75%]
+  else
+    goto &lt;bb 6&gt;; [97.25%]
+
+  &lt;bb 6&gt; [local count: 960413620]:
+  i_16 = i_19 + 1;
+  if (argc_12(D) &gt; i_16)
+    goto &lt;bb 3&gt;; [97.25%]
+  else
+    goto &lt;bb 7&gt;; [2.75%]
+
+  &lt;bb 7&gt; [local count: 113328205]:
+  return _8;
+
+}
+</pre>
+
+<p>
+另外, 即使没有 pass_ch, `while` 也会被优化成:
+</p>
+
+<pre class="example" id="org000003e">
+goto x
+r:
+  // loop body
+x:
+  if cond_meet() {goto r} else {goto out}
+
+out:
+</pre>
+
+<p>
+而不是 
+</p>
+
+<pre class="example" id="org000003f">
+x:
+  if cond_meet() {goto r} else {goto out}
+r:
+  // loop body
+  goto x
+
+out:
+</pre>
+
+<p>
+前者比后者性能更好, 因为后者每次执行完 loop body 都需要先跳转再判断, 而前者只需要一个判断
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000046" class="outline-4">
+<h4 id="org0000046"><span class="section-number-4">1.3.15.</span> pass_lim</h4>
 </div>
 
 <div id="outline-container-org0000041" class="outline-4">
@@ -386,9 +660,9 @@ rtl combine 成一条 rtl (需要先在 md 中定义这个 rtl), 和 llvm 的 DA
 </div>
 
 
-<div id="outline-container-org000004a" class="outline-5 references">
-<h5 id="org000004a">Backlinks</h5>
-<div class="outline-text-5" id="text-org000004a">
+<div id="outline-container-org0000052" class="outline-5 references">
+<h5 id="org0000052">Backlinks</h5>
+<div class="outline-text-5" id="text-org0000052">
 <p>
 <a href="gcc_backend.html#ID-02e7f924-9cf7-4e3d-8ceb-1765fd3a2bed">GCC Backend</a>
 (<i>GCC Backend &gt; rtl optimization</i>):  - <a href="#ID-69585bb2-1dff-4676-adbc-aa90f70e030d">pass_combine</a>
@@ -534,8 +808,8 @@ riscv_expand_prologue 负责生成函数开头的:
 <h5 id="org0000056"><span class="section-number-5">1.4.5.2.</span> epilogue</h5>
 </div>
 
-<div id="outline-container-org0000059" class="outline-5">
-<h5 id="org0000059"><span class="section-number-5">1.4.5.3.</span> backtrace</h5>
+<div id="outline-container-org0000065" class="outline-5">
+<h5 id="org0000065"><span class="section-number-5">1.4.5.3.</span> backtrace</h5>
 <div class="outline-text-5" id="text-1-4-5-3">
 <div class="org-src-container">
 <pre class="src src-rust">#0  gen_prologue () at ../.././riscv-gcc/gcc/config/riscv/riscv.<span class="org-variable-name">md</span>:2202
@@ -640,8 +914,8 @@ naked function, 是指不需要 gcc 生成 prolog 和 epilogue 的函数, 例如
 
 
 <ul class="org-ul">
-<li><a id="org000005f"></a>Backlinks<br />
-<div class="outline-text-7" id="text-org000005f">
+<li><a id="org0000067"></a>Backlinks<br />
+<div class="outline-text-7" id="text-org0000067">
 <p>
 <a href="gcc_attribute.html#ID-463c82be-a55d-43c3-a8f2-cba1c1cd7599">GCC Attribute</a>
 (<i>GCC Attribute &gt; naked</i>):   <a href="#ID-eaff51af-4d01-4a5c-9810-c7382088881e">naked</a>
@@ -726,8 +1000,8 @@ FIXED_REGISTERS. FIXED_REGISTERS 不会被 ira 分配, 也不会被 prologue 保
 </div>
 </div>
 
-<div id="outline-container-org0000065" class="outline-6">
-<h6 id="org0000065"><span class="section-number-6">1.4.6.1.3.</span> backtrace</h6>
+<div id="outline-container-org000006d" class="outline-6">
+<h6 id="org000006d"><span class="section-number-6">1.4.6.1.3.</span> backtrace</h6>
 <div class="outline-text-6" id="text-1-4-6-1-3">
 <div class="org-src-container">
 <pre class="src src-rust">#0  riscv_save_reg_p (regno=0) at ../.././riscv-gcc/gcc/config/riscv/riscv.<span class="org-variable-name">c</span>:3636
@@ -759,9 +1033,9 @@ FIXED_REGISTERS. FIXED_REGISTERS 不会被 ira 分配, 也不会被 prologue 保
 </div>
 
 
-<div id="outline-container-org000006b" class="outline-5 references">
-<h5 id="org000006b">Backlinks</h5>
-<div class="outline-text-5" id="text-org000006b">
+<div id="outline-container-org0000073" class="outline-5 references">
+<h5 id="org0000073">Backlinks</h5>
+<div class="outline-text-5" id="text-org0000073">
 <p>
 <a href="gcc_backend.html#ID-02e7f924-9cf7-4e3d-8ceb-1765fd3a2bed">GCC Backend</a>
 (<i>GCC Backend &gt; register allocation</i>):  <a href="#ID-48b544df-f83e-41b6-8cba-fc2e23d188a9">pass_ira</a> 和 pass_reload
@@ -797,9 +1071,9 @@ FIXED_REGISTERS. FIXED_REGISTERS 不会被 ira 分配, 也不会被 prologue 保
 </div>
 
 
-<div id="outline-container-org0000077" class="outline-5 references">
-<h5 id="org0000077">Backlinks</h5>
-<div class="outline-text-5" id="text-org0000077">
+<div id="outline-container-org000007f" class="outline-5 references">
+<h5 id="org000007f">Backlinks</h5>
+<div class="outline-text-5" id="text-org000007f">
 <p>
 <a href="gcc_backend.html#ID-02e7f924-9cf7-4e3d-8ceb-1765fd3a2bed">GCC Backend</a>
 (<i>GCC Backend &gt; code emission</i>):  rtl 最终由 <a href="#ID-813e2003-85c7-4b59-b221-541240951e12">pass_final</a> 生成 assembly
@@ -821,9 +1095,9 @@ FIXED_REGISTERS. FIXED_REGISTERS 不会被 ira 分配, 也不会被 prologue 保
 </div>
 
 
-<div id="outline-container-org0000083" class="outline-2 references">
-<h2 id="org0000083">Backlinks</h2>
-<div class="outline-text-2" id="text-org0000083">
+<div id="outline-container-org000008b" class="outline-2 references">
+<h2 id="org000008b">Backlinks</h2>
+<div class="outline-text-2" id="text-org000008b">
 <p>
 <a href="gcc.html#ID-19df5597-4fd4-47a1-9534-f6e0c327e8d5">GCC</a>
 (<i>GCC &gt; Pass</i>):   <a href="gcc_pass.html#ID-17957249-95aa-4d26-8d2b-48ece73cd8cd">Pass</a>
@@ -835,7 +1109,7 @@ FIXED_REGISTERS. FIXED_REGISTERS 不会被 ira 分配, 也不会被 prologue 保
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2022-04-15 Fri 14:04<br />
-Last updated: 2022-11-24 Thu 11:19</p>
+Last updated: 2023-04-10 Mon 15:31</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
