@@ -1,0 +1,826 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>SIMD</title>
+
+
+           <link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+           <link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+           <link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+           <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+           <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+           <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+           <link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+           <link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">SIMD</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000066">1. SIMD</a>
+<ul>
+<li><a href="#org000002d">1.1. NEON</a>
+<ul>
+<li><a href="#org0000027">1.1.1. 指令格式</a></li>
+<li><a href="#org000002a">1.1.2. 指令列表</a></li>
+</ul>
+</li>
+<li><a href="#org0000036">1.2. MSA</a>
+<ul>
+<li><a href="#org0000030">1.2.1. 指令格式</a></li>
+<li><a href="#org0000033">1.2.2. 指令列表</a></li>
+</ul>
+</li>
+<li><a href="#org0000039">1.3. NEON vs.MSA</a></li>
+<li><a href="#org0000057">1.4. SIMDe</a>
+<ul>
+<li><a href="#org000003c">1.4.1. overview</a></li>
+<li><a href="#org0000054">1.4.2. 实现细节</a></li>
+</ul>
+</li>
+<li><a href="#org0000063">1.5. RISC-V</a>
+<ul>
+<li><a href="#org000005a">1.5.1. RISC-V Vector Extension</a></li>
+<li><a href="#org000005d">1.5.2. RISC-V P Extension</a></li>
+<li><a href="#org0000060">1.5.3. RISC-V Builtin</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000066" class="outline-2">
+<h2 id="org0000066"><span class="section-number-2">1.</span> SIMD</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org000002d" class="outline-3">
+<h3 id="org000002d"><span class="section-number-3">1.1.</span> NEON</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+<a href="https://github.com/sunwayforever/code/tree/master/hello_world/hello_neon">https://github.com/sunwayforever/code/tree/master/hello_world/hello_neon</a>
+</p>
+</div>
+
+<div id="outline-container-org0000027" class="outline-4">
+<h4 id="org0000027"><span class="section-number-4">1.1.1.</span> 指令格式</h4>
+<div class="outline-text-4" id="text-1-1-1">
+</div>
+<div id="outline-container-org0000000" class="outline-5">
+<h5 id="org0000000"><span class="section-number-5">1.1.1.1.</span> saturating</h5>
+<div class="outline-text-5" id="text-1-1-1-1">
+<p>
+某些会 overflow 的计算时会有 saturating 的版本, 用开头的 `q` 表示, 例如:
+</p>
+
+<ol class="org-ol">
+<li><code>int8x8_t v[q]add_s8(int8x8_t a,int8x8_t b)</code>, 加法</li>
+<li><code>int8x8_t v[q]movn_s16(int16x8_t a)</code>, int16 转换为 int8</li>
+<li><code>int8x8_t v[q]shl_s8(int8x8_t a,int8x8_t b)</code>, 左移</li>
+<li><code>int8x8_t v[q]abs_s8(int8x8_t a)</code>, 当 a 为 INT8_MIN 时计算会溢出</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000003" class="outline-5">
+<h5 id="org0000003"><span class="section-number-5">1.1.1.2.</span> rounding</h5>
+<div class="outline-text-5" id="text-1-1-1-2">
+<p>
+整数的右移计算需要舍入, 默认的舍入方法是直接取整(相当于 rounding towards zero), 通过开头加 `r` 表示需要变成 `四舍五入` 取整, 例如:
+</p>
+
+<ol class="org-ol">
+<li><code>int8x8_t v[r]shl_s8(int8x8_t a,int8x8_t b)</code>, 相当于 <code>(a+(1&lt;&lt;(n-1)))&gt;&gt;b</code></li>
+
+<li><code>int8x8_t v[r]hadd_s8(int8x8_t a,int8x8_t b)</code>, 因为 hadd 相当于 <code>(a+b)&gt;&gt;1</code>, 所以也有 rounding 的问题</li>
+</ol>
+
+<p>
+除了整数右移, <code>vrnd</code> 和 <code>vcvt</code> 指令支持指定不同的 rounding 方法, NEON 支持的
+rounding 方法主要有:
+</p>
+
+<ol class="org-ol">
+<li><p>
+round toward zero
+</p>
+
+<p>
+默认的方法, 例如:
+</p>
+
+<p>
+<code>int32x2_t vcvt_s32_f32(float32x2_t a)</code>
+</p></li>
+
+<li><p>
+round to nearest with ties to even
+</p>
+
+<p>
+round 到离它最近的偶数, 这是 IEEE754 默认的方法, 在指令时使用 `n` 前缀表示,
+例如:
+</p>
+
+<p>
+<code>int32x2_t vcvt[n]_s32_f32(float32x2_t a)</code>
+</p>
+
+<p>
+<code>float32x2_t vrnd[n]_f32(float32x2_t a)</code>
+</p></li>
+
+<li><p>
+round toward minus infinity
+</p>
+
+<p>
+相当于 floor, 在指令时使用 `m` 前缀表示, 例如:
+</p>
+
+<p>
+<code>float32x2_t vrnd[m]_f32(float32x2_t a)</code>
+</p>
+
+<p>
+<code>int32x2_t vcvt[m]_s32_f32(float32x2_t a)</code>
+</p></li>
+
+<li><p>
+round toward plus infinity
+</p>
+
+<p>
+相当于 ceil, 在指令时使用 `p` 前缀表示, 例如:
+</p>
+
+<p>
+<code>float32x2_t vrnd[p]_f32(float32x2_t a)</code>
+</p>
+
+<p>
+<code>int32x2_t vcvt[p]_s32_f32(float32x2_t a)</code>
+</p></li>
+
+<li><p>
+round to nearest with ties to away
+</p>
+
+<p>
+四舍五入, 在指令时使用 `a` 前缀表示, 例如:
+</p>
+
+<p>
+<code>float32x2_t vrnd[a]_f32(float32x2_t a)</code>
+</p>
+
+<p>
+<code>int32x2_t vcvt[a]_s32_f32(float32x2_t a)</code>
+</p></li>
+</ol>
+
+<p>
+不同 rounding 方法的结果如下所示:
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">&#xa0;</th>
+<th scope="col" class="org-right">11.5</th>
+<th scope="col" class="org-right">12.5</th>
+<th scope="col" class="org-left">−11.5</th>
+<th scope="col" class="org-left">−12.5</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">to nearest, ties to even</td>
+<td class="org-right">12</td>
+<td class="org-right">12</td>
+<td class="org-left">−12.0</td>
+<td class="org-left">−12.0</td>
+</tr>
+
+<tr>
+<td class="org-left">to nearest, ties away from zero</td>
+<td class="org-right">12</td>
+<td class="org-right">13</td>
+<td class="org-left">−12.0</td>
+<td class="org-left">−13.0</td>
+</tr>
+
+<tr>
+<td class="org-left">toward 0</td>
+<td class="org-right">11</td>
+<td class="org-right">12</td>
+<td class="org-left">−11.0</td>
+<td class="org-left">−12.0</td>
+</tr>
+
+<tr>
+<td class="org-left">toward +inf</td>
+<td class="org-right">12</td>
+<td class="org-right">13</td>
+<td class="org-left">−11.0</td>
+<td class="org-left">−12.0</td>
+</tr>
+
+<tr>
+<td class="org-left">toward −inf</td>
+<td class="org-right">11</td>
+<td class="org-right">12</td>
+<td class="org-left">−12.0</td>
+<td class="org-left">−13.0</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<div id="outline-container-org0000006" class="outline-5">
+<h5 id="org0000006"><span class="section-number-5">1.1.1.3.</span> vector width</h5>
+<div class="outline-text-5" id="text-1-1-1-3">
+<p>
+默认使用 64-bit vector, 例如 <code>int8x8_t vqadd_s8(int8x8_t a,int8x8_t b)</code> 使用
+64-bit vector, 所以只能同时操作 8 个 <code>int8_t</code>, 通过 `q` 后缀, 表示使用 128-bit
+vector, 例如: <code>int8x16_t vadd[q]_s8(int8x16_t a,int8x16_t b)</code>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000009" class="outline-5">
+<h5 id="org0000009"><span class="section-number-5">1.1.1.4.</span> widen</h5>
+<div class="outline-text-5" id="text-1-1-1-4">
+<p>
+通常情况下 NEON 的输入和输出元素的宽度是相同的, 例如 <code>int8x8_t vqadd_s8(int8x8_t
+a,int8x8_t b)</code> 的输入和输出都是 <code>int8_t</code>. widen 是指把输出元素的宽度变成输出的两倍, 比如输入是 <code>int8_t</code>, 输出变成 <code>int16_t</code>. 用 `l` 后缀表示 widen, 例如:
+<code>int16x8_t vadd[l]_s8(int8x8_t a,int8x8_t b)</code>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000000c" class="outline-5">
+<h5 id="org000000c"><span class="section-number-5">1.1.1.5.</span> narrow</h5>
+<div class="outline-text-5" id="text-1-1-1-5">
+<p>
+narrow 与 widen 相反, 输出元素的宽度变成输入的一半, 用 `n` 后缀表示, 例如:
+</p>
+
+<p>
+<code>int8x8_t vmov[n]_s16(int16x8_t a)</code>
+</p>
+
+<p>
+<code>uint8x8_t vqshru[n]_n_s16(int16x8_t a,const int n)</code>
+</p>
+
+<p>
+另外, add 指令有特殊的 narrow 方法:
+</p>
+
+<p>
+<code>int8x8_t vadd[hn]_s16(int16x8_t a,int16x8_t b)</code>, 其中的 `hn` 表示 high narrow,
+因为它是取的输入元素的 `high part` 做为 narrow 的结果: r[i]=(a[i]+b[i])&gt;&gt;8
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000000f" class="outline-5">
+<h5 id="org000000f"><span class="section-number-5">1.1.1.6.</span> high/low</h5>
+<div class="outline-text-5" id="text-1-1-1-6">
+<p>
+有些指令使用 high/low 后缀, 表示只操作输入或输出的一半元素, 例如:
+</p>
+
+<p>
+<code>int8x16_t vmovn_[high]_s16(int8x8_t r,int16x8_t a)</code> 表示输出的后一半元素来自 a
+</p>
+
+<p>
+<code>int16x8_t vmovl_[high]_s8(int8x16_t a)</code> 表示 a 只有后一半元素会被 mov 到输出
+</p>
+
+<p>
+<code>int16x8_t vshll_[high]_n_s8(int8x16_t a,const int n)</code> 表示 a 的后一半元素会被
+shift 后保存到输出中 (a 有 16 个 元素, 但结果只有 8 个元素)
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000001b" class="outline-5">
+<h5 id="org000001b"><span class="section-number-5">1.1.1.7.</span> scalar</h5>
+<div class="outline-text-5" id="text-1-1-1-7">
+</div>
+<div id="outline-container-org0000012" class="outline-6">
+<h6 id="org0000012"><span class="section-number-6">1.1.1.7.1.</span> lane</h6>
+<div class="outline-text-6" id="text-1-1-1-7-1">
+<p>
+使用 lane 后缀表示输入会使用某个 vector 的某一个固定的元素, 例如
+</p>
+
+<p>
+<code>int16x4_t vmla_[lane]_s16(int16x4_t a,int16x4_t b,int16x4_t v,const int lane)</code> 表示 <code>r[i]=a[i]+b[i]*v[lane]</code>, 即对于 v 总是使用 lane 位置的元素而忽略其它元素
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000015" class="outline-6">
+<h6 id="org0000015"><span class="section-number-6">1.1.1.7.2.</span> n</h6>
+<div class="outline-text-6" id="text-1-1-1-7-2">
+<p>
+使用 n 后缀表示有输入是一个 int scalar, 例如: <code>int8x8_t vsli_[n]_s8(int8x8_t
+a,int8x8_t b,const int n)</code>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000018" class="outline-6">
+<h6 id="org0000018"><span class="section-number-6">1.1.1.7.3.</span> b/h/s/d</h6>
+<div class="outline-text-6" id="text-1-1-1-7-3">
+<p>
+这几个后缀表示输入是标量而不是向量.
+</p>
+
+<p>
+当操作 int 时:
+</p>
+
+<ol class="org-ol">
+<li>b 代表 int8_t</li>
+<li>h 代表 HI, 即 int16_t</li>
+<li>s 代表 SI, 即 int32_t</li>
+<li>d 代表 DI, 即 int64_t</li>
+</ol>
+
+<p>
+当操作 float 时:
+</p>
+
+<ol class="org-ol">
+<li>s 代表 single precision, 即 float</li>
+<li>d 代表 double precision, 即 double</li>
+</ol>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000001e" class="outline-5">
+<h5 id="org000001e"><span class="section-number-5">1.1.1.8.</span> pairwise</h5>
+<div class="outline-text-5" id="text-1-1-1-8">
+<p>
+以 pairwise add 为例, 它把两个输入拼接在一起, 计算的结果是 <code>r[i]=a[2i]+a[2i+1]</code>,
+使用 `p` 前缀表示 pariwise, 例如 <code>int8x8_t v[p]add_s8(int8x8_t a,int8x8_t b)</code>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000021" class="outline-5">
+<h5 id="org0000021"><span class="section-number-5">1.1.1.9.</span> across vector</h5>
+<div class="outline-text-5" id="text-1-1-1-9">
+<p>
+across vector 相当于 reduction, 使用 `v` 后缀表示, 例如 <code>int8_t
+vaddv_s8(int8x8_t a)</code>, 它计算的是 vector 的 sum
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000024" class="outline-5">
+<h5 id="org0000024"><span class="section-number-5">1.1.1.10.</span> unsigned</h5>
+<div class="outline-text-5" id="text-1-1-1-10">
+<p>
+有些指令会把输入的 signed int 变成输出的 unsigned int, 使用 `u` 后缀表示, 例如
+<code>uint8x8_t vqmov[u]n_s16(int16x8_t a)</code>
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000002a" class="outline-4">
+<h4 id="org000002a"><span class="section-number-4">1.1.2.</span> 指令列表</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+<a href="https://arm-software.github.io/acle/neon_intrinsics/advsimd.html">https://arm-software.github.io/acle/neon_intrinsics/advsimd.html</a>
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000036" class="outline-3">
+<h3 id="org0000036"><span class="section-number-3">1.2.</span> MSA</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+<a href="https://github.com/sunwayforever/code/tree/master/hello_world/hello_msa">https://github.com/sunwayforever/code/tree/master/hello_world/hello_msa</a>
+</p>
+</div>
+
+<div id="outline-container-org0000030" class="outline-4">
+<h4 id="org0000030"><span class="section-number-4">1.2.1.</span> 指令格式</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+<code>{7.h}{4.a}xxx{8.r}{1.v}{5.s}{6.i}_{2.s,u}_{3.b,h,w,d}</code>
+</p>
+
+<ul class="org-ul">
+<li>1.v</li>
+<li>2.s,u  signed/unsigned</li>
+<li>3.b,h,w,d 向量元素的类型: int8, int16, int32, int64</li>
+<li>4.a absolute</li>
+<li>5.s saturate</li>
+<li>6.i 立即数</li>
+<li>7.h horizontal</li>
+<li>8.r rounding</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000033" class="outline-4">
+<h4 id="org0000033"><span class="section-number-4">1.2.2.</span> 指令列表</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<p>
+<a href="https://repo.oss.cipunited.com/documents/MD00926-2B-MSA-WHT-01.03.pdf">https://repo.oss.cipunited.com/documents/MD00926-2B-MSA-WHT-01.03.pdf</a>
+</p>
+
+<p>
+<a href="https://s3-eu-west-1.amazonaws.com/downloads-mips/documents/MD00866-2B-MSA32-AFP-01.12.pdf">https://s3-eu-west-1.amazonaws.com/downloads-mips/documents/MD00866-2B-MSA32-AFP-01.12.pdf</a>
+</p>
+
+<p>
+<a href="https://gcc.gnu.org/onlinedocs/gcc/MIPS-SIMD-Architecture-Built-in-Functions.html">https://gcc.gnu.org/onlinedocs/gcc/MIPS-SIMD-Architecture-Built-in-Functions.html</a>
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000039" class="outline-3">
+<h3 id="org0000039"><span class="section-number-3">1.3.</span> NEON vs.MSA</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+使用 msa 实现 neon 的基本操作时主要有以下几个问题:
+</p>
+
+<ol class="org-ol">
+<li>neon 支持 64/128 bit vector, msa 只支持 128 bit, 导致 msa 实现类似于 vadd_s8
+的指令时会浪费一半的计算</li>
+
+<li>msa 不支持 neon 的 widen/narrow 类型的指令, 例如 <code>int16x8_t vaddl_s8(int8x8_t
+   a, int8x8_t b)</code>, 需要额外的代码把 msa 的输入变成 <code>int16x8_t</code>, 而 msa 又不支持用于数据类型转换的 <code>vmov</code> 指令, 导致转换很低效.</li>
+
+<li>msa 不支持 neon 的 signed/unsigned 类型指令, 例如 <code>int8x8_t
+   vuqadd_s8(int8x8_t a,uint8x8_t b)</code>, 因为 msa 的输入输出类型基本上总是相同的,
+需要手动做额外的数据转换</li>
+
+<li>msa 不支持 neon 的 high 类型的指令, 例如 <code>int16x8_t vaddl_high_s8(int8x16_t
+   a, int8x16_t b)</code>, 需要手动从 <code>int8x16_t</code> 构造 <code>int16x8_t</code></li>
+
+<li>msa 不支持 cross vector 类型的指令, 例如 <code>int8_t vaddv_s8(int8x8_t a)</code></li>
+
+<li>当涉及到 neon 的 pairwise 操作时(例如 <code>int16x4_t vpadal_s8(int16x4_t
+   a,int8x8_t b)</code>) 且 neon 是 64-bit vector 时, msa 会因为 vector 后一半填充的 0
+导致 pairwise 结果错误.</li>
+
+<li>msa 不支持 lane 指令和 scalar 指令</li>
+
+<li>msa 的 left shift 与 neon 的定义差异太大, 无法支持</li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-org0000057" class="outline-3">
+<h3 id="org0000057"><span class="section-number-3">1.4.</span> SIMDe</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+<a href="https://github.com/simd-everywhere/simde">https://github.com/simd-everywhere/simde</a>
+</p>
+</div>
+
+<div id="outline-container-org000003c" class="outline-4">
+<h4 id="org000003c"><span class="section-number-4">1.4.1.</span> overview</h4>
+<div class="outline-text-4" id="text-1-4-1">
+<p>
+SIMDe (SIMD everywhere) 让使用不同的 SIMD (sse, neon, msa, &#x2026;) 编写的代码可以运行在非 native 的平台上, 例如 sse 运行在 arm, 或者 neon 运行在 x86, &#x2026;
+</p>
+
+<p>
+它的基本做法是:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">void</span> <span class="org-function-name">my_sse_add</span>() {
+<span class="org-preprocessor">#ifdefne</span> _sse_
+    _sse_add();
+<span class="org-preprocessor">#elif</span> <span class="org-preprocessor">defined</span> _neon_
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#20351;&#29992; neon &#23454;&#29616;</span><span class="org-comment-delimiter">  */</span>
+<span class="org-preprocessor">#elif</span> <span class="org-preprocessor">defined</span> _msa_
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#20351;&#29992; msa &#23454;&#29616;</span><span class="org-comment-delimiter">  */</span>
+<span class="org-preprocessor">#elif</span> <span class="org-preprocessor">defined</span> _vector_extension_
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#20351;&#29992; vector extension</span><span class="org-comment-delimiter"> */</span>
+    r = a + b;
+<span class="org-preprocessor">#else</span>
+<span class="org-preprocessor">#pragma</span> omp simd
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#20351;&#29992; openmp simd</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; N; i++) {
+        r[i] = a[i] + b[i];
+    }
+<span class="org-preprocessor">#endif</span>
+}
+
+<span class="org-preprocessor">#define</span> <span class="org-variable-name">_sse_add</span> my_sse_add
+</pre>
+</div>
+
+<ul class="org-ul">
+<li>如果当前 target 支持 sse, 可以直接调用 sse intrinsic</li>
+
+<li>如果 target 支持 neon, 可以尝试用 neon 间接实现 sse 的功能</li>
+
+<li>如果当前编译器支持 vector extension, 可以使用 vector extension 来利用 target
+上的 SIMD</li>
+
+<li>最后尝试使用 openmp 的 simd 支持 (和自动向量化效果差不多)</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000054" class="outline-4">
+<h4 id="org0000054"><span class="section-number-4">1.4.2.</span> 实现细节</h4>
+<div class="outline-text-4" id="text-1-4-2">
+</div>
+<div id="outline-container-org000003f" class="outline-5">
+<h5 id="org000003f"><span class="section-number-5">1.4.2.1.</span> vector extension</h5>
+<div class="outline-text-5" id="text-1-4-2-1">
+<p>
+参考这个例子: <a href="https://godbolt.org/z/zesG3sxbs">https://godbolt.org/z/zesG3sxbs</a>
+</p>
+
+<p>
+vector extension 依赖于编译器后端是否有 simd 支持 (例如 md 是否支持 V4SI machine
+mode), 如果不支持, 则 pass_lower_vector 会把 vector 操作变成 scalar 操作
+</p>
+
+<p>
+当 vector extension 指定了超过 SIMD 长度的 vector_size 时, 编译器会把它拆分成多个 vector 操作
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000042" class="outline-5">
+<h5 id="org0000042"><span class="section-number-5">1.4.2.2.</span> 宏</h5>
+<div class="outline-text-5" id="text-1-4-2-2">
+<p>
+SIMDe 通过宏 (编译器预定义或用户定义) 控制生成的代码, 例如:
+</p>
+
+<ul class="org-ul">
+<li>SIMDE_ARM_NEON_A32V7_NATIVE</li>
+
+<li>SIMDE_X86_SSE2_NATIVE</li>
+
+<li>SIMDE_VECTOR_SUBSCRIPT</li>
+</ul>
+
+<p>
+这几个宏是根据编译器的预定义宏自动设置的, 表示是否支持 neon/sse2, 是否支持
+vector extension
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000004e" class="outline-5">
+<h5 id="org000004e"><span class="section-number-5">1.4.2.3.</span> 数据类型</h5>
+<div class="outline-text-5" id="text-1-4-2-3">
+<p>
+以 vaba_s32 为例, 它操作的数据类型是 `4 个 int32 构成的 vector`, SIMDe 定义了两种相关的类型:
+</p>
+
+<ol class="org-ol">
+<li>simde_int32x4_t</li>
+
+<li>simde_int32x4_private</li>
+</ol>
+</div>
+
+<div id="outline-container-org0000045" class="outline-6">
+<h6 id="org0000045"><span class="section-number-6">1.4.2.3.1.</span> simde_int32x4_t</h6>
+<div class="outline-text-6" id="text-1-4-2-3-1">
+<p>
+simde_int32x4_t 是 native simd (sse, neon, &#x2026;) 数据类型的别名, 它会做为
+simde_xxx 函数的输入输出以便与 native simd intrinsic 函数一致
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-preprocessor">#if</span> <span class="org-preprocessor">defined</span>(SIMDE_ARM_NEON_A32V7_NATIVE)
+<span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+<span class="org-keyword">typedef</span> <span class="org-type">int32x4_t</span> <span class="org-type">simde_int32x4_t</span>;
+<span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+<span class="org-preprocessor">#elif</span> <span class="org-preprocessor">defined</span>(SIMDE_X86_SSE2_NATIVE)
+<span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+<span class="org-keyword">typedef</span> <span class="org-type">__m128i</span> <span class="org-type">simde_int32x4_t</span>;
+<span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+<span class="org-preprocessor">#endif</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000048" class="outline-6">
+<h6 id="org0000048"><span class="section-number-6">1.4.2.3.2.</span> simde_int32x4_private</h6>
+<div class="outline-text-6" id="text-1-4-2-3-2">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">typedef</span> <span class="org-keyword">union</span> {
+<span class="org-preprocessor">#if</span> <span class="org-preprocessor">defined</span>(SIMDE_VECTOR_SUBSCRIPT)
+    <span class="org-type">int32_t</span> <span class="org-variable-name">values</span> <span class="org-keyword">__attribute__</span>((vector_size 16));
+<span class="org-preprocessor">#else</span>
+    <span class="org-type">int32_t</span> <span class="org-variable-name">values</span>[4];
+<span class="org-preprocessor">#endif</span>
+
+<span class="org-preprocessor">#if</span> <span class="org-preprocessor">defined</span>(SIMDE_X86_SSE2_NATIVE)
+    <span class="org-type">__m128i</span> <span class="org-variable-name">m128i</span>;
+<span class="org-preprocessor">#endif</span>
+
+<span class="org-preprocessor">#if</span> <span class="org-preprocessor">defined</span>(SIMDE_ARM_NEON_A32V7_NATIVE)
+    <span class="org-type">int32x4_t</span> <span class="org-variable-name">neon</span>;
+<span class="org-preprocessor">#endif</span>
+} <span class="org-type">simde_int32x4_private</span>;
+</pre>
+</div>
+
+<p>
+simde_vaba_s32 的代码会用许多宏来区分不同的实现 (x86/neon native, vector
+extension, omp simd), 每种实现会使用不同的数据类型. 通过 simde_int32x4_private
+可以避免 native simd 类型与这些类型之间转换. 另外,不借助 union 无法把 int32x4_t
+直接转换成 int32_t[4]
+</p>
+
+<p>
+simde_int32x4_private 在 simde_xxx 函数的内部使用
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000004b" class="outline-6">
+<h6 id="org000004b"><span class="section-number-6">1.4.2.3.3.</span> simde_int32x4_to_private/simde_int32x4_from_private</h6>
+<div class="outline-text-6" id="text-1-4-2-3-3">
+<p>
+这两个函数的定义为:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-type">simde_int32x4_private</span> <span class="org-function-name">simde_int32x4_to_private</span>(<span class="org-type">simde_int32x4_t</span> <span class="org-variable-name">value</span>) {
+    <span class="org-type">simde_int32x4_private</span> <span class="org-variable-name">r</span>;
+    simde_memcpy(&amp;r, &amp;value, <span class="org-keyword">sizeof</span>(r));
+    <span class="org-keyword">return</span> r;
+}
+
+<span class="org-keyword">static</span> <span class="org-type">simde_int32x4_t</span> <span class="org-function-name">simde_int32x4_from_private</span>(<span class="org-type">simde_int32x4_private</span> <span class="org-variable-name">value</span>) {
+    <span class="org-type">simde_int32x4_t</span> <span class="org-variable-name">r</span>;
+    simde_memcpy(&amp;r, &amp;value, <span class="org-keyword">sizeof</span>(r));
+    <span class="org-keyword">return</span> r;
+}
+</pre>
+</div>
+
+<p>
+实际上 gcc 的 pass_fre (Full Redundancy Elimination) 会识别到 r 是 value 的别名,
+会把这个 memcpy 去掉, 最终相当于一个类型转换
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000051" class="outline-5">
+<h5 id="org0000051"><span class="section-number-5">1.4.2.4.</span> example</h5>
+<div class="outline-text-5" id="text-1-4-2-4">
+<p>
+以 neon 的 vaba_s32 为例:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: vaba_s32(a,b,c) &#25191;&#34892;&#30340;&#25805;&#20316;&#26159; `a += abs(b-c)`</span><span class="org-comment-delimiter"> */</span>
+<span class="org-type">simde_int32x4_t</span> <span class="org-function-name">simde_vabaq_s32</span>(
+    <span class="org-type">simde_int32x4_t</span> <span class="org-variable-name">a</span>, <span class="org-type">simde_int32x4_t</span> <span class="org-variable-name">b</span>, <span class="org-type">simde_int32x4_t</span> <span class="org-variable-name">c</span>) {
+<span class="org-preprocessor">#if</span> <span class="org-preprocessor">defined</span>(SIMDE_ARM_NEON_A32V7_NATIVE)
+    <span class="org-keyword">return</span> vabaq_s32(a, b, c);
+<span class="org-preprocessor">#else</span>
+    <span class="org-keyword">return</span> simde_vaddq_s32(simde_vabdq_s32(b, c), a);
+<span class="org-preprocessor">#endif</span>
+}
+
+<span class="org-preprocessor">#if</span> <span class="org-preprocessor">defined</span>(SIMDE_ARM_NEON_A32V7_ENABLE_NATIVE_ALIASES)
+<span class="org-preprocessor">#undef</span> vabaq_s32
+<span class="org-preprocessor">#define</span> <span class="org-function-name">vabaq_s32</span>(<span class="org-variable-name">a</span>, <span class="org-variable-name">b</span>, <span class="org-variable-name">c</span>) simde_vabaq_s32((a), (b), (c))
+<span class="org-preprocessor">#endif</span>
+<span class="org-comment-delimiter">/* </span><span class="org-comment">=======================================================</span><span class="org-comment-delimiter"> */</span>
+<span class="org-type">simde_int32x4_t</span> <span class="org-function-name">simde_vabdq_s32</span>(<span class="org-type">simde_int32x4_t</span> <span class="org-variable-name">a</span>, <span class="org-type">simde_int32x4_t</span> <span class="org-variable-name">b</span>) {
+<span class="org-preprocessor">#if</span> <span class="org-preprocessor">defined</span>(SIMDE_ARM_NEON_A32V7_NATIVE)
+    <span class="org-keyword">return</span> vabdq_s32(a, b);
+<span class="org-preprocessor">#elif</span> <span class="org-preprocessor">defined</span>(SIMDE_POWER_ALTIVEC_P6_NATIVE)
+    <span class="org-keyword">return</span> vec_sub(vec_max(a, b), vec_min(a, b));
+<span class="org-preprocessor">#else</span>
+    <span class="org-type">simde_int32x4_private</span> <span class="org-variable-name">r_</span>, <span class="org-variable-name">a_</span> = simde_int32x4_to_private(a),
+                              <span class="org-variable-name">b_</span> = simde_int32x4_to_private(b);
+
+<span class="org-preprocessor">#if</span> <span class="org-preprocessor">defined</span>(SIMDE_X86_SSE4_1_NATIVE)
+    r_.m128i = _mm_sub_epi32(
+        _mm_max_epi32(a_.m128i, b_.m128i), _mm_min_epi32(a_.m128i, b_.m128i));
+<span class="org-preprocessor">#elif</span> <span class="org-preprocessor">defined</span>(SIMDE_X86_SSE2_NATIVE)
+    <span class="org-keyword">const</span> <span class="org-type">__m128i</span> <span class="org-variable-name">m</span> = _mm_cmpgt_epi32(b_.m128i, a_.m128i);
+    r_.m128i =
+        _mm_xor_si128(_mm_add_epi32(_mm_sub_epi32(a_.m128i, b_.m128i), m), m);
+<span class="org-preprocessor">#else</span>
+    SIMDE_VECTORIZE
+    <span class="org-keyword">for</span> (<span class="org-type">size_t</span> <span class="org-variable-name">i</span> = 0; i &lt; (<span class="org-keyword">sizeof</span>(r_.values) / <span class="org-keyword">sizeof</span>(r_.values[0])); i++) {
+        <span class="org-type">int64_t</span> <span class="org-variable-name">tmp</span> = HEDLEY_STATIC_CAST(int64_t, a_.values[i]) -
+                      HEDLEY_STATIC_CAST(int64_t, b_.values[i]);
+        r_.values[i] = HEDLEY_STATIC_CAST(int32_t, tmp &lt; 0 ? -tmp : tmp);
+    }
+<span class="org-preprocessor">#endif</span>
+
+    <span class="org-keyword">return</span> simde_int32x4_from_private(r_);
+<span class="org-preprocessor">#endif</span>
+}
+<span class="org-comment-delimiter">/* </span><span class="org-comment">=======================================================</span><span class="org-comment-delimiter"> */</span>
+<span class="org-type">simde_int32x4_t</span> <span class="org-function-name">simde_vaddq_s32</span>(<span class="org-type">simde_int32x4_t</span> <span class="org-variable-name">a</span>, <span class="org-type">simde_int32x4_t</span> <span class="org-variable-name">b</span>) {
+<span class="org-preprocessor">#if</span> <span class="org-preprocessor">defined</span>(SIMDE_ARM_NEON_A32V7_NATIVE)
+    <span class="org-keyword">return</span> vaddq_s32(a, b);
+<span class="org-preprocessor">#elif</span> <span class="org-preprocessor">defined</span>(SIMDE_POWER_ALTIVEC_P6_NATIVE)
+    <span class="org-keyword">return</span> vec_add(a, b);
+<span class="org-preprocessor">#else</span>
+    <span class="org-type">simde_int32x4_private</span> <span class="org-variable-name">r_</span>, <span class="org-variable-name">a_</span> = simde_int32x4_to_private(a),
+                              <span class="org-variable-name">b_</span> = simde_int32x4_to_private(b);
+
+<span class="org-preprocessor">#if</span> <span class="org-preprocessor">defined</span>(SIMDE_X86_SSE2_NATIVE)
+    r_.m128i = _mm_add_epi32(a_.m128i, b_.m128i);
+<span class="org-preprocessor">#elif</span> <span class="org-preprocessor">defined</span>(SIMDE_VECTOR_SUBSCRIPT_OPS)
+    r_.values = a_.values + b_.values;
+<span class="org-preprocessor">#else</span>
+    SIMDE_VECTORIZE
+    <span class="org-keyword">for</span> (<span class="org-type">size_t</span> <span class="org-variable-name">i</span> = 0; i &lt; (<span class="org-keyword">sizeof</span>(r_.values) / <span class="org-keyword">sizeof</span>(r_.values[0])); i++) {
+        r_.values[i] = a_.values[i] + b_.values[i];
+    }
+<span class="org-preprocessor">#endif</span>
+    <span class="org-keyword">return</span> simde_int32x4_from_private(r_);
+<span class="org-preprocessor">#endif</span>
+}
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000063" class="outline-3">
+<h3 id="org0000063"><span class="section-number-3">1.5.</span> RISC-V</h3>
+<div class="outline-text-3" id="text-1-5">
+</div>
+<div id="outline-container-org000005a" class="outline-4">
+<h4 id="org000005a"><span class="section-number-4">1.5.1.</span> <a href="../riscv/riscv_vector_extension.html#ID-1a3f764a-c401-4233-bd66-f809ada336f1">RISC-V Vector Extension</a></h4>
+</div>
+
+<div id="outline-container-org000005d" class="outline-4">
+<h4 id="org000005d"><span class="section-number-4">1.5.2.</span> <a href="../riscv/riscv_vector_extension.html#ID-a05733ad-d9ce-4fc4-b76c-9f15770c0c4b">RISC-V P Extension</a></h4>
+</div>
+
+<div id="outline-container-org0000060" class="outline-4">
+<h4 id="org0000060"><span class="section-number-4">1.5.3.</span> <a href="7f27529a-db21-45ae-8cbe-e5736353d2ba">RISC-V Builtin</a></h4>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-04-27 Thu 18:01<br />
+Last updated: 2023-05-06 Sat 11:46</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
