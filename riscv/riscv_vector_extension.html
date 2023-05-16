@@ -53,7 +53,7 @@
 <li><a href="#org000007e">1.3.3. impls</a></li>
 </ul>
 </li>
-<li><a href="#org000008b">1.4. example</a>
+<li><a href="#org000008a">1.4. example</a>
 <ul>
 <li><a href="#org0000084">1.4.1. matmul with rvv assembly:</a></li>
 <li><a href="#org0000087">1.4.2. matmul with rvv intrinsic:</a></li>
@@ -319,8 +319,8 @@ vset{i}vl{i} 的第一个 i 表示关于 vl 的部分是否使用 imm, 第二个
 </p>
 </div>
 
-<div id="outline-container-org000008a" class="outline-5">
-<h5 id="org000008a"><span class="section-number-5">1.2.2.1.</span> example</h5>
+<div id="outline-container-org000008b" class="outline-5">
+<h5 id="org000008b"><span class="section-number-5">1.2.2.1.</span> example</h5>
 <div class="outline-text-5" id="text-1-2-2-1">
 <div class="org-src-container">
 <pre class="src src-asm">    <span class="org-keyword">.global</span> main
@@ -452,8 +452,8 @@ vmset.m vd
 
 
 <ul class="org-ul">
-<li><a id="org000009d"></a>Backlinks<br />
-<div class="outline-text-7" id="text-org000009d">
+<li><a id="org000009e"></a>Backlinks<br />
+<div class="outline-text-7" id="text-org000009e">
 <p>
 <a href="riscv_vector_extension.html#ID-1a3f764a-c401-4233-bd66-f809ada336f1">RISC-V Vector Extension</a>
 (<i>RISC-V Vector Extension &gt; rvv 1.0 &gt; insns &gt; 算术运算 &gt; mask</i>):   <a href="#ID-22a7c201-dbbd-4d4a-9cb5-aeb3752803cf">mask</a>
@@ -1144,8 +1144,8 @@ masked arithmetic:
 </div>
 </div>
 
-<div id="outline-container-org000008b" class="outline-3">
-<h3 id="org000008b"><span class="section-number-3">1.4.</span> example</h3>
+<div id="outline-container-org000008a" class="outline-3">
+<h3 id="org000008a"><span class="section-number-3">1.4.</span> example</h3>
 <div class="outline-text-3" id="text-1-4">
 </div>
 <div id="outline-container-org0000084" class="outline-4">
@@ -1353,32 +1353,44 @@ masked arithmetic:
 <div class="outline-text-3" id="text-1-5">
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-comment-delimiter">// </span><span class="org-comment">2022-05-06 13:39</span>
-<span class="org-type">void</span> <span class="org-function-name">foo</span>(<span class="org-type">int</span> *<span class="org-variable-name">a</span>, <span class="org-type">int</span> *<span class="org-variable-name">b</span>, <span class="org-type">int</span> <span class="org-variable-name">len</span>) {
+<span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#36825;&#37324;&#21152;&#19978; __restrict &#20851;&#38190;&#23383;, &#21578;&#35785;&#32534;&#35793;&#22120;&#19981;&#38656;&#35201;&#32771;&#34385; a &#21644; b &#26377;&#37325;&#21472;&#30340;&#24773;&#20917;</span><span class="org-comment-delimiter"> */</span>
+<span class="org-type">int</span> <span class="org-keyword">__attribute__</span>((noinline))
+<span class="org-function-name">foo</span>(<span class="org-type">int</span> *<span class="org-variable-name">__restrict</span> a, <span class="org-type">int</span> *<span class="org-variable-name">__restrict</span> b, <span class="org-type">int</span> <span class="org-variable-name">len</span>) {
     <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; len; i++) {
         a[i] += b[i];
     }
+    <span class="org-keyword">return</span> a[0];
+}
+
+<span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]) {
+    <span class="org-type">int</span> <span class="org-variable-name">a</span>[] = {1, 2, 3, 4, 5, 6};
+    <span class="org-type">int</span> <span class="org-variable-name">b</span>[] = {1, 2, 3, 4, 5, 6};
+    <span class="org-keyword">return</span> foo(a, b, 6);
 }
 </pre>
 </div>
 
 <pre class="example" id="org000008d">
-$&gt; /opt/riscv-rvv/bin/riscv64-unknown-elf-gcc -march=rv64gcv ./rvv.c -g -mrvv -c -ftree-vectorize -O2
-$&gt;  /opt/riscv-rvv/bin/riscv64-unknown-elf-objdump -d ./rvv.o
+$&gt; /opt/riscv-rvv/bin/riscv64-unknown-elf-gcc -march=rv64gcv ./rvv.c -g -mrvv -ftree-vectorize -O2
+$&gt; /opt/riscv-rvv/bin/riscv64-unknown-elf-objdump -d ./a.out
 ...
+00000000000101aa &lt;foo&gt;:
+   101aa:       02c05363                blez    a2,101d0 &lt;foo+0x26&gt;
+   101ae:       87aa                    mv      a5,a0
+   101b0:       c2202773                csrr    a4,vlenb
+   101b4:       050676d7                vsetvli a3,a2,e32,m1,ta,mu
+   101b8:       0207ec07                vle32.v v24,(a5)
+   101bc:       0205ec87                vle32.v v25,(a1)
+   101c0:       038c8c57                vadd.vv v24,v24,v25
+   101c4:       0207ec27                vse32.v v24,(a5)
+   101c8:       8e15                    sub     a2,a2,a3
+   101ca:       95ba                    add     a1,a1,a4
+   101cc:       97ba                    add     a5,a5,a4
+   101ce:       f27d                    bnez    a2,101b4 &lt;foo+0xa&gt;
+   101d0:       4108                    lw      a0,0(a0)
+   101d2:       8082                    ret
 ...
-0000000000000018 &lt;.L4&gt;:
-  18:   05067757                vsetvli a4,a2,e32,m1,ta,mu
-  1c:   02056c07                vle32.v v24,(a0)
-  20:   0205ec87                vle32.v v25,(a1)
-  24:   038c8c57                vadd.vv v24,v24,v25
-  28:   02056c27                vse32.v v24,(a0)
-  2c:   8e19                    sub     a2,a2,a4
-  2e:   953e                    add     a0,a0,a5
-  30:   95be                    add     a1,a1,a5
-  32:   f27d                    bnez    a2,18 &lt;.L4&gt;
-  34:   8082                    ret
-...
-...
+
 </pre>
 </div>
 </div>
@@ -1451,9 +1463,9 @@ index 等操作</li>
 
 
 
-<div id="outline-container-org000009e" class="outline-2 references">
-<h2 id="org000009e">Backlinks</h2>
-<div class="outline-text-2" id="text-org000009e">
+<div id="outline-container-org000009d" class="outline-2 references">
+<h2 id="org000009d">Backlinks</h2>
+<div class="outline-text-2" id="text-org000009d">
 <p>
 <a href="riscv_tutorial.html#ID-653c6b58-7ee1-4e07-bf3f-d5eea450748e">RISC-V Tutorial</a>
 (<i>RISC-V Tutorial &gt; Standard Extention &gt; RV32V</i>):  <a href="riscv_vector_extension.html#ID-1a3f764a-c401-4233-bd66-f809ada336f1">RISC-V Vector Extension</a>
@@ -1475,7 +1487,7 @@ index 等操作</li>
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2022-04-28 Thu 19:05<br />
-Last updated: 2023-04-27 Thu 18:10</p>
+Last updated: 2023-05-16 Tue 17:32</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
