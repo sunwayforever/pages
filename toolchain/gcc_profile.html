@@ -32,9 +32,9 @@
 <ul>
 <li><a href="#org0000010">1. GCC Profile</a>
 <ul>
-<li><a href="#org0000003">1.1. 使用 profile 的 branch prediction</a></li>
+<li><a href="#ID-794ce040-0021-4018-af87-4d1072a0e139">1.1. profile guided branch prediction</a></li>
 <li><a href="#org0000006">1.2. converage</a></li>
-<li><a href="#org000000a">1.3. profiling</a></li>
+<li><a href="#org000000b">1.3. profiling</a></li>
 <li><a href="#org000000d">1.4. impls</a></li>
 </ul>
 </li>
@@ -73,19 +73,43 @@ GCC 和 profile 相关的选项有两个:
 </p>
 </div>
 
-<div id="outline-container-org0000003" class="outline-3">
-<h3 id="org0000003"><span class="section-number-3">1.1.</span> 使用 profile 的 branch prediction</h3>
+<div id="outline-container-ID-794ce040-0021-4018-af87-4d1072a0e139" class="outline-3">
+<h3 id="ID-794ce040-0021-4018-af87-4d1072a0e139"><span class="section-number-3">1.1.</span> profile guided branch prediction</h3>
 <div class="outline-text-3" id="text-1-1">
+<p>
+profile 相关的功能主要 profile 这个 ipa pass (tree-profile.cc)
+</p>
+
 <p>
 gcc 可以根据 profile 来决定 predict 的结果.
 </p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">int</span> <span class="org-function-name">foo</span>(<span class="org-type">int</span> <span class="org-variable-name">x</span>) {
+    <span class="org-keyword">if</span> (x &gt; 0) {
+        <span class="org-keyword">return</span> x + 1;
+    } <span class="org-keyword">else</span> {
+        <span class="org-keyword">return</span> -x + 1;
+    }
+}
+
+<span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]) {
+    <span class="org-type">int</span> <span class="org-variable-name">x</span> = 0;
+    <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; 100000; i++) {
+        x += foo(argc - 2);
+    }
+    <span class="org-keyword">return</span> x;
+}
+
+</pre>
+</div>
 
 <p>
 首先需要用 `-fprofile-generate` 编译出一个可以记录 profile 的 binary
 </p>
 
 <pre class="example" id="org0000000">
-$&gt; riscv64-linux-gnu-gcc test.c -O2 -fprofile-generate -static
+$&gt; riscv64-linux-gnu-gcc test.c -O0 -fprofile-generate -static
 </pre>
 
 <p>
@@ -95,31 +119,124 @@ profile 数据
 
 <pre class="example" id="org0000001">
 $&gt; ./a.out
-$&gt; ./a.out
 $&gt; ls
 a.out  test.c  test.gcda
 </pre>
 
 <p>
-最后用 `fprofile-use` 重新编译, gcc 会使用 test.gcda 记录的 profile 数据来做
-branch prediction
+最后用 `fprofile-use` 或 `fbranch-probabilities` 重新编译, gcc 会使用 test.gcda
+记录的 profile 数据来做 branch prediction
 </p>
 
 <pre class="example" id="org0000002">
-$&gt; riscv64-linux-gnu-gcc test.c -O2 -fprofile-use -static
-$&gt; gdb-multiarch ./a.out -ex "disass foo" --batch
+$&gt; riscv64-linux-gnu-gcc test.c -O0 -fenable-rtl-bbro -fbranch-probabilities -static -fdump-ipa-profile
+$&gt; cat test.c.062i.profile
+...
+foo (int x)
+{
+  int D.1508;
+  int _1;
+  int _3;
+  int _4;
 
-Dump of assembler code for function foo:
-   0x00000000000101d4 &lt;+0&gt;:     blez    a0,0x101dc &lt;foo+8&gt;
-   0x00000000000101d8 &lt;+4&gt;:     addiw   a0,a0,1
-   0x00000000000101da &lt;+6&gt;:     ret
-   0x00000000000101dc &lt;+8&gt;:     li      a5,1
-   0x00000000000101de &lt;+10&gt;:    subw    a0,a5,a0
-   0x00000000000101e2 &lt;+14&gt;:    ret
-End of assembler dump.
+  &lt;bb 2&gt; [count: 2]:
+  if (x_2(D) &gt; 0)
+    goto &lt;bb 3&gt;; [0.00%]
+  else
+    goto &lt;bb 4&gt;; [100.00%] &lt;--------- 这是 profile 的结果
+...
+
+$&gt; riscv64-linux-gnu-objdum -d ./a.out
+
+0000000000010430 &lt;foo&gt;:
+   10430:	1101                	addi	sp,sp,-32
+   10432:	ec22                	sd	s0,24(sp)
+   10434:	1000                	addi	s0,sp,32
+   10436:	87aa                	mv	a5,a0
+   10438:	fef42623          	sw	a5,-20(s0)
+   1043c:	fec42783          	lw	a5,-20(s0)
+   10440:	2781                	sext.w	a5,a5
+   10442:	00f04c63          	bgtz	a5,1045a &lt;foo+0x2a&gt; &lt;---- 
+   10446:	4705                	li	a4,1
+   10448:	fec42783          	lw	a5,-20(s0)
+   1044c:	40f707bb          	subw	a5,a4,a5
+   10450:	2781                	sext.w	a5,a5
+   10452:	853e                	mv	a0,a5
+   10454:	6462                	ld	s0,24(sp)
+   10456:	6105                	addi	sp,sp,32
+   10458:	8082                	ret
+   1045a:	fec42783          	lw	a5,-20(s0)
+   1045e:	2785                	addiw	a5,a5,1
+   10460:	2781                	sext.w	a5,a5
+   10462:	bfc5                	j	10452 &lt;foo+0x22&gt;
 </pre>
+
+<p>
+用另一个 profile 对比一下:
+</p>
+
+<pre class="example" id="org0000003">
+$&gt; riscv64-linux-gnu-gcc test.c -O0 -fprofile-generate -static
+$&gt; rm -rf ./test.gcda 
+$&gt; qemu-riscv64 ./a.out 1 2 3 4 5
+$&gt; riscv64-linux-gnu-gcc test.c -O0 -fenable-rtl-bbro  -fbranch-probabilities -static -fdump-ipa-profile
+$&gt; cat test.c.062i.profile
+foo (int x)
+{
+  int D.1508;
+  int _1;
+  int _3;
+  int _4;
+
+  &lt;bb 2&gt; [count: 1]:
+  if (x_2(D) &gt; 0)
+    goto &lt;bb 3&gt;; [100.00%] &lt;-----
+  else
+    goto &lt;bb 4&gt;; [0.00%]
+
+$&gt; riscv64-linux-gnu-objdump -d ./a.out
+
+0000000000010430 &lt;foo&gt;:
+   10430:       1101                    addi    sp,sp,-32
+   10432:       ec22                    sd      s0,24(sp)
+   10434:       1000                    addi    s0,sp,32
+   10436:       87aa                    mv      a5,a0
+   10438:       fef42623                sw      a5,-20(s0)
+   1043c:       fec42783                lw      a5,-20(s0)
+   10440:       2781                    sext.w  a5,a5
+   10442:       00f05a63                blez    a5,10456 &lt;foo+0x26&gt; &lt;----
+   10446:       fec42783                lw      a5,-20(s0)
+   1044a:       2785                    addiw   a5,a5,1
+   1044c:       2781                    sext.w  a5,a5
+   1044e:       853e                    mv      a0,a5
+   10450:       6462                    ld      s0,24(sp)
+   10452:       6105                    addi    sp,sp,32
+   10454:       8082                    ret
+   10456:       4705                    li      a4,1
+   10458:       fec42783                lw      a5,-20(s0)
+   1045c:       40f707bb                subw    a5,a4,a5
+   10460:       2781                    sext.w  a5,a5
+   10462:       b7f5                    j       1044e &lt;foo+0x1e&gt;
+</pre>
+
+<p>
+另外, profile 或者 profile_estimate 并不负责移动代码, 最后需要依赖 bbro 这个 rtl
+pass (basic block reorder)
+</p>
+</div>
+
+
+<div id="outline-container-org0000013" class="outline-4 references">
+<h4 id="org0000013">Backlinks</h4>
+<div class="outline-text-4" id="text-org0000013">
+<p>
+<a href="gcc_branch_prediction.html#ID-3a32de5b-6de3-46a4-9d45-e40ea92ad0d4">GCC Branch Prediction</a>
+(<i>GCC Branch Prediction</i>):      3. 通过 <a href="#ID-794ce040-0021-4018-af87-4d1072a0e139">profile</a>
+</p>
 </div>
 </div>
+</div>
+
 
 <div id="outline-container-org0000006" class="outline-3">
 <h3 id="org0000006"><span class="section-number-3">1.2.</span> converage</h3>
@@ -130,8 +247,8 @@ gconv
 </div>
 </div>
 
-<div id="outline-container-org000000a" class="outline-3">
-<h3 id="org000000a"><span class="section-number-3">1.3.</span> profiling</h3>
+<div id="outline-container-org000000b" class="outline-3">
+<h3 id="org000000b"><span class="section-number-3">1.3.</span> profiling</h3>
 <div class="outline-text-3" id="text-1-3">
 <p>
 gprof
@@ -141,7 +258,7 @@ gprof
 <a href="https://ftp.gnu.org/old-gnu/Manuals/gprof-2.9.1/html_mono/gprof.html">https://ftp.gnu.org/old-gnu/Manuals/gprof-2.9.1/html_mono/gprof.html</a>
 </p>
 
-<pre class="example" id="org0000009">
+<pre class="example" id="org000000a">
 $&gt; gcc test.c -O0 -g -pg
 $&gt; ./a.out
 $&gt; ls
@@ -188,17 +305,12 @@ TODO: pass_profile
 
 
 
-<div id="outline-container-org0000013" class="outline-2 references">
-<h2 id="org0000013">Backlinks</h2>
-<div class="outline-text-2" id="text-org0000013">
+<div id="outline-container-org0000014" class="outline-2 references">
+<h2 id="org0000014">Backlinks</h2>
+<div class="outline-text-2" id="text-org0000014">
 <p>
 <a href="gcc.html#ID-19df5597-4fd4-47a1-9534-f6e0c327e8d5">GCC</a>
 (<i>GCC &gt; Profile</i>):   <a href="gcc_profile.html#ID-b679e100-573e-4625-87b4-06f810416a84">Profile</a>
-</p>
-
-<p>
-<a href="gcc_branch_prediction.html#ID-3a32de5b-6de3-46a4-9d45-e40ea92ad0d4">GCC Branch Prediction</a>
-(<i>GCC Branch Prediction &gt; profile</i>):   <a href="gcc_profile.html#ID-b679e100-573e-4625-87b4-06f810416a84">profile</a>
 </p>
 
 <p>
@@ -217,7 +329,7 @@ TODO: pass_profile
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2022-04-15 Fri 18:44<br />
-Last updated: 2023-01-18 Wed 16:19</p>
+Last updated: 2023-06-07 Wed 16:12</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>

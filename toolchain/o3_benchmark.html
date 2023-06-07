@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>O3 Benchmark</title>
+
+
+           <link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+           <link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+           <link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+           <link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+           <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+           <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+           <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+           <link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+           <link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+           <link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">O3 Benchmark</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000010">1. O3 Benchmark</a>
+<ul>
+<li><a href="#org0000000">1.1. gem5</a></li>
+<li><a href="#org0000004">1.2. gcc scheduler</a></li>
+<li><a href="#org0000007">1.3. gcc branch prediction</a></li>
+<li><a href="#org000000a">1.4. benchmark</a></li>
+<li><a href="#org000000d">1.5. 结论</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000010" class="outline-2">
+<h2 id="org0000010"><span class="section-number-2">1.</span> O3 Benchmark</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+问题:
+</p>
+
+<ul class="org-ul">
+<li>cpu O3 (out of order) 对性能的影响</li>
+
+<li>gcc scheduler 对性能的影响</li>
+
+<li>gcc branch prediction 对性能的影响</li>
+</ul>
+</div>
+
+<div id="outline-container-org0000000" class="outline-3">
+<h3 id="org0000000"><span class="section-number-3">1.1.</span> gem5</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+<a href="https://www.gem5.org/">gem5</a> 是一个 cycle accurate 的 simulator, 它支持 X86, ARM, RISC-V 等 ISA, 并实现了几个不同的 cpu 模型, 例如 MinorCPU 是一个 in-oder 的 CPU, O3CPU 是一个 out of
+order 的 CPU, 同时可以用 python 脚本灵活的配置所有的东西, 可以用来做 benchmark.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000004" class="outline-3">
+<h3 id="org0000004"><span class="section-number-3">1.2.</span> gcc scheduler</h3>
+<div class="outline-text-3" id="text-1-2">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]) {
+    <span class="org-type">float</span> <span class="org-variable-name">x</span> = 0.1;
+    <span class="org-type">float</span> <span class="org-variable-name">z</span> = x * x;
+    <span class="org-type">int</span> <span class="org-variable-name">a</span> = 1;
+    <span class="org-type">int</span> <span class="org-variable-name">b</span> = a + a;
+    <span class="org-keyword">return</span> 0;
+}
+</pre>
+</div>
+
+<pre class="example" id="org0000003">
+$&gt; riscv64-linux-gnu-gcc test.c -O0 -g -c  -o test_0.o
+$&gt; riscv64-linux-gnu-objdump -d test_0.o
+
+0000000000000000 &lt;main&gt;:
+  ...               
+  18:   0007a787                flw     fa5,0(a5) # 10 &lt;main+0x10&gt;
+  1c:   fef42027                fsw     fa5,-32(s0)
+  20:   fe042787                flw     fa5,-32(s0)
+  24:   10f7f7d3                fmul.s  fa5,fa5,fa5
+  28:   fef42227                fsw     fa5,-28(s0)
+  2c:   4785                    li      a5,1  
+  2e:   fef42423                sw      a5,-24(s0)
+  32:   fe842783                lw      a5,-24(s0)
+  36:   0017979b                slliw   a5,a5,0x1
+  3a:   fef42623                sw      a5,-20(s0)
+  ...
+
+# 大部分 `-fxxx` 包括 -fschedule-insns, -fschedule-insns2 在 `-O0` 并不起作用,
+# 因为 pass 的 gate 函数通常要求优化级别不是 `-O0`, 所以需要用
+# `-fenable-rtl-sched1` 直接 enable 这个 pass
+
+$&gt; riscv64-linux-gnu-gcc test.c -O0 -g -c -fenable-rtl-sched1 -fenable-rtl-sched2 -o test_1.o
+$&gt; riscv64-linux-gnu-objdump -d test_1.o
+
+0000000000000000 &lt;main&gt;:
+  ...               
+   e:   0007a787                flw     fa5,0(a5) # 6 &lt;main+0x6&gt;
+  12:   4785                    li      a5,1
+  14:   fef42423                sw      a5,-24(s0)
+  18:   fef42027                fsw     fa5,-32(s0)
+  1c:   fe042787                flw     fa5,-32(s0)
+  20:   fe842783                lw      a5,-24(s0)    # a5 的 load 被提前了
+  24:   872a                    mv      a4,a0
+  26:   10f7f7d3                fmul.s  fa5,fa5,fa5
+  2a:   0017979b                slliw   a5,a5,0x1
+  ...
+</pre>
+
+<p>
+gcc scheduler 默认在 `-O2` 时会打开, 但有些 arch 例外, 例如 i386 会在所有优化级别上默认关闭 scheduler, 因为 schedule 会造成寄存器压力, 导致更多的 spill. 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">lw</span> <span class="org-keyword">a0</span>, 0(x)
+<span class="org-function-name">add</span> <span class="org-keyword">a0</span>, a0, 1
+<span class="org-function-name">sw</span> <span class="org-keyword">a0</span>, 0(x)
+
+<span class="org-function-name">lw</span> <span class="org-keyword">a0</span>, 0(y)
+<span class="org-function-name">add</span> <span class="org-keyword">a0</span>, a0, 1
+<span class="org-function-name">sw</span> <span class="org-keyword">a0</span>, 0(y)
+</pre>
+</div>
+
+<p>
+原始代码只使用 a0 一个寄存器即可, schedule 后可能会变成:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">lw</span> <span class="org-keyword">a0</span>, 0(x)
+<span class="org-function-name">lw</span> <span class="org-keyword">a1</span>, 0(y)
+<span class="org-function-name">add</span> <span class="org-keyword">a0</span>, a0, 1
+<span class="org-function-name">add</span> <span class="org-keyword">a1</span>, a1, 1
+<span class="org-function-name">sw</span> <span class="org-keyword">a0</span>, 0(x)
+<span class="org-function-name">sw</span> <span class="org-keyword">a1</span>, 0(y)
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000007" class="outline-3">
+<h3 id="org0000007"><span class="section-number-3">1.3.</span> <a href="gcc_branch_prediction.html#ID-3a32de5b-6de3-46a4-9d45-e40ea92ad0d4">gcc branch prediction</a></h3>
+</div>
+
+<div id="outline-container-org000000a" class="outline-3">
+<h3 id="org000000a"><span class="section-number-3">1.4.</span> benchmark</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+<a href="https://github.com/sunwayforever/code/tree/master/hello_world/hello_benchmark">https://github.com/sunwayforever/code/tree/master/hello_world/hello_benchmark</a>
+</p>
+
+<ul class="org-ul">
+<li>从 <a href="https://github.com/llvm/llvm-test-suite/">llvm-test-suite</a> 中选择了几个 benchmark, 例如 Bubblesort, Treesort, Towers
+等</li>
+
+<li>针对 X86, RISC-V, ARM 编译不同的 elf</li>
+
+<li>使用不同的编译选项编译不同的 elf:
+
+<ol class="org-ol">
+<li>default, 编译选项为 `-O0`</li>
+
+<li>sched, 编译选项为 `-O0, -fenable-rtl-sched1, -fenable-rtl-sched2`</li>
+
+<li>profile, 在 sched 基础上加入了基于 profile 的分支预测</li>
+</ol></li>
+
+<li>每个 elf 都使用 MinorCPU 和 O3CPU 测试</li>
+</ul>
+
+<p>
+所以每个 benchmark 需要跑 18 (3*3*2) 个测试.
+</p>
+
+<p>
+测试结果:
+</p>
+
+<p>
+<img src="../extra/Bubblesort.png" alt="Bubblesort.png" />
+<img src="../extra/Towers.png" alt="Towers.png" />
+<img src="../extra/Treesort.png" alt="Treesort.png" />
+<img src="../extra/RealMM.png" alt="RealMM.png" />
+<img src="../extra/dry.png" alt="dry.png" />
+<img src="../extra/FloatMM.png" alt="FloatMM.png" />
+<img src="../extra/IntMM.png" alt="IntMM.png" />
+<img src="../extra/Oscar.png" alt="Oscar.png" />
+<img src="../extra/Perm.png" alt="Perm.png" />
+<img src="../extra/Queens.png" alt="Queens.png" />
+<img src="../extra/Quicksort.png" alt="Quicksort.png" />
+</p>
+</div>
+</div>
+
+
+<div id="outline-container-org000000d" class="outline-3">
+<h3 id="org000000d"><span class="section-number-3">1.5.</span> 结论</h3>
+<div class="outline-text-3" id="text-1-5">
+<ul class="org-ul">
+<li>O3CPU 性能远好了 MinorCPU (2~5 倍)</li>
+
+<li>gcc scheduler 针对 MinorCPU 和 O3CPU 都有提升 (5%~20%), 且针对 MinorCPU 提升多一些</li>
+
+<li>gcc branch prediction 有一些效果, 但有许多结果持平</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-06-07 Wed 11:00<br />
+Last updated: 2023-06-07 Wed 19:11</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
