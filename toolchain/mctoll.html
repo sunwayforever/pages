@@ -1,0 +1,344 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>mctoll</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">mctoll</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org000000f">1. mctoll</a>
+<ul>
+<li><a href="#org0000001">1.1. 测试</a></li>
+<li><a href="#org0000006">1.2. 总结</a></li>
+<li><a href="#org0000009">1.3. 为什么使用 llvm ir</a></li>
+<li><a href="#org000000c">1.4. 其它 asm lifting 工具</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000000f" class="outline-2">
+<h2 id="org000000f"><span class="section-number-2">1.</span> mctoll</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+`This tool statically (AOT) translates (or raises) binaries to LLVM IR.`
+</p>
+
+<p>
+<a href="https://github.com/Microsoft/llvm-mctoll">https://github.com/Microsoft/llvm-mctoll</a>
+</p>
+
+<p>
+<a href="https://dse.in.tum.de/wp-content/uploads/2022/01/translating_x86_binaries_into_llvm_intermediate_representation.pdf">translating_x86_binaries_into_llvm_intermediate_representation</a>
+</p>
+</div>
+
+<div id="outline-container-org0000001" class="outline-3">
+<h3 id="org0000001"><span class="section-number-3">1.1.</span> 测试</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+<a href="https://github.com/sunwayforever/llvm-toy/tree/mctoll">https://github.com/sunwayforever/llvm-toy/tree/mctoll</a>
+</p>
+
+<pre class="example" id="org0000000">
+$&gt; cd &lt;path-to-llvm&gt;/mctoll
+$&gt; ./mctoll_build.sh
+$&gt; make
+</pre>
+
+<p>
+原始的 c 代码:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span> **<span class="org-variable-name">argv</span>) {
+  <span class="org-type">int</span> <span class="org-variable-name">a</span> = argc;
+  <span class="org-type">int</span> <span class="org-variable-name">b</span> = argc + 1;
+  <span class="org-keyword">return</span> b;
+}
+</pre>
+</div>
+
+<p>
+原始的汇编:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"># at&amp;t &#35821;&#27861;, `op src, dst`
+<span class="org-function-name">main</span>:
+ <span class="org-keyword">1</span>     pushq   <span class="org-variable-name">%rbp</span>
+ <span class="org-keyword">2</span>     movq    <span class="org-variable-name">%rsp</span>, <span class="org-variable-name">%rbp</span>
+ <span class="org-keyword">3</span>     movl    $0, -4(<span class="org-variable-name">%rbp</span>)
+ <span class="org-keyword">4</span>     movl    <span class="org-variable-name">%edi</span>, -8(<span class="org-variable-name">%rbp</span>)
+ <span class="org-keyword">5</span>     movq    <span class="org-variable-name">%rsi</span>, -16(<span class="org-variable-name">%rbp</span>)
+ <span class="org-keyword">6</span>     movl    -8(<span class="org-variable-name">%rbp</span>), <span class="org-variable-name">%eax</span>
+ <span class="org-keyword">7</span>     movl    <span class="org-variable-name">%eax</span>, -20(<span class="org-variable-name">%rbp</span>)
+ <span class="org-keyword">8</span>     movl    -8(<span class="org-variable-name">%rbp</span>), <span class="org-variable-name">%eax</span>
+ <span class="org-keyword">9</span>     addl    $1, <span class="org-variable-name">%eax</span>
+<span class="org-function-name">10</span>     <span class="org-keyword">movl</span>    <span class="org-variable-name">%eax</span>, -24(<span class="org-variable-name">%rbp</span>)
+<span class="org-function-name">11</span>     <span class="org-keyword">movl</span>    -24(<span class="org-variable-name">%rbp</span>), <span class="org-variable-name">%eax</span>
+<span class="org-function-name">12</span>     <span class="org-keyword">popq</span>    <span class="org-variable-name">%rbp</span>
+<span class="org-function-name">13</span>     <span class="org-keyword">retq</span>
+</pre>
+</div>
+
+<p>
+用汇编生成 binary 后通过 mctoll 转换回来的 llvm ir:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-llvm">define dso_local i32 @main(i32 %arg1, i64 %arg2) {
+entry:
+  ; %rbp 识别为 stktop_4 (stack top), 后续针对 stack 的使用 (-4(%rbp), -8(%rbp)...)
+  ; 都使用 stktop_4 这个 llvm 局部变量来表示
+  %stktop_4 = alloca i8, i32 32, align 1
+  ; RBP_N.20/16/8/4 对应 {-20, -16, 8, -4}(%rbp), 其中 _N 表示 negative?
+  %tos = ptrtoint ptr %stktop_4 to i64
+  %0 = add i64 %tos, 12
+  %RBP_N.20 = inttoptr i64 %0 to ptr
+  %1 = add i64 %tos, 16
+  %RBP_N.16 = inttoptr i64 %1 to ptr
+  %2 = add i64 %tos, 24
+  %RBP_N.8 = inttoptr i64 %2 to ptr
+  %3 = add i64 %tos, 28
+  %RBP_N.4 = inttoptr i64 %3 to ptr
+  %4 = add i64 %tos, 0
+  ; RSP_P.0 对应 $rsp, _P 表示 positive?
+  %RSP_P.0 = inttoptr i64 %4 to ptr
+  ; 写了一个 `DEADBEEF` 到 0(RSP), 表示未初始化
+  store i64 3735928559, ptr %RSP_P.0, align 8
+  ; 1 pushq   %rbp 是 prologue 生成的, 不需要翻译
+  ; 2 movq    %rsp, %rbp
+  %RBP = ptrtoint ptr %RSP_P.0 to i64
+  ; 3 movl    $0, -4(%rbp)
+  store i32 0, ptr %RBP_N.4, align 1
+  ; mctoll 知道 x86 system-v abi 里 edi 代表 arg1
+  ; 4 movl    %edi, -8(%rbp)
+  store i32 %arg1, ptr %RBP_N.8, align 1
+  ; mctoll 知道 rsi 代表 arg2
+  ; 5 movq    %rsi, -16(%rbp)
+  store i64 %arg2, ptr %RBP_N.16, align 1
+  ; 6 movl    -8(%rbp), %eax
+  %memload = load i32, ptr %RBP_N.8, align 1
+  ; 7 movl    %eax, -20(%rbp)
+  store i32 %memload, ptr %RBP_N.20, align 1
+  ; 8 movl    -8(%rbp), %eax
+  %memload1 = load i32, ptr %RBP_N.8, align 1
+
+  ; eax 对应 %EAX 这个 llvm 局部变量
+  ; 9 addl    $1, %eax
+  %EAX = add i32 %memload1, 1
+  ; x86 的 addl 指令会设置 cf, pf, zf, of, sf 这几个 flag 寄存器:
+  ; https://en.wikipedia.org/wiki/FLAGS_register
+  ; cf: carry, 表示无符号加法是否有进位
+  ; of: overflow, 表示有符号加法是否有溢出
+  ; zf: zero, 表示结果是否有 0
+  ; sf: sign, 表示正负
+  ; pf: parity, 表示结果低 8 位中 1 的个数是奇数还是偶数
+  ; 这里通过 llvm.{s,u}add.with.overflow.i32 intrinsic 重新计算了 `addl $1, %eax`,
+  ; 并根据结果设置各个 flag
+  %5 = call { i32, i1 } @llvm.uadd.with.overflow.i32(i32 %memload1, i32 1)
+  ; 通过返回的 i1 类型的值判断是否有 cf
+  %CF = extractvalue { i32, i1 } %5, 1
+  %6 = and i32 %EAX, 255
+  %7 = call i32 @llvm.ctpop.i32(i32 %6)
+  %8 = and i32 %7, 1
+  ; 根据 eax 低 8 位 1 的个数 (llvm.ctpop.i32) 设置 pf
+  %PF = icmp eq i32 %8, 0
+  ; 通过 %eax 的值是否为零设置 zf
+  %ZF = icmp eq i32 %EAX, 0
+  ; -2147483648 为 0x80000000, 根据符号位设置 sf
+  %highbit = and i32 -2147483648, %EAX
+  %SF = icmp ne i32 %highbit, 0
+  ; OF 表示有符号加法溢出, 所以通过 llvm.sadd.with.overflow.i32 又计算了一次加法...
+  %9 = call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 %memload1, i32 1)
+  %OF = extractvalue { i32, i1 } %9, 1
+
+  ; 10 movl    %eax, -24(%rbp)
+  store i32 %EAX, ptr %stktop_4, align 1
+  ; 11 movl    -24(%rbp), %eax
+  %memload2 = load i32, ptr %stktop_4, align 1
+  ; mctoll 知道 systemv abi 通过 eax 保存返回值
+  ret i32 %memload2
+}
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000006" class="outline-3">
+<h3 id="org0000006"><span class="section-number-3">1.2.</span> 总结</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+想像中的 assembly lifting 的工作方式:
+</p>
+
+<pre class="example" id="org0000004">
+c -&gt; llvm ir -&gt; asm ---+
+        ^              |
+        |              |
+        +---lifting----+
+</pre>
+
+<p>
+实现上 assembly lifting 的工作方式:
+</p>
+
+<pre class="example" id="org0000005">
+c -&gt; llvm ir -&gt; asm --lifting--&gt; llvm ir
+</pre>
+
+<p>
+mctoll 的主要思路是:
+</p>
+
+<ol class="org-ol">
+<li>汇编中的寄存器, stack 等均被转换为 llvm 局部变量</li>
+
+<li>把汇编指令转换为 llvm 指令以及 llvm intrinsic</li>
+
+<li>特别的, 需要根据调用约定识别出函数参数和返回值, 对应 llvm 的函数参数和返回值,
+而不是普通的局部变量</li>
+</ol>
+
+<p>
+由于 x86 指令的复杂性 (例如 addl 对各个 flag 寄存器的修改), 一条 x86 汇编往往需要生成多条 llvm 指令
+</p>
+
+<p>
+mctoll 把寄存器做为 llvm 局部变量的做法, 和 <a href="qemu_tcg.html#ID-fedb153b-c9a7-4ad1-a66e-e08b91173dd3">QEMU TCG</a> 类似. 不同的是, mctoll 可以使用 llvm opt 和 llc 对 llvm ir 进行优化和 lower, 最终这些局部变量极可能会重新变成寄存器. 另外, llvm opt 也可以去掉一些没有用到的 llvm ir (例如针对 flag 寄存器的处理)
+</p>
+
+<p>
+例如, 通过 mctoll+opt+llc 生成的 riscv 汇编为:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">main</span>:
+    <span class="org-keyword">addi</span>    sp, sp, -32
+    <span class="org-keyword">lui</span>     a2, 228023
+    <span class="org-keyword">slli</span>    a2, a2, 2
+    <span class="org-keyword">addi</span>    a2, a2, -273
+    <span class="org-keyword">sd</span>      a2, 0(sp)
+    <span class="org-keyword">li</span>      a2, 0
+    <span class="org-keyword">sw</span>      a2, 28(sp)
+    <span class="org-keyword">sw</span>      a0, 24(sp)
+    <span class="org-keyword">sd</span>      a1, 16(sp)
+    <span class="org-keyword">lw</span>      a0, 24(sp)
+    <span class="org-keyword">sw</span>      a0, 12(sp)
+    <span class="org-keyword">lw</span>      a0, 24(sp)
+    <span class="org-keyword">addiw</span>   a0, a0, 1
+    <span class="org-keyword">addi</span>    sp, sp, 32
+    <span class="org-keyword">ret</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000009" class="outline-3">
+<h3 id="org0000009"><span class="section-number-3">1.3.</span> 为什么使用 llvm ir</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+尝试把 x86 asm 直接转换为 riscv asm:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">main</span>:
+    # prologue:
+    # riscv &#30340; prologue &#31867;&#20284;&#20110;&#19979;&#38754;&#36825;&#31181;:
+    # addi sp, sp, xxx
+    # sw ra, xx(sp)
+    # sw .....
+    # &#38656;&#35201;&#35745;&#31639;&#20986; stack size, csr, &#36824;&#35201;&#32771;&#34385; riscv &#23545; stack &#23545;&#40784;&#30340;&#35201;&#27714;
+    <span class="org-keyword">pushq</span>   <span class="org-variable-name">%rbp</span>
+    <span class="org-keyword">movq</span>    <span class="org-variable-name">%rsp</span>, <span class="org-variable-name">%rbp</span>
+    # &#21487;&#20197;&#25226; rbp &#21487;&#20197;&#26144;&#23556;&#20026; fp, &#20294;&#26159;&#33509; target &#19981;&#25903;&#25345; fp &#24590;&#20040;&#22788;&#29702;? &#25163;&#24037;&#36716;&#25442;&#20026; sp?
+    <span class="org-keyword">movl</span>    $0, -4(<span class="org-variable-name">%rbp</span>)
+    # edi, rsi &#21487;&#20197;&#26144;&#23556;&#20026; a0, a1, &#20294; riscv &#30340; calling convertion &#19982; x86 &#19981;&#21516;, &#20363;
+    # &#22914; x86 &#21069; 6 &#20010;&#21442;&#25968;&#25918;&#22312;&#23492;&#23384;&#22120;, &#20854;&#23427;&#25918;&#22312;&#26632;&#19978;, &#20294; riscv &#21069; 8 &#20010;&#25918;&#22312;&#23492;&#23384;&#22120;&#19978;,
+    # &#38656;&#35201;&#24590;&#20040;&#36716;&#25442;
+    <span class="org-keyword">movl</span>    <span class="org-variable-name">%edi</span>, -8(<span class="org-variable-name">%rbp</span>)
+    # &#22914;&#26524; riscv &#19981;&#25903;&#25345; rv64g, &#26080;&#27861;&#30452;&#25509;&#26144;&#23556; 64 &#20301;&#30340; rsi &#21040; riscv &#23492;&#23384;&#22120;
+    <span class="org-keyword">movq</span>    <span class="org-variable-name">%rsi</span>, -16(<span class="org-variable-name">%rbp</span>)
+    # x86_64 &#21482;&#26377; 10 &#20010; gpr, &#20294; riscv &#26377; 32 &#20010; gpr, &#30452;&#25509;&#26144;&#23556;&#26080;&#27861;&#21033;&#29992;&#20840;&#37096; riscv &#23492;&#23384;&#22120;
+    <span class="org-keyword">movl</span>    -8(<span class="org-variable-name">%rbp</span>), <span class="org-variable-name">%eax</span>
+    <span class="org-keyword">movl</span>    <span class="org-variable-name">%eax</span>, -20(<span class="org-variable-name">%rbp</span>)
+    <span class="org-keyword">movl</span>    -8(<span class="org-variable-name">%rbp</span>), <span class="org-variable-name">%eax</span>
+    # x86 &#30340; addl &#38656;&#35201;&#20462;&#25913;&#22810;&#20010; flag, riscv &#38656;&#35201;&#29983;&#25104;&#22810;&#26465;&#25351;&#20196;, &#36825;&#20123;&#25351;&#20196;&#20998;&#37197;&#23492;&#23384;&#22120;
+    # &#26102;&#24590;&#20040;&#36991;&#20813;&#20914;&#31361;? riscv &#20013;&#22914;&#20309;&#26816;&#26597; add &#26159;&#21542;&#26377;&#28322;&#20986;?
+    <span class="org-keyword">addl</span>    $1, <span class="org-variable-name">%eax</span>
+    <span class="org-keyword">movl</span>    <span class="org-variable-name">%eax</span>, -24(<span class="org-variable-name">%rbp</span>)
+    <span class="org-keyword">movl</span>    -24(<span class="org-variable-name">%rbp</span>), <span class="org-variable-name">%eax</span>
+    <span class="org-keyword">popq</span>    <span class="org-variable-name">%rbp</span>
+    <span class="org-keyword">retq</span>
+</pre>
+</div>
+
+<p>
+上面注释中列出来的所有问题, 其实在实现后端时都已经处理过了&#x2026;通过转换为 llvm ir,
+可以避免重新实现一次后端.
+</p>
+
+<p>
+另外, 利用 llvm opt, 还可以对生成的 llvm ir 进行优化, 可能生成比原来的汇编更好的代码.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000000c" class="outline-3">
+<h3 id="org000000c"><span class="section-number-3">1.4.</span> 其它 asm lifting 工具</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+<a href="https://stackoverflow.com/questions/4636498/recompile-a-x86-code-with-llvm-to-some-faster-one-x86/4636583#4636583">recompile-a-x86-code-with-llvm-to-some-faster-one-x86</a>
+</p>
+
+<p>
+<a href="https://github.com/avast/retdec">https://github.com/avast/retdec</a>
+</p>
+
+<p>
+<a href="https://github.com/lifting-bits">https://github.com/lifting-bits</a>
+</p>
+
+<p>
+<a href="https://github.com/aengelke/rellume">https://github.com/aengelke/rellume</a>
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-08-02 Wed 10:41<br />
+Last updated: 2023-08-02 Wed 13:42</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
