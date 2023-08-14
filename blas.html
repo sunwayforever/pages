@@ -30,9 +30,9 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents" role="doc-toc">
 <ul>
-<li><a href="#org000001b">1. BLAS</a>
+<li><a href="#org000002a">1. BLAS</a>
 <ul>
-<li><a href="#org0000018">1.1. gemm</a>
+<li><a href="#org0000027">1.1. gemm</a>
 <ul>
 <li><a href="#org0000001">1.1.1. 拆分方法</a></li>
 <li><a href="#org0000004">1.1.2. 关于 M_c, N_c, K_c, M_r, N_r 的取值</a></li>
@@ -41,6 +41,7 @@
 <li><a href="#org000000e">1.1.5. openblas gemm kernel with SIMD</a></li>
 <li><a href="#org0000012">1.1.6. m/n/k 三重循环的选择</a></li>
 <li><a href="#org0000015">1.1.7. benchmark</a></li>
+<li><a href="#org0000024">1.1.8. openblas 代码结构</a></li>
 </ul>
 </li>
 </ul>
@@ -49,12 +50,12 @@
 </div>
 </div>
 
-<div id="outline-container-org000001b" class="outline-2">
-<h2 id="org000001b"><span class="section-number-2">1.</span> BLAS</h2>
+<div id="outline-container-org000002a" class="outline-2">
+<h2 id="org000002a"><span class="section-number-2">1.</span> BLAS</h2>
 <div class="outline-text-2" id="text-1">
 </div>
-<div id="outline-container-org0000018" class="outline-3">
-<h3 id="org0000018"><span class="section-number-3">1.1.</span> gemm</h3>
+<div id="outline-container-org0000027" class="outline-3">
+<h3 id="org0000027"><span class="section-number-3">1.1.</span> gemm</h3>
 <div class="outline-text-3" id="text-1-1">
 </div>
 <div id="outline-container-org0000001" class="outline-4">
@@ -429,6 +430,139 @@ TBD
 </ol>
 </div>
 </div>
+
+<div id="outline-container-org0000024" class="outline-4">
+<h4 id="org0000024"><span class="section-number-4">1.1.8.</span> openblas 代码结构</h4>
+<div class="outline-text-4" id="text-1-1-8">
+<p>
+以 sgemm_ 为例:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-type">int</span> <span class="org-function-name">sgemm_</span><span class="org-parenthesis">(</span>
+    <span class="org-type">char</span> *<span class="org-variable-name">transa</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">transb</span><span class="org-parenthesis">,</span> <span class="org-type">integer</span> *<span class="org-variable-name">m</span><span class="org-parenthesis">,</span> <span class="org-type">integer</span> *<span class="org-variable-name">n</span><span class="org-parenthesis">,</span> <span class="org-type">integer</span> *<span class="org-variable-name">k</span><span class="org-parenthesis">,</span> <span class="org-type">real</span> *<span class="org-variable-name">alpha</span><span class="org-parenthesis">,</span>
+    <span class="org-type">real</span> *<span class="org-variable-name">a</span><span class="org-parenthesis">,</span> <span class="org-type">integer</span> *<span class="org-variable-name">lda</span><span class="org-parenthesis">,</span> <span class="org-type">real</span> *<span class="org-variable-name">b</span><span class="org-parenthesis">,</span> <span class="org-type">integer</span> *<span class="org-variable-name">ldb</span><span class="org-parenthesis">,</span> <span class="org-type">real</span> *<span class="org-variable-name">beta</span><span class="org-parenthesis">,</span> <span class="org-type">real</span> *<span class="org-variable-name">c</span><span class="org-parenthesis">,</span>
+    <span class="org-type">integer</span> *<span class="org-variable-name">ldc</span><span class="org-parenthesis">)</span>
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000018" class="outline-5">
+<h5 id="org0000018"><span class="section-number-5">1.1.8.1.</span> interface</h5>
+<div class="outline-text-5" id="text-1-1-8-1">
+<p>
+gemm.c 中对应的代码为:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-type">void</span> <span class="org-function-name">CNAME</span><span class="org-parenthesis">(</span>
+    <span class="org-keyword">enum</span> <span class="org-type">CBLAS_ORDER</span> <span class="org-variable-name">order</span><span class="org-parenthesis">,</span> <span class="org-keyword">enum</span> <span class="org-type">CBLAS_TRANSPOSE</span> <span class="org-variable-name">TransA</span><span class="org-parenthesis">,</span>
+    <span class="org-keyword">enum</span> <span class="org-type">CBLAS_TRANSPOSE</span> <span class="org-variable-name">TransB</span><span class="org-parenthesis">,</span> <span class="org-type">blasint</span> <span class="org-variable-name">m</span><span class="org-parenthesis">,</span> <span class="org-type">blasint</span> <span class="org-variable-name">n</span><span class="org-parenthesis">,</span> <span class="org-type">blasint</span> <span class="org-variable-name">k</span><span class="org-parenthesis">,</span> <span class="org-type">FLOAT</span> <span class="org-variable-name">alpha</span><span class="org-parenthesis">,</span>
+    <span class="org-type">IFLOAT</span> *<span class="org-variable-name">a</span><span class="org-parenthesis">,</span> <span class="org-type">blasint</span> <span class="org-variable-name">lda</span><span class="org-parenthesis">,</span> <span class="org-type">IFLOAT</span> *<span class="org-variable-name">b</span><span class="org-parenthesis">,</span> <span class="org-type">blasint</span> <span class="org-variable-name">ldb</span><span class="org-parenthesis">,</span> <span class="org-type">FLOAT</span> <span class="org-variable-name">beta</span><span class="org-parenthesis">,</span> <span class="org-type">FLOAT</span> *<span class="org-variable-name">c</span><span class="org-parenthesis">,</span>
+    <span class="org-type">blasint</span> <span class="org-variable-name">ldc</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<p>
+其中 `CNAME` 通过编译宏替换为 `sgemm_`, openblas 会使用相同的 <code>interface/gemm.c</code>
+和不同的编译宏编译出 <code>{s,d,...}gemm_</code> 等函数
+</p>
+
+<div class="org-src-container">
+<pre class="src src-makefile"><span class="org-comment-delimiter"># </span><span class="org-comment">Makefile@interface</span>
+<span class="org-makefile-targets">sgemm.$</span><span class="org-parenthesis"><span class="org-makefile-targets">(</span></span><span class="org-variable-name"><span class="org-makefile-targets">SUFFIX</span></span><span class="org-parenthesis"><span class="org-makefile-targets">)</span></span><span class="org-makefile-targets"> sgemm.$</span><span class="org-parenthesis"><span class="org-makefile-targets">(</span></span><span class="org-variable-name"><span class="org-makefile-targets">PSUFFIX</span></span><span class="org-parenthesis"><span class="org-makefile-targets">)</span></span> : gemm.c ../param.h
+    $<span class="org-parenthesis">(</span><span class="org-variable-name">CC</span><span class="org-parenthesis">)</span> -c $<span class="org-parenthesis">(</span><span class="org-variable-name">CFLAGS</span><span class="org-parenthesis">)</span> $<span class="org-constant">&lt;</span> -o $<span class="org-parenthesis">(</span><span class="org-variable-name">@F</span><span class="org-parenthesis">)</span>
+
+<span class="org-makefile-targets">dgemm.$</span><span class="org-parenthesis"><span class="org-makefile-targets">(</span></span><span class="org-variable-name"><span class="org-makefile-targets">SUFFIX</span></span><span class="org-parenthesis"><span class="org-makefile-targets">)</span></span><span class="org-makefile-targets"> dgemm.$</span><span class="org-parenthesis"><span class="org-makefile-targets">(</span></span><span class="org-variable-name"><span class="org-makefile-targets">PSUFFIX</span></span><span class="org-parenthesis"><span class="org-makefile-targets">)</span></span> : gemm.c ../param.h
+    $<span class="org-parenthesis">(</span><span class="org-variable-name">CC</span><span class="org-parenthesis">)</span> -c $<span class="org-parenthesis">(</span><span class="org-variable-name">CFLAGS</span><span class="org-parenthesis">)</span> $<span class="org-constant">&lt;</span> -o $<span class="org-parenthesis">(</span><span class="org-variable-name">@F</span><span class="org-parenthesis">)</span>
+
+<span class="org-comment-delimiter"># </span><span class="org-comment">Makefile.system</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">&#20851;&#20110; `*F`: https://www.gnu.org/software/make/manual/html_node/Automatic-Variables.html</span>
+<span class="org-variable-name">CCOMMON_OPT</span> += -DASMNAME=$<span class="org-parenthesis">(</span><span class="org-variable-name">FU</span><span class="org-parenthesis">)</span>$<span class="org-parenthesis">(</span><span class="org-variable-name">*F</span><span class="org-parenthesis">)</span> -DASMFNAME=$<span class="org-parenthesis">(</span><span class="org-variable-name">FU</span><span class="org-parenthesis">)</span>$<span class="org-parenthesis">(</span><span class="org-variable-name">*F</span><span class="org-parenthesis">)</span>$<span class="org-parenthesis">(</span><span class="org-variable-name">BU</span><span class="org-parenthesis">)</span> -DNAME=$<span class="org-parenthesis">(</span><span class="org-variable-name">*F</span><span class="org-parenthesis">)</span>$<span class="org-parenthesis">(</span><span class="org-variable-name">BU</span><span class="org-parenthesis">)</span> \
+                <span class="org-variable-name">-DCNAME</span>=$<span class="org-parenthesis">(</span><span class="org-variable-name">*F</span><span class="org-parenthesis">)</span> -DCHAR_NAME=\"$<span class="org-parenthesis">(</span><span class="org-variable-name">*F</span><span class="org-parenthesis">)</span>$<span class="org-parenthesis">(</span><span class="org-variable-name">BU</span><span class="org-parenthesis">)</span>\" -DCHAR_CNAME=\"$<span class="org-parenthesis">(</span><span class="org-variable-name">*F</span><span class="org-parenthesis">)</span>\"
+
+<span class="org-comment-delimiter"># </span><span class="org-comment">Makefile.tail</span>
+<span class="org-makefile-targets">$</span><span class="org-parenthesis"><span class="org-makefile-targets">(</span></span><span class="org-variable-name"><span class="org-makefile-targets">SBLASOBJS</span></span><span class="org-parenthesis"><span class="org-makefile-targets">)</span></span><span class="org-makefile-targets"> $</span><span class="org-parenthesis"><span class="org-makefile-targets">(</span></span><span class="org-variable-name"><span class="org-makefile-targets">SBLASOBJS_P</span></span><span class="org-parenthesis"><span class="org-makefile-targets">)</span></span> : override <span class="org-variable-name">CFLAGS</span> += -UDOUBLE  -UCOMPLEX
+<span class="org-makefile-targets">$</span><span class="org-parenthesis"><span class="org-makefile-targets">(</span></span><span class="org-variable-name"><span class="org-makefile-targets">DBLASOBJS</span></span><span class="org-parenthesis"><span class="org-makefile-targets">)</span></span><span class="org-makefile-targets"> $</span><span class="org-parenthesis"><span class="org-makefile-targets">(</span></span><span class="org-variable-name"><span class="org-makefile-targets">DBLASOBJS_P</span></span><span class="org-parenthesis"><span class="org-makefile-targets">)</span></span> : override <span class="org-variable-name">CFLAGS</span> += -DDOUBLE  -UCOMPLEX
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000001e" class="outline-5">
+<h5 id="org000001e"><span class="section-number-5">1.1.8.2.</span> driver</h5>
+<div class="outline-text-5" id="text-1-1-8-2">
+<p>
+gemm.c 中的 sgemm_ 会根据 transa, transb, 是否需要多线程等调用 driver 中的函数,
+例如 sgemm_nn, sgemm_nt, sgemm_thread_nn, sgemm_thread_nt 等, 其中 nn, nt 表示输入的矩阵是否经过 transpose
+</p>
+
+<p>
+driver 和 interface 类似, 也是使用同一个 <code>level3.c</code> 和编译宏编译出不同的
+<code>{s,d,...}gemm_{nn,nt,...}</code>
+</p>
+
+<div class="org-src-container">
+<pre class="src src-makefile"><span class="org-makefile-targets">sgemm_nn.$</span><span class="org-parenthesis"><span class="org-makefile-targets">(</span></span><span class="org-variable-name"><span class="org-makefile-targets">PSUFFIX</span></span><span class="org-parenthesis"><span class="org-makefile-targets">)</span></span> : gemm.c level3.c ../../param.h
+    $<span class="org-parenthesis">(</span><span class="org-variable-name">CC</span><span class="org-parenthesis">)</span> $<span class="org-parenthesis">(</span><span class="org-variable-name">PFLAGS</span><span class="org-parenthesis">)</span> $<span class="org-parenthesis">(</span><span class="org-variable-name">BLOCKS</span><span class="org-parenthesis">)</span> -c -UDOUBLE -UCOMPLEX -DNN $<span class="org-constant">&lt;</span> -o $<span class="org-parenthesis">(</span><span class="org-variable-name">@F</span><span class="org-parenthesis">)</span>
+
+<span class="org-makefile-targets">sgemm_nt.$</span><span class="org-parenthesis"><span class="org-makefile-targets">(</span></span><span class="org-variable-name"><span class="org-makefile-targets">PSUFFIX</span></span><span class="org-parenthesis"><span class="org-makefile-targets">)</span></span> : gemm.c level3.c ../../param.h
+    $<span class="org-parenthesis">(</span><span class="org-variable-name">CC</span><span class="org-parenthesis">)</span> $<span class="org-parenthesis">(</span><span class="org-variable-name">PFLAGS</span><span class="org-parenthesis">)</span> $<span class="org-parenthesis">(</span><span class="org-variable-name">BLOCKS</span><span class="org-parenthesis">)</span> -c -UDOUBLE -UCOMPLEX -DNT $<span class="org-constant">&lt;</span> -o $<span class="org-parenthesis">(</span><span class="org-variable-name">@F</span><span class="org-parenthesis">)</span>
+
+<span class="org-makefile-targets">dgemm_nn.$</span><span class="org-parenthesis"><span class="org-makefile-targets">(</span></span><span class="org-variable-name"><span class="org-makefile-targets">PSUFFIX</span></span><span class="org-parenthesis"><span class="org-makefile-targets">)</span></span> : gemm.c level3.c ../../param.h
+    $<span class="org-parenthesis">(</span><span class="org-variable-name">CC</span><span class="org-parenthesis">)</span> $<span class="org-parenthesis">(</span><span class="org-variable-name">PFLAGS</span><span class="org-parenthesis">)</span> $<span class="org-parenthesis">(</span><span class="org-variable-name">BLOCKS</span><span class="org-parenthesis">)</span> -c -DDOUBLE -UCOMPLEX -DNN $<span class="org-constant">&lt;</span> -o $<span class="org-parenthesis">(</span><span class="org-variable-name">@F</span><span class="org-parenthesis">)</span>
+</pre>
+</div>
+
+<p>
+除了 <code>level3.c</code>, driver 中还有一个 <code>level3_thread.c</code>, 用来实现多线程版本的
+driver, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-makefile"><span class="org-makefile-targets">sgemm_thread_nn.$</span><span class="org-parenthesis"><span class="org-makefile-targets">(</span></span><span class="org-variable-name"><span class="org-makefile-targets">SUFFIX</span></span><span class="org-parenthesis"><span class="org-makefile-targets">)</span></span> : gemm.c level3_thread.c ../../param.h
+    $<span class="org-parenthesis">(</span><span class="org-variable-name">CC</span><span class="org-parenthesis">)</span> $<span class="org-parenthesis">(</span><span class="org-variable-name">CFLAGS</span><span class="org-parenthesis">)</span> $<span class="org-parenthesis">(</span><span class="org-variable-name">BLOCKS</span><span class="org-parenthesis">)</span> -c -DTHREADED_LEVEL3 -UDOUBLE -UCOMPLEX -DNN $<span class="org-constant">&lt;</span> -o $<span class="org-parenthesis">(</span><span class="org-variable-name">@F</span><span class="org-parenthesis">)</span>
+</pre>
+</div>
+
+<p>
+sgemm_nn 中的代码需要完成矩阵的拆分和 pack. 对于多线程的 sgemm_thread_nn, 需要把任务拆分成多个 job 由 blas server 调用 sgemm_nn 去处理.
+</p>
+</div>
+
+<div id="outline-container-org000001b" class="outline-6">
+<h6 id="org000001b"><span class="section-number-6">1.1.8.2.1.</span> blas server</h6>
+<div class="outline-text-6" id="text-1-1-8-2-1">
+<p>
+sgemm_thread_nn 把任务拆分成多个 job 后由 blas server 的 <code>exec_blas</code> 去调度执行,
+后者有两个实现:
+</p>
+
+<ol class="org-ol">
+<li>基于 pthread 的 <code>blas_server.c</code></li>
+
+<li>基于 openmp 的 <code>blas_server_omp.c</code></li>
+</ol>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000021" class="outline-5">
+<h5 id="org0000021"><span class="section-number-5">1.1.8.3.</span> kernel</h5>
+<div class="outline-text-5" id="text-1-1-8-3">
+<p>
+以 RISCV64_GENERIC 为例, <code>OpenBLAS/kernel/riscv64/RISCV64_GENERIC</code> 中定义了
+`SGEMMKERNEL = ../generic/gemmkernel_2x2.c`.
+</p>
+
+<p>
+OpenBLAS kernel 相当于 gotoblas 论文中 micro-kernel 及其外面的两层循环, 不需要考虑 `M_c/N_c/K_c` 的拆分, pack 以及多线程的处理, 但需要自己处理 `M_r/N_r` 的拆分
+</p>
+</div>
+</div>
+</div>
 </div>
 </div>
 </div>
@@ -436,7 +570,7 @@ TBD
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-08-10 Thu 11:20<br />
-Last updated: 2023-08-14 Mon 10:57</p>
+Last updated: 2023-08-14 Mon 18:08</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
