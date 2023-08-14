@@ -1,0 +1,482 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>BLAS</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">BLAS</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000018">1. BLAS</a>
+<ul>
+<li><a href="#org0000015">1.1. gemm</a>
+<ul>
+<li><a href="#org0000001">1.1.1. 拆分方法</a></li>
+<li><a href="#org0000004">1.1.2. 关于 M_c, N_c, K_c, M_r, N_r 的取值</a></li>
+<li><a href="#org0000008">1.1.3. 关于 pack</a></li>
+<li><a href="#org000000b">1.1.4. openblas gemm kernel</a></li>
+<li><a href="#org000000e">1.1.5. openblas gemm kernel with SIMD</a></li>
+<li><a href="#org0000012">1.1.6. m/n/k 三重循环的选择</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000018" class="outline-2">
+<h2 id="org0000018"><span class="section-number-2">1.</span> BLAS</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org0000015" class="outline-3">
+<h3 id="org0000015"><span class="section-number-3">1.1.</span> gemm</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-org0000001" class="outline-4">
+<h4 id="org0000001"><span class="section-number-4">1.1.1.</span> 拆分方法</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+<a href="https://www.cs.utexas.edu/users/flame/pubs/GotoTOMS_final.pdf">https://www.cs.utexas.edu/users/flame/pubs/GotoTOMS_final.pdf</a>
+</p>
+
+
+<div id="org0000000" class="figure">
+<p><img src="extra/gotoblas.png" alt="gotoblas.png" />
+</p>
+</div>
+
+<p>
+A 为 M x K, B 为 K x N
+</p>
+
+<ol class="org-ol">
+<li>A, B 拆分成较小的 A' (M_c x K_c) 和 B' (K_c x N_c), A' 在 l2 cache, B'在 l3 cache</li>
+
+<li>A', B' 拆分为更小的 A'' (M_r x K_c) 和 B'' (K_c x N_r), B'' 在 l1 cache,
+M_r/N_r 的典型值为 2</li>
+
+<li>计算 A'' x B'' 时使用了 `列 dot 行`的形式 , 所以 A' 需要以 M_r 为单位纵向
+pack, B' 需要以 N_r 为单位横向 pack, 以便读数据时能利用 l1 cache</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000004" class="outline-4">
+<h4 id="org0000004"><span class="section-number-4">1.1.2.</span> 关于 M_c, N_c, K_c, M_r, N_r 的取值</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<ul class="org-ul">
+<li>K_c 和 N_c 取决于 l3 cache</li>
+<li>K_c 和 M_c 取决于 l2 cache</li>
+<li>K_c 和 M_r,  N_r 取决于 l1 cache</li>
+</ul>
+
+<p>
+所以 K_c 会根据 l1 cache 取一个基准值, 然后根据 l1/l2/l3 cache 和 K_c 确定其它值,
+以 cortex a57 为例:
+</p>
+
+<ul class="org-ul">
+<li>因为 l1 data cache 为 32K, K_c 设为 4K</li>
+<li>由于 N_r x K_c 需要小于 l1 cache, N_r 设为 4</li>
+<li>l2 cache 为 2048K, 由于 M_c x K_c 需要小于 l2 cache, M_c 设为 160 (&lt;512)</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000008" class="outline-4">
+<h4 id="org0000008"><span class="section-number-4">1.1.3.</span> 关于 pack</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<p>
+假设 M_c=N_c=K_c = 4, M_r=N_r=2, openblas pack 的结果为:
+</p>
+
+<pre class="example" id="org0000007">
+pack 之前:
+
+A': (矩阵的值, 非内存中的布局)
+
+0.170828 0.577304 0.873904 0.732520
+0.749902 0.785799 0.745095 0.260222
+0.096372 0.692194 0.446046 0.394294
+0.870465 0.368766 0.353728 0.776790
+
+B':
+
+0.845035 0.455825 0.568585 0.275509
+0.575788 0.109947 0.959066 0.260361
+0.715539 0.545228 0.867719 0.924095
+0.083004 0.390687 0.163190 0.435923
+
+pack 之后:
+
+A'':
+
+(gdb) x /8fg ba
+0x7fffefd7d000: 0.17082803610628972     0.74990198048496381
+0x7fffefd7d010: 0.57730350679510778     0.78579925883967405
+0x7fffefd7d020: 0.87390407686180893     0.74509509845006505
+0x7fffefd7d030: 0.73251963200253911     0.26022200108288018
+
+B'':
+
+(gdb) x /8fg bb
+0x7fffefd9d000: 0.84503513758028603     0.45582512865975744
+0x7fffefd9d010: 0.57578820048277635     0.10994681418064545
+0x7fffefd9d020: 0.71553859516866325     0.54522802381657343
+0x7fffefd9d030: 0.083004246073876686    0.39068657064867551
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org000000b" class="outline-4">
+<h4 id="org000000b"><span class="section-number-4">1.1.4.</span> openblas gemm kernel</h4>
+<div class="outline-text-4" id="text-1-1-4">
+<p>
+openblas SGEMMKERNEL 计算的是 packed A' x packed B', 所以 gemm kernel 需要先通过
+SGEMMONCOPY/SGEMMOTCOPY 进行 pack, 且 COPY 和 SGEMMKERNEL 需要对应相同的
+M_r/N_r, 否则数据的布局会对应不上.
+</p>
+
+<p>
+openblas 中的 param.h 中定义了以上几个值:
+</p>
+
+<ul class="org-ul">
+<li>SGEMM_DEFAULT_P 对应 M_c</li>
+<li>SGEMM_DEFAULT_Q 对应 N_c</li>
+<li>SGEMM_DEFAULT_R 对应 K_c</li>
+<li>SGEMM_DEFAULT_UNROLL_M 对应 M_r</li>
+<li>SGEMM_DEFAULT_UNROLL_N 对应 N_r</li>
+</ul>
+
+
+<p>
+以 gemmkernel_2x2.c 为例:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-type">int</span> <span class="org-function-name">CNAME</span><span class="org-parenthesis">(</span>
+    <span class="org-type">BLASLONG</span> <span class="org-variable-name">bm</span><span class="org-parenthesis">,</span> <span class="org-type">BLASLONG</span> <span class="org-variable-name">bn</span><span class="org-parenthesis">,</span> <span class="org-type">BLASLONG</span> <span class="org-variable-name">bk</span><span class="org-parenthesis">,</span> <span class="org-type">FLOAT</span> <span class="org-variable-name">alpha</span><span class="org-parenthesis">,</span> <span class="org-type">IFLOAT</span>* <span class="org-variable-name">ba</span><span class="org-parenthesis">,</span> <span class="org-type">IFLOAT</span>* <span class="org-variable-name">bb</span><span class="org-parenthesis">,</span>
+    <span class="org-type">FLOAT</span>* <span class="org-variable-name">C</span><span class="org-parenthesis">,</span> <span class="org-type">BLASLONG</span> <span class="org-variable-name">ldc</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">BLASLONG</span> <span class="org-variable-name">i</span><span class="org-parenthesis">,</span> <span class="org-variable-name">j</span><span class="org-parenthesis">,</span> <span class="org-variable-name">k</span>;
+    <span class="org-type">FLOAT</span> *<span class="org-variable-name">C0</span><span class="org-parenthesis">,</span> *<span class="org-variable-name">C1</span>;
+    <span class="org-type">IFLOAT</span> *<span class="org-variable-name">ptrba</span><span class="org-parenthesis">,</span> *<span class="org-variable-name">ptrbb</span>;
+    <span class="org-type">FLOAT</span> <span class="org-variable-name">res0</span><span class="org-parenthesis">,</span> <span class="org-variable-name">res1</span><span class="org-parenthesis">,</span> <span class="org-variable-name">res2</span><span class="org-parenthesis">,</span> <span class="org-variable-name">res3</span>;
+    <span class="org-type">IFLOAT</span> <span class="org-variable-name">load0</span><span class="org-parenthesis">,</span> <span class="org-variable-name">load1</span><span class="org-parenthesis">,</span> <span class="org-variable-name">load2</span><span class="org-parenthesis">,</span> <span class="org-variable-name">load3</span><span class="org-parenthesis">,</span> <span class="org-variable-name">load4</span><span class="org-parenthesis">,</span> <span class="org-variable-name">load5</span><span class="org-parenthesis">,</span> <span class="org-variable-name">load6</span><span class="org-parenthesis">,</span> <span class="org-variable-name">load7</span>;
+    <span class="org-comment-delimiter">/* </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: ba &#21363; packed A', bb &#21017; packed B'</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-comment-delimiter">/* </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: bn &#21363; N_c, /2 &#34920;&#31034; N_r &#20026; 2</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>j = 0; j &lt; bn / 2; j += 1<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+        C0 = C;
+        C1 = C0 + ldc;
+        <span class="org-comment-delimiter">/* </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: ptrba &#30456;&#24403;&#20110; A''</span><span class="org-comment-delimiter"> */</span>
+        ptrba = ba;
+        <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>i = 0; i &lt; bm / 2; i += 1<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+            <span class="org-comment-delimiter">/* </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: bm &#21363; M_c, M_r=2</span><span class="org-comment-delimiter"> */</span>
+            <span class="org-comment-delimiter">/* </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: ptrbb &#30456;&#24403;&#20110; B''</span><span class="org-comment-delimiter"> */</span>
+            ptrbb = bb;
+            res0 = 0;
+            res1 = 0;
+            res2 = 0;
+            res3 = 0;
+            <span class="org-comment-delimiter">/* </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: bk &#21363; K_c, /4 &#34920;&#31034;&#35745;&#31639; A'' x B'' &#26102;&#38024;&#23545; K_c &#24490;&#29615;&#23637;&#24320; 4 &#27425;</span>
+<span class="org-comment-delimiter">             */</span>
+            <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>k = 0; k &lt; bk / 4; k += 1<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+                <span class="org-comment-delimiter">/* </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: &#35745;&#31639; A'' x B'', &#27599;&#27425;&#24471;&#21040; 4 &#20010;&#20540; (&#22240;&#20026;&#27599;&#27425; A'' &#30340;&#19968;&#21015;</span>
+<span class="org-comment">                 * dot B'' &#30340;&#19968;&#34892;, &#32467;&#26524;&#20026; 2x2 &#30697;&#38453;")</span><span class="org-comment-delimiter"> */</span>
+                load0 = ptrba[2 * 0 + 0];
+                load1 = ptrbb[2 * 0 + 0];
+                res0 = res0 + BF16TOF32<span class="org-parenthesis">(</span>load0<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load1<span class="org-parenthesis">)</span>;
+                load2 = ptrba[2 * 0 + 1];
+                res1 = res1 + BF16TOF32<span class="org-parenthesis">(</span>load2<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load1<span class="org-parenthesis">)</span>;
+                load3 = ptrbb[2 * 0 + 1];
+                res2 = res2 + BF16TOF32<span class="org-parenthesis">(</span>load0<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load3<span class="org-parenthesis">)</span>;
+                res3 = res3 + BF16TOF32<span class="org-parenthesis">(</span>load2<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load3<span class="org-parenthesis">)</span>;
+                load4 = ptrba[2 * 1 + 0];
+                load5 = ptrbb[2 * 1 + 0];
+                res0 = res0 + BF16TOF32<span class="org-parenthesis">(</span>load4<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load5<span class="org-parenthesis">)</span>;
+                load6 = ptrba[2 * 1 + 1];
+                res1 = res1 + BF16TOF32<span class="org-parenthesis">(</span>load6<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load5<span class="org-parenthesis">)</span>;
+                load7 = ptrbb[2 * 1 + 1];
+                res2 = res2 + BF16TOF32<span class="org-parenthesis">(</span>load4<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load7<span class="org-parenthesis">)</span>;
+                res3 = res3 + BF16TOF32<span class="org-parenthesis">(</span>load6<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load7<span class="org-parenthesis">)</span>;
+                load0 = ptrba[2 * 2 + 0];
+                load1 = ptrbb[2 * 2 + 0];
+                res0 = res0 + BF16TOF32<span class="org-parenthesis">(</span>load0<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load1<span class="org-parenthesis">)</span>;
+                load2 = ptrba[2 * 2 + 1];
+                res1 = res1 + BF16TOF32<span class="org-parenthesis">(</span>load2<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load1<span class="org-parenthesis">)</span>;
+                load3 = ptrbb[2 * 2 + 1];
+                res2 = res2 + BF16TOF32<span class="org-parenthesis">(</span>load0<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load3<span class="org-parenthesis">)</span>;
+                res3 = res3 + BF16TOF32<span class="org-parenthesis">(</span>load2<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load3<span class="org-parenthesis">)</span>;
+                load4 = ptrba[2 * 3 + 0];
+                load5 = ptrbb[2 * 3 + 0];
+                res0 = res0 + BF16TOF32<span class="org-parenthesis">(</span>load4<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load5<span class="org-parenthesis">)</span>;
+                load6 = ptrba[2 * 3 + 1];
+                res1 = res1 + BF16TOF32<span class="org-parenthesis">(</span>load6<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load5<span class="org-parenthesis">)</span>;
+                load7 = ptrbb[2 * 3 + 1];
+                res2 = res2 + BF16TOF32<span class="org-parenthesis">(</span>load4<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load7<span class="org-parenthesis">)</span>;
+                res3 = res3 + BF16TOF32<span class="org-parenthesis">(</span>load6<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load7<span class="org-parenthesis">)</span>;
+                ptrba = ptrba + 8;
+                ptrbb = ptrbb + 8;
+            <span class="org-parenthesis">}</span>
+            <span class="org-comment-delimiter">/* </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: &#24490;&#29615;&#23637;&#24320;&#26102; K_c &#19981;&#33021;&#34987; 4 &#25972;&#38500;</span><span class="org-comment-delimiter"> */</span>
+            <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>k = 0; k &lt; <span class="org-parenthesis">(</span>bk &amp; 3<span class="org-parenthesis">)</span>; k += 1<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+                load0 = ptrba[2 * 0 + 0];
+                load1 = ptrbb[2 * 0 + 0];
+                res0 = res0 + BF16TOF32<span class="org-parenthesis">(</span>load0<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load1<span class="org-parenthesis">)</span>;
+                load2 = ptrba[2 * 0 + 1];
+                res1 = res1 + BF16TOF32<span class="org-parenthesis">(</span>load2<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load1<span class="org-parenthesis">)</span>;
+                load3 = ptrbb[2 * 0 + 1];
+                res2 = res2 + BF16TOF32<span class="org-parenthesis">(</span>load0<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load3<span class="org-parenthesis">)</span>;
+                res3 = res3 + BF16TOF32<span class="org-parenthesis">(</span>load2<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load3<span class="org-parenthesis">)</span>;
+                ptrba = ptrba + 2;
+                ptrbb = ptrbb + 2;
+            <span class="org-parenthesis">}</span>
+            res0 = res0 * alpha;
+            C0[0] = C0[0] + res0;
+            res1 = res1 * alpha;
+            C0[1] = C0[1] + res1;
+            res2 = res2 * alpha;
+            C1[0] = C1[0] + res2;
+            res3 = res3 * alpha;
+            C1[1] = C1[1] + res3;
+            C0 = C0 + 2;
+            C1 = C1 + 2;
+        <span class="org-parenthesis">}</span>
+        <span class="org-comment-delimiter">/* </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: M_c &#19981;&#33021;&#34987; 2 &#25972;&#38500;</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>i = 0; i &lt; <span class="org-parenthesis">(</span>bm &amp; 1<span class="org-parenthesis">)</span>; i += 1<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+            ptrbb = bb;
+            res0 = 0;
+            res1 = 0;
+            <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>k = 0; k &lt; bk; k += 1<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+                load0 = ptrba[0 + 0];
+                load1 = ptrbb[2 * 0 + 0];
+                res0 = res0 + BF16TOF32<span class="org-parenthesis">(</span>load0<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load1<span class="org-parenthesis">)</span>;
+                load2 = ptrbb[2 * 0 + 1];
+                res1 = res1 + BF16TOF32<span class="org-parenthesis">(</span>load0<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load2<span class="org-parenthesis">)</span>;
+                ptrba = ptrba + 1;
+                ptrbb = ptrbb + 2;
+            <span class="org-parenthesis">}</span>
+            res0 = res0 * alpha;
+            C0[0] = C0[0] + res0;
+            res1 = res1 * alpha;
+            C1[0] = C1[0] + res1;
+            C0 = C0 + 1;
+            C1 = C1 + 1;
+        <span class="org-parenthesis">}</span>
+        k = <span class="org-parenthesis">(</span>bk &lt;&lt; 1<span class="org-parenthesis">)</span>;
+        bb = bb + k;
+        i = <span class="org-parenthesis">(</span>ldc &lt;&lt; 1<span class="org-parenthesis">)</span>;
+        C = C + i;
+    <span class="org-parenthesis">}</span>
+    <span class="org-comment-delimiter">/* </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: N_c &#19981;&#33021;&#34987; 2 &#25972;&#38500;</span><span class="org-comment-delimiter"> */</span>
+    * / <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>j = 0; j &lt; <span class="org-parenthesis">(</span>bn &amp; 1<span class="org-parenthesis">)</span>; j += 1<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+        C0 = C;
+        ptrba = ba;
+        <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>i = 0; i &lt; bm / 2; i += 1<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+            ptrbb = bb;
+            res0 = 0;
+            res1 = 0;
+            <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>k = 0; k &lt; bk; k += 1<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+                load0 = ptrba[2 * 0 + 0];
+                load1 = ptrbb[0 + 0];
+                res0 = res0 + BF16TOF32<span class="org-parenthesis">(</span>load0<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load1<span class="org-parenthesis">)</span>;
+                load2 = ptrba[2 * 0 + 1];
+                res1 = res1 + BF16TOF32<span class="org-parenthesis">(</span>load2<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load1<span class="org-parenthesis">)</span>;
+                ptrba = ptrba + 2;
+                ptrbb = ptrbb + 1;
+            <span class="org-parenthesis">}</span>
+            res0 = res0 * alpha;
+            C0[0] = C0[0] + res0;
+            res1 = res1 * alpha;
+            C0[1] = C0[1] + res1;
+            C0 = C0 + 2;
+        <span class="org-parenthesis">}</span>
+        <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>i = 0; i &lt; <span class="org-parenthesis">(</span>bm &amp; 1<span class="org-parenthesis">)</span>; i += 1<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+            ptrbb = bb;
+            res0 = 0;
+            <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>k = 0; k &lt; bk; k += 1<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+                load0 = ptrba[0 + 0];
+                load1 = ptrbb[0 + 0];
+                res0 = res0 + BF16TOF32<span class="org-parenthesis">(</span>load0<span class="org-parenthesis">)</span> * BF16TOF32<span class="org-parenthesis">(</span>load1<span class="org-parenthesis">)</span>;
+                ptrba = ptrba + 1;
+                ptrbb = ptrbb + 1;
+            <span class="org-parenthesis">}</span>
+            res0 = res0 * alpha;
+            C0[0] = C0[0] + res0;
+            C0 = C0 + 1;
+        <span class="org-parenthesis">}</span>
+        k = <span class="org-parenthesis">(</span>bk &lt;&lt; 0<span class="org-parenthesis">)</span>;
+        bb = bb + k;
+        C = C + ldc;
+    <span class="org-parenthesis">}</span>
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000000e" class="outline-4">
+<h4 id="org000000e"><span class="section-number-4">1.1.5.</span> openblas gemm kernel with SIMD</h4>
+<div class="outline-text-4" id="text-1-1-5">
+<p>
+TBD
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000012" class="outline-4">
+<h4 id="org0000012"><span class="section-number-4">1.1.6.</span> m/n/k 三重循环的选择</h4>
+<div class="outline-text-4" id="text-1-1-6">
+<p>
+最简单的 gemm 实现如下所示:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">m</span> = 0; m &lt; M; m++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">n</span> = 0; n &lt; N; n++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+        <span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">k</span> = 0; k &lt; K; k++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+            C[m<span class="org-parenthesis">,</span> n] += A[m<span class="org-parenthesis">,</span> k] * B[k<span class="org-parenthesis">,</span> n];
+        <span class="org-parenthesis">}</span>
+    <span class="org-parenthesis">}</span>
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<p>
+实际上三重循环的顺序可以任意调换, 不影响计算结果, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">n</span> = 0; n &lt; N; n++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">m</span> = 0; m &lt; M; m++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+        <span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">k</span> = 0; k &lt; K; k++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+            C[m<span class="org-parenthesis">,</span> n] += A[m<span class="org-parenthesis">,</span> k] * B[k<span class="org-parenthesis">,</span> n];
+        <span class="org-parenthesis">}</span>
+    <span class="org-parenthesis">}</span>
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<p>
+但它们的性能并不相同.
+</p>
+
+<p>
+假设 A/B/C 均为 column major, 则访问 <code>A[m,k]</code> 相当于 <code>A[k*M+m]</code>, 所以从 locality
+的角度出发, 遍历时我们应尽量改动 m 而不是 k.
+</p>
+
+<p>
+例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-type">C</span>[m<span class="org-parenthesis">,</span> n] += A[m<span class="org-parenthesis">,</span> k] * B[k<span class="org-parenthesis">,</span> n];
+</pre>
+</div>
+
+<p>
+m: 两次出现在 M[x,y] 的 x 位置 (C[m,n], A[m,k])
+k: 一次出现在 x 位置, 一次出现在 y 位置
+n: 两次出现在 y 位置
+</p>
+
+<p>
+因此对于 column major 的 gemm, 最佳的三重循环的写法是 nkm 形式, 即:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">n</span> = 0; n &lt; N; n++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">k</span> = 0; k &lt; K; k++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+        <span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">m</span> = 0; m &lt; M; m++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+            C[m<span class="org-parenthesis">,</span> n] += A[m<span class="org-parenthesis">,</span> k] * B[k<span class="org-parenthesis">,</span> n];
+        <span class="org-parenthesis">}</span>
+    <span class="org-parenthesis">}</span>
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<p>
+使用 <a href="https://github.com/flame/blislab/tree/master">blislab</a> 的测试的结果:
+</p>
+
+<pre class="example" id="org0000011">
+# nkm
+~/source/blislab/step0&gt; sudo perf stat -e L1-dcache-loads,L1-dcache-load-misses, \
+                                                            L1-dcache-stores,cycles,instructions,branches \
+                                                            test/test_bl_dgemm.x  1000 1000 1000
+ 1000     1000    1000    2.10     inf
+
+ Performance counter stats for 'test/test_bl_dgemm.x 1000 1000 1000':
+
+     3,049,074,610      L1-dcache-loads                                               (83.17%)
+       126,865,835      L1-dcache-load-misses     #    4.16% of all L1-dcache accesses  (83.17%)
+     1,029,504,921      L1-dcache-stores                                              (83.35%)
+     2,169,687,341      cycles                                                        (67.14%)
+     8,171,486,214      instructions              #    3.77  insn per cycle           (83.57%)
+     1,031,403,187      branches                                                      (83.17%)
+
+       0.999021070 seconds time elapsed
+
+       0.982300000 seconds user
+       0.016037000 seconds sys
+
+# mkn
+~/source/blislab/step0#&gt; sudo perf stat -e L1-dcache-loads,L1-dcache-load-misses, \
+                                                            L1-dcache-stores,cycles,instructions,branches \
+                                                            test/test_bl_dgemm.x  1000 1000 1000
+ 1000     1000    1000    0.17     inf
+
+ Performance counter stats for 'test/test_bl_dgemm.x 1000 1000 1000':
+
+     3,057,403,526      L1-dcache-loads                                               (83.34%)
+     2,448,489,282      L1-dcache-load-misses     #   80.08% of all L1-dcache accesses  (83.33%)
+     1,033,077,016      L1-dcache-stores                                              (83.33%)
+    25,482,801,053      cycles                                                        (66.67%)
+     9,233,529,254      instructions              #    0.36  insn per cycle           (83.33%)
+     1,038,037,398      branches                                                      (83.33%)
+
+      11.616521657 seconds time elapsed
+
+      11.582296000 seconds user
+       0.027986000 seconds sys
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-08-10 Thu 11:20<br />
+Last updated: 2023-08-14 Mon 10:41</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
