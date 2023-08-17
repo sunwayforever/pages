@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>Unaligned Memory Access</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">Unaligned Memory Access</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000004">1. Unaligned Memory Access</a>
+<ul>
+<li><a href="#org0000001">1.1. 通过 trap handler 模拟 UMA</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000004" class="outline-2">
+<h2 id="org0000004"><span class="section-number-2">1.</span> Unaligned Memory Access</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+cpu 对 unaligned memory access (UMA) 的支持分为几种情况:
+</p>
+
+<ol class="org-ol">
+<li>不支持, 会触发 trap</li>
+
+<li>支持, 但比较慢</li>
+
+<li>支持且不慢</li>
+</ol>
+
+<p>
+如果编译器能判断出当前指令是 UMA, 则会根据 <a href="toolchain/gcc_cost.html#ID-98f35525-3f8c-4f76-8478-6cab3f3182be">slow_unaligned_access</a> 和
+`-mstrict-align` 参数决定对于 UMA 是直接生成 load/store 指令还是通过其它多条指令.
+例如, 为了支持非对齐的 sw, 编译器可能会使用 4 条 sb 指令
+</p>
+</div>
+
+<div id="outline-container-org0000001" class="outline-3">
+<h3 id="org0000001"><span class="section-number-3">1.1.</span> 通过 trap handler 模拟 UMA</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+有些时候编译器能判断出是否是 UMA, 例如
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-keyword">__attribute__</span><span class="org-parenthesis">((</span><span class="org-type">packed</span><span class="org-parenthesis">))</span> <span class="org-type">X</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">short</span> <span class="org-variable-name">a</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">b</span>;
+<span class="org-parenthesis">}</span>;
+</pre>
+</div>
+
+<p>
+编译器知道访问 b 时不是 4 字节对齐的.
+</p>
+
+<p>
+但有时编译器无法判断出是否对齐, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-type">short</span> *<span class="org-variable-name">y</span> = <span class="org-parenthesis">((</span><span class="org-type">char</span> *<span class="org-parenthesis">)</span>&amp;x<span class="org-parenthesis">)</span> + k;
+*y = 1;
+</pre>
+</div>
+
+<p>
+可见如果硬件不支持 UMA, 试图通过编译器来完全避免 UMA 是不可行的, 这时需要用户自己提供 trap handler 通过其它方式 (例如使用支持 UMA 的指令或转换为以字节为单位的指令例如 riscv 的 sb 指令) 模拟当前指令.
+</p>
+
+<p>
+以 riscv 为例:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">x</span> = 10;
+    <span class="org-type">short</span> *<span class="org-variable-name">y</span> = <span class="org-parenthesis">((</span><span class="org-type">char</span> *<span class="org-parenthesis">)</span>&amp;x<span class="org-parenthesis">)</span> + 1;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"test:%p\n"</span><span class="org-parenthesis">,</span> y<span class="org-parenthesis">)</span>;
+    *y = 1;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<p>
+spike 对应 store 指令的代码:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-type">void</span> <span class="org-variable-name">mmu_t</span>::store_slow_path<span class="org-parenthesis">(</span>
+    <span class="org-type">reg_t</span> <span class="org-variable-name">addr</span><span class="org-parenthesis">,</span> <span class="org-type">reg_t</span> <span class="org-variable-name">len</span><span class="org-parenthesis">,</span> <span class="org-keyword">const</span> <span class="org-type">uint8_t</span>* <span class="org-variable-name">bytes</span><span class="org-parenthesis">,</span> <span class="org-type">uint32_t</span> <span class="org-variable-name">xlate_flags</span><span class="org-parenthesis">,</span>
+    <span class="org-type">bool</span> <span class="org-variable-name">actually_store</span><span class="org-parenthesis">,</span> bool UNUSED require_alignment<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>actually_store<span class="org-parenthesis">)</span>
+        check_triggers<span class="org-parenthesis">(</span>
+            triggers::OPERATION_STORE<span class="org-parenthesis">,</span> addr<span class="org-parenthesis">,</span> reg_from_bytes<span class="org-parenthesis">(</span>len<span class="org-parenthesis">,</span> bytes<span class="org-parenthesis">))</span>;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"ssp:1:%x %d\n"</span><span class="org-parenthesis">,</span> addr<span class="org-parenthesis">,</span> len<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>addr &amp; <span class="org-parenthesis">(</span>len - 1<span class="org-parenthesis">))</span> <span class="org-parenthesis">{</span>
+        <span class="org-type">bool</span> <span class="org-variable-name">gva</span> = <span class="org-parenthesis">((</span>proc<span class="org-parenthesis">)</span> ? proc-&gt;state.v : <span class="org-constant">false</span><span class="org-parenthesis">)</span> ||
+                   <span class="org-parenthesis">(</span>RISCV_XLATE_VIRT &amp; xlate_flags<span class="org-parenthesis">)</span>;
+        <span class="org-keyword">if</span> <span class="org-parenthesis">(</span><span class="org-negation-char">!</span>is_misaligned_enabled<span class="org-parenthesis">())</span> <span class="org-parenthesis">{</span>
+            printf<span class="org-parenthesis">(</span><span class="org-string">"ssp:2:%x\n"</span><span class="org-parenthesis">,</span> addr<span class="org-parenthesis">)</span>;
+            <span class="org-type">throw</span> <span class="org-function-name">trap_store_address_misaligned</span><span class="org-parenthesis">(</span><span class="org-type">gva</span><span class="org-parenthesis">,</span> <span class="org-type">addr</span><span class="org-parenthesis">,</span> 0<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">)</span>;
+        <span class="org-parenthesis">}</span>
+
+        <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>require_alignment<span class="org-parenthesis">)</span> <span class="org-type">throw</span> <span class="org-function-name">trap_store_access_fault</span><span class="org-parenthesis">(</span><span class="org-type">gva</span><span class="org-parenthesis">,</span> <span class="org-type">addr</span><span class="org-parenthesis">,</span> 0<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">)</span>;
+
+        <span class="org-type">reg_t</span> <span class="org-variable-name">len_page0</span> = std::min<span class="org-parenthesis">(</span>len<span class="org-parenthesis">,</span> PGSIZE - addr % PGSIZE<span class="org-parenthesis">)</span>;
+        store_slow_path_intrapage<span class="org-parenthesis">(</span>
+            addr<span class="org-parenthesis">,</span> len_page0<span class="org-parenthesis">,</span> bytes<span class="org-parenthesis">,</span> xlate_flags<span class="org-parenthesis">,</span> actually_store<span class="org-parenthesis">)</span>;
+        <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>len_page0 != len<span class="org-parenthesis">)</span>
+            store_slow_path_intrapage<span class="org-parenthesis">(</span>
+                addr + len_page0<span class="org-parenthesis">,</span> len - len_page0<span class="org-parenthesis">,</span> bytes + len_page0<span class="org-parenthesis">,</span>
+                xlate_flags<span class="org-parenthesis">,</span> actually_store<span class="org-parenthesis">)</span>;
+    <span class="org-parenthesis">}</span> <span class="org-keyword">else</span> <span class="org-parenthesis">{</span>
+        store_slow_path_intrapage<span class="org-parenthesis">(</span>
+            addr<span class="org-parenthesis">,</span> len<span class="org-parenthesis">,</span> bytes<span class="org-parenthesis">,</span> xlate_flags<span class="org-parenthesis">,</span> actually_store<span class="org-parenthesis">)</span>;
+    <span class="org-parenthesis">}</span>
+    printf<span class="org-parenthesis">(</span><span class="org-string">"ssp:3:%x\n"</span><span class="org-parenthesis">,</span> addr<span class="org-parenthesis">)</span>;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<p>
+执行的 log 为:
+</p>
+
+<pre class="example" id="org0000000">
+#&gt; spike pk ./a.out
+test:0x3ffffff9f5
+ssp:1:fffff9f5 2
+ssp:2:fffff9f5
+...
+...
+ssp:1:fffff9f5 1
+ssp:2:fffff9f5
+ssp:3:fffff9f5
+ssp:1:fffff9f6 1
+ssp:2:fffff9f6
+ssp:3:fffff9f6
+
+// 做为对比, spike 的 `--misaligned` 参数表示硬件支持 UMA
+#&gt; spike --misaligned pk ./a.out
+test:0x3ffffff9f5 2
+ssp:1:fffff9f5 2
+ssp:3:fffff9f5
+</pre>
+
+<p>
+上面例子中发生 trap 后由 pk 的 misaligned_store_trap 负责把指令转换为两次一字节的 store
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-type">void</span> <span class="org-function-name">misaligned_store_trap</span><span class="org-parenthesis">(</span><span class="org-type">uintptr_t</span>* <span class="org-variable-name">regs</span><span class="org-parenthesis">,</span> <span class="org-type">uintptr_t</span> <span class="org-variable-name">mcause</span><span class="org-parenthesis">,</span> <span class="org-type">uintptr_t</span> <span class="org-variable-name">mepc</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-keyword">union</span> <span class="org-type">byte_array</span> <span class="org-variable-name">val</span>;
+    <span class="org-type">uintptr_t</span> <span class="org-variable-name">mstatus</span>;
+    <span class="org-type">insn_t</span> <span class="org-variable-name">insn</span> = get_insn<span class="org-parenthesis">(</span>mepc<span class="org-parenthesis">,</span> &amp;mstatus<span class="org-parenthesis">)</span>;
+    <span class="org-type">uintptr_t</span> <span class="org-variable-name">npc</span> = mepc + insn_len<span class="org-parenthesis">(</span>insn<span class="org-parenthesis">)</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">len</span>;
+
+    val.intx = GET_RS2<span class="org-parenthesis">(</span>insn<span class="org-parenthesis">,</span> regs<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">if</span> <span class="org-parenthesis">((</span>insn &amp; MASK_SW<span class="org-parenthesis">)</span> == MATCH_SW<span class="org-parenthesis">)</span>
+        len = 4;
+    <span class="org-keyword">else</span> <span class="org-keyword">if</span> <span class="org-parenthesis">((</span>insn &amp; MASK_SH<span class="org-parenthesis">)</span> == MATCH_SH<span class="org-parenthesis">)</span>
+        len = 2;
+    <span class="org-keyword">else</span> <span class="org-parenthesis">{</span>
+        mcause = CAUSE_STORE_ACCESS;
+        write_csr<span class="org-parenthesis">(</span>mcause<span class="org-parenthesis">,</span> mcause<span class="org-parenthesis">)</span>;
+        <span class="org-keyword">return</span> truly_illegal_insn<span class="org-parenthesis">(</span>regs<span class="org-parenthesis">,</span> mcause<span class="org-parenthesis">,</span> mepc<span class="org-parenthesis">,</span> mstatus<span class="org-parenthesis">,</span> insn<span class="org-parenthesis">)</span>;
+    <span class="org-parenthesis">}</span>
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: misaligned_store &#24322;&#24120;&#26102; mtval &#20026;&#35201; store &#30340;&#22320;&#22336;</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-comment-delimiter">/* </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: val &#26159; RS2, &#21363;&#35201; store &#30340;&#23492;&#23384;&#22120;</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">uintptr_t</span> <span class="org-variable-name">addr</span> = read_csr<span class="org-parenthesis">(</span>mtval<span class="org-parenthesis">)</span>;
+    <span class="org-type">intptr_t</span> <span class="org-variable-name">offs</span> = 0;
+    <span class="org-comment-delimiter">/* </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: &#24490;&#29615;&#22810;&#27425;, &#27599;&#27425;&#20889;&#19968;&#20010; byte</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; len; i++<span class="org-parenthesis">)</span>
+        store_uint8_t<span class="org-parenthesis">((</span><span class="org-type">void</span>*<span class="org-parenthesis">)(</span>addr + i<span class="org-parenthesis">),</span> val.bytes[offs + i]<span class="org-parenthesis">,</span> mepc<span class="org-parenthesis">)</span>;
+
+    write_csr<span class="org-parenthesis">(</span>mepc<span class="org-parenthesis">,</span> npc<span class="org-parenthesis">)</span>;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<p>
+另外, 上述只针对 unaligned store/load, 对于其它要求对齐的情况例如 branch 地址对齐, 原子指令内存对齐等并不适用.
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-08-17 Thu 13:43<br />
+Last updated: 2023-08-17 Thu 15:42</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
