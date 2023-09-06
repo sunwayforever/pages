@@ -36,7 +36,7 @@
 <ul>
 <li><a href="#ID-e78f85b3-7a6b-4ce8-aecc-665873d8b6ad">1.1.1. opcodes</a></li>
 <li><a href="#org000002a">1.1.2. as</a></li>
-<li><a href="#org000002d">1.1.3. objdump</a></li>
+<li><a href="#org0000042">1.1.3. objdump</a></li>
 <li><a href="#org0000030">1.1.4. bfd</a></li>
 </ul>
 </li>
@@ -44,7 +44,7 @@
 <ul>
 <li><a href="#org000003c">1.2.1. objcopy</a></li>
 <li><a href="#org000003f">1.2.2. readelf</a></li>
-<li><a href="#org0000042">1.2.3. objdump</a></li>
+<li><a href="#org0000043">1.2.3. objdump</a></li>
 </ul>
 </li>
 </ul>
@@ -60,7 +60,11 @@
 <div id="outline-container-org0000033" class="outline-3">
 <h3 id="org0000033"><span class="section-number-3">1.1.</span> 实现</h3>
 <div class="outline-text-3" id="text-1-1">
+<p>
+分析基于早期 riscv bintuils 的代码, 有些代码可能有出入. 最近的代码中 mips_ip 改为 riscv_ip, riscv_builtin_opcodes 改为 riscv_opcodes
+</p>
 </div>
+
 <div id="outline-container-ID-e78f85b3-7a6b-4ce8-aecc-665873d8b6ad" class="outline-4">
 <h4 id="ID-e78f85b3-7a6b-4ce8-aecc-665873d8b6ad"><span class="section-number-4">1.1.1.</span> opcodes</h4>
 <div class="outline-text-4" id="text-1-1-1">
@@ -86,6 +90,10 @@ as/objdump/gdb 都需要用到:
 <p>
 在 as/objdump 中添加新指令时, 只修改 <code>riscv_builtin_opcodes</code> 就可以完成, 因为
 as/objdump 关于 encode/decode 的操作都是针对该数据结构完成的.
+</p>
+
+<p>
+注意这个结构体中的成员的顺序并不是随意的, 因为无论汇编或反汇编时都需要能快速的查找这个表中的数据, 参考 op_hash 和 mips_hash
 </p>
 
 <div class="org-src-container">
@@ -146,8 +154,20 @@ as/objdump 关于 encode/decode 的操作都是针对该数据结构完成的.
 <li>MASK_ADDI 为 0x707f, 即 b 111 00000 1111111, 是指用这个 mask 去掉指令中变化的部分: rd, rs1, imm</li>
 
 <li>match_opcode 是一个函数, 目地是判断一条机器指令与这个模板是否匹配, 它实现是
-return (insn &amp; op-&gt;mask) == op-&gt;match, 所以这里定义的模板的作用就是根据 mask取出 insn 中的特定数据, 与 match 匹配</li>
+<code>return (insn &amp; op-&gt;mask) =</code> op-&gt;match=</li>
 </ul>
+
+<p>
+这条模板有两个作用:
+</p>
+
+<ol class="org-ol">
+<li>汇编时根据 `addi` 匹配到该模板 (使用 op_hash), 根据 MATCH_ADDI 和 MASK_ADDI
+填充二进制指令中不变的部分, 根据 `d,s,j` 和 OP_MASK<sub>RS1/RD</sub> 和汇编指令的参数填充二进制指令中汇编参数的部分</li>
+
+<li>反汇编时根据 MATCH_ADDI, MASK_ADDI 和 match_opcode 匹配到该模板 (使用
+mips_hash), 根据 `d,s,j` 和 OP_MASK 生成汇编指令的参数</li>
+</ol>
 </div>
 </div>
 
@@ -399,9 +419,9 @@ objdump 会使用 opcodes 中提供的 print_insn_riscv 等函数
 </div>
 
 
-<div id="outline-container-org000001b" class="outline-5 references">
-<h5 id="org000001b">Backlinks</h5>
-<div class="outline-text-5" id="text-org000001b">
+<div id="outline-container-org000004b" class="outline-5 references">
+<h5 id="org000004b">Backlinks</h5>
+<div class="outline-text-5" id="text-org000004b">
 <p>
 <a href="gdb_target_arch.html#ID-853d6271-a0b6-4ae0-bba1-667a2a3d8505">GDB Target Arch</a>
 (<i>GDB Target Arch &gt; porting new arch &gt; porting</i>):     gdb 的 disass 依赖 <a href="#ID-e78f85b3-7a6b-4ce8-aecc-665873d8b6ad">opcodes</a>. core, exec 数据的读取依赖 <a href="bfd.html#ID-7569396e-eef7-485b-a1eb-8a545dec44ba">bfd</a>
@@ -424,11 +444,7 @@ objdump 会使用 opcodes 中提供的 print_insn_riscv 等函数
 <div id="outline-container-org000002a" class="outline-4">
 <h4 id="org000002a"><span class="section-number-4">1.1.2.</span> as</h4>
 <div class="outline-text-4" id="text-1-1-2">
-<p>
-as 的工作是把汇编转换为机器指令. 在 gcc 4.9.1 中, 后端也是生成汇编后再由 as 转换为机器指令, 而不是直接由后端直接生成机器指令.
-</p>
 </div>
-
 <div id="outline-container-org000001e" class="outline-5">
 <h5 id="org000001e"><span class="section-number-5">1.1.2.1.</span> md_assemble</h5>
 <div class="outline-text-5" id="text-1-1-2-1">
@@ -714,8 +730,8 @@ append_insn 主要的工作是根据 reloc_type 决定 imm 或 offset 如何处�
 </div>
 </div>
 
-<div id="outline-container-org000002d" class="outline-4">
-<h4 id="org000002d"><span class="section-number-4">1.1.3.</span> objdump</h4>
+<div id="outline-container-org0000042" class="outline-4">
+<h4 id="org0000042"><span class="section-number-4">1.1.3.</span> objdump</h4>
 <div class="outline-text-4" id="text-1-1-3">
 <p>
 objdump 通过 opcodes 的 disassembler 接口完成 dump 的工作, 参考 opcodes 的
@@ -880,16 +896,16 @@ Program Headers:
 <h4 id="org000003f"><span class="section-number-4">1.2.2.</span> readelf</h4>
 </div>
 
-<div id="outline-container-org0000042" class="outline-4">
-<h4 id="org0000042"><span class="section-number-4">1.2.3.</span> objdump</h4>
+<div id="outline-container-org0000043" class="outline-4">
+<h4 id="org0000043"><span class="section-number-4">1.2.3.</span> objdump</h4>
 </div>
 </div>
 </div>
 
 
-<div id="outline-container-org000004b" class="outline-2 references">
-<h2 id="org000004b">Backlinks</h2>
-<div class="outline-text-2" id="text-org000004b">
+<div id="outline-container-org000004c" class="outline-2 references">
+<h2 id="org000004c">Backlinks</h2>
+<div class="outline-text-2" id="text-org000004c">
 <p>
 <a href="retargeting_gcc_to_riscv.html#ID-303d0f7f-03c2-4f31-ad7e-064162e3af10">Retargeting GCC To RISC-V</a>
 (<i>Retargeting GCC To RISC-V &gt; binutils</i>):   <a href="binutils.html#ID-28890ac4-f012-4934-afb2-1db09e6fc514">binutils</a>
@@ -901,7 +917,7 @@ Program Headers:
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-03-29 Wed 19:17<br />
-Last updated: 2023-09-06 Wed 12:57</p>
+Last updated: 2023-09-06 Wed 14:02</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
