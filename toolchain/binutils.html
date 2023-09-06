@@ -1,0 +1,908 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>binutils</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">binutils</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000048">1. binutils</a>
+<ul>
+<li><a href="#org0000033">1.1. 实现</a>
+<ul>
+<li><a href="#ID-e78f85b3-7a6b-4ce8-aecc-665873d8b6ad">1.1.1. opcodes</a></li>
+<li><a href="#org000002a">1.1.2. as</a></li>
+<li><a href="#org000002d">1.1.3. objdump</a></li>
+<li><a href="#org0000030">1.1.4. bfd</a></li>
+</ul>
+</li>
+<li><a href="#org0000045">1.2. 使用</a>
+<ul>
+<li><a href="#org000003c">1.2.1. objcopy</a></li>
+<li><a href="#org000003f">1.2.2. readelf</a></li>
+<li><a href="#org0000042">1.2.3. objdump</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000048" class="outline-2">
+<h2 id="org0000048"><span class="section-number-2">1.</span> binutils</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org0000033" class="outline-3">
+<h3 id="org0000033"><span class="section-number-3">1.1.</span> 实现</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-ID-e78f85b3-7a6b-4ce8-aecc-665873d8b6ad" class="outline-4">
+<h4 id="ID-e78f85b3-7a6b-4ce8-aecc-665873d8b6ad"><span class="section-number-4">1.1.1.</span> opcodes</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+as/objdump/gdb 都需要用到:
+</p>
+
+<ol class="org-ol">
+<li>opcode 的汇编格式</li>
+
+<li>opcode 的编码信息</li>
+</ol>
+
+<p>
+因此 binutils 中使用 opcodes 统一实现, 它定义了 opcode 的格式以及处理它们的函数,
+并提供了一个机制可以简化新指令的添加
+</p>
+</div>
+
+<div id="outline-container-org0000009" class="outline-5">
+<h5 id="org0000009"><span class="section-number-5">1.1.1.1.</span> riscv_opcodes</h5>
+<div class="outline-text-5" id="text-1-1-1-1">
+<p>
+在 as/objdump 中添加新指令时, 只修改 <code>riscv_builtin_opcodes</code> 就可以完成, 因为
+as/objdump 关于 encode/decode 的操作都是针对该数据结构完成的.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">const</span> <span class="org-keyword">struct</span> <span class="org-type">riscv_opcode</span> <span class="org-variable-name">riscv_builtin_opcodes</span>[] = <span class="org-parenthesis">{</span>
+    <span class="org-parenthesis">{</span><span class="org-string">"unimp"</span><span class="org-parenthesis">,</span> <span class="org-string">"I"</span><span class="org-parenthesis">,</span> <span class="org-string">""</span><span class="org-parenthesis">,</span> 0<span class="org-parenthesis">,</span> 0xffff<span class="org-parenthesis">,</span> match_opcode<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">},</span>
+    <span class="org-parenthesis">{</span><span class="org-string">"nop"</span><span class="org-parenthesis">,</span> <span class="org-string">"I"</span><span class="org-parenthesis">,</span> <span class="org-string">""</span><span class="org-parenthesis">,</span> MATCH_ADDI<span class="org-parenthesis">,</span> MASK_ADDI | MASK_RD | MASK_RS1 | MASK_IMM<span class="org-parenthesis">,</span>
+     match_opcode<span class="org-parenthesis">,</span> INSN_ALIAS<span class="org-parenthesis">},</span>
+    <span class="org-parenthesis">{</span><span class="org-string">"li"</span><span class="org-parenthesis">,</span> <span class="org-string">"I"</span><span class="org-parenthesis">,</span> <span class="org-string">"d,j"</span><span class="org-parenthesis">,</span> MATCH_ADDI<span class="org-parenthesis">,</span> MASK_ADDI | MASK_RS1<span class="org-parenthesis">,</span> match_opcode<span class="org-parenthesis">,</span>
+     INSN_ALIAS | WR_xd<span class="org-parenthesis">},</span> <span class="org-comment-delimiter">/* </span><span class="org-comment">addi</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-parenthesis">{</span><span class="org-string">"li"</span><span class="org-parenthesis">,</span> <span class="org-string">"I"</span><span class="org-parenthesis">,</span> <span class="org-string">"d,I"</span><span class="org-parenthesis">,</span> 0<span class="org-parenthesis">,</span> <span class="org-parenthesis">(</span><span class="org-type">int</span><span class="org-parenthesis">)</span>M_LI<span class="org-parenthesis">,</span> match_never<span class="org-parenthesis">,</span> INSN_MACRO<span class="org-parenthesis">},</span>
+    <span class="org-parenthesis">{</span><span class="org-string">"mv"</span><span class="org-parenthesis">,</span> <span class="org-string">"I"</span><span class="org-parenthesis">,</span> <span class="org-string">"d,s"</span><span class="org-parenthesis">,</span> MATCH_ADDI<span class="org-parenthesis">,</span> MASK_ADDI | MASK_IMM<span class="org-parenthesis">,</span> match_opcode<span class="org-parenthesis">,</span>
+     INSN_ALIAS | WR_xd | RD_xs1<span class="org-parenthesis">},</span>
+    <span class="org-parenthesis">{</span><span class="org-string">"move"</span><span class="org-parenthesis">,</span> <span class="org-string">"I"</span><span class="org-parenthesis">,</span> <span class="org-string">"d,s"</span><span class="org-parenthesis">,</span> MATCH_ADDI<span class="org-parenthesis">,</span> MASK_ADDI | MASK_IMM<span class="org-parenthesis">,</span> match_opcode<span class="org-parenthesis">,</span>
+     INSN_ALIAS | WR_xd | RD_xs1<span class="org-parenthesis">},</span>
+    <span class="org-parenthesis">{</span><span class="org-string">"b"</span><span class="org-parenthesis">,</span> <span class="org-string">"I"</span><span class="org-parenthesis">,</span> <span class="org-string">"p"</span><span class="org-parenthesis">,</span> MATCH_BEQ<span class="org-parenthesis">,</span> MASK_BEQ | MASK_RS1 | MASK_RS2<span class="org-parenthesis">,</span> match_opcode<span class="org-parenthesis">,</span>
+     0<span class="org-parenthesis">},</span> <span class="org-comment-delimiter">/* </span><span class="org-comment">beq 0,0</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-parenthesis">{</span><span class="org-string">"andi"</span><span class="org-parenthesis">,</span> <span class="org-string">"I"</span><span class="org-parenthesis">,</span> <span class="org-string">"d,s,j"</span><span class="org-parenthesis">,</span> MATCH_ANDI<span class="org-parenthesis">,</span> MASK_ANDI<span class="org-parenthesis">,</span> match_opcode<span class="org-parenthesis">,</span> WR_xd | RD_xs1<span class="org-parenthesis">},</span>
+    <span class="org-parenthesis">{</span><span class="org-string">"and"</span><span class="org-parenthesis">,</span> <span class="org-string">"I"</span><span class="org-parenthesis">,</span> <span class="org-string">"d,s,t"</span><span class="org-parenthesis">,</span> MATCH_AND<span class="org-parenthesis">,</span> MASK_AND<span class="org-parenthesis">,</span> match_opcode<span class="org-parenthesis">,</span>
+     WR_xd | RD_xs1 | RD_xs2<span class="org-parenthesis">},</span>
+    <span class="org-parenthesis">{</span><span class="org-string">"and"</span><span class="org-parenthesis">,</span> <span class="org-string">"I"</span><span class="org-parenthesis">,</span> <span class="org-string">"d,s,j"</span><span class="org-parenthesis">,</span> MATCH_ANDI<span class="org-parenthesis">,</span> MASK_ANDI<span class="org-parenthesis">,</span> match_opcode<span class="org-parenthesis">,</span>
+     INSN_ALIAS | WR_xd | RD_xs1<span class="org-parenthesis">},</span>
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-parenthesis">{</span><span class="org-string">"addi"</span><span class="org-parenthesis">,</span> <span class="org-string">"I"</span><span class="org-parenthesis">,</span> <span class="org-string">"d,s,j"</span><span class="org-parenthesis">,</span> MATCH_ADDI<span class="org-parenthesis">,</span> MASK_ADDI<span class="org-parenthesis">,</span> match_opcode<span class="org-parenthesis">,</span> WR_xd | RD_xs1<span class="org-parenthesis">},</span>
+    <span class="org-parenthesis">{</span><span class="org-string">"add"</span><span class="org-parenthesis">,</span> <span class="org-string">"I"</span><span class="org-parenthesis">,</span> <span class="org-string">"d,s,t"</span><span class="org-parenthesis">,</span> MATCH_ADD<span class="org-parenthesis">,</span> MASK_ADD<span class="org-parenthesis">,</span> match_opcode<span class="org-parenthesis">,</span>
+     WR_xd | RD_xs1 | RD_xs2<span class="org-parenthesis">},</span>
+    <span class="org-parenthesis">{</span><span class="org-string">"add"</span><span class="org-parenthesis">,</span> <span class="org-string">"I"</span><span class="org-parenthesis">,</span> <span class="org-string">"d,s,t,0"</span><span class="org-parenthesis">,</span> MATCH_ADD<span class="org-parenthesis">,</span> MASK_ADD<span class="org-parenthesis">,</span> match_opcode<span class="org-parenthesis">,</span>
+     WR_xd | RD_xs1 | RD_xs2<span class="org-parenthesis">},</span>
+    <span class="org-parenthesis">{</span><span class="org-string">"add"</span><span class="org-parenthesis">,</span> <span class="org-string">"I"</span><span class="org-parenthesis">,</span> <span class="org-string">"d,s,j"</span><span class="org-parenthesis">,</span> MATCH_ADDI<span class="org-parenthesis">,</span> MASK_ADDI<span class="org-parenthesis">,</span> match_opcode<span class="org-parenthesis">,</span>
+     INSN_ALIAS | WR_xd | RD_xs1<span class="org-parenthesis">},</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+<span class="org-parenthesis">}</span>;
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000000" class="outline-6">
+<h6 id="org0000000"><span class="section-number-6">1.1.1.1.1.</span> INSN</h6>
+<div class="outline-text-6" id="text-1-1-1-1-1">
+<p>
+<code>{"addi", "I", "d,s,j", MATCH_ADDI, MASK_ADDI, match_opcode, WR_xd | RD_xs1}</code>
+</p>
+
+<ul class="org-ul">
+<li>"I" 表示 I 指令</li>
+
+<li><p>
+"d,s,j" 表示对应汇编的的参数是 rd, rs1, imm 的形式
+</p>
+
+<p>
+在汇编时, `mips_ip` 函数会根据它决定汇编中的参数如何编码到二进制指令. 在反汇编时, `print_insn_args` 函数会根据它决定如何把二进制指令中的数据解码成汇编的参数.
+另外, 这两个函数需要用到 OP_MASK_XXX (例如 OP_MASK_RS1) 以确定汇编参数模板中的
+`d`, `s` 等与二进制指令的 bit 的对应关系
+</p></li>
+
+<li>MATCH_ADDI 为 0x13, 即 b0010011, 代表 addi 指令的低 7 位 opcode 的值</li>
+
+<li>MASK_ADDI 为 0x707f, 即 b 111 00000 1111111, 是指用这个 mask 去掉指令中变化的部分: rd, rs1, imm</li>
+
+<li>match_opcode 是一个函数, 目地是判断一条机器指令与这个模板是否匹配, 它实现是
+return (insn &amp; op-&gt;mask) == op-&gt;match, 所以这里定义的模板的作用就是根据 mask取出 insn 中的特定数据, 与 match 匹配</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000003" class="outline-6">
+<h6 id="org0000003"><span class="section-number-6">1.1.1.1.2.</span> INSN_ALIAS</h6>
+<div class="outline-text-6" id="text-1-1-1-1-2">
+<p>
+<code>{"li", "I", "d,j", MATCH_ADDI, MASK_ADDI | MASK_RS1, match_opcode, INSN_ALIAS | WR_xd}</code>
+</p>
+
+<ul class="org-ul">
+<li>INSN_ALIAS 表示 li 是一个 alias. 实际上后面的 `MATCH_ADDI` 会让它匹配到 <code>addi
+  rd, zero, imm</code>, 所以 objdump 时针对这个机器指令会输出 <code>li rd, imm</code> 而不是
+<code>addi rd, zero, imm</code>, 因为li 指令在列表中比 addi 更靠前. 通过 objdump
+<code>-Mno-aliases</code> 可以忽略掉所有带 INSN_ALIAS 标记的模板</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000006" class="outline-6">
+<h6 id="org0000006"><span class="section-number-6">1.1.1.1.3.</span> INSN_MACRO</h6>
+<div class="outline-text-6" id="text-1-1-1-1-3">
+<p>
+<code>{"li", "I", "d,I", 0, (int)M_LI, match_never, INSN_MACRO}</code>
+</p>
+
+<p>
+这里对应的 li 是用来加载 32 位立即数的伪指令, 通过 INSN_MACRO 标识. 由于它会产生两条指令 (lui, addi), 所以无法在 disassemble 时根据一条机器指令匹配到这个模板,
+所以用 match_never 跳过它. 虽然对 disassemble 没用, 但 assember 会使用它. 所以
+objdump 无法还原某些伪指令
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000000c" class="outline-5">
+<h5 id="org000000c"><span class="section-number-5">1.1.1.2.</span> encode</h5>
+<div class="outline-text-5" id="text-1-1-1-2">
+<p>
+as 使用 opcodes 进行 encode 时需要使用 riscv_opcodes 结构体, 参考 md_assemble
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000018" class="outline-5">
+<h5 id="org0000018"><span class="section-number-5">1.1.1.3.</span> decode</h5>
+<div class="outline-text-5" id="text-1-1-1-3">
+<p>
+objdump 会使用 opcodes 中提供的 print_insn_riscv 等函数
+</p>
+</div>
+
+<div id="outline-container-org000000f" class="outline-6">
+<h6 id="org000000f"><span class="section-number-6">1.1.1.3.1.</span> print_insn_riscv</h6>
+<div class="outline-text-6" id="text-1-1-1-3-1">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">int</span> <span class="org-function-name">print_insn_riscv</span><span class="org-parenthesis">(</span><span class="org-type">bfd_vma</span> <span class="org-variable-name">memaddr</span><span class="org-parenthesis">,</span> <span class="org-keyword">struct</span> <span class="org-type">disassemble_info</span> *<span class="org-variable-name">info</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">uint16_t</span> <span class="org-variable-name">i2</span>;
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">insn_t &#21363; uint64_t, &#26159;&#25351; riscv &#25351;&#20196;&#26368;&#22823;&#38271;&#24230;&#20026; 64bit</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">insn_t</span> <span class="org-variable-name">insn</span> = 0;
+    <span class="org-type">bfd_vma</span> <span class="org-variable-name">n</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">status</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">disassemble &#26102;&#20808;&#19968;&#27425;&#24615;&#35835;&#20837; 2 bytes, &#28982;&#21518;&#26681;&#25454; riscv_insn_length &#20915;&#23450;&#26159;&#21542;&#36824;</span>
+<span class="org-comment">     * &#38656;&#35201;&#35835;&#20837;&#26356;&#22810;&#30340;&#25968;&#25454;, riscv &#25351;&#20196;&#38271;&#24230;&#26159; 2~8 bytes, &#20294;&#36890;&#24120;&#26159; 4 bytes.</span>
+<span class="org-comment">     *</span>
+<span class="org-comment">     * &#22240;&#20026; riscv &#25351;&#20196;&#26159; little-endian (&#20302;&#20301;&#20445;&#23384;&#22312;&#20302;&#22320;&#22336;), &#25152;&#20197;</span>
+<span class="org-comment">     * riscv_insn_length &#23454;&#38469;&#26159;&#26681;&#25454;&#25351;&#20196;&#20302; 7 &#20301; opcode &#26469;&#21028;&#26029;&#23427;&#26159;&#21542;&#26159; 16 &#20301;</span>
+<span class="org-comment">     * compact &#25351;&#20196;, 32 &#20301;&#25351;&#20196;&#25110;&#32773; 48/64 &#20301;&#25193;&#23637;&#25351;&#20196;</span>
+<span class="org-comment">     *</span>
+<span class="org-comment">     *</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>n = 0; n &lt; <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>insn<span class="org-parenthesis">)</span> &amp;&amp; n &lt; riscv_insn_length<span class="org-parenthesis">(</span>insn<span class="org-parenthesis">)</span>; n += 2<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+        status =
+            <span class="org-parenthesis">(</span>*info-&gt;read_memory_func<span class="org-parenthesis">)(</span>memaddr + n<span class="org-parenthesis">,</span> <span class="org-parenthesis">(</span><span class="org-type">bfd_byte</span> *<span class="org-parenthesis">)</span>&amp;i2<span class="org-parenthesis">,</span> 2<span class="org-parenthesis">,</span> info<span class="org-parenthesis">)</span>;
+        <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>status != 0<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+            <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>n &gt; 0<span class="org-parenthesis">)</span> <span class="org-comment-delimiter">/* </span><span class="org-comment">Don't fail just because we fell off the end.</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-keyword">break</span>;
+            <span class="org-parenthesis">(</span>*info-&gt;memory_error_func<span class="org-parenthesis">)(</span>status<span class="org-parenthesis">,</span> memaddr<span class="org-parenthesis">,</span> info<span class="org-parenthesis">)</span>;
+            <span class="org-keyword">return</span> status;
+        <span class="org-parenthesis">}</span>
+
+        i2 = bfd_getl16<span class="org-parenthesis">(</span>&amp;i2<span class="org-parenthesis">)</span>;
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">little endian</span><span class="org-comment-delimiter"> */</span>
+        insn |= <span class="org-parenthesis">(</span><span class="org-type">insn_t</span><span class="org-parenthesis">)</span>i2 &lt;&lt; <span class="org-parenthesis">(</span>8 * n<span class="org-parenthesis">)</span>;
+    <span class="org-parenthesis">}</span>
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#21442;&#32771; mips, &#20294;&#38024;&#23545; riscv &#20462;&#25913;&#30340;&#29256;&#26412;, &#22240;&#20026; riscv &#21644; mips &#24456;&#30456;&#20284;</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">return</span> print_insn_mips<span class="org-parenthesis">(</span>memaddr<span class="org-parenthesis">,</span> insn<span class="org-parenthesis">,</span> info<span class="org-parenthesis">)</span>;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000012" class="outline-6">
+<h6 id="org0000012"><span class="section-number-6">1.1.1.3.2.</span> print_insn_mips</h6>
+<div class="outline-text-6" id="text-1-1-1-3-2">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-type">int</span> <span class="org-function-name">print_insn_mips</span><span class="org-parenthesis">(</span>
+    <span class="org-type">bfd_vma</span> <span class="org-variable-name">memaddr</span><span class="org-parenthesis">,</span> <span class="org-type">insn_t</span> <span class="org-variable-name">word</span><span class="org-parenthesis">,</span> <span class="org-type">disassemble_info</span> *<span class="org-variable-name">info</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-keyword">const</span> <span class="org-keyword">struct</span> <span class="org-type">riscv_opcode</span> *<span class="org-variable-name">op</span>;
+    <span class="org-keyword">static</span> <span class="org-type">bfd_boolean</span> <span class="org-variable-name">init</span> = 0;
+    <span class="org-keyword">static</span> <span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">extension</span> = <span class="org-constant">NULL</span>;
+    <span class="org-keyword">static</span> <span class="org-keyword">const</span> <span class="org-keyword">struct</span> <span class="org-type">riscv_opcode</span> *<span class="org-variable-name">mips_hash</span>[OP_MASK_OP + 1];
+    <span class="org-keyword">struct</span> <span class="org-type">riscv_private_data</span> *<span class="org-variable-name">pd</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">insnlen</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#36825;&#37324; mips_hash &#24182;&#19981;&#26159;&#19968;&#20010; hash table, &#23427;&#23454;&#38469;&#30456;&#24403;&#20110;&#19968;&#20010;&#36339;&#36716;&#34920;:</span>
+<span class="org-comment">     *</span>
+<span class="org-comment">     * riscv_opcodes &#19968;&#20849;&#26377; NUMOPCODES &#26465;&#27169;&#26495;, &#21305;&#37197; insn &#26102;&#38656;&#35201;&#20174;&#22836;&#20381;&#27425;&#21435;&#26597;&#30475;</span>
+<span class="org-comment">     * insn &#26159;&#21542;&#19982;&#24403;&#21069;&#27169;&#26495;&#21305;&#37197;, &#20026;&#20102;&#36991;&#20813;&#20174;&#22836;&#26597;&#25214;, &#25226;&#25152;&#26377; riscv_opcodes &#25353; &#20302; 7</span>
+<span class="org-comment">     * &#20301; opcode &#32479;&#35745;&#27599;&#19968;&#27425;&#20986;&#29616;&#30340;&#20301;&#32622;, &#27599;&#27425;&#26597;&#25214;&#26159;&#20808;&#26681;&#25454; opcode &#36339;&#21040;&#35813;&#20301;&#32622;&#21518;&#20877;&#32447;</span>
+<span class="org-comment">     * &#24615;&#26597;&#25214;</span>
+<span class="org-comment">     *</span>
+<span class="org-comment">     *</span>
+<span class="org-comment">     *</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span><span class="org-negation-char">!</span>init<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+        <span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">i</span>;
+        <span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">e_flags</span> = elf_elfheader<span class="org-parenthesis">(</span>info-&gt;section-&gt;owner<span class="org-parenthesis">)</span>-&gt;e_flags;
+        extension = riscv_elf_flag_to_name<span class="org-parenthesis">(</span>EF_GET_RISCV_EXT<span class="org-parenthesis">(</span>e_flags<span class="org-parenthesis">))</span>;
+
+        <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>i = 0; i &lt;= OP_MASK_OP; i++<span class="org-parenthesis">)</span>
+            <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>op = riscv_opcodes; op &lt; &amp;riscv_opcodes[NUMOPCODES]; op++<span class="org-parenthesis">)</span>
+                <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>i == <span class="org-parenthesis">((</span>op-&gt;match &gt;&gt; OP_SH_OP<span class="org-parenthesis">)</span> &amp; OP_MASK_OP<span class="org-parenthesis">))</span> <span class="org-parenthesis">{</span>
+                    mips_hash[i] = op;
+                    <span class="org-keyword">break</span>;
+                <span class="org-parenthesis">}</span>
+
+        init = 1;
+    <span class="org-parenthesis">}</span>
+
+    insnlen = riscv_insn_length<span class="org-parenthesis">(</span>word<span class="org-parenthesis">)</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+
+    op = mips_hash[<span class="org-parenthesis">(</span>word &gt;&gt; OP_SH_OP<span class="org-parenthesis">)</span> &amp; OP_MASK_OP];
+    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>op != <span class="org-constant">NULL</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+        <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>; op &lt; &amp;riscv_opcodes[NUMOPCODES]; op++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+            <span class="org-keyword">if</span> <span class="org-parenthesis">((</span>op-&gt;match_func<span class="org-parenthesis">)(</span>op<span class="org-parenthesis">,</span> word<span class="org-parenthesis">)</span> &amp;&amp;
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">&#22788;&#29702; -Mno-aliases &#36873;&#39033;</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-negation-char">!</span><span class="org-parenthesis">(</span>no_aliases &amp;&amp; <span class="org-parenthesis">(</span>op-&gt;pinfo &amp; INSN_ALIAS<span class="org-parenthesis">))</span> &amp;&amp;
+                <span class="org-negation-char">!</span><span class="org-parenthesis">(</span>op-&gt;subset[0] == <span class="org-string">'X'</span> &amp;&amp; strcmp<span class="org-parenthesis">(</span>op-&gt;subset<span class="org-parenthesis">,</span> extension<span class="org-parenthesis">)))</span> <span class="org-parenthesis">{</span>
+                <span class="org-parenthesis">(</span>*info-&gt;fprintf_func<span class="org-parenthesis">)(</span>info-&gt;stream<span class="org-parenthesis">,</span> <span class="org-string">"%s"</span><span class="org-parenthesis">,</span> op-&gt;name<span class="org-parenthesis">)</span>;
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">print_insn_args &#20250;&#25171;&#21360;&#20986;&#21518;&#32493;&#30340;&#21442;&#25968;, &#26681;&#25454;&#27169;&#26495;&#20013;&#30340; "d,s" &#24418;&#24335;&#30340;</span>
+<span class="org-comment">                 * fmt string</span><span class="org-comment-delimiter"> */</span>
+                print_insn_args<span class="org-parenthesis">(</span>op-&gt;args<span class="org-parenthesis">,</span> word<span class="org-parenthesis">,</span> memaddr<span class="org-parenthesis">,</span> info<span class="org-parenthesis">)</span>;
+                <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>pd-&gt;print_addr != <span class="org-parenthesis">(</span><span class="org-type">bfd_vma</span><span class="org-parenthesis">)</span>-1<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+                    info-&gt;target = pd-&gt;print_addr;
+                    <span class="org-parenthesis">(</span>*info-&gt;fprintf_func<span class="org-parenthesis">)(</span>info-&gt;stream<span class="org-parenthesis">,</span> <span class="org-string">" # "</span><span class="org-parenthesis">)</span>;
+                    <span class="org-parenthesis">(</span>*info-&gt;print_address_func<span class="org-parenthesis">)(</span>info-&gt;target<span class="org-parenthesis">,</span> info<span class="org-parenthesis">)</span>;
+                    pd-&gt;print_addr = -1;
+                <span class="org-parenthesis">}</span>
+                <span class="org-keyword">return</span> insnlen;
+            <span class="org-parenthesis">}</span>
+        <span class="org-parenthesis">}</span>
+    <span class="org-parenthesis">}</span>
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">Handle undefined instructions.</span><span class="org-comment-delimiter">  */</span>
+    info-&gt;insn_type = dis_noninsn;
+    <span class="org-parenthesis">(</span>*info-&gt;fprintf_func<span class="org-parenthesis">)(</span>info-&gt;stream<span class="org-parenthesis">,</span> <span class="org-string">"0x%llx"</span><span class="org-parenthesis">,</span> <span class="org-parenthesis">(</span><span class="org-type">unsigned</span> <span class="org-type">long</span> <span class="org-type">long</span><span class="org-parenthesis">)</span>word<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">return</span> insnlen;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000015" class="outline-6">
+<h6 id="org0000015"><span class="section-number-6">1.1.1.3.3.</span> print_insn_args</h6>
+<div class="outline-text-6" id="text-1-1-1-3-3">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">print_insn_args</span><span class="org-parenthesis">(</span>
+    <span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">d</span><span class="org-parenthesis">,</span> <span class="org-type">insn_t</span> <span class="org-variable-name">l</span><span class="org-parenthesis">,</span> <span class="org-type">bfd_vma</span> <span class="org-variable-name">pc</span><span class="org-parenthesis">,</span> <span class="org-type">disassemble_info</span> *<span class="org-variable-name">info</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-keyword">struct</span> <span class="org-type">riscv_private_data</span> *<span class="org-variable-name">pd</span> = info-&gt;private_data;
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#22312;&#20351;&#29992; rs1 &#30340;&#25351;&#20196;&#20013;, rs1 &#30340;&#20301;&#32622;&#21644;&#38271;&#24230;&#37117;&#26159;&#30830;&#23450;&#30340;:</span>
+<span class="org-comment">     *</span>
+<span class="org-comment">     * OP_SH_RS1 &#20026; 15, OP_MASK_RS1 &#20026; 0x1f (b11111), &#34920;&#31034; rs1 &#22312;&#20302; 15 &#20301;&#24320;&#22987;&#30340;&#36830;</span>
+<span class="org-comment">     * &#32493; 5 bit. &#32780; rd &#22312;&#20302; 7 &#20301;&#24320;&#22987;&#30340;&#36830;&#32493; 5 bit</span>
+<span class="org-comment">     *</span>
+<span class="org-comment">     *</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">int</span> <span class="org-variable-name">rs1</span> = <span class="org-parenthesis">(</span>l &gt;&gt; OP_SH_RS1<span class="org-parenthesis">)</span> &amp; OP_MASK_RS1;
+    <span class="org-type">int</span> <span class="org-variable-name">rd</span> = <span class="org-parenthesis">(</span>l &gt;&gt; OP_SH_RD<span class="org-parenthesis">)</span> &amp; OP_MASK_RD;
+
+    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>*d != <span class="org-string">'\0'</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">(</span>*info-&gt;fprintf_func<span class="org-parenthesis">)(</span>info-&gt;stream<span class="org-parenthesis">,</span> <span class="org-string">"\t"</span><span class="org-parenthesis">)</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#35299;&#26512;&#27169;&#26495;&#20013;&#30340; args fmt, &#20363;&#22914; addi &#30340; "d,s,j"</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>; *d != <span class="org-string">'\0'</span>; d++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+        <span class="org-keyword">switch</span> <span class="org-parenthesis">(</span>*d<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+            <span class="org-keyword">case</span> <span class="org-string">','</span>:
+            <span class="org-keyword">case</span> <span class="org-string">'('</span>:
+            <span class="org-keyword">case</span> <span class="org-string">')'</span>:
+            <span class="org-keyword">case</span> <span class="org-string">'['</span>:
+            <span class="org-keyword">case</span> <span class="org-string">']'</span>:
+                <span class="org-parenthesis">(</span>*info-&gt;fprintf_func<span class="org-parenthesis">)(</span>info-&gt;stream<span class="org-parenthesis">,</span> <span class="org-string">"%c"</span><span class="org-parenthesis">,</span> *d<span class="org-parenthesis">)</span>;
+                <span class="org-keyword">break</span>;
+
+            <span class="org-keyword">case</span> <span class="org-string">'b'</span>:
+            <span class="org-keyword">case</span> <span class="org-string">'s'</span>:
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">s &#20195;&#34920; rs1</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-parenthesis">(</span>*info-&gt;fprintf_func<span class="org-parenthesis">)(</span>info-&gt;stream<span class="org-parenthesis">,</span> <span class="org-string">"%s"</span><span class="org-parenthesis">,</span> mips_gpr_names[rs1]<span class="org-parenthesis">)</span>;
+                <span class="org-keyword">break</span>;
+
+            <span class="org-keyword">case</span> <span class="org-string">'t'</span>:
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">t &#20195;&#34920; rs2</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-parenthesis">(</span>*info-&gt;fprintf_func<span class="org-parenthesis">)(</span>
+                    info-&gt;stream<span class="org-parenthesis">,</span> <span class="org-string">"%s"</span><span class="org-parenthesis">,</span>
+                    mips_gpr_names[<span class="org-parenthesis">(</span>l &gt;&gt; OP_SH_RS2<span class="org-parenthesis">)</span> &amp; OP_MASK_RS2]<span class="org-parenthesis">)</span>;
+                <span class="org-keyword">break</span>;
+
+            <span class="org-keyword">case</span> <span class="org-string">'j'</span>:
+                <span class="org-keyword">if</span> <span class="org-parenthesis">((</span>l &amp; MASK_ADDI<span class="org-parenthesis">)</span> == MATCH_ADDI<span class="org-parenthesis">)</span>
+                    maybe_print_address<span class="org-parenthesis">(</span>pd<span class="org-parenthesis">,</span> rs1<span class="org-parenthesis">,</span> EXTRACT_ITYPE_IMM<span class="org-parenthesis">(</span>l<span class="org-parenthesis">))</span>;
+                <span class="org-comment-delimiter">/*</span>
+<span class="org-comment">                 * j &#20195;&#34920;&#31435;&#21363;&#25968;, &#20294;&#31435;&#21363;&#25968;&#22312; rv32i &#38024;&#23545;&#19981;&#21516;&#25351;&#20196;&#26377;&#19981;&#21516;&#30340;&#32534;&#30721;&#26041;&#24335;,</span>
+<span class="org-comment">                 * &#25152;&#20197;&#36890;&#36807; EXTRACT_{I,S,SB,U,UJ}TYPE_IMM(l) &#20174; insn &#20013;&#33719;&#24471;&#31435;&#21363;</span>
+<span class="org-comment">                 * &#25968;</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-parenthesis">(</span>*info-&gt;fprintf_func<span class="org-parenthesis">)(</span>
+                    info-&gt;stream<span class="org-parenthesis">,</span> <span class="org-string">"%d"</span><span class="org-parenthesis">,</span> <span class="org-parenthesis">(</span><span class="org-type">int</span><span class="org-parenthesis">)</span>EXTRACT_ITYPE_IMM<span class="org-parenthesis">(</span>l<span class="org-parenthesis">))</span>;
+                <span class="org-keyword">break</span>;
+
+            <span class="org-keyword">case</span> <span class="org-string">'d'</span>:
+                <span class="org-keyword">if</span> <span class="org-parenthesis">((</span>l &amp; MASK_AUIPC<span class="org-parenthesis">)</span> == MATCH_AUIPC<span class="org-parenthesis">)</span>
+                    pd-&gt;hi_addr[rd] =
+                        pc + <span class="org-parenthesis">(</span>EXTRACT_UTYPE_IMM<span class="org-parenthesis">(</span>l<span class="org-parenthesis">)</span> &lt;&lt; RISCV_IMM_BITS<span class="org-parenthesis">)</span>;
+                <span class="org-keyword">else</span> <span class="org-keyword">if</span> <span class="org-parenthesis">((</span>l &amp; MASK_LUI<span class="org-parenthesis">)</span> == MATCH_LUI<span class="org-parenthesis">)</span>
+                    pd-&gt;hi_addr[rd] = EXTRACT_UTYPE_IMM<span class="org-parenthesis">(</span>l<span class="org-parenthesis">)</span> &lt;&lt; RISCV_IMM_BITS;
+                <span class="org-comment-delimiter">/*</span>
+<span class="org-comment">                 * &#20551;&#35774;&#21069;&#38754;&#20174; insn &#20013;&#35835;&#21040; rd &#20540;&#20026; 2, &#21017; mips_gpr_names[rd] &#20026; x2</span>
+<span class="org-comment">                 * &#25110; s0, &#36890;&#36807; objdump -M gpr-names=numeric &#25110; -M gpr-names=32</span>
+<span class="org-comment">                 * &#26469;&#20999;&#25442;&#20004;&#31181;&#21629;&#20196;&#26041;&#24335;</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-parenthesis">(</span>*info-&gt;fprintf_func<span class="org-parenthesis">)(</span>info-&gt;stream<span class="org-parenthesis">,</span> <span class="org-string">"%s"</span><span class="org-parenthesis">,</span> mips_gpr_names[rd]<span class="org-parenthesis">)</span>;
+                <span class="org-keyword">break</span>;
+
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+
+            <span class="org-keyword">default</span>:
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">xgettext:c-format</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-parenthesis">(</span>*info-&gt;fprintf_func<span class="org-parenthesis">)(</span>
+                    info-&gt;stream<span class="org-parenthesis">,</span>
+                    _<span class="org-parenthesis">(</span><span class="org-string">"# internal error, undefined modifier (%c)"</span><span class="org-parenthesis">),</span> *d<span class="org-parenthesis">)</span>;
+                <span class="org-keyword">return</span>;
+        <span class="org-parenthesis">}</span>
+    <span class="org-parenthesis">}</span>
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org000001b" class="outline-5 references">
+<h5 id="org000001b">Backlinks</h5>
+<div class="outline-text-5" id="text-org000001b">
+<p>
+<a href="gdb_target_arch.html#ID-853d6271-a0b6-4ae0-bba1-667a2a3d8505">GDB Target Arch</a>
+(<i>GDB Target Arch &gt; porting new arch &gt; porting</i>):     gdb 的 disass 依赖 <a href="#ID-e78f85b3-7a6b-4ce8-aecc-665873d8b6ad">opcodes</a>. core, exec 数据的读取依赖 <a href="bfd.html#ID-7569396e-eef7-485b-a1eb-8a545dec44ba">bfd</a>
+</p>
+
+<p>
+<a href="spike.html#ID-3985c93c-c7ba-4aa5-abbc-565d8f32155c">Spike</a>
+(<i>Spike &gt; interpreter &gt; register</i>):  spike 通过 riscv.mk.in 和 encoding.h 实现了和 <a href="#ID-e78f85b3-7a6b-4ce8-aecc-665873d8b6ad">opcodes</a> 类似的功能.
+</p>
+
+<p>
+<a href="qemu_tcg.html#ID-378ef901-0a55-4204-963f-9d98e670e661">decodetree</a>
+(<i>QEMU TCG &gt; decodetree</i>):  qemu 的 decodetree 和 <a href="#ID-e78f85b3-7a6b-4ce8-aecc-665873d8b6ad">opcodes</a> 功能类似
+</p>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org000002a" class="outline-4">
+<h4 id="org000002a"><span class="section-number-4">1.1.2.</span> as</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+as 的工作是把汇编转换为机器指令. 在 gcc 4.9.1 中, 后端也是生成汇编后再由 as 转换为机器指令, 而不是直接由后端直接生成机器指令.
+</p>
+</div>
+
+<div id="outline-container-org000001e" class="outline-5">
+<h5 id="org000001e"><span class="section-number-5">1.1.2.1.</span> md_assemble</h5>
+<div class="outline-text-5" id="text-1-1-2-1">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">void</span> <span class="org-function-name">md_assemble</span><span class="org-parenthesis">(</span><span class="org-type">char</span> *<span class="org-variable-name">str</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-keyword">struct</span> <span class="org-type">mips_cl_insn</span> <span class="org-variable-name">insn</span>;
+
+    imm_expr.X_op = O_absent;
+    offset_expr.X_op = O_absent;
+    imm_reloc = BFD_RELOC_UNUSED;
+    offset_reloc = BFD_RELOC_UNUSED;
+
+    mips_ip<span class="org-parenthesis">(</span>str<span class="org-parenthesis">,</span> &amp;insn<span class="org-parenthesis">)</span>;
+
+    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>insn.insn_mo-&gt;pinfo == INSN_MACRO<span class="org-parenthesis">)</span>
+        macro<span class="org-parenthesis">(</span>&amp;insn<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">else</span> <span class="org-parenthesis">{</span>
+        <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>imm_expr.X_op != O_absent<span class="org-parenthesis">)</span>
+            append_insn<span class="org-parenthesis">(</span>&amp;insn<span class="org-parenthesis">,</span> &amp;imm_expr<span class="org-parenthesis">,</span> imm_reloc<span class="org-parenthesis">)</span>;
+        <span class="org-keyword">else</span> <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>offset_expr.X_op != O_absent<span class="org-parenthesis">)</span>
+            append_insn<span class="org-parenthesis">(</span>&amp;insn<span class="org-parenthesis">,</span> &amp;offset_expr<span class="org-parenthesis">,</span> offset_reloc<span class="org-parenthesis">)</span>;
+        <span class="org-keyword">else</span>
+            append_insn<span class="org-parenthesis">(</span>&amp;insn<span class="org-parenthesis">,</span> <span class="org-constant">NULL</span><span class="org-parenthesis">,</span> BFD_RELOC_UNUSED<span class="org-parenthesis">)</span>;
+    <span class="org-parenthesis">}</span>
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000021" class="outline-5">
+<h5 id="org0000021"><span class="section-number-5">1.1.2.2.</span> mips_ip</h5>
+<div class="outline-text-5" id="text-1-1-2-2">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">mips_ip</span><span class="org-parenthesis">(</span><span class="org-type">char</span> *<span class="org-variable-name">str</span><span class="org-parenthesis">,</span> <span class="org-keyword">struct</span> <span class="org-type">mips_cl_insn</span> *<span class="org-variable-name">ip</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">char</span> *<span class="org-variable-name">s</span>;
+    <span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">args</span>;
+    <span class="org-type">char</span> <span class="org-variable-name">c</span> = 0;
+    <span class="org-keyword">struct</span> <span class="org-type">riscv_opcode</span> *<span class="org-variable-name">insn</span>;
+    <span class="org-type">char</span> *<span class="org-variable-name">argsStart</span>;
+    <span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">regno</span>;
+    <span class="org-type">char</span> <span class="org-variable-name">save_c</span> = 0;
+    <span class="org-type">int</span> <span class="org-variable-name">argnum</span>;
+    <span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">rtype</span>;
+    <span class="org-keyword">const</span> <span class="org-keyword">struct</span> <span class="org-type">percent_op_match</span> *<span class="org-variable-name">p</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">op_hash &#26159;&#19968;&#20010;&#20197; name &#20026; key &#30340; hash table, &#29992;&#20110;&#24555;&#36895;&#30340;&#26681;&#25454;&#27719;&#32534;&#25351;&#20196;&#30340;&#21517;&#23383;</span>
+<span class="org-comment">     * (&#22914; addi) &#25214;&#21040;&#23545;&#24212;&#30340;&#27169;&#26495;. &#36825;&#37324;&#29992;&#30340;&#26159;&#21644; objdump &#30456;&#21516;&#30340;&#19968;&#22871;&#27169;&#26495;. &#20294;&#30001;&#20110;&#23384;&#22312;</span>
+<span class="org-comment">     * &#21517;&#23383;&#30456;&#21516;&#32780;&#21442;&#25968;&#19981;&#21516;&#30340;&#27169;&#26495;, &#25152;&#20197;&#36825;&#37324; op_hash &#20445;&#23384;&#30340;&#26159;&#21517;&#23383;&#23545;&#24212;&#30340;&#31532;&#19968;&#20010;&#27169;&#26495;,</span>
+<span class="org-comment">     * &#21518;&#32493;&#22312;&#26597;&#25214;&#26102;&#20250;&#20381;&#27425;&#22788;&#29702;&#21517;&#23383;&#21305;&#37197;&#30340;&#25152;&#26377;&#27169;&#26495;</span><span class="org-comment-delimiter">*/</span>
+    insn = <span class="org-parenthesis">(</span><span class="org-keyword">struct</span> <span class="org-type">riscv_opcode</span> *<span class="org-parenthesis">)</span>hash_find<span class="org-parenthesis">(</span>op_hash<span class="org-parenthesis">,</span> str<span class="org-parenthesis">)</span>;
+
+    argsStart = s;
+    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>;;<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+        <span class="org-type">bfd_boolean</span> <span class="org-variable-name">ok</span> = TRUE;
+
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">create_insn &#20250;&#25226; insn &#30340; opcode (op-&gt;match) &#20808;&#22635;&#20805;&#21040; ip &#20013;, &#28982;&#21518;&#21518;&#32493;</span>
+<span class="org-comment">         * &#30340;&#20195;&#30721;&#35201;&#22635;&#20805; args</span><span class="org-comment-delimiter"> */</span>
+        create_insn<span class="org-parenthesis">(</span>ip<span class="org-parenthesis">,</span> insn<span class="org-parenthesis">)</span>;
+        argnum = 1;
+        <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>args = insn-&gt;args;; ++args<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+            s += strspn<span class="org-parenthesis">(</span>s<span class="org-parenthesis">,</span> <span class="org-string">" \t"</span><span class="org-parenthesis">)</span>;
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">args &#26159;&#27169;&#26495;&#21442;&#25968;, s &#26159;&#23454;&#38469;&#21442;&#25968;</span><span class="org-comment-delimiter"> */</span>
+            <span class="org-keyword">switch</span> <span class="org-parenthesis">(</span>*args<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+                <span class="org-keyword">case</span> <span class="org-string">'\0'</span>: <span class="org-comment-delimiter">/* </span><span class="org-comment">end of args</span><span class="org-comment-delimiter"> */</span>
+                    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>*s == <span class="org-string">'\0'</span><span class="org-parenthesis">)</span> <span class="org-keyword">return</span>;
+                    <span class="org-keyword">break</span>;
+
+                <span class="org-keyword">case</span> <span class="org-string">','</span>:
+                    ++argnum;
+                    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>*s++ == *args<span class="org-parenthesis">)</span> <span class="org-keyword">continue</span>;
+                    s--;
+                    <span class="org-keyword">break</span>;
+
+                <span class="org-keyword">case</span> <span class="org-string">'('</span>:
+                <span class="org-keyword">case</span> <span class="org-string">')'</span>:
+                <span class="org-keyword">case</span> <span class="org-string">'['</span>:
+                <span class="org-keyword">case</span> <span class="org-string">']'</span>:
+                    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>*s++ == *args<span class="org-parenthesis">)</span> <span class="org-keyword">continue</span>;
+                    <span class="org-keyword">break</span>;
+
+                <span class="org-keyword">case</span> <span class="org-string">'d'</span>: <span class="org-comment-delimiter">/* </span><span class="org-comment">destination register</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-keyword">case</span> <span class="org-string">'s'</span>: <span class="org-comment-delimiter">/* </span><span class="org-comment">source register</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-keyword">case</span> <span class="org-string">'t'</span>: <span class="org-comment-delimiter">/* </span><span class="org-comment">target register</span><span class="org-comment-delimiter"> */</span>
+                    <span class="org-comment-delimiter">/* </span><span class="org-comment">s &#26159;&#27719;&#32534;&#20013;&#30340;&#23545;&#24212;&#20110;&#27169;&#26495;&#21442;&#25968;&#20301;&#32622;&#30340;&#23492;&#23384;&#22120;&#30340;&#21517;&#23383;, &#20363;&#22914; s0, x0</span>
+<span class="org-comment">                     * &#31561;, reg_lookup &#26159;&#25171;&#21040; s0 &#23545;&#24212;&#30340; regno: 2</span><span class="org-comment-delimiter"> */</span>
+                    ok = reg_lookup<span class="org-parenthesis">(</span>&amp;s<span class="org-parenthesis">,</span> RTYPE_NUM | RTYPE_GP<span class="org-parenthesis">,</span> &amp;regno<span class="org-parenthesis">)</span>;
+                    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>ok<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+                        c = *args;
+                        <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>*s == <span class="org-string">' '</span><span class="org-parenthesis">)</span> ++s;
+
+                        <span class="org-comment-delimiter">/* </span><span class="org-comment">Now that we have assembled one operand, we use the</span>
+<span class="org-comment">                         * args string to figure out where it goes in the</span>
+<span class="org-comment">                         * instruction.</span><span class="org-comment-delimiter">  */</span>
+                        <span class="org-keyword">switch</span> <span class="org-parenthesis">(</span>c<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+                            <span class="org-keyword">case</span> <span class="org-string">'s'</span>:
+                                <span class="org-comment-delimiter">/* </span><span class="org-comment">INSERT_OPERAND &#20808;&#26681;&#25454; RS1 &#30340; shift &#21644; mask &#25226;</span>
+<span class="org-comment">                                 * regno &#20889;&#21040; ip &#30340;&#29305;&#23450;&#20301;&#32622;</span><span class="org-comment-delimiter"> */</span>
+                                INSERT_OPERAND<span class="org-parenthesis">(</span>RS1<span class="org-parenthesis">,</span> *ip<span class="org-parenthesis">,</span> regno<span class="org-parenthesis">)</span>;
+                                <span class="org-keyword">break</span>;
+                            <span class="org-keyword">case</span> <span class="org-string">'d'</span>:
+                                INSERT_OPERAND<span class="org-parenthesis">(</span>RD<span class="org-parenthesis">,</span> *ip<span class="org-parenthesis">,</span> regno<span class="org-parenthesis">)</span>;
+                                <span class="org-keyword">break</span>;
+                            <span class="org-keyword">case</span> <span class="org-string">'t'</span>:
+                                INSERT_OPERAND<span class="org-parenthesis">(</span>RS2<span class="org-parenthesis">,</span> *ip<span class="org-parenthesis">,</span> regno<span class="org-parenthesis">)</span>;
+                                <span class="org-keyword">break</span>;
+                        <span class="org-parenthesis">}</span>
+                        <span class="org-keyword">continue</span>;
+                    <span class="org-parenthesis">}</span>
+                    <span class="org-keyword">break</span>;
+
+                <span class="org-keyword">case</span> <span class="org-string">'j'</span>: <span class="org-comment-delimiter">/* </span><span class="org-comment">sign-extended immediate</span><span class="org-comment-delimiter"> */</span>
+                    offset_reloc = BFD_RELOC_RISCV_LO12_I;
+                    p = percent_op_itype;
+                    <span class="org-keyword">goto</span> <span class="org-constant">alu_op</span>;
+
+                <span class="org-constant">alu_op</span>:
+                    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span><span class="org-negation-char">!</span>my_getSmallExpression<span class="org-parenthesis">(</span>
+                            &amp;offset_expr<span class="org-parenthesis">,</span> &amp;offset_reloc<span class="org-parenthesis">,</span> s<span class="org-parenthesis">,</span> p<span class="org-parenthesis">))</span> <span class="org-parenthesis">{</span>
+                        normalize_constant_expr<span class="org-parenthesis">(</span>&amp;offset_expr<span class="org-parenthesis">)</span>;
+                        <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>offset_expr.X_op != O_constant ||
+                            <span class="org-parenthesis">(</span>*args == <span class="org-string">'0'</span> &amp;&amp; offset_expr.X_add_number != 0<span class="org-parenthesis">)</span> ||
+                            offset_expr.X_add_number &gt;=
+                                <span class="org-parenthesis">(</span><span class="org-type">signed</span><span class="org-parenthesis">)</span>RISCV_IMM_REACH / 2 ||
+                            offset_expr.X_add_number &lt;
+                                -<span class="org-parenthesis">(</span><span class="org-type">signed</span><span class="org-parenthesis">)</span>RISCV_IMM_REACH / 2<span class="org-parenthesis">)</span>
+                            <span class="org-keyword">break</span>;
+                    <span class="org-parenthesis">}</span>
+                    <span class="org-comment-delimiter">/* </span><span class="org-comment">offset_expr.X_add_number &#20250;&#26159;&#27719;&#32534;&#20013;&#30340;&#31435;&#21363;&#25968;, offset_expr</span>
+<span class="org-comment">                     * &#26159;&#19968;&#20010;&#20840;&#23616;&#21464;&#37327;, &#21518;&#32493; md_assemble &#20013;&#30340; append_insn &#20250;&#25226;&#23427;</span>
+<span class="org-comment">                     * &#32534;&#30721;&#21040;&#25351;&#20196;&#20013;</span><span class="org-comment-delimiter">*/</span>
+                    s = expr_end;
+                    <span class="org-keyword">continue</span>;
+                <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+                <span class="org-keyword">default</span>:
+                    as_bad<span class="org-parenthesis">(</span>_<span class="org-parenthesis">(</span><span class="org-string">"bad char = '%c'\n"</span><span class="org-parenthesis">),</span> *args<span class="org-parenthesis">)</span>;
+                    internalError<span class="org-parenthesis">()</span>;
+            <span class="org-parenthesis">}</span>
+            <span class="org-keyword">break</span>;
+        <span class="org-parenthesis">}</span>
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">&#24403;&#21069;&#27169;&#26495;&#30340;&#21442;&#25968;&#19982;&#25351;&#20196;&#19981;&#21305;&#37197;, &#21017;&#32487;&#32493;&#22788;&#29702;&#19979;&#19968;&#26465;&#21516;&#21517;&#30340;&#27169;&#26495;, &#25152;&#20197;&#22312;</span>
+<span class="org-comment">         * riscv_opcodes &#20013;&#30456;&#21516;&#21517;&#23383;&#30340;&#27169;&#26495;&#38656;&#35201;&#25918;&#22312;&#19968;&#36215;</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>insn + 1 &lt; &amp;riscv_opcodes[NUMOPCODES] &amp;&amp;
+            <span class="org-negation-char">!</span>strcmp<span class="org-parenthesis">(</span>insn-&gt;name<span class="org-parenthesis">,</span> insn[1].name<span class="org-parenthesis">))</span> <span class="org-parenthesis">{</span>
+            ++insn;
+            s = argsStart;
+            insn_error = _<span class="org-parenthesis">(</span><span class="org-string">"illegal operands"</span><span class="org-parenthesis">)</span>;
+            <span class="org-keyword">continue</span>;
+        <span class="org-parenthesis">}</span>
+        <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>save_c<span class="org-parenthesis">)</span> *<span class="org-parenthesis">(</span>--argsStart<span class="org-parenthesis">)</span> = save_c;
+        insn_error = _<span class="org-parenthesis">(</span><span class="org-string">"illegal operands"</span><span class="org-parenthesis">)</span>;
+        <span class="org-keyword">return</span>;
+    <span class="org-parenthesis">}</span>
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000024" class="outline-5">
+<h5 id="org0000024"><span class="section-number-5">1.1.2.3.</span> macro</h5>
+<div class="outline-text-5" id="text-1-1-2-3">
+<p>
+mips_ip 返回后, insn 相应的位已经被赋值, imm_expr, offset_expr 也被赋值, 如果
+insn 不是 macro, 则 imm_expr, offset_expr 会通过 append_insn 直接编码在 insn 或保留 symbol 和 reloc_type 留给 link editor 处理. 但如果 insn 是一个 macro, 则需要通过 macro 函数单独处理, 以展开成多条 insn.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">macro</span><span class="org-parenthesis">(</span><span class="org-keyword">struct</span> <span class="org-type">mips_cl_insn</span> *<span class="org-variable-name">ip</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">rd</span><span class="org-parenthesis">,</span> <span class="org-variable-name">rs1</span><span class="org-parenthesis">,</span> <span class="org-variable-name">rs2</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">mask</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">rd, rs1, rs2, imm_expr, offset_expr &#19981;&#20877;&#38656;&#35201;&#20174;&#27719;&#32534;&#20013;&#35299;&#26512;, &#22240;&#20026;&#21069;&#38754;&#24050;&#32463;&#35299;</span>
+<span class="org-comment">     * &#26512;&#23436;&#20102;</span><span class="org-comment-delimiter"> */</span>
+
+    rd = <span class="org-parenthesis">(</span>ip-&gt;insn_opcode &gt;&gt; OP_SH_RD<span class="org-parenthesis">)</span> &amp; OP_MASK_RD;
+    rs1 = <span class="org-parenthesis">(</span>ip-&gt;insn_opcode &gt;&gt; OP_SH_RS1<span class="org-parenthesis">)</span> &amp; OP_MASK_RS1;
+    rs2 = <span class="org-parenthesis">(</span>ip-&gt;insn_opcode &gt;&gt; OP_SH_RS2<span class="org-parenthesis">)</span> &amp; OP_MASK_RS2;
+    mask = ip-&gt;insn_mo-&gt;mask;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">&#20197; li &#20026;&#20363;:</span>
+<span class="org-comment">     * {"li",        "I",   "d,I",  0,    (int) M_LI,  match_never, INSN_MACRO</span>
+<span class="org-comment">     * },</span>
+<span class="org-comment">     *</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">switch</span> <span class="org-parenthesis">(</span>mask<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+        <span class="org-keyword">case</span> M_LI:
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">load_const &#20250;&#21464;&#25104;&#20004;&#26465;&#25351;&#20196;: lui &amp; addi</span><span class="org-comment-delimiter"> */</span>
+            load_const<span class="org-parenthesis">(</span>rd<span class="org-parenthesis">,</span> &amp;imm_expr<span class="org-parenthesis">)</span>;
+            <span class="org-keyword">break</span>;
+
+        <span class="org-keyword">case</span> M_LA:
+        <span class="org-keyword">case</span> M_LLA:
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">Load the address of a symbol into a register.</span><span class="org-comment-delimiter"> */</span>
+            <span class="org-keyword">if</span> <span class="org-parenthesis">(</span><span class="org-negation-char">!</span>IS_SEXT_32BIT_NUM<span class="org-parenthesis">(</span>offset_expr.X_add_number<span class="org-parenthesis">))</span>
+                as_bad<span class="org-parenthesis">(</span>_<span class="org-parenthesis">(</span><span class="org-string">"offset too large"</span><span class="org-parenthesis">))</span>;
+
+            <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>offset_expr.X_op == O_constant<span class="org-parenthesis">)</span>
+                load_const<span class="org-parenthesis">(</span>rd<span class="org-parenthesis">,</span> &amp;offset_expr<span class="org-parenthesis">)</span>;
+            <span class="org-keyword">else</span> <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>is_pic &amp;&amp; mask == M_LA<span class="org-parenthesis">)</span> <span class="org-comment-delimiter">/* </span><span class="org-comment">Global PIC symbol</span><span class="org-comment-delimiter"> */</span>
+                pcrel_load<span class="org-parenthesis">(</span>
+                    rd<span class="org-parenthesis">,</span> rd<span class="org-parenthesis">,</span> &amp;offset_expr<span class="org-parenthesis">,</span> LOAD_ADDRESS_INSN<span class="org-parenthesis">,</span>
+                    BFD_RELOC_RISCV_GOT_HI20<span class="org-parenthesis">,</span> BFD_RELOC_RISCV_GOT_LO12<span class="org-parenthesis">)</span>;
+            <span class="org-keyword">else</span> <span class="org-comment-delimiter">/* </span><span class="org-comment">Local PIC symbol, or any non-PIC symbol</span><span class="org-comment-delimiter"> */</span>
+                pcrel_load<span class="org-parenthesis">(</span>
+                    rd<span class="org-parenthesis">,</span> rd<span class="org-parenthesis">,</span> &amp;offset_expr<span class="org-parenthesis">,</span> <span class="org-string">"addi"</span><span class="org-parenthesis">,</span> BFD_RELOC_RISCV_PCREL_HI20<span class="org-parenthesis">,</span>
+                    BFD_RELOC_RISCV_PCREL_LO12_I<span class="org-parenthesis">)</span>;
+            <span class="org-keyword">break</span>;
+
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">case</span> M_JUMP:
+            rd = 0;
+            <span class="org-keyword">goto</span> <span class="org-constant">do_call</span>;
+        <span class="org-keyword">case</span> M_CALL:
+            rd = LINK_REG;
+        <span class="org-constant">do_call</span>:
+            rs1 = reg_lookup_assert<span class="org-parenthesis">(</span><span class="org-string">"t0"</span><span class="org-parenthesis">,</span> RTYPE_GP<span class="org-parenthesis">)</span>;
+            riscv_call<span class="org-parenthesis">(</span>rd<span class="org-parenthesis">,</span> rs1<span class="org-parenthesis">,</span> &amp;offset_expr<span class="org-parenthesis">,</span> offset_reloc<span class="org-parenthesis">)</span>;
+            <span class="org-keyword">break</span>;
+
+        <span class="org-keyword">default</span>:
+            as_bad<span class="org-parenthesis">(</span>_<span class="org-parenthesis">(</span><span class="org-string">"Macro %s not implemented"</span><span class="org-parenthesis">),</span> ip-&gt;insn_mo-&gt;name<span class="org-parenthesis">)</span>;
+            <span class="org-keyword">break</span>;
+    <span class="org-parenthesis">}</span>
+<span class="org-parenthesis">}</span>
+
+<span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">load_const</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">reg</span><span class="org-parenthesis">,</span> <span class="org-type">expressionS</span> *<span class="org-variable-name">ep</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>rv64 &amp;&amp; <span class="org-negation-char">!</span>IS_SEXT_32BIT_NUM<span class="org-parenthesis">(</span>ep-&gt;X_add_number<span class="org-parenthesis">))</span> <span class="org-parenthesis">{</span>
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">64 bit</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-parenthesis">}</span> <span class="org-keyword">else</span> <span class="org-parenthesis">{</span>
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">32 bit</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-type">int</span> <span class="org-variable-name">hi_reg</span> = ZERO;
+
+        <span class="org-type">int32_t</span> <span class="org-variable-name">hi</span> = ep-&gt;X_add_number &amp; <span class="org-parenthesis">(</span>RISCV_IMM_REACH - 1<span class="org-parenthesis">)</span>;
+        hi = hi &lt;&lt; <span class="org-parenthesis">(</span>32 - RISCV_IMM_BITS<span class="org-parenthesis">)</span> &gt;&gt; <span class="org-parenthesis">(</span>32 - RISCV_IMM_BITS<span class="org-parenthesis">)</span>;
+        hi = <span class="org-parenthesis">(</span><span class="org-type">int32_t</span><span class="org-parenthesis">)</span>ep-&gt;X_add_number - hi;
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">&#36825;&#37324;&#20250;&#23545;&#24212;&#20004;&#26465;&#25351;&#20196;:</span>
+<span class="org-comment">         * lui rd, %hi(imm)</span>
+<span class="org-comment">         * addi rd, zero, %lo(imm)</span>
+<span class="org-comment">         *</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>hi<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">macro_build &#21644; mips_ip &#31867;&#20284;</span><span class="org-comment-delimiter"> */</span>
+            macro_build<span class="org-parenthesis">(</span>ep<span class="org-parenthesis">,</span> <span class="org-string">"lui"</span><span class="org-parenthesis">,</span> <span class="org-string">"d,u"</span><span class="org-parenthesis">,</span> reg<span class="org-parenthesis">,</span> BFD_RELOC_RISCV_HI20<span class="org-parenthesis">)</span>;
+            hi_reg = reg;
+        <span class="org-parenthesis">}</span>
+
+        <span class="org-keyword">if</span> <span class="org-parenthesis">((</span>ep-&gt;X_add_number &amp; <span class="org-parenthesis">(</span>RISCV_IMM_REACH - 1<span class="org-parenthesis">))</span> || hi_reg == ZERO<span class="org-parenthesis">)</span>
+            macro_build<span class="org-parenthesis">(</span>
+                ep<span class="org-parenthesis">,</span> ADD32_INSN<span class="org-parenthesis">,</span> <span class="org-string">"d,s,j"</span><span class="org-parenthesis">,</span> reg<span class="org-parenthesis">,</span> hi_reg<span class="org-parenthesis">,</span> BFD_RELOC_RISCV_LO12_I<span class="org-parenthesis">)</span>;
+    <span class="org-parenthesis">}</span>
+<span class="org-parenthesis">}</span>
+
+<span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">riscv_call</span><span class="org-parenthesis">(</span>
+    <span class="org-type">int</span> <span class="org-variable-name">destreg</span><span class="org-parenthesis">,</span> <span class="org-type">int</span> <span class="org-variable-name">tempreg</span><span class="org-parenthesis">,</span> <span class="org-type">expressionS</span> *<span class="org-variable-name">ep</span><span class="org-parenthesis">,</span> <span class="org-type">bfd_reloc_code_real_type</span> <span class="org-variable-name">reloc</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    macro_build<span class="org-parenthesis">(</span>ep<span class="org-parenthesis">,</span> <span class="org-string">"auipc"</span><span class="org-parenthesis">,</span> <span class="org-string">"d,u"</span><span class="org-parenthesis">,</span> tempreg<span class="org-parenthesis">,</span> reloc<span class="org-parenthesis">)</span>;
+    macro_build<span class="org-parenthesis">(</span><span class="org-constant">NULL</span><span class="org-parenthesis">,</span> <span class="org-string">"jalr"</span><span class="org-parenthesis">,</span> <span class="org-string">"d,s"</span><span class="org-parenthesis">,</span> destreg<span class="org-parenthesis">,</span> tempreg<span class="org-parenthesis">)</span>;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<p>
+riscv_call 生成了 `auipc+jalr`, 因为 assembler 无法知道跳转的范围有多大, 用
+auipc+jalr 是最保险的做法, 在 link 阶段通过 <a href="linker_relaxation.html#ID-b861e156-7ced-4e25-b047-455b5b075c1e">linker relaxation</a> 有可能会把它换成
+jal
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000027" class="outline-5">
+<h5 id="org0000027"><span class="section-number-5">1.1.2.4.</span> append_insn</h5>
+<div class="outline-text-5" id="text-1-1-2-4">
+<p>
+append_insn 主要的工作是根据 reloc_type 决定 imm 或 offset 如何处理:
+</p>
+
+<ol class="org-ol">
+<li>使用常量的指令可以直接把 constant 编码到指令中, 只是需要考虑不同的类型
+(I,S,U) 对 imm 的编码不太一样</li>
+
+<li>使用 symbol 的指令无法把 symbol 的地址直接编码到指令中, assembling 阶段只能确定 symbol 和 reloc_type, 最终地址在链接阶段由 处理</li>
+</ol>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000002d" class="outline-4">
+<h4 id="org000002d"><span class="section-number-4">1.1.3.</span> objdump</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<p>
+objdump 通过 opcodes 的 disassembler 接口完成 dump 的工作, 参考 opcodes 的
+print_insn_riscv 函数
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000030" class="outline-4">
+<h4 id="org0000030"><span class="section-number-4">1.1.4.</span> bfd</h4>
+<div class="outline-text-4" id="text-1-1-4">
+<p>
+riscv 定义了自己的 reloc_type, 这些信息需要通过 <a href="bfd.html#ID-7569396e-eef7-485b-a1eb-8a545dec44ba">bfd</a> 写入 elf, 并且 ld 也需要通过
+bfd 处理这些信息
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000045" class="outline-3">
+<h3 id="org0000045"><span class="section-number-3">1.2.</span> 使用</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-org000003c" class="outline-4">
+<h4 id="org000003c"><span class="section-number-4">1.2.1.</span> objcopy</h4>
+<div class="outline-text-4" id="text-1-2-1">
+</div>
+<div id="outline-container-org0000039" class="outline-5">
+<h5 id="org0000039"><span class="section-number-5">1.2.1.1.</span> 生成 bin</h5>
+<div class="outline-text-5" id="text-1-2-1-1">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-comment-delimiter">// </span><span class="org-comment">2023-03-29 17:59</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+
+<span class="org-type">int</span> <span class="org-function-name">foo</span><span class="org-parenthesis">(){}</span>;
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{}</span>
+</pre>
+</div>
+
+<pre class="example" id="org0000036">
+$&gt; gcc tset.c -O0 -g3
+$&gt; objcopy -O binary a.out a.bin
+$&gt; du -b
+15608   a.bin
+</pre>
+
+<p>
+objcopy 只会复制 elf 中特定的 section: `SEC_HAS_CONTENTS | SEC_READONLY |
+SEC_DATA`, 并且不会复制 debug 相关的 section
+</p>
+
+<pre class="example" id="org0000037">
+$&gt; objdump -h ./a.out
+
+./a.out:     file format elf64-x86-64
+
+Sections:
+Idx Name          Size      VMA               LMA               File off  Algn
+  0 .interp       0000001c  0000000000000318  0000000000000318  00000318  2**0
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  1 .note.gnu.property 00000020  0000000000000338  0000000000000338  00000338  2**3
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  2 .note.gnu.build-id 00000024  0000000000000358  0000000000000358  00000358  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  3 .note.ABI-tag 00000020  000000000000037c  000000000000037c  0000037c  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  4 .gnu.hash     00000024  00000000000003a0  00000000000003a0  000003a0  2**3
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  ...
+ 19 .fini_array   00000008  0000000000003df8  0000000000003df8  00002df8  2**3
+                  CONTENTS, ALLOC, LOAD, DATA
+ 20 .dynamic      000001c0  0000000000003e00  0000000000003e00  00002e00  2**3
+                  CONTENTS, ALLOC, LOAD, DATA
+ 21 .got          00000040  0000000000003fc0  0000000000003fc0  00002fc0  2**3
+                  CONTENTS, ALLOC, LOAD, DATA
+ 22 .data         00000010  0000000000004000  0000000000004000  00003000  2**3
+                  CONTENTS, ALLOC, LOAD, DATA
+ 23 .bss          00000008  0000000000004010  0000000000004010  00003010  2**0
+                  ALLOC
+ 24 .comment      0000002b  0000000000000000  0000000000000000  00003010  2**0
+                  CONTENTS, READONLY
+ 25 .debug_aranges 00000030  0000000000000000  0000000000000000  0000303b  2**0
+                  CONTENTS, READONLY, DEBUGGING, OCTETS
+ 26 .debug_info   0000034c  0000000000000000  0000000000000000  0000306b  2**0
+                  CONTENTS, READONLY, DEBUGGING, OCTETS
+ ...
+</pre>
+
+<p>
+section 0~22 会被复制, bss 和 debug 相关的 section 不会被复制, 总大小为
+<code>0x4000+0x10-0x318=15608</code>
+</p>
+
+<p>
+注意这个大小和统计 PT_LOAD segment 的大小并不相同:
+</p>
+
+<pre class="example" id="org0000038">
+$&gt; readelf -a a.out
+...
+Program Headers:
+  Type           Offset             VirtAddr           PhysAddr
+                 FileSiz            MemSiz              Flags  Align
+  PHDR           0x0000000000000040 0x0000000000000040 0x0000000000000040
+                 0x00000000000002d8 0x00000000000002d8  R      0x8
+  INTERP         0x0000000000000318 0x0000000000000318 0x0000000000000318
+                 0x000000000000001c 0x000000000000001c  R      0x1
+      [Requesting program interpreter: /lib64/ld-linux-x86-64.so.2]
+  LOAD           0x0000000000000000 0x0000000000000000 0x0000000000000000
+                 0x00000000000005c8 0x00000000000005c8  R      0x1000
+  LOAD           0x0000000000001000 0x0000000000001000 0x0000000000001000
+                 0x00000000000001d5 0x00000000000001d5  R E    0x1000
+  LOAD           0x0000000000002000 0x0000000000002000 0x0000000000002000
+                 0x0000000000000158 0x0000000000000158  R      0x1000
+  LOAD           0x0000000000002df0 0x0000000000003df0 0x0000000000003df0
+                 0x0000000000000220 0x0000000000000228  RW     0x1000
+  DYNAMIC        0x0000000000002e00 0x0000000000003e00 0x0000000000003e00
+                 0x00000000000001c0 0x00000000000001c0  RW     0x8
+  NOTE           0x0000000000000338 0x0000000000000338 0x0000000000000338
+                 0x0000000000000020 0x0000000000000020  R      0x8
+  NOTE           0x0000000000000358 0x0000000000000358 0x0000000000000358
+                 0x0000000000000044 0x0000000000000044  R      0x4
+  GNU_PROPERTY   0x0000000000000338 0x0000000000000338 0x0000000000000338
+                 0x0000000000000020 0x0000000000000020  R      0x8
+  GNU_EH_FRAME   0x0000000000002004 0x0000000000002004 0x0000000000002004
+                 0x0000000000000044 0x0000000000000044  R      0x4
+  GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000
+                 0x0000000000000000 0x0000000000000000  RW     0x10
+  GNU_RELRO      0x0000000000002df0 0x0000000000003df0 0x0000000000003df0
+                 0x0000000000000210 0x0000000000000210  R      0x1
+
+ Section to Segment mapping:
+  Segment Sections...
+   00
+   01     .interp
+   02     .interp .note.gnu.property .note.gnu.build-id .note.ABI-tag .gnu.hash .dynsym .dynstr .gnu.version .gnu.version_r .rela.dyn
+   03     .init .plt .plt.got .text .fini
+   04     .rodata .eh_frame_hdr .eh_frame
+   05     .init_array .fini_array .dynamic .got .data .bss
+   06     .dynamic
+   07     .note.gnu.property
+   08     .note.gnu.build-id .note.ABI-tag
+   09     .note.gnu.property
+   10     .eh_frame_hdr
+   11
+   12     .init_array .fini_array .dynamic .got
+...
+</pre>
+
+<p>
+第一个 PT_LOAD 从 0 开始 (而不是 0x318, .interp), 因为它包含了 elf 文件开头的信息, 例如 `ELF` magic number 和 elf 的 program header, 参考 <a href="elf.html#ID-6bf0cc7e-0532-4831-9345-8f79c47dc5e3">ELF</a>
+</p>
+
+<p>
+另外, 第四个 PT_LOAD 包含了 bss section, 这个在 objcopy 的 bin 中也是没有的.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000003f" class="outline-4">
+<h4 id="org000003f"><span class="section-number-4">1.2.2.</span> readelf</h4>
+</div>
+
+<div id="outline-container-org0000042" class="outline-4">
+<h4 id="org0000042"><span class="section-number-4">1.2.3.</span> objdump</h4>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org000004b" class="outline-2 references">
+<h2 id="org000004b">Backlinks</h2>
+<div class="outline-text-2" id="text-org000004b">
+<p>
+<a href="retargeting_gcc_to_riscv.html#ID-303d0f7f-03c2-4f31-ad7e-064162e3af10">Retargeting GCC To RISC-V</a>
+(<i>Retargeting GCC To RISC-V &gt; binutils</i>):   <a href="binutils.html#ID-28890ac4-f012-4934-afb2-1db09e6fc514">binutils</a>
+</p>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-03-29 Wed 19:17<br />
+Last updated: 2023-09-06 Wed 12:57</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
