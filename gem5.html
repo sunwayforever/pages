@@ -30,7 +30,7 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents" role="doc-toc">
 <ul>
-<li><a href="#org000001b">1. gem5</a>
+<li><a href="#org000002c">1. gem5</a>
 <ul>
 <li><a href="#org0000001">1.1. cpu model</a></li>
 <li><a href="#org0000004">1.2. O3PipeView</a></li>
@@ -39,15 +39,26 @@
 <li><a href="#org0000012">1.3.1. contention</a></li>
 </ul>
 </li>
-<li><a href="#org0000018">1.4. simpoint</a></li>
+<li><a href="#org000001e">1.4. checkpoint</a>
+<ul>
+<li><a href="#org0000018">1.4.1. 创建 checkpoint</a></li>
+<li><a href="#org000001b">1.4.2. 使用 checkpoint</a></li>
+</ul>
+</li>
+<li><a href="#org0000029">1.5. simpoint</a>
+<ul>
+<li><a href="#org0000023">1.5.1. 产生 simpoint 数据</a></li>
+<li><a href="#org0000026">1.5.2. 使用 simpoint 产生 checkpoint</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-org000001b" class="outline-2">
-<h2 id="org000001b"><span class="section-number-2">1.</span> gem5</h2>
+<div id="outline-container-org000002c" class="outline-2">
+<h2 id="org000002c"><span class="section-number-2">1.</span> gem5</h2>
 <div class="outline-text-2" id="text-1">
 </div>
 <div id="outline-container-org0000001" class="outline-3">
@@ -138,7 +149,7 @@ o3
 
 <pre class="example" id="org0000007">
 $&gt; gh repo clone sunwayforever/gem5
-$&gt; cd &lt;path-to-gem5&gt;/configs/toy
+$&gt; cd &lt;path_to_gem5&gt;/configs/toy
 $&gt; make gem5
 $&gt; make hello_cache
 </pre>
@@ -257,9 +268,51 @@ membus 通过 `recvTimingResq` 时, mem_side 返回 false, mem_side 需要发送
 </div>
 </div>
 
-<div id="outline-container-org0000018" class="outline-3">
-<h3 id="org0000018"><span class="section-number-3">1.4.</span> simpoint</h3>
+<div id="outline-container-org000001e" class="outline-3">
+<h3 id="org000001e"><span class="section-number-3">1.4.</span> checkpoint</h3>
 <div class="outline-text-3" id="text-1-4">
+<p>
+gem5 可以在执行过程中产生 checkpoint, 后续可以从 checkout 恢复执行. checkpoint
+会包含系统状态(例如寄存器值) 和内存映像.
+</p>
+
+<p>
+一个典型的使用 checkpoint 的场景是: gem5 使用较快的 atomic cpu 启动 linux, 然后保存 checkpoint. 后续可以直接使用 checkpoint 启动 gem5, 避免漫长的 linux 启动过程.
+</p>
+
+<p>
+还有一个场景通过采样的方式加快 benchmark 的执行: 先完整执行一次 benchmark, 但每隔一段 tick N 保存一次 checkpoint. 后续再次执行 benchmark 时并行的从这些
+benchmark 启动, 但可以只执行 N/2 个 tick, 达到均匀采样 (uniform sampling) 执行的效果. 后面提到的simpoint 也需要配置 checkpoint 工作
+</p>
+</div>
+
+<div id="outline-container-org0000018" class="outline-4">
+<h4 id="org0000018"><span class="section-number-4">1.4.1.</span> 创建 checkpoint</h4>
+<div class="outline-text-4" id="text-1-4-1">
+<div class="org-src-container">
+<pre class="src src-python">m5.instantiate<span class="org-parenthesis">()</span>
+<span class="org-variable-name">exit_event</span> <span class="org-operator">=</span> m5.simulate<span class="org-parenthesis">(</span>10000000<span class="org-parenthesis">)</span>
+m5.checkpoint<span class="org-parenthesis">(</span><span class="org-string">"/tmp/1.ckpt"</span><span class="org-parenthesis">)</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000001b" class="outline-4">
+<h4 id="org000001b"><span class="section-number-4">1.4.2.</span> 使用 checkpoint</h4>
+<div class="outline-text-4" id="text-1-4-2">
+<div class="org-src-container">
+<pre class="src src-python">m5.instantiate<span class="org-parenthesis">(</span><span class="org-string">"/tmp/1.ckpt"</span><span class="org-parenthesis">)</span>
+<span class="org-variable-name">exit_event</span> <span class="org-operator">=</span> m5.simulate<span class="org-parenthesis">()</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000029" class="outline-3">
+<h3 id="org0000029"><span class="section-number-3">1.5.</span> simpoint</h3>
+<div class="outline-text-3" id="text-1-5">
 <p>
 <a href="https://cseweb.ucsd.edu/~calder/papers/ASPLOS-02-SimPoint.pdf">Automatically Characterizing Large Scale Program Behavior</a>
 </p>
@@ -270,6 +323,10 @@ membus 通过 `recvTimingResq` 时, mem_side 返回 false, mem_side 需要发送
 
 <p>
 <a href="https://xiangshan-doc.readthedocs.io/zh_CN/latest/tools/simpoint/">https://xiangshan-doc.readthedocs.io/zh_CN/latest/tools/simpoint/</a>
+</p>
+
+<p>
+simpoint 不是均匀采样: 每一段 tick 根据其执行的代码 (根据 BBV 来判断) 被赋予不同的 cluster, 根据每个 cluster 的大小做为权重来采样执行.
 </p>
 
 <p>
@@ -293,6 +350,89 @@ BBV_j 相似意味着 T_i 和 T_j 在执行类似的代码</li>
 <li>后续需要重复模拟时, 只需要加载 ckpt_i 后执行 C_i, 再乘上 C_i 的权重即可估计模拟的结果</li>
 </ol>
 </div>
+
+<div id="outline-container-org0000023" class="outline-4">
+<h4 id="org0000023"><span class="section-number-4">1.5.1.</span> 产生 simpoint 数据</h4>
+<div class="outline-text-4" id="text-1-5-1">
+<div class="org-src-container">
+<pre class="src src-python"><span class="org-comment-delimiter"># </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: gem5 &#21482;&#26377; atomic cpu &#25903;&#25345; simport</span>
+system.<span class="org-variable-name">cpu</span> <span class="org-operator">=</span> RiscvAtomicSimpleCPU<span class="org-parenthesis">()</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: 20 &#26159;&#25351; sample &#38388;&#38548;&#26159;&#27599; 20 &#26465; inst</span>
+system.cpu.addSimPointProbe<span class="org-parenthesis">(</span>20<span class="org-parenthesis">)</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: memory &#20063;&#24517;&#39035;&#26159; atomic &#27169;&#24335; (&#32780;&#19981;&#26159; timing &#27169;&#24335;)</span>
+system.<span class="org-variable-name">mem_mode</span> <span class="org-operator">=</span> <span class="org-string">"atomic"</span>
+</pre>
+</div>
+
+<p>
+通过 `make simple_simport` 产生 `m5out/simpoint.bb.gz`, 其内容为:
+</p>
+
+<pre class="example" id="org0000021">
+# NOTE: 格式为 T: [BB_id:count]*
+T:1:1 :2:3 :3:12 :4:15
+T:5:12
+T:6:1 :7:4 :8:63
+T:9:4
+T:10:3
+T:11:2
+...
+</pre>
+
+<p>
+使用 <a href="https://cseweb.ucsd.edu/~calder/simpoint/simpoint-3-0.htm">SimPoint3.2</a> 产生 sim points 和 weights (SimPoint 3.2 年代久远, 需要修改一些编译错误)
+</p>
+
+<pre class="example" id="org0000022">
+$&gt; &lt;path_to_simpoint&gt;/bin/simpoint -maxK 5 -loadFVFile m5out/simpoint.bb.gz -inputVectorsGzipped \
+   -saveSimpoints m5out/simpoints.txt -saveSimpointWeights m5out/weights.txt
+
+$&gt; cat m5out/simpoints.txt
+43 0
+10 1
+173 2
+87 3
+187 4
+
+$&gt; cat m5out/weights.txt
+0.0803859 0
+0.472669 1
+0.0321543 2
+0.144695 3
+0.270096 4
+</pre>
+
+<p>
+`43 0` 是指第 0 个 cluster 的聚类中心是第 43 次 sample, 即第 43x20 条指令处, 权重为 0.0803859
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000026" class="outline-4">
+<h4 id="org0000026"><span class="section-number-4">1.5.2.</span> 使用 simpoint 产生 checkpoint</h4>
+<div class="outline-text-4" id="text-1-5-2">
+<p>
+最后使用 simpoints.txt 让 gem5 产生 checkpoint:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span class="org-comment-delimiter"># </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: x20 &#26159;&#22240;&#20026; sample &#38388;&#38548;&#26159; 20 &#26465;&#25351;&#20196;</span>
+<span class="org-variable-name">start_insts</span> <span class="org-operator">=</span> [x <span class="org-operator">*</span> 20 <span class="org-keyword">for</span> x <span class="org-keyword">in</span> [10<span class="org-parenthesis">,</span> 43<span class="org-parenthesis">,</span> 87<span class="org-parenthesis">,</span> 173<span class="org-parenthesis">,</span> 187]]
+system.cpu.<span class="org-variable-name">simpoint_start_insts</span> <span class="org-operator">=</span> start_insts
+<span class="org-comment-delimiter"># </span><span class="org-comment">...</span>
+<span class="org-keyword">for</span> i<span class="org-parenthesis">,</span> _ <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span><span class="org-parenthesis">(</span>start_insts<span class="org-parenthesis">)</span>:
+    <span class="org-comment-delimiter"># </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: &#26080;&#27861;&#30452;&#25509;&#22312; m5.simulate &#25351;&#23450; tick &#26469; exit , &#22240;&#20026;&#19981;&#30693;&#36947; inst &#23545;&#24212;&#30340;</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">tick, &#21482;&#33021;&#20381;&#36182;&#35774;&#32622; system.cpu.simpoint_start_insts &#35753;&#23427;&#22312; start inst &#22788;</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">exit</span>
+    <span class="org-variable-name">exit_event</span> <span class="org-operator">=</span> m5.simulate<span class="org-parenthesis">()</span>
+
+    <span class="org-keyword">if</span> exit_event.getCause<span class="org-parenthesis">()</span> <span class="org-operator">==</span> <span class="org-string">"simpoint starting point found"</span>:
+        <span class="org-variable-name">ckpt_dir</span> <span class="org-operator">=</span> os.path.join<span class="org-parenthesis">(</span>m5out<span class="org-parenthesis">,</span> f<span class="org-string">"ckpt.</span>{i}<span class="org-string">"</span><span class="org-parenthesis">)</span>
+        m5.checkpoint<span class="org-parenthesis">(</span>ckpt_dir<span class="org-parenthesis">)</span>
+</pre>
+</div>
+</div>
+</div>
 </div>
 </div>
 </div>
@@ -300,7 +440,7 @@ BBV_j 相似意味着 T_i 和 T_j 在执行类似的代码</li>
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-09-06 Wed 16:48<br />
-Last updated: 2023-09-07 Thu 18:02</p>
+Last updated: 2023-09-08 Fri 15:10</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
