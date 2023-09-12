@@ -30,7 +30,7 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents" role="doc-toc">
 <ul>
-<li><a href="#org000002f">1. gem5</a>
+<li><a href="#org0000035">1. gem5</a>
 <ul>
 <li><a href="#org0000001">1.1. cpu model</a></li>
 <li><a href="#org0000004">1.2. O3PipeView</a></li>
@@ -52,14 +52,20 @@
 <li><a href="#org000002a">1.5.3. 使用 checkpoint</a></li>
 </ul>
 </li>
+<li><a href="#org0000036">1.6. 其它</a>
+<ul>
+<li><a href="#org000002f">1.6.1. tick/cycle</a></li>
+<li><a href="#org0000033">1.6.2. insn decoder</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-org000002f" class="outline-2">
-<h2 id="org000002f"><span class="section-number-2">1.</span> gem5</h2>
+<div id="outline-container-org0000035" class="outline-2">
+<h2 id="org0000035"><span class="section-number-2">1.</span> gem5</h2>
 <div class="outline-text-2" id="text-1">
 </div>
 <div id="outline-container-org0000001" class="outline-3">
@@ -116,11 +122,14 @@ o3
 </p>
 
 <pre class="example" id="org0000000">
-
-+-------+     &gt;20     +-------+ &gt;3 +--------+  &gt;10  +---------+ &gt;10  +--------+
-| rtl   | ------------| atomic|----| o3     |-------+  fpga   |------|  qemu  |
-+-------+             +-------+    +--------+       +---------+      +--------+
++------+    -&gt;20    +--------+ -&gt;3 +--------+  -&gt;10 +---------+ -&gt;10 +--------+
+|  rtl |------------| atomic |-----|   o3   |-------+  fpga   |------|  qemu  |
++------+            +--------+     +--------+       +---------+      +--------+
 </pre>
+
+<p>
+其中 `A -&gt;n B` 指 B 比 A 快 n 倍
+</p>
 </div>
 </div>
 
@@ -301,7 +310,8 @@ gem5 可以在执行过程中产生 checkpoint, 后续可以从 checkout 恢复�
 
 <p>
 还有一个场景通过采样的方式加快 benchmark 的执行: 先完整执行一次 benchmark, 但每隔一段 tick N 保存一次 checkpoint. 后续再次执行 benchmark 时并行的从这些
-benchmark 启动, 但可以只执行 N/2 个 tick, 达到均匀采样 (uniform sampling) 执行的效果. 后面提到的simpoint 也需要配置 checkpoint 工作
+benchmark 启动, 但可以只执行 N/2 个 tick (或者每隔一段 tick N 执行一次?), 达到均匀采样 (uniform sampling) 执行的效果. 后面提到的simpoint 也需要配置 checkpoint
+工作
 </p>
 </div>
 
@@ -466,13 +476,118 @@ m5.instantiate<span class="org-parenthesis">(</span><span class="org-string">"m5
 </div>
 </div>
 </div>
+
+<div id="outline-container-org0000036" class="outline-3">
+<h3 id="org0000036"><span class="section-number-3">1.6.</span> 其它</h3>
+<div class="outline-text-3" id="text-1-6">
+</div>
+<div id="outline-container-org000002f" class="outline-4">
+<h4 id="org000002f"><span class="section-number-4">1.6.1.</span> tick/cycle</h4>
+<div class="outline-text-4" id="text-1-6-1">
+<p>
+gem5 默认的 simFreq 是 1x10^12 tick/s, 即每个 tick 相当于 1ps 模拟时间 (而非实现时间). 所以 system.clk_domain.clock=`1GHz` 时每个 cycle 等于 1000 个 tick,
+system.clk_domain.clock=`2GHz` 时每个 cycle 等于 500 个 tick. 以上信息通过
+m5out/stats.txt 可以看到
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000033" class="outline-4">
+<h4 id="org0000033"><span class="section-number-4">1.6.2.</span> insn decoder</h4>
+<div class="outline-text-4" id="text-1-6-2">
+<p>
+gem5 使用自定义的 DSL 来生成指令的 decoder 代码, 例如 decoder.isa 中关于 addi 的定义:
+</p>
+
+<pre class="example" id="org0000032">
+...
+decode OPCODE {
+0x03: decode FUNCT3 {
+   format IOp {
+       0x0: addi({{
+           Rd_sd = Rs1_sd + imm;
+       }});
+       0x2: slti({{
+           Rd = (Rs1_sd &lt; imm) ? 1 : 0;
+       }});
+       ...
+   }
+}
+...
+</pre>
+
+<p>
+表示 addi 的 opcode 为 0x03, FUNCT3 为 0x0
+</p>
+
+<p>
+这个 isa 编译后会生成几个相关的 inc 文件给 c 代码使用:
+</p>
+
+<p>
+decode-method.cc.inc
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">case</span> 0x0:
+    <span class="org-comment-delimiter">// </span><span class="org-comment">IOp::addi(['\n                    Rd_sd = Rs1_sd + imm;\n '],{})</span>
+    <span class="org-keyword">return</span> new Addi<span class="org-parenthesis">(</span>machInst<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">break</span>;
+</pre>
+</div>
+
+<p>
+exec-ns.cc.inc
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-comment-delimiter">// </span><span class="org-comment">IOp::addi(['\n                    Rd_sd = Rs1_sd + imm;\n                '],</span>
+<span class="org-comment-delimiter">// </span><span class="org-comment">{})</span>
+Fault <span class="org-type">Addi</span>::execute<span class="org-parenthesis">(</span><span class="org-type">ExecContext</span> *<span class="org-variable-name">xc</span><span class="org-parenthesis">,</span> trace::InstRecord *traceData<span class="org-parenthesis">)</span> <span class="org-keyword">const</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int64_t</span> <span class="org-variable-name">Rd</span> = 0;
+    <span class="org-type">int64_t</span> <span class="org-variable-name">Rs1</span> = 0;
+
+    Rs1 = xc-&gt;getRegOperand<span class="org-parenthesis">(</span>this<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">)</span>;
+
+    Rd = Rs1 + imm;
+
+    <span class="org-parenthesis">{</span>
+        <span class="org-type">RegVal</span> <span class="org-variable-name">final_val</span> = Rd;
+        xc-&gt;setRegOperand<span class="org-parenthesis">(</span>this<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">,</span> final_val<span class="org-parenthesis">)</span>;
+        <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>traceData<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+            traceData-&gt;setData<span class="org-parenthesis">(</span>intRegClass<span class="org-parenthesis">,</span> final_val<span class="org-parenthesis">)</span>;
+        <span class="org-parenthesis">}</span>
+    <span class="org-parenthesis">}</span>;
+    <span class="org-keyword">return</span> NoFault;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<p>
+另外, isa 中还包含了 functional unit 信息, 例如 IntDivOp, 在模拟时 minor 和o3cpu
+会选择 fu 并插入对应的 latency (opLat)
+</p>
+</div>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org0000038" class="outline-2 references">
+<h2 id="org0000038">Backlinks</h2>
+<div class="outline-text-2" id="text-org0000038">
+<p>
+<a href="toolchain/binutils.html#ID-e78f85b3-7a6b-4ce8-aecc-665873d8b6ad">opcodes</a>
+(<i>binutils &gt; 实现 &gt; opcodes &gt; riscv_opcodes</i>):  as/objdump/gdb 都使用了 opcodes, <a href="toolchain/qemu_tcg.html#ID-fedb153b-c9a7-4ad1-a66e-e08b91173dd3">qemu</a>/<a href="toolchain/spike.html#ID-3985c93c-c7ba-4aa5-abbc-565d8f32155c">spike</a>/<a href="gem5.html#ID-1cac4f31-b11d-4648-941c-5e8f4ec82725">gem5</a> 则定义了它们自己的一套类似的机制
+</p>
+</div>
 </div>
 </div>
 <div id="postamble" class="status">
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-09-06 Wed 16:48<br />
-Last updated: 2023-09-08 Fri 18:12</p>
+Last updated: 2023-09-12 Tue 18:02</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>

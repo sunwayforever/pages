@@ -36,7 +36,7 @@
 <ul>
 <li><a href="#ID-e78f85b3-7a6b-4ce8-aecc-665873d8b6ad">1.1.1. opcodes</a></li>
 <li><a href="#org000002a">1.1.2. as</a></li>
-<li><a href="#org0000042">1.1.3. objdump</a></li>
+<li><a href="#org0000043">1.1.3. objdump</a></li>
 <li><a href="#org0000030">1.1.4. bfd</a></li>
 </ul>
 </li>
@@ -44,7 +44,7 @@
 <ul>
 <li><a href="#org000003c">1.2.1. objcopy</a></li>
 <li><a href="#org000003f">1.2.2. readelf</a></li>
-<li><a href="#org0000043">1.2.3. objdump</a></li>
+<li><a href="#org0000042">1.2.3. objdump</a></li>
 </ul>
 </li>
 </ul>
@@ -88,8 +88,12 @@ as/objdump/gdb 都需要用到:
 <h5 id="org0000009"><span class="section-number-5">1.1.1.1.</span> riscv_opcodes</h5>
 <div class="outline-text-5" id="text-1-1-1-1">
 <p>
-在 as/objdump 中添加新指令时, 只修改 <code>riscv_builtin_opcodes</code> 就可以完成, 因为
-as/objdump 关于 encode/decode 的操作都是针对该数据结构完成的.
+在 as/objdump 中添加新指令时, 大部分工作只需要修改 <code>riscv_builtin_opcodes</code> (除非添加了新的指令格式, 需要实现对应的 encode/decode 方法), 因为 as/objdump 关于
+encode/decode 的操作都是针对该数据结构完成的.
+</p>
+
+<p>
+as/objdump/gdb 都使用了 opcodes, <a href="qemu_tcg.html#ID-fedb153b-c9a7-4ad1-a66e-e08b91173dd3">qemu</a>/<a href="spike.html#ID-3985c93c-c7ba-4aa5-abbc-565d8f32155c">spike</a>/<a href="../gem5.html#ID-1cac4f31-b11d-4648-941c-5e8f4ec82725">gem5</a> 则定义了它们自己的一套类似的机制
 </p>
 
 <p>
@@ -178,12 +182,12 @@ mips_hash), 根据 `d,s,j` 和 OP_MASK 生成汇编指令的参数</li>
 <code>{"li", "I", "d,j", MATCH_ADDI, MASK_ADDI | MASK_RS1, match_opcode, INSN_ALIAS | WR_xd}</code>
 </p>
 
-<ul class="org-ul">
-<li>INSN_ALIAS 表示 li 是一个 alias. 实际上后面的 `MATCH_ADDI` 会让它匹配到 <code>addi
-  rd, zero, imm</code>, 所以 objdump 时针对这个机器指令会输出 <code>li rd, imm</code> 而不是
-<code>addi rd, zero, imm</code>, 因为li 指令在列表中比 addi 更靠前. 通过 objdump
-<code>-Mno-aliases</code> 可以忽略掉所有带 INSN_ALIAS 标记的模板</li>
-</ul>
+<p>
+INSN_ALIAS 表示 li 是一个 alias. 实际上后面的 <code>MATCH_ADDI, MASK_ADDI | MASK_RS1</code>
+会让它匹配到 <code>addi rd, zero, imm</code>, 所以 objdump 时针对这个指令会输出 <code>li rd,
+imm</code> 而不是 <code>addi rd, zero, imm</code>, 因为 li 指令在列表中比 addi 更靠前. 通过
+objdump <code>-Mno-aliases</code> 可以忽略掉所有带 INSN_ALIAS 标记的模板
+</p>
 </div>
 </div>
 
@@ -195,9 +199,15 @@ mips_hash), 根据 `d,s,j` 和 OP_MASK 生成汇编指令的参数</li>
 </p>
 
 <p>
-这里对应的 li 是用来加载 32 位立即数的伪指令, 通过 INSN_MACRO 标识. 由于它会产生两条指令 (lui, addi), 所以无法在 disassemble 时根据一条机器指令匹配到这个模板,
-所以用 match_never 跳过它. 虽然对 disassemble 没用, 但 assember 会使用它. 所以
-objdump 无法还原某些伪指令
+INSN_ALIAS 和 INSN_MACRO 共同构成了 as 支持的伪指令.
+</p>
+
+<p>
+这里对应的 li 是用来加载 32 位立即数的伪指令, 通过 INSN_MACRO 标识. 由于它可能会产生两条指令 (lui, addi), 所以无法在反汇编时根据一条机器指令匹配到这个模板, 所以用 match_never 跳过它, 所以 objdump 无法还原某些伪指令.
+</p>
+
+<p>
+虽然 macro 对反汇编没用, 但汇编时还是会使用它.
 </p>
 </div>
 </div>
@@ -419,9 +429,9 @@ objdump 会使用 opcodes 中提供的 print_insn_riscv 等函数
 </div>
 
 
-<div id="outline-container-org000004b" class="outline-5 references">
-<h5 id="org000004b">Backlinks</h5>
-<div class="outline-text-5" id="text-org000004b">
+<div id="outline-container-org000004c" class="outline-5 references">
+<h5 id="org000004c">Backlinks</h5>
+<div class="outline-text-5" id="text-org000004c">
 <p>
 <a href="gdb_target_arch.html#ID-853d6271-a0b6-4ae0-bba1-667a2a3d8505">GDB Target Arch</a>
 (<i>GDB Target Arch &gt; porting new arch &gt; porting</i>):     gdb 的 disass 依赖 <a href="#ID-e78f85b3-7a6b-4ce8-aecc-665873d8b6ad">opcodes</a>. core, exec 数据的读取依赖 <a href="bfd.html#ID-7569396e-eef7-485b-a1eb-8a545dec44ba">bfd</a>
@@ -530,7 +540,7 @@ objdump 会使用 opcodes 中提供的 print_insn_riscv 等函数
                 <span class="org-keyword">case</span> <span class="org-string">'s'</span>: <span class="org-comment-delimiter">/* </span><span class="org-comment">source register</span><span class="org-comment-delimiter"> */</span>
                 <span class="org-keyword">case</span> <span class="org-string">'t'</span>: <span class="org-comment-delimiter">/* </span><span class="org-comment">target register</span><span class="org-comment-delimiter"> */</span>
                     <span class="org-comment-delimiter">/* </span><span class="org-comment">s &#26159;&#27719;&#32534;&#20013;&#30340;&#23545;&#24212;&#20110;&#27169;&#26495;&#21442;&#25968;&#20301;&#32622;&#30340;&#23492;&#23384;&#22120;&#30340;&#21517;&#23383;, &#20363;&#22914; s0, x0</span>
-<span class="org-comment">                     * &#31561;, reg_lookup &#26159;&#25171;&#21040; s0 &#23545;&#24212;&#30340; regno: 2</span><span class="org-comment-delimiter"> */</span>
+<span class="org-comment">                     * &#31561;, reg_lookup &#26159;&#25214;&#21040; s0 &#23545;&#24212;&#30340; regno: 2</span><span class="org-comment-delimiter"> */</span>
                     ok = reg_lookup<span class="org-parenthesis">(</span>&amp;s<span class="org-parenthesis">,</span> RTYPE_NUM | RTYPE_GP<span class="org-parenthesis">,</span> &amp;regno<span class="org-parenthesis">)</span>;
                     <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>ok<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
                         c = *args;
@@ -541,8 +551,8 @@ objdump 会使用 opcodes 中提供的 print_insn_riscv 等函数
 <span class="org-comment">                         * instruction.</span><span class="org-comment-delimiter">  */</span>
                         <span class="org-keyword">switch</span> <span class="org-parenthesis">(</span>c<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
                             <span class="org-keyword">case</span> <span class="org-string">'s'</span>:
-                                <span class="org-comment-delimiter">/* </span><span class="org-comment">INSERT_OPERAND &#20808;&#26681;&#25454; RS1 &#30340; shift &#21644; mask &#25226;</span>
-<span class="org-comment">                                 * regno &#20889;&#21040; ip &#30340;&#29305;&#23450;&#20301;&#32622;</span><span class="org-comment-delimiter"> */</span>
+                                <span class="org-comment-delimiter">/* </span><span class="org-comment">INSERT_OPERAND &#20808;&#26681;&#25454; OP_MASK_RS1 &#21644;</span>
+<span class="org-comment">                                 * OP_SH_RS1 &#25226;regno &#20889;&#21040; ip &#30340;&#29305;&#23450;&#20301;&#32622;</span><span class="org-comment-delimiter"> */</span>
                                 INSERT_OPERAND<span class="org-parenthesis">(</span>RS1<span class="org-parenthesis">,</span> *ip<span class="org-parenthesis">,</span> regno<span class="org-parenthesis">)</span>;
                                 <span class="org-keyword">break</span>;
                             <span class="org-keyword">case</span> <span class="org-string">'d'</span>:
@@ -677,7 +687,7 @@ insn 不是 macro, 则 imm_expr, offset_expr 会通过 append_insn 直接编码�
     <span class="org-parenthesis">}</span> <span class="org-keyword">else</span> <span class="org-parenthesis">{</span>
         <span class="org-comment-delimiter">/* </span><span class="org-comment">32 bit</span><span class="org-comment-delimiter"> */</span>
         <span class="org-type">int</span> <span class="org-variable-name">hi_reg</span> = ZERO;
-
+        <span class="org-comment-delimiter">/* </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: &#36825;&#37324;&#30340;&#22788;&#29702;&#38656;&#35201;&#21442;&#32771; RISCV_CONST_HIGH_PART</span><span class="org-comment-delimiter"> */</span>
         <span class="org-type">int32_t</span> <span class="org-variable-name">hi</span> = ep-&gt;X_add_number &amp; <span class="org-parenthesis">(</span>RISCV_IMM_REACH - 1<span class="org-parenthesis">)</span>;
         hi = hi &lt;&lt; <span class="org-parenthesis">(</span>32 - RISCV_IMM_BITS<span class="org-parenthesis">)</span> &gt;&gt; <span class="org-parenthesis">(</span>32 - RISCV_IMM_BITS<span class="org-parenthesis">)</span>;
         hi = <span class="org-parenthesis">(</span><span class="org-type">int32_t</span><span class="org-parenthesis">)</span>ep-&gt;X_add_number - hi;
@@ -730,8 +740,8 @@ append_insn 主要的工作是根据 reloc_type 决定 imm 或 offset 如何处�
 </div>
 </div>
 
-<div id="outline-container-org0000042" class="outline-4">
-<h4 id="org0000042"><span class="section-number-4">1.1.3.</span> objdump</h4>
+<div id="outline-container-org0000043" class="outline-4">
+<h4 id="org0000043"><span class="section-number-4">1.1.3.</span> objdump</h4>
 <div class="outline-text-4" id="text-1-1-3">
 <p>
 objdump 通过 opcodes 的 disassembler 接口完成 dump 的工作, 参考 opcodes 的
@@ -896,16 +906,16 @@ Program Headers:
 <h4 id="org000003f"><span class="section-number-4">1.2.2.</span> readelf</h4>
 </div>
 
-<div id="outline-container-org0000043" class="outline-4">
-<h4 id="org0000043"><span class="section-number-4">1.2.3.</span> objdump</h4>
+<div id="outline-container-org0000042" class="outline-4">
+<h4 id="org0000042"><span class="section-number-4">1.2.3.</span> objdump</h4>
 </div>
 </div>
 </div>
 
 
-<div id="outline-container-org000004c" class="outline-2 references">
-<h2 id="org000004c">Backlinks</h2>
-<div class="outline-text-2" id="text-org000004c">
+<div id="outline-container-org000004b" class="outline-2 references">
+<h2 id="org000004b">Backlinks</h2>
+<div class="outline-text-2" id="text-org000004b">
 <p>
 <a href="retargeting_gcc_to_riscv.html#ID-303d0f7f-03c2-4f31-ad7e-064162e3af10">Retargeting GCC To RISC-V</a>
 (<i>Retargeting GCC To RISC-V &gt; binutils</i>):   <a href="binutils.html#ID-28890ac4-f012-4934-afb2-1db09e6fc514">binutils</a>
@@ -917,7 +927,7 @@ Program Headers:
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-03-29 Wed 19:17<br />
-Last updated: 2023-09-06 Wed 14:02</p>
+Last updated: 2023-09-12 Tue 17:27</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
