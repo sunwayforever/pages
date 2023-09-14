@@ -1,0 +1,527 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>Inline ASM</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+<script>
+  window.MathJax = {
+    tex: {
+      ams: {
+        multlineWidth: '85%'
+      },
+      tags: 'ams',
+      tagSide: 'right',
+      tagIndent: '.8em'
+    },
+    chtml: {
+      scale: 1.0,
+      displayAlign: 'center',
+      displayIndent: '0em'
+    },
+    svg: {
+      scale: 1.0,
+      displayAlign: 'center',
+      displayIndent: '0em'
+    },
+    output: {
+      font: 'mathjax-modern',
+      displayOverflow: 'overflow'
+    }
+  };
+</script>
+
+<script
+  id="MathJax-script"
+  async
+  src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+</script>
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">Inline ASM</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000012">1. Inline ASM</a>
+<ul>
+<li><a href="#org0000002">1.1. 没有指明输入变量</a></li>
+<li><a href="#org0000006">1.2. 没有指明输出变量</a></li>
+<li><a href="#org000000c">1.3. 没有指明 clobber memory</a></li>
+<li><a href="#org000000f">1.4. volatile</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000012" class="outline-2">
+<h2 id="org0000012"><span class="section-number-2">1.</span> Inline ASM</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org0000002" class="outline-3">
+<h3 id="org0000002"><span class="section-number-3">1.1.</span> 没有指明输入变量</h3>
+<div class="outline-text-3" id="text-1-1">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">x</span> = 0;
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span><span class="org-string">"addi %0,%0,1"</span> : <span class="org-string">"+r"</span><span class="org-parenthesis">(</span>x<span class="org-parenthesis">))</span>;
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span><span class="org-string">"addi %0,%0,2"</span> : <span class="org-string">"=r"</span><span class="org-parenthesis">(</span>x<span class="org-parenthesis">))</span>;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> x<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org0000000">
+$&gt; riscv-gcc  test.c -O2 -g -c
+$&gt; riscv-objdump -d test.o
+
+0000000000000000 &lt;main&gt;:
+   0:   00000537                lui     a0,0x0
+
+0000000000000004 &lt;.LVL1&gt;:
+   4:   1141                    addi    sp,sp,-16
+   6:   00050513                mv      a0,a0
+   a:   0589                    addi    a1,a1,2
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+000000000000000c &lt;.LVL2&gt;:
+   c:   2581                    sext.w  a1,a1
+   e:   e406                    sd      ra,8(sp)
+  10:   00000097                auipc   ra,0x0
+  14:   000080e7                jalr    ra # 10 &lt;.LVL2+0x4&gt;
+
+0000000000000018 &lt;.LVL3&gt;:
+  18:   60a2                    ld      ra,8(sp)
+  1a:   4501                    li      a0,0
+  1c:   0141                    addi    sp,sp,16
+  1e:   8082                    ret
+</pre>
+
+<p>
+源码中的
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-type">int</span> <span class="org-variable-name">x</span> = 0;
+<span class="org-keyword">asm</span><span class="org-parenthesis">(</span><span class="org-string">"addi %0,%0,1"</span> : <span class="org-string">"+r"</span><span class="org-parenthesis">(</span>x<span class="org-parenthesis">))</span>;
+</pre>
+</div>
+
+<p>
+被优化掉了, 导致 x 没有初始化. 被优化掉的原因是 `asm("addi %0,%0,2" : "=r"(x))`
+没有指明 x 是它的输入, 导致 gcc 认为之前对 x 赋值的语句没有用的.
+</p>
+
+<p>
+即使加上 volatile 也无法保证程序正确:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">x</span> = 0;
+    <span class="org-keyword">asm</span> <span class="org-keyword">volatile</span><span class="org-parenthesis">(</span><span class="org-string">"addi %0,%0,1"</span> : <span class="org-string">"+r"</span><span class="org-parenthesis">(</span>x<span class="org-parenthesis">))</span>;
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span><span class="org-string">"addi %0,%0,2"</span> : <span class="org-string">"=r"</span><span class="org-parenthesis">(</span>x<span class="org-parenthesis">))</span>;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> x<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org0000001">
+0000000000000000 &lt;main&gt;:
+   0:   1141                    addi    sp,sp,-16
+   2:   e406                    sd      ra,8(sp)
+   4:   4781                    li      a5,0
+   6:   0785                    addi    a5,a5,1
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+0000000000000008 &lt;.LVL1&gt;:
+   8:   0589                    addi    a1,a1,2
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+000000000000000a &lt;.LVL2&gt;:
+   a:   00000537                lui     a0,0x0
+
+000000000000000e &lt;.LVL3&gt;:
+   e:   2581                    sext.w  a1,a1
+  10:   00050513                mv      a0,a0
+  14:   00000097                auipc   ra,0x0
+  18:   000080e7                jalr    ra # 14 &lt;.LVL3+0x6&gt;
+
+000000000000001c &lt;.LVL4&gt;:
+  1c:   60a2                    ld      ra,8(sp)
+  1e:   4501                    li      a0,0
+  20:   0141                    addi    sp,sp,16
+  22:   8082                    ret
+</pre>
+
+<p>
+加上 volatile 后 gcc 不会把 `addi %0,%0,1` 优化掉了, 但 `printf("%d\n", x)` 仍然认为 x 只取决了 `addi %0,%0,2`
+</p>
+
+<p>
+正确修改后的代码为:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">x</span> = 0;
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span><span class="org-string">"addi %0,%0,1"</span> : <span class="org-string">"+r"</span><span class="org-parenthesis">(</span>x<span class="org-parenthesis">))</span>;
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span><span class="org-string">"addi %0,%0,2"</span> : <span class="org-string">"+r"</span><span class="org-parenthesis">(</span>x<span class="org-parenthesis">))</span>;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> x<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000006" class="outline-3">
+<h3 id="org0000006"><span class="section-number-3">1.2.</span> 没有指明输出变量</h3>
+<div class="outline-text-3" id="text-1-2">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">x</span> = 0;
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span><span class="org-string">"addi %0,%0,1"</span> ::<span class="org-string">"r"</span><span class="org-parenthesis">(</span>x<span class="org-parenthesis">))</span>;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> x<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org0000005">
+$&gt; riscv-gcc  test.c -O2 -g -c
+$&gt; riscv-objdump -d test.o
+0000000000000000 &lt;main&gt;:
+   0:   1141                    addi    sp,sp,-16
+   2:   e406                    sd      ra,8(sp)
+   4:   4781                    li      a5,0
+   6:   0785                    addi    a5,a5,1
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   8:   00000537                lui     a0,0x0
+
+000000000000000c &lt;.LVL1&gt;:
+   c:   4581                    li      a1,0
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+000000000000000e &lt;.LVL2&gt;:
+   e:   00050513                mv      a0,a0
+  12:   00000097                auipc   ra,0x0
+  16:   000080e7                jalr    ra # 12 &lt;.LVL2+0x4&gt;
+
+000000000000001a &lt;.LVL3&gt;:
+  1a:   60a2                    ld      ra,8(sp)
+  1c:   4501                    li      a0,0
+  1e:   0141                    addi    sp,sp,16
+  20:   8082                    ret
+</pre>
+
+<p>
+没有 ouput 的 asm 默认自带 volatile 属性. 虽然针对 `addi %0,%0,1` 生成了指令, 但
+`printf` 认为 x 只取决于 `int x=0`, 所以结果仍然是错误的.
+</p>
+
+<p>
+正确修改的代码为:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">x</span> = 0;
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span><span class="org-string">"addi %0,%0,1"</span> : <span class="org-string">"+r"</span><span class="org-parenthesis">(</span>x<span class="org-parenthesis">))</span>;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> x<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000000c" class="outline-3">
+<h3 id="org000000c"><span class="section-number-3">1.3.</span> 没有指明 clobber memory</h3>
+<div class="outline-text-3" id="text-1-3">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">a</span> = 0;
+    <span class="org-type">int</span> *<span class="org-variable-name">pa</span> = &amp;a;
+
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span>
+        <span class="org-string">"ld a0, %0\n\t"</span>
+        <span class="org-string">"li a1, 10\n\t"</span>
+        <span class="org-string">"sd a1, 0(a0)\n\t"</span>
+        :
+        : <span class="org-string">"m"</span><span class="org-parenthesis">(</span>pa<span class="org-parenthesis">)</span>
+        : <span class="org-string">"a0"</span><span class="org-parenthesis">,</span> <span class="org-string">"a1"</span><span class="org-parenthesis">)</span>;
+
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> a<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org0000009">
+0000000000000000 &lt;main&gt;:
+   0:   1101                    addi    sp,sp,-32
+   2:   005c                    addi    a5,sp,4
+   4:   ec06                    sd      ra,24(sp)
+   6:   e43e                    sd      a5,8(sp)
+   8:   c202                    sw      zero,4(sp)
+   a:   6522                    ld      a0,8(sp)
+   c:   45a9                    li      a1,10
+   e:   e10c                    sd      a1,0(a0)
+
+0000000000000010 &lt;.LVL1&gt;:
+  10:   00000537                lui     a0,0x0
+  14:   4581                    li      a1,0
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  16:   00050513                mv      a0,a0
+  1a:   00000097                auipc   ra,0x0
+  1e:   000080e7                jalr    ra # 1a &lt;.LVL1+0xa&gt;
+
+0000000000000022 &lt;.LVL2&gt;:
+  22:   60e2                    ld      ra,24(sp)
+  24:   4501                    li      a0,0
+  26:   6105                    addi    sp,sp,32
+  28:   8082                    ret
+</pre>
+
+<p>
+通过 clobber memory, 表示 pa 指向的内存 (a) 被修改 inline asm 修改了, printf 时需要重新从内存 load a (而不是直接 li a1,0)
+</p>
+
+<p>
+修改后的代码:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">a</span> = 0;
+    <span class="org-type">int</span> *<span class="org-variable-name">pa</span> = &amp;a;
+
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span>
+        <span class="org-string">"ld a0, %0\n\t"</span>
+        <span class="org-string">"li a1, 10\n\t"</span>
+        <span class="org-string">"sd a1, 0(a0)\n\t"</span>
+        :
+        : <span class="org-string">"m"</span><span class="org-parenthesis">(</span>pa<span class="org-parenthesis">)</span>
+        : <span class="org-string">"a0"</span><span class="org-parenthesis">,</span> <span class="org-string">"a1"</span><span class="org-parenthesis">,</span> <span class="org-string">"memory"</span><span class="org-parenthesis">)</span>;
+
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> a<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org000000a">
+0000000000000000 &lt;main&gt;:
+   0:   1101                    addi    sp,sp,-32
+   2:   005c                    addi    a5,sp,4
+   4:   ec06                    sd      ra,24(sp)
+   6:   e43e                    sd      a5,8(sp)
+   8:   c202                    sw      zero,4(sp)
+   a:   6522                    ld      a0,8(sp)
+   c:   45a9                    li      a1,10
+   e:   e10c                    sd      a1,0(a0)
+
+0000000000000010 &lt;.LVL1&gt;:
+  10:   4592                    lw      a1,4(sp)
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  12:   00000537                lui     a0,0x0
+  16:   00050513                mv      a0,a0
+  1a:   00000097                auipc   ra,0x0
+  1e:   000080e7                jalr    ra # 1a &lt;.LVL1+0xa&gt;
+
+0000000000000022 &lt;.LVL2&gt;:
+  22:   60e2                    ld      ra,24(sp)
+  24:   4501                    li      a0,0
+  26:   6105                    addi    sp,sp,32
+  28:   8082                    ret
+</pre>
+
+<p>
+注意 clobber memory 只会影响通过 input (pa) 指向的 a, 因为正常的 inline asm 要修改局部变量的内存只能通过传入 pa 这种形式.
+</p>
+
+<p>
+例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">a</span> = 0;
+    <span class="org-type">int</span> <span class="org-variable-name">b</span> = 0;
+    <span class="org-type">int</span> *<span class="org-variable-name">pa</span> = &amp;a;
+
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span>
+        <span class="org-string">"ld a0, %0\n\t"</span>
+        <span class="org-string">"li a1, 10\n\t"</span>
+        <span class="org-string">"sd a1, 0(a0)\n\t"</span>
+        :
+        : <span class="org-string">"m"</span><span class="org-parenthesis">(</span>pa<span class="org-parenthesis">)</span>
+        : <span class="org-string">"a0"</span><span class="org-parenthesis">,</span> <span class="org-string">"a1"</span><span class="org-parenthesis">,</span> <span class="org-string">"memory"</span><span class="org-parenthesis">)</span>;
+
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d %d\n"</span><span class="org-parenthesis">,</span> a<span class="org-parenthesis">,</span> b<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org000000b">
+0000000000000000 &lt;main&gt;:
+   0:   1101                    addi    sp,sp,-32
+   2:   005c                    addi    a5,sp,4
+   4:   ec06                    sd      ra,24(sp)
+   6:   e43e                    sd      a5,8(sp)
+   8:   c202                    sw      zero,4(sp)
+   a:   6522                    ld      a0,8(sp)
+   c:   45a9                    li      a1,10
+   e:   e10c                    sd      a1,0(a0)
+
+0000000000000010 &lt;.LVL2&gt;:
+  10:   4592                    lw      a1,4(sp)
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  12:   00000537                lui     a0,0x0
+  16:   4601                    li      a2,0
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  18:   00050513                mv      a0,a0
+  1c:   00000097                auipc   ra,0x0
+  20:   000080e7                jalr    ra # 1c &lt;.LVL2+0xc&gt;
+
+0000000000000024 &lt;.LVL3&gt;:
+  24:   60e2                    ld      ra,24(sp)
+  26:   4501                    li      a0,0
+  28:   6105                    addi    sp,sp,32
+  2a:   8082                    ret
+</pre>
+
+<p>
+如果 inline asm 通过其它非正常的手段修改了变量, 那只能通过变量加 volatile 的方式避免出错:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">a</span> = 0;
+    <span class="org-type">int</span> <span class="org-variable-name">b</span> = 0;
+    <span class="org-type">int</span> *<span class="org-variable-name">pa</span> = &amp;a;
+
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span>
+        <span class="org-string">"ld a0, %0\n\t"</span>
+        <span class="org-string">"li a1, 10\n\t"</span>
+        <span class="org-string">"sd a1, 4(a0)\n\t"</span>
+        :
+        : <span class="org-string">"m"</span><span class="org-parenthesis">(</span>pa<span class="org-parenthesis">)</span>
+        : <span class="org-string">"a0"</span><span class="org-parenthesis">,</span> <span class="org-string">"a1"</span><span class="org-parenthesis">,</span> <span class="org-string">"memory"</span><span class="org-parenthesis">)</span>;
+
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> b<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<p>
+inline asm 中传入了 pa, 但修改了 b (4(a0)), 最后输出是 `0` 而不是 `10`.
+</p>
+
+<p>
+修改后的代码为:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">a</span> = 0;
+    <span class="org-keyword">volatile</span> <span class="org-type">int</span> <span class="org-variable-name">b</span> = 0;
+    <span class="org-type">int</span> *<span class="org-variable-name">pa</span> = &amp;a;
+
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span>
+        <span class="org-string">"ld a0, %0\n\t"</span>
+        <span class="org-string">"li a1, 10\n\t"</span>
+        <span class="org-string">"sd a1, 4(a0)\n\t"</span>
+        :
+        : <span class="org-string">"m"</span><span class="org-parenthesis">(</span>pa<span class="org-parenthesis">)</span>
+        : <span class="org-string">"a0"</span><span class="org-parenthesis">,</span> <span class="org-string">"a1"</span><span class="org-parenthesis">,</span> <span class="org-string">"memory"</span><span class="org-parenthesis">)</span>;
+
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> b<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000000f" class="outline-3">
+<h3 id="org000000f"><span class="section-number-3">1.4.</span> volatile</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+gcc 把 inline asm 看做一个没有副作用 (side effect) 的函数 `output=f(input)`, 优化时只会考虑 input/output/clobber, 而不会看 asm 的代码.
+</p>
+
+<p>
+例如:
+</p>
+
+<ul class="org-ul">
+<li>若 output 的结果没有用 (没有使用或者被其它赋值覆盖), 则 asm 会被优化掉.</li>
+
+<li>若两次调用的 input 不变(包含没有 input), 则可能会复用上一次的结果</li>
+</ul>
+
+<p>
+如果 inline asm 有根据 input/output 推断不出来的副作用, 例如
+</p>
+
+<ol class="org-ol">
+<li>依赖 input 之外的输入</li>
+
+<li>产生 output 之外的输出</li>
+</ol>
+
+<p>
+则需要加上 volatile 关键字. 另外, 若 output 为空, gcc 会自动加上 volatile, 因为没有 output 的 inline asm 显然是有副作用.
+</p>
+
+<p>
+如果 inline asm 没有副作用, 盲目的添加 volatile 只会阻止 gcc 有益的优化.
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-09-14 Thu 13:28<br />
+Last updated: 2023-09-14 Thu 15:16</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
