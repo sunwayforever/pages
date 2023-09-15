@@ -67,7 +67,8 @@
 <li><a href="#org0000002">1.1. 没有指明输入变量</a></li>
 <li><a href="#org0000006">1.2. 没有指明输出变量</a></li>
 <li><a href="#org000000c">1.3. 没有指明 clobber memory</a></li>
-<li><a href="#org000000f">1.4. volatile</a></li>
+<li><a href="#org0000010">1.4. volatile</a></li>
+<li><a href="#org0000013">1.5. 其它</a></li>
 </ul>
 </li>
 </ul>
@@ -77,7 +78,11 @@
 <div id="outline-container-org0000012" class="outline-2">
 <h2 id="org0000012"><span class="section-number-2">1.</span> Inline ASM</h2>
 <div class="outline-text-2" id="text-1">
+<p>
+<a href="https://gcc.gnu.org/onlinedocs/gcc/Extended-Asm.html">https://gcc.gnu.org/onlinedocs/gcc/Extended-Asm.html</a>
+</p>
 </div>
+
 <div id="outline-container-org0000002" class="outline-3">
 <h3 id="org0000002"><span class="section-number-3">1.1.</span> 没有指明输入变量</h3>
 <div class="outline-text-3" id="text-1-1">
@@ -478,8 +483,8 @@ inline asm 中传入了 pa, 但修改了 b (4(a0)), 最后输出是 `0` 而不�
 </div>
 </div>
 
-<div id="outline-container-org000000f" class="outline-3">
-<h3 id="org000000f"><span class="section-number-3">1.4.</span> volatile</h3>
+<div id="outline-container-org0000010" class="outline-3">
+<h3 id="org0000010"><span class="section-number-3">1.4.</span> volatile</h3>
 <div class="outline-text-3" id="text-1-4">
 <p>
 gcc 把 inline asm 看做一个没有副作用 (side effect) 的函数 `output=f(input)`, 优化时只会考虑 input/output/clobber, 而不会看 asm 的代码.
@@ -492,7 +497,36 @@ gcc 把 inline asm 看做一个没有副作用 (side effect) 的函数 `output=f
 <ul class="org-ul">
 <li>若 output 的结果没有用 (没有使用或者被其它赋值覆盖), 则 asm 会被优化掉.</li>
 
-<li>若两次调用的 input 不变(包含没有 input), 则可能会复用上一次的结果</li>
+<li><p>
+若两次调用的 input 不变(包含没有 input), 则可能会复用上一次的结果, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">a</span> = 0;
+    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; 10; i++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+        <span class="org-keyword">asm</span><span class="org-parenthesis">(</span><span class="org-string">"li a0, 1\n\t"</span> : <span class="org-string">"=r"</span><span class="org-parenthesis">(</span>a<span class="org-parenthesis">)</span> :<span class="org-parenthesis">)</span>;
+    <span class="org-parenthesis">}</span>
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> a<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org000000f">
+
+0000000000000002 &lt;.LBB3&gt;:
+   2:   4505                    li      a0,1
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+...
+000000000000000a &lt;.L2&gt;:
+   a:   37fd                    addiw   a5,a5,-1
+   c:   fffd                    bnez    a5,a &lt;.L2&gt;
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+...
+</pre></li>
 </ul>
 
 <p>
@@ -514,13 +548,23 @@ gcc 把 inline asm 看做一个没有副作用 (side effect) 的函数 `output=f
 </p>
 </div>
 </div>
+
+<div id="outline-container-org0000013" class="outline-3">
+<h3 id="org0000013"><span class="section-number-3">1.5.</span> 其它</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+inline asm 中的 constraints (r, m, &#x2026;) 的意义需要到后端的 constraints.md 中去找.
+模板中的 modifier 的用法 (%z0, &#x2026;) 需要到后端的 TARGET_PRINT_OPERAND hook 中去找
+</p>
+</div>
+</div>
 </div>
 </div>
 <div id="postamble" class="status">
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-09-14 Thu 13:28<br />
-Last updated: 2023-09-14 Thu 15:16</p>
+Last updated: 2023-09-15 Fri 10:26</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
