@@ -66,9 +66,10 @@
 <ul>
 <li><a href="#org0000002">1.1. 没有指明输入变量</a></li>
 <li><a href="#org0000006">1.2. 没有指明输出变量</a></li>
-<li><a href="#org000000c">1.3. 没有指明 clobber memory</a></li>
-<li><a href="#org0000010">1.4. volatile</a></li>
-<li><a href="#org0000013">1.5. 其它</a></li>
+<li><a href="#org000000b">1.3. 没有指明 clobber register</a></li>
+<li><a href="#org000000c">1.4. 没有指明 clobber memory</a></li>
+<li><a href="#org0000015">1.5. volatile</a></li>
+<li><a href="#org0000013">1.6. 其它</a></li>
 </ul>
 </li>
 </ul>
@@ -267,9 +268,83 @@ $&gt; riscv-objdump -d test.o
 </div>
 </div>
 
-<div id="outline-container-org000000c" class="outline-3">
-<h3 id="org000000c"><span class="section-number-3">1.3.</span> 没有指明 clobber memory</h3>
+<div id="outline-container-org000000b" class="outline-3">
+<h3 id="org000000b"><span class="section-number-3">1.3.</span> 没有指明 clobber register</h3>
 <div class="outline-text-3" id="text-1-3">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">a</span> = 0;
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span><span class="org-string">"li %0, 1\n\t"</span> : <span class="org-string">"=r"</span><span class="org-parenthesis">(</span>a<span class="org-parenthesis">)</span> :<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span><span class="org-string">"li a1, 2\n\t"</span><span class="org-parenthesis">)</span>;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> a<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org0000009">
+0000000000000000 &lt;main&gt;:
+...
+   4:   4585                    li      a1,1
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+...
+0000000000000008 &lt;.LVL2&gt;:
+   8:   4589                    li      a1,2
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   a:   00000537                lui     a0,0x0
+
+000000000000000e &lt;.LVL3&gt;:
+   e:   00050513                mv      a0,a0
+  12:   00000097                auipc   ra,0x0
+  16:   000080e7                jalr    ra # 12 &lt;.LVL3+0x4&gt;
+...
+</pre>
+
+<p>
+`asm("li a1, 2\n\t")` 修改了 `a1` 但没有通过 clobber 声明, 导致 printf 时直接使用了 a1.
+</p>
+
+<p>
+修改后的代码为:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">a</span> = 0;
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span><span class="org-string">"li %0, 1\n\t"</span> : <span class="org-string">"=r"</span><span class="org-parenthesis">(</span>a<span class="org-parenthesis">)</span> :<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span><span class="org-string">"li a1, 2\n\t"</span> ::: <span class="org-string">"a1"</span><span class="org-parenthesis">)</span>;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> a<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org000000a">
+...
+   4:   4785                    li      a5,1
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   6:   2781                    sext.w  a5,a5
+
+0000000000000008 &lt;.LVL1&gt;:
+   8:   4589                    li      a1,2
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+...
+000000000000000e &lt;.LVL3&gt;:
+   e:   85be                    mv      a1,a5
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  10:   00050513                mv      a0,a0
+  14:   00000097                auipc   ra,0x0
+  18:   000080e7                jalr    ra # 14 &lt;.LVL3+0x6&gt;
+...
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org000000c" class="outline-3">
+<h3 id="org000000c"><span class="section-number-3">1.4.</span> 没有指明 clobber memory</h3>
+<div class="outline-text-3" id="text-1-4">
 <div class="org-src-container">
 <pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
 <span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
@@ -290,7 +365,7 @@ $&gt; riscv-objdump -d test.o
 </pre>
 </div>
 
-<pre class="example" id="org0000009">
+<pre class="example" id="org000000e">
 0000000000000000 &lt;main&gt;:
    0:   1101                    addi    sp,sp,-32
    2:   005c                    addi    a5,sp,4
@@ -344,7 +419,7 @@ $&gt; riscv-objdump -d test.o
 </pre>
 </div>
 
-<pre class="example" id="org000000a">
+<pre class="example" id="org000000f">
 0000000000000000 &lt;main&gt;:
    0:   1101                    addi    sp,sp,-32
    2:   005c                    addi    a5,sp,4
@@ -399,7 +474,7 @@ $&gt; riscv-objdump -d test.o
 </pre>
 </div>
 
-<pre class="example" id="org000000b">
+<pre class="example" id="org0000010">
 0000000000000000 &lt;main&gt;:
    0:   1101                    addi    sp,sp,-32
    2:   005c                    addi    a5,sp,4
@@ -483,9 +558,9 @@ inline asm 中传入了 pa, 但修改了 b (4(a0)), 最后输出是 `0` 而不�
 </div>
 </div>
 
-<div id="outline-container-org0000010" class="outline-3">
-<h3 id="org0000010"><span class="section-number-3">1.4.</span> volatile</h3>
-<div class="outline-text-3" id="text-1-4">
+<div id="outline-container-org0000015" class="outline-3">
+<h3 id="org0000015"><span class="section-number-3">1.5.</span> volatile</h3>
+<div class="outline-text-3" id="text-1-5">
 <p>
 gcc 把 inline asm 看做一个没有副作用 (side effect) 的函数 `output=f(input)`, 优化时只会考虑 input/output/clobber, 而不会看 asm 的代码.
 </p>
@@ -514,7 +589,7 @@ gcc 把 inline asm 看做一个没有副作用 (side effect) 的函数 `output=f
 </pre>
 </div>
 
-<pre class="example" id="org000000f">
+<pre class="example" id="org0000014">
 
 0000000000000002 &lt;.LBB3&gt;:
    2:   4505                    li      a0,1
@@ -550,8 +625,8 @@ gcc 把 inline asm 看做一个没有副作用 (side effect) 的函数 `output=f
 </div>
 
 <div id="outline-container-org0000013" class="outline-3">
-<h3 id="org0000013"><span class="section-number-3">1.5.</span> 其它</h3>
-<div class="outline-text-3" id="text-1-5">
+<h3 id="org0000013"><span class="section-number-3">1.6.</span> 其它</h3>
+<div class="outline-text-3" id="text-1-6">
 <p>
 inline asm 中的 constraints (r, m, &#x2026;) 的意义需要到后端的 constraints.md 中去找.
 模板中的 modifier 的用法 (%z0, &#x2026;) 需要到后端的 TARGET_PRINT_OPERAND hook 中去找
@@ -564,7 +639,7 @@ inline asm 中的 constraints (r, m, &#x2026;) 的意义需要到后端的 const
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-09-14 Thu 13:28<br />
-Last updated: 2023-09-15 Fri 10:26</p>
+Last updated: 2023-09-15 Fri 10:55</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
