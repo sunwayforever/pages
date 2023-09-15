@@ -68,8 +68,9 @@
 <li><a href="#org0000006">1.2. 没有指明输出变量</a></li>
 <li><a href="#org000000b">1.3. 没有指明 clobber register</a></li>
 <li><a href="#org000000c">1.4. 没有指明 clobber memory</a></li>
-<li><a href="#org0000015">1.5. volatile</a></li>
-<li><a href="#org0000013">1.6. 其它</a></li>
+<li><a href="#org0000016">1.5. reorder</a></li>
+<li><a href="#org000001a">1.6. volatile</a></li>
+<li><a href="#org0000013">1.7. 其它</a></li>
 </ul>
 </li>
 </ul>
@@ -558,9 +559,118 @@ inline asm 中传入了 pa, 但修改了 b (4(a0)), 最后输出是 `0` 而不�
 </div>
 </div>
 
-<div id="outline-container-org0000015" class="outline-3">
-<h3 id="org0000015"><span class="section-number-3">1.5.</span> volatile</h3>
+<div id="outline-container-org0000016" class="outline-3">
+<h3 id="org0000016"><span class="section-number-3">1.5.</span> reorder</h3>
 <div class="outline-text-3" id="text-1-5">
+<p>
+和普通代码一样, inline asm 也会有 reorder 的问题
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">a</span> = 0;
+    <span class="org-type">int</span> <span class="org-variable-name">b</span> = 0;
+    <span class="org-type">int</span> <span class="org-variable-name">c</span> = 0;
+
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span><span class="org-string">"li %0, 1\n\t"</span> : <span class="org-string">"=r"</span><span class="org-parenthesis">(</span>a<span class="org-parenthesis">)</span> :<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span><span class="org-string">"li %0, 2\n\t"</span> : <span class="org-string">"=r"</span><span class="org-parenthesis">(</span>b<span class="org-parenthesis">)</span> :<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span><span class="org-string">"li %0, 3\n\t"</span> : <span class="org-string">"=r"</span><span class="org-parenthesis">(</span>c<span class="org-parenthesis">)</span> :<span class="org-parenthesis">)</span>;
+
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> c<span class="org-parenthesis">)</span>;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> b<span class="org-parenthesis">)</span>;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> a<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org0000014">
+0000000000000000 &lt;main&gt;:
+...
+   c:   458d                    li      a1,3
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+...
+  16:   4409                    li      s0,2
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  18:   00000097                auipc   ra,0x0
+  1c:   000080e7                jalr    ra # 18 &lt;.LVL2+0xa&gt;
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+...
+  22:   85a2                    mv      a1,s0
+  24:   00048513                mv      a0,s1
+  28:   00000097                auipc   ra,0x0
+  2c:   000080e7                jalr    ra # 28 &lt;.LVL3+0x8&gt;
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+...
+  30:   4905                    li      s2,1
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  32:   2901                    sext.w  s2,s2
+...
+  34:   85ca                    mv      a1,s2
+  36:   00048513                mv      a0,s1
+  3a:   00000097                auipc   ra,0x0
+  3e:   000080e7                jalr    ra # 3a &lt;.LVL5+0x6&gt;
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+...
+</pre>
+
+<p>
+通过 volatile 以及 compiler fence 可以阻止 reorder
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">a</span> = 0;
+    <span class="org-type">int</span> <span class="org-variable-name">b</span> = 0;
+    <span class="org-type">int</span> <span class="org-variable-name">c</span> = 0;
+
+    <span class="org-keyword">asm</span> <span class="org-keyword">volatile</span><span class="org-parenthesis">(</span><span class="org-string">"li %0, 1\n\t"</span> : <span class="org-string">"=r"</span><span class="org-parenthesis">(</span>a<span class="org-parenthesis">)</span> :<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">asm</span> <span class="org-keyword">volatile</span><span class="org-parenthesis">(</span><span class="org-string">"li %0, 2\n\t"</span> : <span class="org-string">"=r"</span><span class="org-parenthesis">(</span>b<span class="org-parenthesis">)</span> :<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">asm</span> <span class="org-keyword">volatile</span><span class="org-parenthesis">(</span><span class="org-string">"li %0, 3\n\t"</span> : <span class="org-string">"=r"</span><span class="org-parenthesis">(</span>c<span class="org-parenthesis">)</span> :<span class="org-parenthesis">)</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: compiler fence</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">asm</span><span class="org-parenthesis">(</span><span class="org-string">""</span> ::: <span class="org-string">"memory"</span><span class="org-parenthesis">)</span>;
+
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> c<span class="org-parenthesis">)</span>;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> b<span class="org-parenthesis">)</span>;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> a<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org0000015">
+...
+   a:   4485                    li      s1,1
+   c:   2481                    sext.w  s1,s1
+   e:   4909                    li      s2,2
+  10:   2901                    sext.w  s2,s2
+  12:   458d                    li      a1,3
+
+...
+  22:   000080e7                jalr    ra # 1e &lt;.LVL6&gt;
+  26:   85ca                    mv      a1,s2
+...
+  30:   000080e7                jalr    ra # 2c &lt;.LVL7+0x6&gt;
+...
+  34:   85a6                    mv      a1,s1
+...
+  3e:   000080e7                jalr    ra # 3a &lt;.LVL8+0x6&gt;
+</pre>
+
+<p>
+reorder 一般不是问题, 因为 gcc 会根据 input/output 推断合适的顺序, 且没有 output
+的 inline asm 会自带 volatile 避免 reorder. 但对于带 output 又有其它副作用的
+inline asm 则需要考虑 reorder 问题.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000001a" class="outline-3">
+<h3 id="org000001a"><span class="section-number-3">1.6.</span> volatile</h3>
+<div class="outline-text-3" id="text-1-6">
 <p>
 gcc 把 inline asm 看做一个没有副作用 (side effect) 的函数 `output=f(input)`, 优化时只会考虑 input/output/clobber, 而不会看 asm 的代码.
 </p>
@@ -589,7 +699,7 @@ gcc 把 inline asm 看做一个没有副作用 (side effect) 的函数 `output=f
 </pre>
 </div>
 
-<pre class="example" id="org0000014">
+<pre class="example" id="org0000019">
 
 0000000000000002 &lt;.LBB3&gt;:
    2:   4505                    li      a0,1
@@ -625,8 +735,8 @@ gcc 把 inline asm 看做一个没有副作用 (side effect) 的函数 `output=f
 </div>
 
 <div id="outline-container-org0000013" class="outline-3">
-<h3 id="org0000013"><span class="section-number-3">1.6.</span> 其它</h3>
-<div class="outline-text-3" id="text-1-6">
+<h3 id="org0000013"><span class="section-number-3">1.7.</span> 其它</h3>
+<div class="outline-text-3" id="text-1-7">
 <p>
 inline asm 中的 constraints (r, m, &#x2026;) 的意义需要到后端的 constraints.md 中去找.
 模板中的 modifier 的用法 (%z0, &#x2026;) 需要到后端的 TARGET_PRINT_OPERAND hook 中去找
@@ -639,7 +749,7 @@ inline asm 中的 constraints (r, m, &#x2026;) 的意义需要到后端的 const
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-09-14 Thu 13:28<br />
-Last updated: 2023-09-15 Fri 11:00</p>
+Last updated: 2023-09-15 Fri 11:33</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
