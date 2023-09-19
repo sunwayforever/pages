@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>GCC Spec</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">GCC Spec</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org000000f">1. GCC Spec</a>
+<ul>
+<li><a href="#org0000000">1.1. overview</a></li>
+<li><a href="#org0000004">1.2. 基本格式</a></li>
+<li><a href="#org0000008">1.3. 通过 spec 添加参数</a></li>
+<li><a href="#org000000c">1.4. nano.specs</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000000f" class="outline-2">
+<h2 id="org000000f"><span class="section-number-2">1.</span> GCC Spec</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org0000000" class="outline-3">
+<h3 id="org0000000"><span class="section-number-3">1.1.</span> overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+<a href="https://gcc.gnu.org/onlinedocs/gcc/Spec-Files.html">https://gcc.gnu.org/onlinedocs/gcc/Spec-Files.html</a>
+</p>
+
+<p>
+gcc 是一个 driver 程序, 它负责调用 cc1/as/ld 等程序. spec 解决的主要问题是调用
+cc1/as/ld 时如何控制它们的参数. 通过修改 spec 文件, 我们可以:
+</p>
+
+<ol class="org-ol">
+<li>修改 cc1/as/ld 的参数</li>
+
+<li>给 gcc driver 添加参数, 并映射成 cc1/as/ld 的参数</li>
+</ol>
+
+<p>
+gcc 默认的 spec 是在 `gcc/gcc.cc` 中指定后编译到 gcc 中的, 后端可通过 `#define
+CC1_SPEC xxx` 的形式修改 spec.
+</p>
+
+<p>
+通过 `gcc -dumpspecs` 可以得到默认的 spec
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000004" class="outline-3">
+<h3 id="org0000004"><span class="section-number-3">1.2.</span> 基本格式</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+以 gcc 调用 linker 时的参数为例:
+</p>
+
+<pre class="example" id="org0000003">
+*linker:
+collect2
+
+*link_gcc_c_sequences:
+%G %{!nolibc:%(lib) %G} -lgcc
+// %G 即 %(libgcc), 通过 %(libgcc) 可以把 `*libgcc` include 到这里, 即给 ld 加上 `-lgcc` 参数
+// %{!nolibc:%(lib)} 是指如果 gcc 没有指定 `-nolibc`, 则通过 include `*lib` 把 `-lc` 等参数传递给 ld
+
+
+*lib:
+--start-group -lc %{!specs=nosys.specs:-lgloss} --end-group
+
+*libgcc:
+-lgcc
+
+*startfile:
+crt0%O%s crtbegin%O%s
+
+*endfile:
+crtend.o%s
+
+*link_command:
+%(linker)
+...
+%{!nostdlib:%{!nodefaultlibs:%(link_ssp) %(link_gcc_c_sequences)}}
+%{!nostdlib:%{!nostartfiles:%S}}
+%{!nostdlib:%{!nostartfiles:%E}}
+...
+// include `*linker`, 即调用 collect2 做为 linker
+// 如果没有指定 nostdlib 和 nodefaultlibs, 则 include `*link_gcc_c_sequences`
+// 如果没有指定 nostdlib 和 nostartfiles, 则 include `*startfile` 和 `*endfile`
+</pre>
+
+<p>
+所以 spec 主要元素是:
+</p>
+
+<ul class="org-ul">
+<li><p>
+`*xxx`
+</p>
+
+<p>
+定义 spec, 用来指示某个程序 (as/cc1/ld) 使用的参数, gcc 预定义了几个 `*xxx`, 例如:
+`*asm`, `*cc1_options`, `*link`, 其中 `*asm` 表示调用 as 时使用的参数.
+</p>
+
+<p>
+用户也可以自定义 spec, 然后通过 `%(xxx) 的形式 include 到其它 spec
+</p></li>
+
+<li>`%(xxx)</li>
+
+<li>`%{a:b}` 表示 gcc 的 `-a` 参数映射为当前 spec 对应的程序 (as/cc1/ld) 的 `b` 参数</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000008" class="outline-3">
+<h3 id="org0000008"><span class="section-number-3">1.3.</span> 通过 spec 添加参数</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+例如, 通过 spec 给 gcc 添加一个 `&#x2013;foo` 参数, 并且把这个参数映射为 as 的 `-foox` 以及 cc1 的 `-fooy` 参数:
+</p>
+
+<pre class="example" id="org0000007">
+*asm:
+... %{-foo:-foox}
+
+*cc1_options:
+... %{-foo:-fooy}
+</pre>
+
+<p>
+由于默认的 cc1_options 中包含 `%{m*} %{f*}`, 所以 gcc 的 `-mxxx`, `-fxxx` 总是会原封不动的传递给 cc1. 添加这种名字的 gcc 参数需要注意
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000000c" class="outline-3">
+<h3 id="org000000c"><span class="section-number-3">1.4.</span> nano.specs</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+nano.specs 是使用 nano libc 的 spec. nano.specs 主要是修改了默认 spec 需要用到的 `*link_gcc_c_sequence`, `*link`, `*cpp` 等 spec, 把相应参数替换为 nano 的版本,
+特别的, 它通过 `replace-outfile` 把原来的 `-lc` 替换成为 `-lc_nano`
+</p>
+
+<pre class="example" id="org000000b">
+%rename link                nano_link
+%rename link_gcc_c_sequence                nano_link_gcc_c_sequence
+%rename cpp             nano_cpp
+
+*cpp:
+-isystem =/include/newlib-nano %(nano_cpp)
+
+*nano_libc:
+-lc_nano
+
+*nano_libgloss:
+%{specs=nosys.specs:-lnosys} %{!specs=nosys.specs:-lgloss_nano}
+
+*link_gcc_c_sequence:
+%(nano_link_gcc_c_sequence) --start-group %G %(nano_libc) %(nano_libgloss) --end-group
+
+*link:
+%(nano_link) %:replace-outfile(-lc -lc_nano) %:replace-outfile(-lg -lg_nano) %:replace-outfile(-lm -lm_nano)
+
+*lib:
+%{!shared:%{g*:-lg_nano} %{!p:%{!pg:-lc_nano}}%{p:-lc_p}%{pg:-lc_p}}
+</pre>
+
+<p>
+gcc 可以指定多个 spec, 且后面定义的 spec 中的 `*xxx` 会覆盖前面的, 通过
+`%rename` 可以保留旧的 spec, 从而实现修改而不是覆盖.
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-09-19 Tue 10:40<br />
+Last updated: 2023-09-19 Tue 14:22</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
