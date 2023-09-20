@@ -317,9 +317,9 @@ Relocation section '.rela.text' at offset 0x100 contains 1 entry:
 </div>
 
 
-<div id="outline-container-org0000033" class="outline-5 references">
-<h5 id="org0000033">Backlinks</h5>
-<div class="outline-text-5" id="text-org0000033">
+<div id="outline-container-org0000030" class="outline-5 references">
+<h5 id="org0000030">Backlinks</h5>
+<div class="outline-text-5" id="text-org0000030">
 <p>
 <a href="../riscv/riscv_tutorial.html#ID-653c6b58-7ee1-4e07-bf3f-d5eea450748e">RISC-V Tutorial</a>
 (<i>RISC-V Tutorial &gt; RISC-V Assembly &gt; RV32I &gt; Overview</i>):     与 B 指令类似, 没有使用 imm[0], J 跳转范围扩大为 [-1M, +1M]+pc (<a href="#ID-119c2664-36d0-4cf5-ae13-0686350c3df8">jal relocation</a>)
@@ -390,6 +390,28 @@ relocation 是 <a href="https://github.com/riscv-non-isa/riscv-elf-psabi-doc">ps
 
 表示指令的 imm 部分应该用 hello_msg 的低 12 位与 pc 的低 12 的差来填充
 </pre>
+
+<p>
+R_RISCV_PCREL_LO12 比较特殊的一点是它使用的 symbol 是前面 R_RISCV_PCREL_HI2 对应的 label, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">1</span>:
+    <span class="org-keyword">auipc</span> a0<span class="org-parenthesis">,</span> <span class="org-variable-name">%pcrel</span>_hi<span class="org-parenthesis">(</span>hello_msg<span class="org-parenthesis">)</span>
+    <span class="org-keyword">addi</span> a0<span class="org-parenthesis">,</span> a0<span class="org-parenthesis">,</span> <span class="org-variable-name">%pcrel</span>_lo<span class="org-parenthesis">(</span>1b<span class="org-parenthesis">)</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: &#20351;&#29992;&#20102; 1b &#32780;&#19981;&#26159; hello_msg</span>
+</pre>
+</div>
+
+<p>
+处理 auipc 时会通过 `riscv_record_pcgp_hi_reloc` 记录下 `hello_msg` 的
+pc-relative 地址 (1b 为 key). 后面处理 addi 时通过 `_bfd_riscv_relax_pc` 根据
+`1b` 找到前面记录的 hi_reloc, 然后找到 `hello_msg` 的 pc-relative 地址.
+</p>
+
+<p>
+之所以这样而不直接写成 `addi xx, xx, %pcrel_lo(symbol)` 是处理 `addi` 时需要相对于前面的 `auipc` 计算 pc-relative (而不是相对于 addi 本身), 因此采取这种复杂的方式
+</p>
 </div>
 </div>
 
@@ -450,7 +472,6 @@ collect2: error: ld returned 1 exit status
 </div>
 </div>
 </div>
-
 
 <div id="outline-container-org000002c" class="outline-3">
 <h3 id="org000002c"><span class="section-number-3">1.3.</span> impls</h3>
@@ -650,9 +671,9 @@ word 中的 value 部分修改成 relocation 的结果了.
 </div>
 
 
-<div id="outline-container-org0000030" class="outline-2 references">
-<h2 id="org0000030">Backlinks</h2>
-<div class="outline-text-2" id="text-org0000030">
+<div id="outline-container-org0000031" class="outline-2 references">
+<h2 id="org0000031">Backlinks</h2>
+<div class="outline-text-2" id="text-org0000031">
 <p>
 <a href="llvm_toy_riscv_backend.html#ID-1145dd49-e340-4c20-8d85-d4779a20ffcd">LLVM Toy RISC-V Backend</a>
 (<i>LLVM Toy RISC-V Backend &gt; toy-46: write object file Pt. 3</i>):  CALL 转换 jalr 时由于涉及到 symbol 的问题, 需要转换为 `lui t0, %hi(addr); addi t0, %lo(addr); jarl ra, 0(t0)`, 其中 hi/lo 需要转换为 fixup 信息 (类型, 原指令需 要被 patch 的 offset 和长度) 保存在 object 中 <a href="linker_relocation.html#ID-4fabbae2-594b-4f7d-bcb9-756212cfbe9f">Linker Relocation</a>
@@ -674,7 +695,7 @@ word 中的 value 部分修改成 relocation 的结果了.
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2022-04-08 Fri 13:50<br />
-Last updated: 2023-09-12 Tue 16:49</p>
+Last updated: 2023-09-20 Wed 10:48</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
