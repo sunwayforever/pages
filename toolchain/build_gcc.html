@@ -22,6 +22,38 @@
 <link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
 <link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
 <link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+<script>
+  window.MathJax = {
+    tex: {
+      ams: {
+        multlineWidth: '85%'
+      },
+      tags: 'ams',
+      tagSide: 'right',
+      tagIndent: '.8em'
+    },
+    chtml: {
+      scale: 1.0,
+      displayAlign: 'center',
+      displayIndent: '0em'
+    },
+    svg: {
+      scale: 1.0,
+      displayAlign: 'center',
+      displayIndent: '0em'
+    },
+    output: {
+      font: 'mathjax-modern',
+      displayOverflow: 'overflow'
+    }
+  };
+</script>
+
+<script
+  id="MathJax-script"
+  async
+  src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+</script>
 </head>
 <body>
 <div id="content" class="content">
@@ -30,22 +62,24 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents" role="doc-toc">
 <ul>
-<li><a href="#org0000015">1. Build GCC Cross Compiler</a>
+<li><a href="#org0000021">1. Build GCC Cross Compiler</a>
 <ul>
 <li><a href="#org0000000">1.1. What Is Cross Build</a></li>
 <li><a href="#org0000003">1.2. Build</a></li>
-<li><a href="#org0000007">1.3. stage 1</a></li>
-<li><a href="#org000000b">1.4. stage 2</a></li>
-<li><a href="#org000000e">1.5. disable-bootstrap</a></li>
-<li><a href="#org0000012">1.6. build native gcc for riscv</a></li>
+<li><a href="#org0000008">1.3. binutils</a></li>
+<li><a href="#org000000d">1.4. stage 1</a></li>
+<li><a href="#org0000012">1.5. libc</a></li>
+<li><a href="#org0000017">1.6. stage 2</a></li>
+<li><a href="#org000000e">1.7. disable-bootstrap</a></li>
+<li><a href="#org000001e">1.8. build native gcc for riscv</a></li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-org0000015" class="outline-2">
-<h2 id="org0000015"><span class="section-number-2">1.</span> Build GCC Cross Compiler</h2>
+<div id="outline-container-org0000021" class="outline-2">
+<h2 id="org0000021"><span class="section-number-2">1.</span> Build GCC Cross Compiler</h2>
 <div class="outline-text-2" id="text-1">
 </div>
 <div id="outline-container-org0000000" class="outline-3">
@@ -114,8 +148,7 @@ build gcc cross compiler 的步骤为:
 </ol>
 
 <p>
-之所以需要编译两次 gcc, 主要是因为 gcc 代码不仅包含 gcc, 还包含许多其它的 lib,
-例如 libatomic, libstdc++, libgcc 等, 这些库或多或少会依赖 libc.
+之所以需要编译两次 gcc, 主要是因为 gcc 代码不仅包含 gcc, 还包含许多其它的 lib,例如 libatomic, libstdc++ 等, 这些库或多或少会依赖 libc.
 </p>
 
 <p>
@@ -132,17 +165,90 @@ build gcc cross compiler 的步骤为:
 </div>
 </div>
 
-<div id="outline-container-org0000007" class="outline-3">
-<h3 id="org0000007"><span class="section-number-3">1.3.</span> stage 1</h3>
+<div id="outline-container-org0000008" class="outline-3">
+<h3 id="org0000008"><span class="section-number-3">1.3.</span> binutils</h3>
 <div class="outline-text-3" id="text-1-3">
 <pre class="example" id="org0000006">
+stamps/build-binutils-newlib: $(BINUTILS_SRCDIR) $(BINUTILS_SRC_GIT) stamps/check-write-permission
+    rm -rf $@ $(notdir $@)
+    mkdir $(notdir $@)
+    cd $(notdir $@) &amp;&amp; $&lt;/configure \
+        --target=$(NEWLIB_TUPLE) \
+        $(CONFIGURE_HOST) \
+        --prefix=$(INSTALL_DIR) \
+         \
+        --disable-werror \
+        $(BINUTILS_TARGET_FLAGS) \
+        --disable-gdb \
+        --disable-sim \
+        --disable-libdecnumber \
+        --disable-readline \
+        $(WITH_ISA_SPEC)
+    $(MAKE) -C $(notdir $@)
+    $(MAKE) -C $(notdir $@) install
+    mkdir -p $(dir $@) &amp;&amp; touch $@
+</pre>
+
+<p>
+install 后 `prefix` 目录为:
+</p>
+
+<pre class="example" id="org0000007">
+├── bin
+│   ├── riscv64-unknown-elf-addr2line
+│   ├── riscv64-unknown-elf-ar
+│   ├── riscv64-unknown-elf-as
+│   ├── riscv64-unknown-elf-c++filt
+│   ├── riscv64-unknown-elf-elfedit
+│   ├── riscv64-unknown-elf-gprof
+│   ├── riscv64-unknown-elf-ld
+│   ├── riscv64-unknown-elf-ld.bfd
+│   ├── riscv64-unknown-elf-nm
+│   ├── riscv64-unknown-elf-objcopy
+│   ├── riscv64-unknown-elf-objdump
+│   ├── riscv64-unknown-elf-ranlib
+│   ├── riscv64-unknown-elf-readelf
+│   ├── riscv64-unknown-elf-size
+│   ├── riscv64-unknown-elf-strings
+│   └── riscv64-unknown-elf-strip
+├── lib
+│   └── bfd-plugins
+│       └── libdep.so
+├── riscv64-unknown-elf
+│   ├── bin
+│   │   ├── ar
+│   │   ├── as
+│   │   ├── ld
+│   │   ├── ld.bfd
+│   │   ├── nm
+│   │   ├── objcopy
+│   │   ├── objdump
+│   │   ├── ranlib
+│   │   ├── readelf
+│   │   └── strip
+│   └── lib
+</pre>
+
+<p>
+由于 Makefile 里设置了 `PATH := \((INSTALL_DIR)/bin:\)(PATH)`, 所以 stage 1 可以找从 bin 中找到编译 libgcc 需要的 riscv64-unknown-elf-as.
+</p>
+
+<p>
+`riscv64-unknown-elf/bin` 下的 as 与 `bin/riscv64-unknown-elf-as` 完全相同, 前者是给 gcc driver 使用, 后者倾向于独立使用.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000000d" class="outline-3">
+<h3 id="org000000d"><span class="section-number-3">1.4.</span> stage 1</h3>
+<div class="outline-text-3" id="text-1-4">
+<pre class="example" id="org000000b">
 stamps/build-gcc-linux-stage1: $(GCC_SRCDIR) $(GCC_SRC_GIT) stamps/build-binutils-linux \
                                stamps/build-linux-headers
     cd $(notdir $@) &amp;&amp; $&lt;/configure \
         --target=$(LINUX_TUPLE) \
         $(CONFIGURE_HOST) \
         --prefix=$(INSTALL_DIR) \
-        --with-sysroot=$(SYSROOT) \
         --with-newlib \
         --without-headers \
         --disable-shared \
@@ -163,15 +269,182 @@ stamps/build-gcc-linux-stage1: $(GCC_SRCDIR) $(GCC_SRC_GIT) stamps/build-binutil
     $(MAKE) -C $(notdir $@) inhibit-libc=true install-gcc
     $(MAKE) -C $(notdir $@) inhibit-libc=true all-target-libgcc
     $(MAKE) -C $(notdir $@) inhibit-libc=true install-target-libgcc
+</pre>
 
+<p>
+编译 libgcc 并不需要 libc, 所以 stage1 时就已经可以编译 libgcc 了. 包含 libgcc
+的 stage1 gcc 配合 binutils 已经可以编译出不使用 libc 的可执行程序了.
+</p>
+
+<p>
+编译 libgcc 时需要保证 binutils (例如 riscv64-unknown-elf-as) 在 PATH中, gcc 会使用 `build/gcc/as` 这个脚本找到 PATH 中的 riscv64-unknown-elf-as. 这个 as 只在编译时使用, make install 后生成的 riscv64-unknown-elf-gcc 运行时如何找到 as 取决于:
+</p>
+
+<ol class="org-ol">
+<li>编译时 `&#x2013;prefix` 参数</li>
+<li>编译时的 `-with-as` 参数</li>
+<li>运行时的 `-B` 参数</li>
+<li>运行时的 `GCC_EXEC_PREFIX` 环境变量</li>
+<li>&#x2026;</li>
+</ol>
+
+<p>
+通过 `gcc &#x2013;print-prog-name=as` 及 `gcc &#x2013;print-search-dirs` 可以确认找到的哪个
+as.
+</p>
+
+<p>
+另外, 虽然 sysroot 中也有 `as`, 但看起来 gcc 只会考虑 sysroot 的 include 和 lib,
+并不会考虑 bin
+</p>
+
+<p>
+install 后 `prefix` 目录新增文件:
+</p>
+
+<pre class="example" id="org000000c">
+├── bin
+│   ├── riscv64-unknown-elf-c++
+│   ├── riscv64-unknown-elf-c++filt
+│   ├── riscv64-unknown-elf-cpp
+│   ├── riscv64-unknown-elf-g++
+│   ├── riscv64-unknown-elf-gcc
+│   ├── riscv64-unknown-elf-gcc-12.2.0
+│   ├── riscv64-unknown-elf-gcc-ar
+│   ├── riscv64-unknown-elf-gcc-nm
+│   ├── riscv64-unknown-elf-gcc-ranlib
+│   ├── riscv64-unknown-elf-gcov
+│   ├── riscv64-unknown-elf-gcov-dump
+│   ├── riscv64-unknown-elf-gcov-tool
+│   ├── riscv64-unknown-elf-gprof
+│   ├── riscv64-unknown-elf-lto-dump
+├── lib
+│   └── gcc
+│       └── riscv64-unknown-elf
+│           └── 12.2.0
+│               ├── include
+│               │   ├── float.h
+│               │   ├── iso646.h
+│               │   ├── stdalign.h
+│               │   ├── stdarg.h
+│               │   ├── stdatomic.h
+│               │   ├── stdbool.h
+│               │   ├── stddef.h
+│               │   ├── stdfix.h
+│               │   ├── stdint-gcc.h
+│               │   ├── stdint.h
+│               │   ├── stdnoreturn.h
+│               │   ├── tgmath.h
+│               │   └── varargs.h
+│               ├── include-fixed
+│               │   ├── limits.h
+│               │   ├── README
+│               │   └── syslimits.h
+│               ├── install-tools
+│               │   ├── fixinc_list
+│               │   ├── gsyslimits.h
+│               │   ├── include
+│               │   │   ├── limits.h
+│               │   │   └── README
+│               │   ├── macro_list
+│               │   └── mkheaders.conf
+│               └── plugin
+├── libexec
+│   └── gcc
+│       └── riscv64-unknown-elf
+│           └── 12.2.0
+│               ├── cc1
+│               ├── cc1plus
+│               ├── collect2
+│               ├── install-tools
+│               │   ├── fixincl
+│               │   ├── fixinc.sh
+│               │   ├── mkheaders
+│               │   └── mkinstalldirs
+│               ├── liblto_plugin.la
+│               ├── liblto_plugin.so
+│               ├── lto1
+│               ├── lto-wrapper
+│               └── plugin
+│                   └── gengtype
 </pre>
 </div>
 </div>
 
-<div id="outline-container-org000000b" class="outline-3">
-<h3 id="org000000b"><span class="section-number-3">1.4.</span> stage 2</h3>
-<div class="outline-text-3" id="text-1-4">
-<pre class="example" id="org000000a">
+<div id="outline-container-org0000012" class="outline-3">
+<h3 id="org0000012"><span class="section-number-3">1.5.</span> libc</h3>
+<div class="outline-text-3" id="text-1-5">
+<pre class="example" id="org0000010">
+stamps/build-newlib: $(NEWLIB_SRCDIR) $(NEWLIB_SRC_GIT) stamps/build-gcc-newlib-stage1
+    rm -rf $@ $(notdir $@)
+    mkdir $(notdir $@)
+    cd $(notdir $@) &amp;&amp; $&lt;/configure \
+        --target=$(NEWLIB_TUPLE) \
+        $(CONFIGURE_HOST) \
+        --prefix=$(INSTALL_DIR) \
+        --enable-newlib-io-long-double \
+        --enable-newlib-io-long-long \
+        --enable-newlib-io-c99-formats \
+        --enable-newlib-register-fini \
+        CFLAGS_FOR_TARGET="-O2 -D_POSIX_MODE -ffunction-sections -fdata-sections $(CFLAGS_FOR_TARGET)" \
+        CXXFLAGS_FOR_TARGET="-O2 -D_POSIX_MODE -ffunction-sections -fdata-sections $(CXXFLAGS_FOR_TARGET)"
+    $(MAKE) -C $(notdir $@)
+    $(MAKE) -C $(notdir $@) install
+</pre>
+
+<p>
+由于提前已经设置了 PATH, 所以编译 libc 时可以找到需要的 riscv64-unknown-elf-xxx
+和 stage1 riscv64-unknown-elf-gcc
+</p>
+
+<p>
+新增的文件为:
+</p>
+
+<pre class="example" id="org0000011">
+.
+├── riscv64-unknown-elf
+│   ├── include
+│   │   ├── alloca.h
+│   │   ├── _ansi.h
+│   │   ├── argz.h
+│   │   ├── ar.h
+│   │   ├── assert.h
+│   │   ├── bits
+│   │   ├── complex.h
+│   │   ├── cpio.h
+│   │   ├── ctype.h
+│   │   ├── devctl.h
+│   │   ├── dirent.h
+│   │   ├── elf.h
+....
+│   │   ├── unistd.h
+│   │   ├── utime.h
+│   │   ├── utmp.h
+│   │   ├── wchar.h
+│   │   ├── wctype.h
+│   │   └── wordexp.h
+│   └── lib
+│       ├── crt0.o
+│       ├── libc.a
+│       ├── libg.a
+│       ├── libgloss.a
+│       ├── libm.a
+│       ├── libnosys.a
+│       ├── libsemihost.a
+│       ├── libsim.a
+│       ├── nano.specs
+│       ├── nosys.specs
+│       ├── semihost.specs
+│       └── sim.specs
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000017" class="outline-3">
+<h3 id="org0000017"><span class="section-number-3">1.6.</span> stage 2</h3>
+<div class="outline-text-3" id="text-1-6">
+<pre class="example" id="org0000015">
 stamps/build-gcc-linux-stage2: $(GCC_SRCDIR) $(GCC_SRC_GIT) $(addprefix stamps/build-glibc-linux-,$(GLIBC_MULTILIB_NAMES)) \
                                stamps/build-glibc-linux-headers
     cd $(notdir $@) &amp;&amp; $&lt;/configure \
@@ -191,19 +464,77 @@ stamps/build-gcc-linux-stage2: $(GCC_SRCDIR) $(GCC_SRC_GIT) $(addprefix stamps/b
         --disable-nls \
         --disable-bootstrap \
         --src=$(gccsrcdir)
-    # libc.so 已经在 sysroot 中, 可能 make all-target 了
+    # libc 已经在 sysroot 中, 可以 make all-target 了
     $(MAKE) -C $(notdir $@)
     $(MAKE) -C $(notdir $@) install
     cp -a $(INSTALL_DIR)/$(LINUX_TUPLE)/lib* $(SYSROOT)
-
-
 </pre>
+
+<p>
+新增的文件:
+</p>
+
+<pre class="example" id="org0000016">
+.
+├── lib
+│   ├── gcc
+│   │   └── riscv64-unknown-elf
+│   │       └── 12.2.0
+│   │           ├── crtbegin.o
+│   │           ├── crtend.o
+│   │           ├── crti.o
+│   │           ├── crtn.o
+│   │           ├── libgcc.a
+│   │           ├── libgcov.a
+├── riscv64-unknown-elf
+│   ├── include
+│   │   ├── c++
+│   │   │   └── 12.2.0
+│   │   │       ├── algorithm
+│   │   │       ├── any
+│   │   │       ├── array
+│   │   │       ├── atomic
+│   │   │       ├── backward
+│   │   │       │   ├── auto_ptr.h
+│   │   │       │   ├── backward_warning.h
+│   │   │       │   ├── binders.h
+│   │   │       │   ├── hash_fun.h
+│   │   │       │   ├── hash_map
+│   │   │       │   ├── hash_set
+│   │   │       │   ├── hashtable.h
+│   │   │       │   └── strstream
+│   │   │       ├── barrier
+│   │   │       ├── bit
+│   │   │       ├── bits
+│   │   │       │   ├── algorithmfwd.h
+....
+│   │   │       ├── valarray
+│   │   │       ├── variant
+│   │   │       ├── vector
+│   │   │       └── version
+│   └── lib
+│       ├── libstdc++.a
+│       ├── libstdc++.a-gdb.py
+│       ├── libstdc++.la
+│       ├── libsupc++.a
+│       ├── libsupc++.la
+</pre>
+
+<p>
+主要包含:
+</p>
+
+<ol class="org-ol">
+<li>`enable-languages=c++` 新增的 libstdc++</li>
+
+<li>libgcc (如果 stage1 没有编译 libgcc)</li>
+</ol>
 </div>
 </div>
 
 <div id="outline-container-org000000e" class="outline-3">
-<h3 id="org000000e"><span class="section-number-3">1.5.</span> disable-bootstrap</h3>
-<div class="outline-text-3" id="text-1-5">
+<h3 id="org000000e"><span class="section-number-3">1.7.</span> disable-bootstrap</h3>
+<div class="outline-text-3" id="text-1-7">
 <p>
 默认情况下编译 gcc 时会通过 3 个 stage 确定 gcc 编译的没有问题, 例如现在需要用
 gcc 4 编译 gcc 9:
@@ -222,10 +553,10 @@ gcc 4 编译 gcc 9:
 </div>
 </div>
 
-<div id="outline-container-org0000012" class="outline-3">
-<h3 id="org0000012"><span class="section-number-3">1.6.</span> build native gcc for riscv</h3>
-<div class="outline-text-3" id="text-1-6">
-<pre class="example" id="org0000011">
+<div id="outline-container-org000001e" class="outline-3">
+<h3 id="org000001e"><span class="section-number-3">1.8.</span> build native gcc for riscv</h3>
+<div class="outline-text-3" id="text-1-8">
+<pre class="example" id="org000001d">
 # build riscv cross compiler at /opt/gcc-riscv
 cd &lt;path-to-riscv-gnu-toolchain&gt;
 ./configure --prefix=/opt/gcc-riscv --with-arch=rv64gc --with-abi=lp64d
@@ -272,7 +603,7 @@ make stamps/build-binutils-linux -j 20
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2022-03-22 Tue 13:39<br />
-Last updated: 2023-07-18 Tue 10:41</p>
+Last updated: 2023-09-21 Thu 18:18</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
