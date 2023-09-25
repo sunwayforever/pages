@@ -32,19 +32,14 @@
 <ul>
 <li><a href="#org000002f">1. Linker Relocation</a>
 <ul>
-<li><a href="#org0000009">1.1. example</a>
-<ul>
-<li><a href="#org0000001">1.1.1. la relocation</a></li>
-<li><a href="#ID-119c2664-36d0-4cf5-ae13-0686350c3df8">1.1.2. jal relocation</a></li>
-</ul>
-</li>
+<li><a href="#org0000009">1.1. example</a></li>
 <li><a href="#org000001f">1.2. riscv relocation</a>
 <ul>
 <li><a href="#org000000d">1.2.1. R_RISCV_PCREL_HI2</a></li>
 <li><a href="#org0000011">1.2.2. R_RISCV_PCREL_LO12</a></li>
 <li><a href="#org0000015">1.2.3. R_RISCV_HI20</a></li>
 <li><a href="#org0000018">1.2.4. R_RISCV_RELAX</a></li>
-<li><a href="#org000001c">1.2.5. R_RISCV_JAL</a></li>
+<li><a href="#ID-119c2664-36d0-4cf5-ae13-0686350c3df8">1.2.5. R_RISCV_JAL</a></li>
 </ul>
 </li>
 <li><a href="#org000002c">1.3. impls</a>
@@ -132,10 +127,18 @@ patch 指令, reloc_type 会包含如下信息:
 <div id="outline-container-org0000009" class="outline-3">
 <h3 id="org0000009"><span class="section-number-3">1.1.</span> example</h3>
 <div class="outline-text-3" id="text-1-1">
-</div>
-<div id="outline-container-org0000001" class="outline-4">
-<h4 id="org0000001"><span class="section-number-4">1.1.1.</span> la relocation</h4>
-<div class="outline-text-4" id="text-1-1-1">
+<p>
+下面这个例子展示了:
+</p>
+
+<ol class="org-ol">
+<li>R_RISCV_HI20</li>
+
+<li>R_RISCV_PCREL_HI20</li>
+
+<li>R_RISCV_GOT_HI20</li>
+</ol>
+
 <div class="org-src-container">
 <pre class="src src-asm">    <span class="org-comment-delimiter">## </span><span class="org-comment">riscv64-linux-gnu-gcc test.s -static</span>
     <span class="org-keyword">.global</span> main
@@ -183,8 +186,7 @@ patch 指令, reloc_type 会包含如下信息:
 </div>
 
 <p>
-上面的 `%hi`, `pcrel_hi` 等是 , 会导致 obj 中不同的 relocation
-type:
+上面的 `%hi`, `%pcrel_hi`, `%got_pcrel_hi` 等是 , 会导致 obj 使用不同的 relocation type:
 </p>
 
 <pre class="example" id="org0000000">
@@ -238,98 +240,6 @@ objdump -d test.o
 </div>
 </div>
 
-<div id="outline-container-ID-119c2664-36d0-4cf5-ae13-0686350c3df8" class="outline-4">
-<h4 id="ID-119c2664-36d0-4cf5-ae13-0686350c3df8"><span class="section-number-4">1.1.2.</span> jal relocation</h4>
-<div class="outline-text-4" id="text-1-1-2">
-<p>
-jal 的操作数也是一个 symbol, 但根据 symbol 的位置, 分为两种情况:
-</p>
-
-<ol class="org-ol">
-<li>symbol 在当前 section</li>
-
-<li>symbol 在其它 section</li>
-</ol>
-
-<p>
-之所以区分这两种情况, 是因为 section 的地址是不确定的 (<a href="linker_script.html#ID-1047822f-1bc3-4e98-8874-d7fa2e59260e">Linker Script</a> 可以配置
-section 的地址). 但如果 symbol 在当前 section, 因为 jal 的操作数是 PCREL 的, 所以操作数会是确定的值.
-</p>
-
-<p>
-symbol 在同一个 section:
-</p>
-
-<div class="org-src-container">
-<pre class="src src-asm">    <span class="org-keyword">.global</span> _start
-    <span class="org-keyword">.section</span> .text
-<span class="org-function-name">_start</span>:
-    <span class="org-keyword">jal</span> here
-
-<span class="org-function-name">here</span>:
-    <span class="org-keyword">ret</span>
-</pre>
-</div>
-
-<pre class="example" id="org0000004">
-$&gt; /opt/riscv/bin/riscv-elf-gcc test.S -O0 -c
-$&gt; /opt/riscv/bin/riscv-elf-objdump -d test.o
-
-Disassembly of section .text:
-
-0000000000000000 &lt;_start&gt;:
-   0:   004000ef                jal     ra,4 &lt;here&gt;
-
-0000000000000004 &lt;here&gt;:
-   4:   8082                    ret
-</pre>
-
-<p>
-symbol 不在同一个 section:
-</p>
-
-<div class="org-src-container">
-<pre class="src src-asm">    <span class="org-keyword">.global</span> _start
-    <span class="org-keyword">.section</span> .text
-<span class="org-function-name">_start</span>:
-    <span class="org-keyword">jal</span> here
-
-    <span class="org-keyword">.section</span> .mysection
-<span class="org-function-name">here</span>:
-    <span class="org-keyword">ret</span>
-</pre>
-</div>
-
-<pre class="example" id="org0000005">
-$&gt; riscv64-linux-gnu-objdump -d test.o
-
-Disassembly of section .text:
-
-0000000000000000 &lt;_start&gt;:
-   0:   000000ef                jal     ra,0 &lt;_start&gt;
-
-$&gt; readelf -a test.o
-
-Relocation section '.rela.text' at offset 0x100 contains 1 entry:
-  Offset          Info           Type           Sym. Value    Sym. Name + Addend
-000000000000  000400000011 R_RISCV_JAL       0000000000000000 here + 0
-</pre>
-</div>
-
-
-<div id="outline-container-org0000031" class="outline-5 references">
-<h5 id="org0000031">Backlinks</h5>
-<div class="outline-text-5" id="text-org0000031">
-<p>
-<a href="../riscv/riscv_tutorial.html#ID-653c6b58-7ee1-4e07-bf3f-d5eea450748e">RISC-V Tutorial</a>
-(<i>RISC-V Tutorial &gt; RISC-V Assembly &gt; RV32I &gt; Overview</i>):     与 B 指令类似, 没有使用 imm[0], J 跳转范围扩大为 [-1M, +1M]+pc (<a href="#ID-119c2664-36d0-4cf5-ae13-0686350c3df8">jal relocation</a>)
-</p>
-</div>
-</div>
-</div>
-</div>
-
-
 <div id="outline-container-org000001f" class="outline-3">
 <h3 id="org000001f"><span class="section-number-3">1.2.</span> riscv relocation</h3>
 <div class="outline-text-3" id="text-1-2">
@@ -360,13 +270,48 @@ relocation 是 <a href="https://github.com/riscv-non-isa/riscv-elf-psabi-doc">ps
 <li>R_RISCV_TPREL_S</li>
 <li>R_RISCV_RELAX</li>
 </ul>
+
+<p>
+riscv 的 relocation type 定义在 `bfd/elfxx-riscv.c::howto_table` 中, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-function-name">HOWTO</span><span class="org-parenthesis">(</span>
+    <span class="org-type">R_RISCV_JAL</span><span class="org-parenthesis">,</span>            <span class="org-comment-delimiter">/* </span><span class="org-comment">type</span><span class="org-comment-delimiter"> */</span>
+    0<span class="org-parenthesis">,</span>                      <span class="org-comment-delimiter">/* </span><span class="org-comment">rightshift</span><span class="org-comment-delimiter"> */</span>
+    4<span class="org-parenthesis">,</span>                      <span class="org-comment-delimiter">/* </span><span class="org-comment">size</span><span class="org-comment-delimiter"> */</span>
+    32<span class="org-parenthesis">,</span>                     <span class="org-comment-delimiter">/* </span><span class="org-comment">bitsize</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-constant">true</span><span class="org-parenthesis">,</span>                   <span class="org-comment-delimiter">/* </span><span class="org-comment">pc_relative</span><span class="org-comment-delimiter"> */</span>
+    0<span class="org-parenthesis">,</span>                      <span class="org-comment-delimiter">/* </span><span class="org-comment">bitpos</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">complain_overflow_dont</span><span class="org-parenthesis">,</span> <span class="org-comment-delimiter">/* </span><span class="org-comment">complain_on_overflow</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">bfd_elf_generic_reloc</span><span class="org-parenthesis">,</span>  <span class="org-comment-delimiter">/* </span><span class="org-comment">special_function</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-string">"R_RISCV_JAL"</span><span class="org-parenthesis">,</span>          <span class="org-comment-delimiter">/* </span><span class="org-comment">name</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-constant">false</span><span class="org-parenthesis">,</span>                  <span class="org-comment-delimiter">/* </span><span class="org-comment">partial_inplace</span><span class="org-comment-delimiter"> */</span>
+    0<span class="org-parenthesis">,</span>                      <span class="org-comment-delimiter">/* </span><span class="org-comment">src_mask</span><span class="org-comment-delimiter"> */</span>
+    ENCODE_JTYPE_IMM<span class="org-parenthesis">(</span>-1U<span class="org-parenthesis">),</span>  <span class="org-comment-delimiter">/* </span><span class="org-comment">dst_mask</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-constant">true</span><span class="org-parenthesis">),</span>                  <span class="org-comment-delimiter">/* </span><span class="org-comment">pcrel_offset</span><span class="org-comment-delimiter"> */</span>
+</pre>
 </div>
 
+<p>
+这里定义的字段是为了抽象出不同 reloc type 中相同的逻辑, 但 riscv 基本上只用到了:
+</p>
+
+<ol class="org-ol">
+<li>type</li>
+
+<li>pc_relative</li>
+
+<li>size/bitsize</li>
+
+<li>dst_mask</li>
+</ol>
+</div>
 
 <div id="outline-container-org000000d" class="outline-4">
 <h4 id="org000000d"><span class="section-number-4">1.2.1.</span> R_RISCV_PCREL_HI2</h4>
 <div class="outline-text-4" id="text-1-2-1">
-<pre class="example" id="org000000c">
+<pre class="example" id="org0000004">
 000000000014  000400000017 R_RISCV_PCREL_HI2 0000000000000000 hello_msg + 0
 
 表示
@@ -381,7 +326,7 @@ relocation 是 <a href="https://github.com/riscv-non-isa/riscv-elf-psabi-doc">ps
 <div id="outline-container-org0000011" class="outline-4">
 <h4 id="org0000011"><span class="section-number-4">1.2.2.</span> R_RISCV_PCREL_LO12</h4>
 <div class="outline-text-4" id="text-1-2-2">
-<pre class="example" id="org0000010">
+<pre class="example" id="org0000008">
 000000000018  000500000018 R_RISCV_PCREL_LO1 0000000000000014 .1 + 0
 
 对应
@@ -416,7 +361,7 @@ pc-relative 地址 (1b 为 key). 后面处理 addi 时通过 `_bfd_riscv_relax_p
 <div id="outline-container-org0000015" class="outline-4">
 <h4 id="org0000015"><span class="section-number-4">1.2.3.</span> R_RISCV_HI20</h4>
 <div class="outline-text-4" id="text-1-2-3">
-<pre class="example" id="org0000014">
+<pre class="example" id="org000000c">
 000000000004  00040000001a R_RISCV_HI20      0000000000000000 hello_msg + 0
 
 表示
@@ -438,11 +383,85 @@ pc-relative 地址 (1b 为 key). 后面处理 addi 时通过 `_bfd_riscv_relax_p
 </div>
 </div>
 
-<div id="outline-container-org000001c" class="outline-4">
-<h4 id="org000001c"><span class="section-number-4">1.2.5.</span> R_RISCV_JAL</h4>
+<div id="outline-container-ID-119c2664-36d0-4cf5-ae13-0686350c3df8" class="outline-4">
+<h4 id="ID-119c2664-36d0-4cf5-ae13-0686350c3df8"><span class="section-number-4">1.2.5.</span> R_RISCV_JAL</h4>
 <div class="outline-text-4" id="text-1-2-5">
 <p>
-R_RISCV_JAL 和 R_RISCV_PCREL_LO12 类似, 只是 ENCODE IMM 有点区别, JAL 有一个限制是它跳转的范围在 [-1M,1M] 之间, 所以下面的代码会链接不过
+JAL 的操作数也是一个 symbol, 但根据 symbol 的位置, 分为两种情况:
+</p>
+
+<ol class="org-ol">
+<li>symbol 在当前 section</li>
+
+<li>symbol 在其它 section</li>
+</ol>
+
+<p>
+之所以区分这两种情况, 是因为 section 的地址是不确定的 (<a href="linker_script.html#ID-1047822f-1bc3-4e98-8874-d7fa2e59260e">Linker Script</a> 可以配置
+section 的地址). 但如果 symbol 在当前 section, 因为 jal 的操作数是 PCREL 的, 所以操作数会是确定的值.
+</p>
+
+<p>
+symbol 在同一个 section:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm">    <span class="org-keyword">.global</span> _start
+    <span class="org-keyword">.section</span> .text
+<span class="org-function-name">_start</span>:
+    <span class="org-keyword">jal</span> here
+
+<span class="org-function-name">here</span>:
+    <span class="org-keyword">ret</span>
+</pre>
+</div>
+
+<pre class="example" id="org0000013">
+$&gt; /opt/riscv/bin/riscv-elf-gcc test.S -O0 -c
+$&gt; /opt/riscv/bin/riscv-elf-objdump -d test.o
+
+Disassembly of section .text:
+
+0000000000000000 &lt;_start&gt;:
+   0:   004000ef                jal     ra,4 &lt;here&gt;
+
+0000000000000004 &lt;here&gt;:
+   4:   8082                    ret
+</pre>
+
+<p>
+symbol 不在同一个 section:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm">    <span class="org-keyword">.global</span> _start
+    <span class="org-keyword">.section</span> .text
+<span class="org-function-name">_start</span>:
+    <span class="org-keyword">jal</span> here
+
+    <span class="org-keyword">.section</span> .mysection
+<span class="org-function-name">here</span>:
+    <span class="org-keyword">ret</span>
+</pre>
+</div>
+
+<pre class="example" id="org0000014">
+$&gt; riscv64-linux-gnu-objdump -d test.o
+
+Disassembly of section .text:
+
+0000000000000000 &lt;_start&gt;:
+   0:   000000ef                jal     ra,0 &lt;_start&gt;
+
+$&gt; readelf -a test.o
+
+Relocation section '.rela.text' at offset 0x100 contains 1 entry:
+  Offset          Info           Type           Sym. Value    Sym. Name + Addend
+000000000000  000400000011 R_RISCV_JAL       0000000000000000 here + 0
+</pre>
+
+<p>
+R_RISCV_JAL 的 IMM 编码参考 ENCODE_JTYPE_IMM 以及 <a href="https://msyksphinz-self.github.io/riscv-isadoc/html/rvi.html#jal">JAL 的指令格式</a>, 另外, IMM 编码决定了 JAL 跳转的范围在 [-1M,1M] 之间, 所以下面的代码会链接不过
 </p>
 
 <div class="org-src-container">
@@ -461,15 +480,27 @@ R_RISCV_JAL 和 R_RISCV_PCREL_LO12 类似, 只是 ENCODE IMM 有点区别, JAL �
 </pre>
 </div>
 
-<pre class="example" id="org000001b">
+<pre class="example" id="org0000016">
 $&gt; riscv64-linux-gnu-gcc test.S  -nostdlib -O0
 /tmp/ccuebMtl.o: in function `_start':
 (.text+0x0): relocation truncated to fit: R_RISCV_JAL against `here'
 collect2: error: ld returned 1 exit status
 </pre>
 </div>
+
+
+<div id="outline-container-org0000030" class="outline-5 references">
+<h5 id="org0000030">Backlinks</h5>
+<div class="outline-text-5" id="text-org0000030">
+<p>
+<a href="../riscv/riscv_tutorial.html#ID-653c6b58-7ee1-4e07-bf3f-d5eea450748e">RISC-V Tutorial</a>
+(<i>RISC-V Tutorial &gt; RISC-V Assembly &gt; RV32I &gt; Overview</i>):     与 B 指令类似, 没有使用 imm[0], J 跳转范围扩大为 [-1M, +1M]+pc (<a href="#ID-119c2664-36d0-4cf5-ae13-0686350c3df8">jal relocation</a>)
+</p>
 </div>
 </div>
+</div>
+</div>
+
 
 <div id="outline-container-org000002c" class="outline-3">
 <h3 id="org000002c"><span class="section-number-3">1.3.</span> impls</h3>
@@ -500,7 +531,7 @@ test.S:
 重定位结果为:
 </p>
 
-<pre class="example" id="org0000022">
+<pre class="example" id="org000001c">
 Disassembly of section .text:
 
 0000000000010078 &lt;here-0x789&gt;:
@@ -669,9 +700,9 @@ word 中的 value 部分修改成 relocation 的结果了.
 </div>
 
 
-<div id="outline-container-org0000030" class="outline-2 references">
-<h2 id="org0000030">Backlinks</h2>
-<div class="outline-text-2" id="text-org0000030">
+<div id="outline-container-org000002a" class="outline-2 references">
+<h2 id="org000002a">Backlinks</h2>
+<div class="outline-text-2" id="text-org000002a">
 <p>
 <a href="llvm_toy_riscv_backend.html#ID-1145dd49-e340-4c20-8d85-d4779a20ffcd">LLVM Toy RISC-V Backend</a>
 (<i>LLVM Toy RISC-V Backend &gt; toy-46: write object file Pt. 3</i>):  CALL 转换 jalr 时由于涉及到 symbol 的问题, 需要转换为 `lui t0, %hi(addr); addi t0, %lo(addr); jarl ra, 0(t0)`, 其中 hi/lo 需要转换为 fixup 信息 (类型, 原指令需 要被 patch 的 offset 和长度) 保存在 object 中 <a href="linker_relocation.html#ID-4fabbae2-594b-4f7d-bcb9-756212cfbe9f">Linker Relocation</a>
@@ -684,7 +715,7 @@ word 中的 value 部分修改成 relocation 的结果了.
 
 <p>
 <a href="../riscv/riscv_tutorial.html#ID-f3ef27f9-fba8-4fcc-aac4-350d9b81ece1">risc-v modifiers</a>
-(<i>RISC-V Tutorial &gt; GNU Assembler &gt; risc-v modifiers</i>):  2) %pcrel_hi(symbol), %pcrel_lo(label)
+(<i>RISC-V Tutorial &gt; GNU Assembler &gt; risc-v modifiers</i>):  需要注意的是 <a href="linker_relocation.html#ID-4fabbae2-594b-4f7d-bcb9-756212cfbe9f">linker relocation</a> 处理 lo/pcrel_lo, hi/pcrel_hi 时并不是简单的取高 20/低 12 位, 以 lui/addi 为例:
 </p>
 </div>
 </div>
@@ -693,7 +724,7 @@ word 中的 value 部分修改成 relocation 的结果了.
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2022-04-08 Fri 13:50<br />
-Last updated: 2023-09-25 Mon 09:40</p>
+Last updated: 2023-09-25 Mon 11:17</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
