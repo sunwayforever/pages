@@ -1,0 +1,702 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>BFD Tutorial</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">BFD Tutorial</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org000004e">1. BFD Tutorial</a>
+<ul>
+<li><a href="#org0000000">1.1. Overview</a></li>
+<li><a href="#org0000020">1.2. Read ELF</a>
+<ul>
+<li><a href="#org000001d">1.2.1. API</a></li>
+</ul>
+</li>
+<li><a href="#org000004b">1.3. Write ELF</a>
+<ul>
+<li><a href="#org0000048">1.3.1. API</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000004e" class="outline-2">
+<h2 id="org000004e"><span class="section-number-2">1.</span> BFD Tutorial</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="https://ftp.gnu.org/old-gnu/Manuals/bfd-2.9.1/html_chapter/bfd_1.html">https://ftp.gnu.org/old-gnu/Manuals/bfd-2.9.1/html_chapter/bfd_1.html</a>
+</p>
+</div>
+
+<div id="outline-container-org0000000" class="outline-3">
+<h3 id="org0000000"><span class="section-number-3">1.1.</span> Overview</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+bfd (binary file descriptor library) 是 binutils 中用来读写 object 文件的库,
+binutils 中的 gas/ld/objdump/readelf/objcopy 等都依赖 bfd 去读写 object file.
+</p>
+
+<p>
+bfd 支持不同平台上的不同的 object 文件格式, 包括 <a href="elf.html#ID-6bf0cc7e-0532-4831-9345-8f79c47dc5e3">elf</a>, a.out, coff 等.
+</p>
+
+<p>
+bfd 把 object file 抽像成三部分:
+</p>
+
+<ol class="org-ol">
+<li>section</li>
+<li>symtab</li>
+<li>reloc</li>
+</ol>
+
+<p>
+bfd 主要用来读写可重定位 (relocatable) 的 object file, 所以已经 link 完成的文件中的特有的数据 (例如 elf 的 segment/phdr) 它并不关注.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000020" class="outline-3">
+<h3 id="org0000020"><span class="section-number-3">1.2.</span> Read ELF</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+测试用的 test.obj:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-type">int</span> <span class="org-variable-name">a</span> = 10;
+<span class="org-type">void</span> <span class="org-function-name">foo</span> <span class="org-parenthesis">()</span> <span class="org-parenthesis">{</span>
+    printf<span class="org-parenthesis">(</span><span class="org-string">"%d\n"</span><span class="org-parenthesis">,</span> a<span class="org-parenthesis">)</span>;
+<span class="org-parenthesis">}</span>
+
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    foo<span class="org-parenthesis">()</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-comment-delimiter">// </span><span class="org-comment">2022-03-04 11:42</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;assert.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;bfd.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdlib.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;string.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;unistd.h&gt;</span>
+
+<span class="org-type">void</span> <span class="org-function-name">read_reloc</span><span class="org-parenthesis">(</span><span class="org-type">bfd</span> *<span class="org-variable-name">abfd</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    printf<span class="org-parenthesis">(</span><span class="org-string">"---------- %s ----------\n"</span><span class="org-parenthesis">,</span> __FUNCTION__<span class="org-parenthesis">)</span>;
+
+    <span class="org-type">int</span> <span class="org-variable-name">symtab_size</span> = bfd_get_symtab_upper_bound<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">)</span>;
+    assert<span class="org-parenthesis">(</span>symtab_size &gt; 0<span class="org-parenthesis">)</span>;
+    <span class="org-type">asymbol</span> **<span class="org-variable-name">symbol_table</span> = <span class="org-parenthesis">(</span><span class="org-type">asymbol</span> **<span class="org-parenthesis">)</span>malloc<span class="org-parenthesis">(</span>symtab_size<span class="org-parenthesis">)</span>;
+    bfd_canonicalize_symtab<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> symbol_table<span class="org-parenthesis">)</span>;
+
+    <span class="org-type">asection</span> *<span class="org-variable-name">text_section</span> = bfd_get_section_by_name<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> <span class="org-string">".text"</span><span class="org-parenthesis">)</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">reloc_size</span> = bfd_get_reloc_upper_bound<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> text_section<span class="org-parenthesis">)</span>;
+    <span class="org-type">arelent</span> **<span class="org-variable-name">reloc_table</span> = <span class="org-parenthesis">(</span><span class="org-type">arelent</span> **<span class="org-parenthesis">)</span>malloc<span class="org-parenthesis">(</span>reloc_size<span class="org-parenthesis">)</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">num_reloc</span> =
+        bfd_canonicalize_reloc<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> text_section<span class="org-parenthesis">,</span> reloc_table<span class="org-parenthesis">,</span> symbol_table<span class="org-parenthesis">)</span>;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"reloc_size: %d, num_reloc: %d\n"</span><span class="org-parenthesis">,</span> reloc_size<span class="org-parenthesis">,</span> num_reloc<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; num_reloc; i++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+        <span class="org-type">arelent</span> *<span class="org-variable-name">reloc</span> = reloc_table[i];
+        printf<span class="org-parenthesis">(</span>
+            <span class="org-string">"offset: 0x%lx rel: %-20s symbol: %-10s addend: %ld\n"</span><span class="org-parenthesis">,</span>
+            reloc-&gt;address<span class="org-parenthesis">,</span> reloc-&gt;howto-&gt;name<span class="org-parenthesis">,</span> <span class="org-parenthesis">(</span>*<span class="org-parenthesis">(</span>reloc-&gt;sym_ptr_ptr<span class="org-parenthesis">))</span>-&gt;name<span class="org-parenthesis">,</span>
+            reloc-&gt;addend<span class="org-parenthesis">)</span>;
+    <span class="org-parenthesis">}</span>
+<span class="org-parenthesis">}</span>
+
+<span class="org-type">void</span> <span class="org-function-name">read_symtab</span><span class="org-parenthesis">(</span><span class="org-type">bfd</span> *<span class="org-variable-name">abfd</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    printf<span class="org-parenthesis">(</span><span class="org-string">"---------- %s ----------\n"</span><span class="org-parenthesis">,</span> __FUNCTION__<span class="org-parenthesis">)</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">symtab_size</span> = bfd_get_symtab_upper_bound<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">)</span>;
+    assert<span class="org-parenthesis">(</span>symtab_size &gt; 0<span class="org-parenthesis">)</span>;
+
+    <span class="org-type">asymbol</span> **<span class="org-variable-name">symbol_table</span> = <span class="org-parenthesis">(</span><span class="org-type">asymbol</span> **<span class="org-parenthesis">)</span>malloc<span class="org-parenthesis">(</span>symtab_size<span class="org-parenthesis">)</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">num_symbols</span> = bfd_canonicalize_symtab<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> symbol_table<span class="org-parenthesis">)</span>;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"symtabl size: %d, num of symbols: %d\n"</span><span class="org-parenthesis">,</span> symtab_size<span class="org-parenthesis">,</span> num_symbols<span class="org-parenthesis">)</span>;
+
+    <span class="org-type">symbol_info</span> <span class="org-variable-name">info</span>;
+    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; num_symbols; i++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+        <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>symbol_table[i]-&gt;section == <span class="org-constant">NULL</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+            <span class="org-keyword">continue</span>;
+        <span class="org-parenthesis">}</span>
+        bfd_symbol_info<span class="org-parenthesis">(</span>symbol_table[i]<span class="org-parenthesis">,</span> &amp;info<span class="org-parenthesis">)</span>;
+        printf<span class="org-parenthesis">(</span>
+            <span class="org-string">"section: %-20s, symbol: %-25s -&gt; 0x%lx, type: %x\n"</span><span class="org-parenthesis">,</span>
+            symbol_table[i]-&gt;section-&gt;name<span class="org-parenthesis">,</span> info.name<span class="org-parenthesis">,</span> info.value<span class="org-parenthesis">,</span> info.type<span class="org-parenthesis">)</span>;
+    <span class="org-parenthesis">}</span>
+<span class="org-parenthesis">}</span>
+
+<span class="org-type">void</span> <span class="org-function-name">read_section</span><span class="org-parenthesis">(</span><span class="org-type">bfd</span> *<span class="org-variable-name">abfd</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">asection</span> *<span class="org-variable-name">section</span> = bfd_get_section_by_name<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> <span class="org-string">".text"</span><span class="org-parenthesis">)</span>;
+    printf<span class="org-parenthesis">(</span><span class="org-string">".text vma: 0x%lx\n"</span><span class="org-parenthesis">,</span> section-&gt;vma<span class="org-parenthesis">)</span>;
+
+    <span class="org-type">char</span> *<span class="org-variable-name">buffer</span> = <span class="org-parenthesis">(</span><span class="org-type">char</span> *<span class="org-parenthesis">)</span>malloc<span class="org-parenthesis">(</span>section-&gt;size<span class="org-parenthesis">)</span>;
+    bfd_get_section_contents<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> section<span class="org-parenthesis">,</span> buffer<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">,</span> section-&gt;size<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; section-&gt;size; i++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+        printf<span class="org-parenthesis">(</span><span class="org-string">"%.2x "</span><span class="org-parenthesis">,</span> buffer[i] &amp; 0xff<span class="org-parenthesis">)</span>;
+    <span class="org-parenthesis">}</span>
+    printf<span class="org-parenthesis">(</span><span class="org-string">"\n"</span><span class="org-parenthesis">)</span>;
+<span class="org-parenthesis">}</span>
+
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    bfd_init<span class="org-parenthesis">()</span>;
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">bfd_openr &#29992;&#26469;&#35835;</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">bfd_openw &#29992;&#26469;&#20889;</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">bfd</span> *<span class="org-variable-name">abfd</span> = bfd_openr<span class="org-parenthesis">(</span><span class="org-string">"/tmp/test.obj"</span><span class="org-parenthesis">,</span> <span class="org-constant">NULL</span><span class="org-parenthesis">)</span>;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"target: %s\n"</span><span class="org-parenthesis">,</span> bfd_get_target<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">))</span>;
+
+    assert<span class="org-parenthesis">(</span>abfd != <span class="org-constant">NULL</span><span class="org-parenthesis">)</span>;
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">abfd &#25903;&#25345;&#19977;&#31181;&#26684;&#24335;, &#20854;&#20013; elf &#30340; executable, o, so &#37117;&#31639; bfd_object</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-comment-delimiter">/*</span>
+<span class="org-comment">     * if (bfd_check_format(abfd, bfd_archive)) {</span>
+<span class="org-comment">     *     printf("found archive\n");</span>
+<span class="org-comment">     * }</span>
+<span class="org-comment">     * if (bfd_check_format(abfd, bfd_core)) {</span>
+<span class="org-comment">     *     printf("found core\n");</span>
+<span class="org-comment">     * }</span>
+<span class="org-comment-delimiter">     */</span>
+    assert<span class="org-parenthesis">(</span>bfd_check_format<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> bfd_object<span class="org-parenthesis">)</span> != 0<span class="org-parenthesis">)</span>;
+
+    read_symtab<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">)</span>;
+    read_reloc<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">)</span>;
+    read_section<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+
+</pre>
+</div>
+
+<pre class="example" id="org0000003">
+target: elf64-x86-64
+---------- read_symtab ----------
+symtabl size: 120, num of symbols: 14
+section: *ABS*               , symbol: C-src-ZDhXTO.c            -&gt; 0x0, type: 61
+section: .text               , symbol: .text                     -&gt; 0x0, type: 74
+section: .data               , symbol: .data                     -&gt; 0x0, type: 64
+section: .bss                , symbol: .bss                      -&gt; 0x0, type: 62
+section: .rodata             , symbol: .rodata                   -&gt; 0x0, type: 72
+section: .note.GNU-stack     , symbol: .note.GNU-stack           -&gt; 0x0, type: 6e
+section: .note.gnu.property  , symbol: .note.gnu.property        -&gt; 0x0, type: 72
+section: .eh_frame           , symbol: .eh_frame                 -&gt; 0x0, type: 72
+section: .comment            , symbol: .comment                  -&gt; 0x0, type: 6e
+section: .data               , symbol: a                         -&gt; 0x0, type: 44
+section: .text               , symbol: foo                       -&gt; 0x0, type: 54
+section: *UND*               , symbol: _GLOBAL_OFFSET_TABLE_     -&gt; 0x0, type: 55
+section: *UND*               , symbol: printf                    -&gt; 0x0, type: 55
+section: .text               , symbol: main                      -&gt; 0x24, type: 54
+---------- read_reloc ----------
+reloc_size: 40, num_reloc: 4
+offset: 0xa rel: R_X86_64_PC32        symbol: a          addend: -4
+offset: 0x13 rel: R_X86_64_PC32        symbol: .rodata    addend: -4
+offset: 0x1d rel: R_X86_64_PLT32       symbol: printf     addend: -4
+offset: 0x3d rel: R_X86_64_PLT32       symbol: foo        addend: -4
+.text vma: 0x0
+f3 0f 1e fa 55 48 89 e5 8b 05 00 00 00 00 89 c6 48 8d 3d 00 00 00 00 b8 00 00 00 00 e8 00 00 00 00 90 5d c3 f3 0f 1e fa 55 48 89 e5 48 83 ec 10 89 7d fc 48 89 75 f0 b8 00 00 00 00 e8 00 00 00 00 b8 00 00 00 00 c9 c3
+</pre>
+</div>
+
+<div id="outline-container-org000001d" class="outline-4">
+<h4 id="org000001d"><span class="section-number-4">1.2.1.</span> API</h4>
+<div class="outline-text-4" id="text-1-2-1">
+</div>
+<div id="outline-container-org0000005" class="outline-5">
+<h5 id="org0000005"><span class="section-number-5">1.2.1.1.</span> bfd_openr</h5>
+<div class="outline-text-5" id="text-1-2-1-1">
+<p>
+读文件
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000008" class="outline-5">
+<h5 id="org0000008"><span class="section-number-5">1.2.1.2.</span> bfd_check_format</h5>
+<div class="outline-text-5" id="text-1-2-1-2">
+<p>
+bfd 支持三种 format:
+</p>
+
+<ol class="org-ol">
+<li>bfd_object</li>
+<li>bfd_archive</li>
+<li>bfd_core</li>
+</ol>
+
+<p>
+其中 elf executable, so, o 都属于 bfd_object
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000000b" class="outline-5">
+<h5 id="org000000b"><span class="section-number-5">1.2.1.3.</span> bfd_get_symtab_upper_bound</h5>
+<div class="outline-text-5" id="text-1-2-1-3">
+<p>
+获得 symtab 的大小, 用户代码需要据此分配空间以便后续读出 symtab
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000000e" class="outline-5">
+<h5 id="org000000e"><span class="section-number-5">1.2.1.4.</span> bfd_canonicalize_symtab</h5>
+<div class="outline-text-5" id="text-1-2-1-4">
+<p>
+读 symtab
+</p>
+
+<p>
+asymbol 的主要成员有:
+</p>
+
+<ol class="org-ol">
+<li>name</li>
+
+<li><p>
+value
+</p>
+
+<p>
+symbol value 是指它在其 section 中的 offset
+</p></li>
+
+<li><p>
+section
+</p>
+
+<p>
+symbol 所属的 section, 重定位时需要根据 section 和 value 确定 symbol 的地址
+</p></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000011" class="outline-5">
+<h5 id="org0000011"><span class="section-number-5">1.2.1.5.</span> bfd_get_section_by_name</h5>
+<div class="outline-text-5" id="text-1-2-1-5">
+<p>
+查找 section
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000014" class="outline-5">
+<h5 id="org0000014"><span class="section-number-5">1.2.1.6.</span> bfd_get_section_contents</h5>
+<div class="outline-text-5" id="text-1-2-1-6">
+<p>
+读取 section 的数据
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000017" class="outline-5">
+<h5 id="org0000017"><span class="section-number-5">1.2.1.7.</span> bfd_get_reloc_upper_bound</h5>
+<div class="outline-text-5" id="text-1-2-1-7">
+<p>
+和 symbol 类似, 读取 reloc 的大小
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000001a" class="outline-5">
+<h5 id="org000001a"><span class="section-number-5">1.2.1.8.</span> bfd_canonicalize_reloc</h5>
+<div class="outline-text-5" id="text-1-2-1-8">
+<p>
+读取 reloc
+</p>
+
+<p>
+arelen 的主要成员有:
+</p>
+
+<ol class="org-ol">
+<li><p>
+address
+</p>
+
+<p>
+表示需要 patch 的地址
+</p></li>
+
+<li><p>
+sym_ptr_ptr
+</p>
+
+<p>
+要查找的 symbol
+</p></li>
+
+<li><p>
+howto
+</p>
+
+<p>
+reloc 的类型, 决定了 symbol 的真实地址要如何写到 address
+</p></li>
+
+<li><p>
+addend
+</p>
+
+<p>
+得到 symbol 的真实地址后需要加上 addend 做为最终的地址, 例如 array 的索引就是一种常见的 addend
+</p></li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000004b" class="outline-3">
+<h3 id="org000004b"><span class="section-number-3">1.3.</span> Write ELF</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+用 bfd 生成 o 文件: test_write_section.o, test_write_reloc.o
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-comment-delimiter">// </span><span class="org-comment">2022-03-04 13:31</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;assert.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;bfd.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdlib.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;string.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;unistd.h&gt;</span>
+
+<span class="org-type">void</span> <span class="org-function-name">write_reloc</span><span class="org-parenthesis">()</span> <span class="org-parenthesis">{</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">int a = 10;</span>
+    <span class="org-comment-delimiter">// </span><span class="org-comment">int foo() { return a; }</span>
+    <span class="org-type">bfd</span>* <span class="org-variable-name">abfd</span> = bfd_openw<span class="org-parenthesis">(</span><span class="org-string">"/tmp/test_write_reloc.o"</span><span class="org-parenthesis">,</span> <span class="org-string">"elf64-x86-64"</span><span class="org-parenthesis">)</span>;
+    bfd_set_arch_mach<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> bfd_arch_i386<span class="org-parenthesis">,</span> bfd_mach_x86_64<span class="org-parenthesis">)</span>;
+    assert<span class="org-parenthesis">(</span>abfd != <span class="org-constant">NULL</span><span class="org-parenthesis">)</span>;
+    bfd_set_format<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> bfd_object<span class="org-parenthesis">)</span>;
+
+    <span class="org-type">asection</span>* <span class="org-variable-name">data_section</span> = bfd_make_section_old_way<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> <span class="org-string">".data"</span><span class="org-parenthesis">)</span>;
+    <span class="org-type">asection</span>* <span class="org-variable-name">text_section</span> = bfd_make_section_old_way<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> <span class="org-string">".text"</span><span class="org-parenthesis">)</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">two symbol: foo &amp; a</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">asymbol</span>* <span class="org-variable-name">symbol_table</span>[3];
+    memset<span class="org-parenthesis">(</span>symbol_table<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">,</span> <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>symbol_table<span class="org-parenthesis">))</span>;
+
+    symbol_table[0] = bfd_make_empty_symbol<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">)</span>;
+    symbol_table[0]-&gt;name = <span class="org-string">"foo"</span>;
+    symbol_table[0]-&gt;section = text_section;
+    symbol_table[0]-&gt;flags = BSF_GLOBAL | BSF_FUNCTION;
+    symbol_table[0]-&gt;value = 0;
+
+    symbol_table[1] = bfd_make_empty_symbol<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">)</span>;
+    symbol_table[1]-&gt;name = <span class="org-string">"a"</span>;
+    symbol_table[1]-&gt;section = data_section;
+    symbol_table[1]-&gt;flags = BSF_GLOBAL | BSF_OBJECT;
+    symbol_table[1]-&gt;value = 0;
+
+    bfd_set_symtab<span class="org-parenthesis">(</span>
+        abfd<span class="org-parenthesis">,</span> symbol_table<span class="org-parenthesis">,</span> <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>symbol_table<span class="org-parenthesis">)</span> / <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>symbol_table[0]<span class="org-parenthesis">)</span> - 1<span class="org-parenthesis">)</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">text</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">char</span> <span class="org-variable-name">buffer</span>[] = <span class="org-parenthesis">{</span>0xf3<span class="org-parenthesis">,</span> 0x0f<span class="org-parenthesis">,</span> 0x1e<span class="org-parenthesis">,</span> 0xfa<span class="org-parenthesis">,</span> 0x55<span class="org-parenthesis">,</span> 0x48<span class="org-parenthesis">,</span> 0x89<span class="org-parenthesis">,</span> 0xe5<span class="org-parenthesis">,</span>
+                     0x8b<span class="org-parenthesis">,</span> 0x05<span class="org-parenthesis">,</span> 0x00<span class="org-parenthesis">,</span> 0x00<span class="org-parenthesis">,</span> 0x00<span class="org-parenthesis">,</span> 0x00<span class="org-parenthesis">,</span> 0x5d<span class="org-parenthesis">,</span> 0xc3<span class="org-parenthesis">}</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">size</span> = <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>buffer<span class="org-parenthesis">)</span> / <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>buffer[0]<span class="org-parenthesis">)</span>;
+    bfd_set_section_flags<span class="org-parenthesis">(</span>
+        text_section<span class="org-parenthesis">,</span> SEC_CODE | SEC_HAS_CONTENTS | SEC_RELOC<span class="org-parenthesis">)</span>;
+    bfd_set_section_size<span class="org-parenthesis">(</span>text_section<span class="org-parenthesis">,</span> size<span class="org-parenthesis">)</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">data</span><span class="org-comment-delimiter"> */</span>
+    bfd_set_section_flags<span class="org-parenthesis">(</span>data_section<span class="org-parenthesis">,</span> SEC_DATA | SEC_HAS_CONTENTS<span class="org-parenthesis">)</span>;
+    bfd_set_section_size<span class="org-parenthesis">(</span>data_section<span class="org-parenthesis">,</span> 4<span class="org-parenthesis">)</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">x</span> = 0xa;
+
+    bfd_set_section_contents<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> text_section<span class="org-parenthesis">,</span> buffer<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">,</span> size<span class="org-parenthesis">)</span>;
+    bfd_set_section_contents<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> data_section<span class="org-parenthesis">,</span> <span class="org-parenthesis">(</span><span class="org-type">char</span>*<span class="org-parenthesis">)</span>&amp;x<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">,</span> 4<span class="org-parenthesis">)</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">reloc</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">one reloc: a</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">arelent</span>* <span class="org-variable-name">reloc_table</span>[2];
+    memset<span class="org-parenthesis">(</span>reloc_table<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">,</span> <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>reloc_table<span class="org-parenthesis">))</span>;
+    reloc_table[0] = bfd_alloc<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>arelent<span class="org-parenthesis">))</span>;
+    reloc_table[0]-&gt;address = 0xa;
+    reloc_table[0]-&gt;addend = -4;
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">R_X86_64_PC32</span><span class="org-comment-delimiter"> */</span>
+    reloc_table[0]-&gt;howto = bfd_reloc_type_lookup<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> BFD_RELOC_32_PCREL<span class="org-parenthesis">)</span>;
+    reloc_table[0]-&gt;sym_ptr_ptr = &amp;symbol_table[1];
+    bfd_set_reloc<span class="org-parenthesis">(</span>
+        abfd<span class="org-parenthesis">,</span> text_section<span class="org-parenthesis">,</span> reloc_table<span class="org-parenthesis">,</span>
+        <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>reloc_table<span class="org-parenthesis">)</span> / <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>reloc_table[0]<span class="org-parenthesis">)</span> - 1<span class="org-parenthesis">)</span>;
+    bfd_close<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">)</span>;
+<span class="org-parenthesis">}</span>
+
+<span class="org-type">void</span> <span class="org-function-name">write_symbol</span><span class="org-parenthesis">()</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">bfd</span>* <span class="org-variable-name">abfd</span> = bfd_openw<span class="org-parenthesis">(</span><span class="org-string">"/tmp/test_write_symbol.o"</span><span class="org-parenthesis">,</span> <span class="org-string">"elf64-x86-64"</span><span class="org-parenthesis">)</span>;
+    bfd_set_arch_mach<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> bfd_arch_i386<span class="org-parenthesis">,</span> bfd_mach_x86_64<span class="org-parenthesis">)</span>;
+    assert<span class="org-parenthesis">(</span>abfd != <span class="org-constant">NULL</span><span class="org-parenthesis">)</span>;
+    bfd_set_format<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> bfd_object<span class="org-parenthesis">)</span>;
+    <span class="org-type">asymbol</span>* <span class="org-variable-name">symbol_table</span>[2];
+    memset<span class="org-parenthesis">(</span>symbol_table<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">,</span> <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>symbol_table<span class="org-parenthesis">))</span>;
+
+    symbol_table[0] = bfd_make_empty_symbol<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">)</span>;
+    symbol_table[0]-&gt;name = <span class="org-string">"hello"</span>;
+    symbol_table[0]-&gt;section = bfd_make_section_old_way<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> <span class="org-string">".text"</span><span class="org-parenthesis">)</span>;
+    symbol_table[0]-&gt;flags = BSF_GLOBAL;
+    symbol_table[0]-&gt;value = 0;
+
+    bfd_set_symtab<span class="org-parenthesis">(</span>
+        abfd<span class="org-parenthesis">,</span> symbol_table<span class="org-parenthesis">,</span> <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>symbol_table<span class="org-parenthesis">)</span> / <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>symbol_table[0]<span class="org-parenthesis">)</span> - 1<span class="org-parenthesis">)</span>;
+    bfd_close<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">)</span>;
+<span class="org-parenthesis">}</span>
+
+<span class="org-type">void</span> <span class="org-function-name">write_section</span><span class="org-parenthesis">()</span> <span class="org-parenthesis">{</span>
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">int foo() {return 10;}</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">bfd</span>* <span class="org-variable-name">abfd</span> = bfd_openw<span class="org-parenthesis">(</span><span class="org-string">"/tmp/test_write_section.o"</span><span class="org-parenthesis">,</span> <span class="org-string">"elf64-x86-64"</span><span class="org-parenthesis">)</span>;
+    bfd_set_arch_mach<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> bfd_arch_i386<span class="org-parenthesis">,</span> bfd_mach_x86_64<span class="org-parenthesis">)</span>;
+
+    assert<span class="org-parenthesis">(</span>abfd != <span class="org-constant">NULL</span><span class="org-parenthesis">)</span>;
+    bfd_set_format<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> bfd_object<span class="org-parenthesis">)</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">write symtab</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">asymbol</span>* <span class="org-variable-name">symbol_table</span>[2];
+    memset<span class="org-parenthesis">(</span>symbol_table<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">,</span> <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>symbol_table<span class="org-parenthesis">))</span>;
+
+    <span class="org-type">asection</span>* <span class="org-variable-name">text_section</span> = bfd_make_section_old_way<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> <span class="org-string">".text"</span><span class="org-parenthesis">)</span>;
+
+    symbol_table[0] = bfd_make_empty_symbol<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">)</span>;
+    symbol_table[0]-&gt;name = <span class="org-string">"foo2"</span>;
+    symbol_table[0]-&gt;section = text_section;
+    symbol_table[0]-&gt;flags = BSF_GLOBAL | BSF_FUNCTION;
+    symbol_table[0]-&gt;value = 0;
+    bfd_set_symtab<span class="org-parenthesis">(</span>
+        abfd<span class="org-parenthesis">,</span> symbol_table<span class="org-parenthesis">,</span> <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>symbol_table<span class="org-parenthesis">)</span> / <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>symbol_table[0]<span class="org-parenthesis">)</span> - 1<span class="org-parenthesis">)</span>;
+
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">write section</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">char</span> <span class="org-variable-name">buffer</span>[] = <span class="org-parenthesis">{</span>0xf3<span class="org-parenthesis">,</span> 0x0f<span class="org-parenthesis">,</span> 0x1e<span class="org-parenthesis">,</span> 0xfa<span class="org-parenthesis">,</span> 0x55<span class="org-parenthesis">,</span> 0x48<span class="org-parenthesis">,</span> 0x89<span class="org-parenthesis">,</span> 0xe5<span class="org-parenthesis">,</span>
+                     0xb8<span class="org-parenthesis">,</span> 0x0a<span class="org-parenthesis">,</span> 0x00<span class="org-parenthesis">,</span> 0x00<span class="org-parenthesis">,</span> 0x00<span class="org-parenthesis">,</span> 0x5d<span class="org-parenthesis">,</span> 0xc3<span class="org-parenthesis">}</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">size</span> = <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>buffer<span class="org-parenthesis">)</span> / <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>buffer[0]<span class="org-parenthesis">)</span>;
+    bfd_set_section_flags<span class="org-parenthesis">(</span>text_section<span class="org-parenthesis">,</span> SEC_CODE | SEC_HAS_CONTENTS<span class="org-parenthesis">)</span>;
+    bfd_set_section_size<span class="org-parenthesis">(</span>text_section<span class="org-parenthesis">,</span> size<span class="org-parenthesis">)</span>;
+    bfd_set_section_contents<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">,</span> text_section<span class="org-parenthesis">,</span> buffer<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">,</span> size<span class="org-parenthesis">)</span>;
+    bfd_close<span class="org-parenthesis">(</span>abfd<span class="org-parenthesis">)</span>;
+<span class="org-parenthesis">}</span>
+
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span>* <span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    write_symbol<span class="org-parenthesis">()</span>;
+    write_section<span class="org-parenthesis">()</span>;
+    write_reloc<span class="org-parenthesis">()</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-sh">readelf -a /tmp/test_write_reloc.o|tail -n 16
+</pre>
+</div>
+
+<pre class="example" id="org0000023">
+
+Relocation section '.rela.text' at offset 0xd8 contains 1 entry:
+  Offset          Info           Type           Sym. Value    Sym. Name + Addend
+00000000000a  000400000002 R_X86_64_PC32     0000000000000000 a - 4
+
+The decoding of unwind sections for machine type Advanced Micro Devices X86-64 is not currently supported.
+
+Symbol table '.symtab' contains 5 entries:
+   Num:    Value          Size Type    Bind   Vis      Ndx Name
+     0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND
+     1: 0000000000000000     0 SECTION LOCAL  DEFAULT    1
+     2: 0000000000000000     0 SECTION LOCAL  DEFAULT    2
+     3: 0000000000000000     0 FUNC    GLOBAL DEFAULT    2 foo
+     4: 0000000000000000     0 OBJECT  GLOBAL DEFAULT    1 a
+
+No version information found in this file.
+</pre>
+
+<p>
+链接手动生成的 test_write_reloc.o 和 test_write_section.o
+</p>
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-comment-delimiter">// </span><span class="org-comment">2022-03-05 19:48</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdlib.h&gt;</span>
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">foo &#23450;&#20041;&#22312; test_write_reloc.o</span><span class="org-comment-delimiter"> */</span>
+<span class="org-keyword">extern</span> <span class="org-type">int</span> <span class="org-function-name">foo</span><span class="org-parenthesis">()</span>;
+<span class="org-comment-delimiter">/* </span><span class="org-comment">foo2 &#23450;&#20041;&#22312; test_write_section.o</span><span class="org-comment-delimiter"> */</span>
+<span class="org-keyword">extern</span> <span class="org-type">int</span> <span class="org-function-name">foo2</span><span class="org-parenthesis">()</span>;
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span> printf<span class="org-parenthesis">(</span><span class="org-string">"%d %d\n"</span><span class="org-parenthesis">,</span> foo<span class="org-parenthesis">(),</span> foo2<span class="org-parenthesis">())</span>; <span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org0000025">
+10 10
+</pre>
+</div>
+
+<div id="outline-container-org0000048" class="outline-4">
+<h4 id="org0000048"><span class="section-number-4">1.3.1.</span> API</h4>
+<div class="outline-text-4" id="text-1-3-1">
+</div>
+<div id="outline-container-org0000027" class="outline-5">
+<h5 id="org0000027"><span class="section-number-5">1.3.1.1.</span> bfd_openw</h5>
+<div class="outline-text-5" id="text-1-3-1-1">
+<p>
+bfd_openw("test_write_reloc.o", "elf64-x86-64"), 创建一个 x86_64 elf 文件
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000002a" class="outline-5">
+<h5 id="org000002a"><span class="section-number-5">1.3.1.2.</span> bfd_set_arch_mach</h5>
+</div>
+
+<div id="outline-container-org000002d" class="outline-5">
+<h5 id="org000002d"><span class="section-number-5">1.3.1.3.</span> bfd_set_format</h5>
+</div>
+
+<div id="outline-container-org0000030" class="outline-5">
+<h5 id="org0000030"><span class="section-number-5">1.3.1.4.</span> bfd_make_section_old_way</h5>
+<div class="outline-text-5" id="text-1-3-1-4">
+<p>
+查找或创建一个 section
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000033" class="outline-5">
+<h5 id="org0000033"><span class="section-number-5">1.3.1.5.</span> bfd_make_empty_symbol</h5>
+<div class="outline-text-5" id="text-1-3-1-5">
+<p>
+创建一个 asymbol. 创建 symbol 中 flags 非常重要, 例如需要指定 BSF_GLOBAL 后该
+symbol 才能被 linker 找到.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000036" class="outline-5">
+<h5 id="org0000036"><span class="section-number-5">1.3.1.6.</span> bfd_set_symtab</h5>
+<div class="outline-text-5" id="text-1-3-1-6">
+<p>
+设置 symtab, 其中 symtab[-1] 需要为 NULL, 且 size 要排除该项
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000039" class="outline-5">
+<h5 id="org0000039"><span class="section-number-5">1.3.1.7.</span> bfd_set_section_flags</h5>
+<div class="outline-text-5" id="text-1-3-1-7">
+<p>
+例如 .text 需要设置为  SEC_CODE | SEC_HAS_CONTENTS, 缺少某些 flag 会导致某些功能不工作, 例如, 如果 SEC_HAS_CONTENTS 没有置位, 则后面 bfd_set_section_contents 会直接失败
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000003c" class="outline-5">
+<h5 id="org000003c"><span class="section-number-5">1.3.1.8.</span> bfd_set_section_size</h5>
+<div class="outline-text-5" id="text-1-3-1-8">
+<p>
+设置 section 大小
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000003f" class="outline-5">
+<h5 id="org000003f"><span class="section-number-5">1.3.1.9.</span> bfd_set_section_contents</h5>
+<div class="outline-text-5" id="text-1-3-1-9">
+<p>
+向 section 写数据. bfd 代码里对上述函数调用的顺序有要求, 列如
+bfd_set_section_contents 后无法再 bfd_set_section_size (即使操作的是另一个
+section)
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000042" class="outline-5">
+<h5 id="org0000042"><span class="section-number-5">1.3.1.10.</span> bfd_reloc_type_lookup</h5>
+<div class="outline-text-5" id="text-1-3-1-10">
+<p>
+查找 reloc howto
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000045" class="outline-5">
+<h5 id="org0000045"><span class="section-number-5">1.3.1.11.</span> bfd_set_reloc</h5>
+<div class="outline-text-5" id="text-1-3-1-11">
+<p>
+写 reloc
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org0000051" class="outline-2 references">
+<h2 id="org0000051">Backlinks</h2>
+<div class="outline-text-2" id="text-org0000051">
+<p>
+<a href="elf.html#ID-6bf0cc7e-0532-4831-9345-8f79c47dc5e3">ELF</a>
+(<i>ELF &gt; ELF Section &gt; static linker 相关 &gt; rel.text</i>):  <a href="bfd_tutorial.html#ID-7569396e-eef7-485b-a1eb-8a545dec44ba">BFD</a> 操作 reloc 相关的功能就是在操作 rel.text
+</p>
+
+<p>
+<a href="gdb_target_arch.html#ID-853d6271-a0b6-4ae0-bba1-667a2a3d8505">GDB Target Arch</a>
+(<i>GDB Target Arch &gt; porting new arch &gt; porting</i>):     gdb 的 disass 依赖 <a href="binutils.html#ID-e78f85b3-7a6b-4ce8-aecc-665873d8b6ad">opcodes</a>. core, exec 数据的读取依赖 <a href="bfd_tutorial.html#ID-7569396e-eef7-485b-a1eb-8a545dec44ba">bfd</a>
+</p>
+
+<p>
+<a href="linker_relaxation.html#ID-b861e156-7ced-4e25-b047-455b5b075c1e">Linker Relaxation</a>
+(<i>Linker Relaxation &gt; impls</i>):  linker relaxation 的实现在 <a href="bfd_tutorial.html#ID-7569396e-eef7-485b-a1eb-8a545dec44ba">BFD</a> 中, 以 riscv 为例, 在 elfnn-riscv.c 中, 具体的:
+</p>
+
+<p>
+<a href="linker_relocation.html#ID-4fabbae2-594b-4f7d-bcb9-756212cfbe9f">Linker Relocation</a>
+(<i>Linker Relocation</i>):  编译器生成 object file 时, symbol 地址在 assembling 阶段无法确定, assembler 只能 通过 <a href="bfd_tutorial.html#ID-7569396e-eef7-485b-a1eb-8a545dec44ba">BFD</a> 写入重定位信息到 rel.text, 后面需要 link edtitor 进行 relocation
+</p>
+
+<p>
+<a href="binutils.html#ID-28890ac4-f012-4934-afb2-1db09e6fc514">binutils</a>
+(<i>binutils &gt; BFD</i>):   <a href="bfd_tutorial.html#ID-7569396e-eef7-485b-a1eb-8a545dec44ba">BFD</a>
+</p>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2022-03-05 Sat 19:58<br />
+Last updated: 2023-09-25 Mon 11:43</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
