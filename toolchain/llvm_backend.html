@@ -7,21 +7,21 @@
 <title>LLVM Backend</title>
 
 
-           <link rel="stylesheet" type="text/css" href="/htmlize.css"/>
-           <link rel="stylesheet" type="text/css" href="./htmlize.css"/>
-           <link rel="stylesheet" type="text/css" href="../htmlize.css"/>
-           <link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
-           <link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
-           <link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
-           <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
-           <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
-           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
-           <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
-           <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
-           <link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
-           <link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
-           <link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
-           <link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
 </head>
 <body>
 <div id="content" class="content">
@@ -39,7 +39,7 @@
 <li><a href="#org0000009">1.2.2. 生成 SDAG</a></li>
 <li><a href="#org0000018">1.2.3. legalize SDAG</a></li>
 <li><a href="#org000001b">1.2.4. 优化 SDAG</a></li>
-<li><a href="#org0000024">1.2.5. 指令选择</a></li>
+<li><a href="#org0000024">1.2.5. 生成 MachineDAG</a></li>
 <li><a href="#org000002d">1.2.6. 指令调度</a></li>
 <li><a href="#org000002e">1.2.7. MachineInstrBuilder</a></li>
 </ul>
@@ -89,7 +89,7 @@ llvm backend 的主要步骤是:
 
 <li>legalize &amp; optimize</li>
 
-<li>instruction selection</li>
+<li>SelectionDAG -&gt; MachineDAG</li>
 
 <li>instruction scheduling</li>
 </ol></li>
@@ -138,15 +138,11 @@ llvm backend 的主要步骤是:
 </p>
 
 <p>
-RISC-V 与 instruction selection 的相关的代码主要在 <code>RISCVISelLowering.cpp</code>
-</p>
-
-<p>
 以下面代码为例:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-C"><span class="org-type">float</span> <span class="org-function-name">MUL</span>(<span class="org-type">float</span> <span class="org-variable-name">x</span>, <span class="org-type">float</span> <span class="org-variable-name">y</span>) { <span class="org-keyword">return</span> x + y; }
+<pre class="src src-C"><span class="org-type">float</span> <span class="org-function-name">MUL</span><span class="org-parenthesis">(</span><span class="org-type">float</span> <span class="org-variable-name">x</span><span class="org-parenthesis">,</span> <span class="org-type">float</span> <span class="org-variable-name">y</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span> <span class="org-keyword">return</span> x + y; <span class="org-parenthesis">}</span>
 </pre>
 </div>
 </div>
@@ -189,7 +185,7 @@ llc 接受几个参数, 可以显示 SelectionDAG 不同阶段的 dag:
 <p>
 <code>SelectionDAGBuilder</code> 用来生成最初的 SDAG (SelectionDAG), 这个过程基本是 target
 无关的, 但 target 可以实现 LowerCall, LowerReturn 等在 DAG 中生成 target 相关的
-node
+node, RISC-V 相关的代码主要在 <code>RISCVISelLowering.cpp</code>
 </p>
 
 <pre class="example" id="org0000007">
@@ -240,24 +236,24 @@ expand 规则, target 只需要提供 <code>isOperationLegal</code> 的信息即
 </p>
 
 <div class="org-src-container">
-<pre class="src src-C">bool <span class="org-type">SelectionDAGLegalize</span>::ExpandNode(<span class="org-type">SDNode</span> *<span class="org-variable-name">Node</span>) {
-    <span class="org-keyword">switch</span> (Node-&gt;getOpcode()) {
-        <span class="org-keyword">case</span> ISD::SUB: {
-            <span class="org-type">EVT</span> <span class="org-variable-name">VT</span> = Node-&gt;getValueType(0);
-            assert(
-                TLI.isOperationLegalOrCustom(ISD::ADD, VT) &amp;&amp;
-                TLI.isOperationLegalOrCustom(ISD::XOR, VT) &amp;&amp;
-                <span class="org-string">"Don't know how to expand this subtraction!"</span>);
+<pre class="src src-C">bool <span class="org-type">SelectionDAGLegalize</span>::ExpandNode<span class="org-parenthesis">(</span><span class="org-type">SDNode</span> *<span class="org-variable-name">Node</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-keyword">switch</span> <span class="org-parenthesis">(</span>Node-&gt;getOpcode<span class="org-parenthesis">())</span> <span class="org-parenthesis">{</span>
+        <span class="org-keyword">case</span> ISD::SUB: <span class="org-parenthesis">{</span>
+            <span class="org-type">EVT</span> <span class="org-variable-name">VT</span> = Node-&gt;getValueType<span class="org-parenthesis">(</span>0<span class="org-parenthesis">)</span>;
+            assert<span class="org-parenthesis">(</span>
+                TLI.isOperationLegalOrCustom<span class="org-parenthesis">(</span>ISD::ADD<span class="org-parenthesis">,</span> VT<span class="org-parenthesis">)</span> &amp;&amp;
+                TLI.isOperationLegalOrCustom<span class="org-parenthesis">(</span>ISD::XOR<span class="org-parenthesis">,</span> VT<span class="org-parenthesis">)</span> &amp;&amp;
+                <span class="org-string">"Don't know how to expand this subtraction!"</span><span class="org-parenthesis">)</span>;
             <span class="org-comment-delimiter">/* </span><span class="org-comment">-A = (~A) + 1</span><span class="org-comment-delimiter"> */</span>
-            Tmp1 = DAG.getNOT(dl, Node-&gt;getOperand(1), VT);
+            Tmp1 = DAG.getNOT<span class="org-parenthesis">(</span>dl<span class="org-parenthesis">,</span> Node-&gt;getOperand<span class="org-parenthesis">(</span>1<span class="org-parenthesis">),</span> VT<span class="org-parenthesis">)</span>;
             Tmp1 =
-                DAG.getNode(ISD::ADD, dl, VT, Tmp1, DAG.getConstant(1, dl, VT));
-            Results.push_back(
-                DAG.getNode(ISD::ADD, dl, VT, Node-&gt;getOperand(0), Tmp1));
+                DAG.getNode<span class="org-parenthesis">(</span>ISD::ADD<span class="org-parenthesis">,</span> dl<span class="org-parenthesis">,</span> VT<span class="org-parenthesis">,</span> Tmp1<span class="org-parenthesis">,</span> DAG.getConstant<span class="org-parenthesis">(</span>1<span class="org-parenthesis">,</span> dl<span class="org-parenthesis">,</span> VT<span class="org-parenthesis">))</span>;
+            Results.push_back<span class="org-parenthesis">(</span>
+                DAG.getNode<span class="org-parenthesis">(</span>ISD::ADD<span class="org-parenthesis">,</span> dl<span class="org-parenthesis">,</span> VT<span class="org-parenthesis">,</span> Node-&gt;getOperand<span class="org-parenthesis">(</span>0<span class="org-parenthesis">),</span> Tmp1<span class="org-parenthesis">))</span>;
             <span class="org-keyword">break</span>;
-        }
-    }
-}
+        <span class="org-parenthesis">}</span>
+    <span class="org-parenthesis">}</span>
+<span class="org-parenthesis">}</span>
 </pre>
 </div>
 
@@ -322,11 +318,12 @@ DAGCombiner 与 gcc 的 <a href="gcc_pass.html#ID-69585bb2-1dff-4676-adbc-aa90f7
 </div>
 
 <div id="outline-container-org0000024" class="outline-4">
-<h4 id="org0000024"><span class="section-number-4">1.2.5.</span> 指令选择</h4>
+<h4 id="org0000024"><span class="section-number-4">1.2.5.</span> 生成 MachineDAG</h4>
 <div class="outline-text-4" id="text-1-2-5">
 <p>
-<code>DoInstructionSelection</code> 的作用是根据 target description (td) 中定义的 pattern 和
-predicate 去匹配对应的 target instruction, 和 gcc 的 recog 过程非常类似
+<code>DoInstructionSelection</code> 的作用是根据 target description (td) 中定义的 pattern
+和predicate 去匹配对应的 target instruction, 把 SelectionDAG 转换为
+MachineDAG. 和 gcc 的 recog 类似
 </p>
 
 <p>
@@ -382,14 +379,14 @@ debug 中的 opcode index 是 RISCVGenDAGISel.inc 中 <code>MatcherTable</code> 
 </p>
 
 <div class="org-src-container">
-<pre class="src src-C"><span class="org-keyword">switch</span> (opcode):
+<pre class="src src-C"><span class="org-keyword">switch</span> <span class="org-parenthesis">(</span>opcode<span class="org-parenthesis">)</span>:
   <span class="org-keyword">case</span> `fadd`:
-    <span class="org-keyword">switch</span> (return_type):
+    <span class="org-keyword">switch</span> <span class="org-parenthesis">(</span>return_type<span class="org-parenthesis">)</span>:
       <span class="org-keyword">case</span> f16:
         <span class="org-comment-delimiter">/* </span><span class="org-comment">...</span><span class="org-comment-delimiter"> */</span>
         <span class="org-keyword">break</span>;
       <span class="org-keyword">case</span> f32:
-        <span class="org-keyword">if</span> check_pattern_predicate (35):
+        <span class="org-keyword">if</span> check_pattern_predicate <span class="org-parenthesis">(</span>35<span class="org-parenthesis">)</span>:
           <span class="org-keyword">return</span> FADD_S
 </pre>
 </div>
@@ -568,7 +565,7 @@ bb.0.entry:
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2022-05-11 Wed 13:44<br />
-Last updated: 2023-06-27 Tue 15:46</p>
+Last updated: 2023-10-16 Mon 10:28</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
