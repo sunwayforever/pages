@@ -433,9 +433,9 @@ objdump 会使用 opcodes 中提供的 print_insn_riscv 等函数
 </div>
 
 
-<div id="outline-container-org0000043" class="outline-4 references">
-<h4 id="org0000043">Backlinks</h4>
-<div class="outline-text-4" id="text-org0000043">
+<div id="outline-container-org0000047" class="outline-4 references">
+<h4 id="org0000047">Backlinks</h4>
+<div class="outline-text-4" id="text-org0000047">
 <p>
 <a href="gdb_target_arch.html#ID-853d6271-a0b6-4ae0-bba1-667a2a3d8505">GDB Target Arch</a>
 (<i>GDB Target Arch &gt; porting new arch &gt; porting</i>):     gdb 的 disass 依赖 <a href="#ID-e78f85b3-7a6b-4ce8-aecc-665873d8b6ad">opcodes</a>. core, exec 数据的读取依赖 <a href="bfd_tutorial.html#ID-7569396e-eef7-485b-a1eb-8a545dec44ba">bfd</a>
@@ -747,14 +747,16 @@ append_insn 主要的工作是根据 reloc_type 决定 imm 或 offset 如何处�
 <h4 id="org000002b"><span class="section-number-4">1.2.5.</span> relax branch</h4>
 <div class="outline-text-4" id="text-1-2-5">
 <p>
-当 branch 指令的 target 在编译时是确定的且过远, as 会通过 relax branch 把它替换成其它的指令 (例如 blt 可能会被换成 bge + jal)
+当 branch 指令的 target 在编译时不确定, 或者确定的但过远, as 会通过 relax branch 把它替换成其它的指令 (例如 blt 可能会被换成 bge + jal)
 </p>
 
 <div class="org-src-container">
 <pre class="src src-asm">    <span class="org-comment-delimiter"># </span><span class="org-comment">riscv64-unknown-elf-as -march=rv64gcv  test.s -o test.o</span>
+<span class="org-keyword">.extern</span> hello
     <span class="org-keyword">.global</span> _start
 
 <span class="org-function-name">_start</span>:
+    <span class="org-keyword">blt</span> a0<span class="org-parenthesis">,</span>a1<span class="org-parenthesis">,</span>hello
     <span class="org-keyword">blt</span> a0<span class="org-parenthesis">,</span>a1<span class="org-parenthesis">,</span>1f
 
     <span class="org-keyword">.rept</span>   1024
@@ -769,15 +771,13 @@ objdump 的结果为:
 </p>
 
 <pre class="example" id="org000002a">
-Disassembly of section .text:
-
 0000000000000000 &lt;_start&gt;:
        0:       00b55463                bge     a0,a1,8 &lt;_start+0x8&gt;
-       4:       0040106f                j       1008 &lt;.L1^B1&gt;
-                        4: R_RISCV_JAL  .L1^B1
-       8:       00000001                .word   0x00000001
-       c:       00000001                .word   0x00000001
-      10:       00000001                .word   0x00000001
+       4:       ffdff06f                j       0 &lt;_start&gt;
+                        4: R_RISCV_JAL  hello
+       8:       00b55463                bge     a0,a1,10 &lt;_start+0x10&gt;
+       c:       0040106f                j       1010 &lt;.L1^B1&gt;
+                        c: R_RISCV_JAL  .L1^B1
 ...
 </pre>
 
@@ -793,7 +793,8 @@ imm), 通过 `add_relaxed_insn` 记录到 frag.
 
 <p>
 relax branch 的作用与 <a href="linker_relaxation.html#ID-b861e156-7ced-4e25-b047-455b5b075c1e">Linker Relaxation</a> 类似, 但 linker relaxation 并没有处理
-relax branch, 因为 branch 的地址在 as 时已经是确定的了, 不需要linker 处理
+relax branch. 一种可能的 linker relaxation 中实现方法是: 让 blt 默认生成
+`bge+jal`, 然后由 linker_relaxation 尝试把它替换回 `blt`
 </p>
 </div>
 </div>
@@ -995,9 +996,9 @@ Program Headers:
 </div>
 
 
-<div id="outline-container-org0000047" class="outline-2 references">
-<h2 id="org0000047">Backlinks</h2>
-<div class="outline-text-2" id="text-org0000047">
+<div id="outline-container-org0000049" class="outline-2 references">
+<h2 id="org0000049">Backlinks</h2>
+<div class="outline-text-2" id="text-org0000049">
 <p>
 <a href="retargeting_gcc_to_riscv.html#ID-303d0f7f-03c2-4f31-ad7e-064162e3af10">Retargeting GCC To RISC-V</a>
 (<i>Retargeting GCC To RISC-V &gt; binutils</i>):   <a href="binutils.html#ID-28890ac4-f012-4934-afb2-1db09e6fc514">binutils</a>
@@ -1009,7 +1010,7 @@ Program Headers:
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-03-29 Wed 19:17<br />
-Last updated: 2023-10-18 Wed 16:06</p>
+Last updated: 2023-10-18 Wed 17:03</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
