@@ -39,12 +39,13 @@
 <li><a href="#org0000018">1.1.3. decode</a></li>
 </ul>
 </li>
-<li><a href="#org000002a">1.2. as</a>
+<li><a href="#org000002e">1.2. as</a>
 <ul>
 <li><a href="#org000001e">1.2.1. md_assemble</a></li>
 <li><a href="#org0000021">1.2.2. mips_ip</a></li>
 <li><a href="#org0000024">1.2.3. macro</a></li>
 <li><a href="#org0000027">1.2.4. append_insn</a></li>
+<li><a href="#org000002b">1.2.5. relax branch</a></li>
 </ul>
 </li>
 <li><a href="#org0000042">1.3. objdump</a></li>
@@ -432,9 +433,9 @@ objdump 会使用 opcodes 中提供的 print_insn_riscv 等函数
 </div>
 
 
-<div id="outline-container-org0000044" class="outline-4 references">
-<h4 id="org0000044">Backlinks</h4>
-<div class="outline-text-4" id="text-org0000044">
+<div id="outline-container-org0000043" class="outline-4 references">
+<h4 id="org0000043">Backlinks</h4>
+<div class="outline-text-4" id="text-org0000043">
 <p>
 <a href="gdb_target_arch.html#ID-853d6271-a0b6-4ae0-bba1-667a2a3d8505">GDB Target Arch</a>
 (<i>GDB Target Arch &gt; porting new arch &gt; porting</i>):     gdb 的 disass 依赖 <a href="#ID-e78f85b3-7a6b-4ce8-aecc-665873d8b6ad">opcodes</a>. core, exec 数据的读取依赖 <a href="bfd_tutorial.html#ID-7569396e-eef7-485b-a1eb-8a545dec44ba">bfd</a>
@@ -454,8 +455,8 @@ objdump 会使用 opcodes 中提供的 print_insn_riscv 等函数
 </div>
 
 
-<div id="outline-container-org000002a" class="outline-3">
-<h3 id="org000002a"><span class="section-number-3">1.2.</span> as</h3>
+<div id="outline-container-org000002e" class="outline-3">
+<h3 id="org000002e"><span class="section-number-3">1.2.</span> as</h3>
 <div class="outline-text-3" id="text-1-2">
 </div>
 <div id="outline-container-org000001e" class="outline-4">
@@ -741,6 +742,61 @@ append_insn 主要的工作是根据 reloc_type 决定 imm 或 offset 如何处�
 </ol>
 </div>
 </div>
+
+<div id="outline-container-org000002b" class="outline-4">
+<h4 id="org000002b"><span class="section-number-4">1.2.5.</span> relax branch</h4>
+<div class="outline-text-4" id="text-1-2-5">
+<p>
+当 branch 指令的 target 在编译时是确定的且过远, as 会通过 relax branch 把它替换成其它的指令 (例如 blt 可能会被换成 bge + jal)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm">    <span class="org-comment-delimiter"># </span><span class="org-comment">riscv64-unknown-elf-as -march=rv64gcv  test.s -o test.o</span>
+    <span class="org-keyword">.global</span> _start
+
+<span class="org-function-name">_start</span>:
+    <span class="org-keyword">blt</span> a0<span class="org-parenthesis">,</span>a1<span class="org-parenthesis">,</span>1f
+
+    <span class="org-keyword">.rept</span>   1024
+    <span class="org-keyword">.word</span> 1
+    <span class="org-keyword">.endr</span>
+<span class="org-function-name">1</span>:
+</pre>
+</div>
+
+<p>
+objdump 的结果为:
+</p>
+
+<pre class="example" id="org000002a">
+Disassembly of section .text:
+
+0000000000000000 &lt;_start&gt;:
+       0:       00b55463                bge     a0,a1,8 &lt;_start+0x8&gt;
+       4:       0040106f                j       1008 &lt;.L1^B1&gt;
+                        4: R_RISCV_JAL  .L1^B1
+       8:       00000001                .word   0x00000001
+       c:       00000001                .word   0x00000001
+      10:       00000001                .word   0x00000001
+...
+</pre>
+
+<p>
+在 `append_insn` 时, 针对 BFD_RELOC_12_PCREL (即 R_RISCV_BRANCH) 等会记录一个
+relax_substateT, 保存着原始的指令的信息(例如 blt) 以及 imm 的信息 (例如多大的
+imm), 通过 `add_relaxed_insn` 记录到 frag.
+</p>
+
+<p>
+最后通过 `md_convert_frag_branch` 完成指令的转换, 例如把 `blt` 替换成 `bge+jal`
+</p>
+
+<p>
+relax branch 的作用与 <a href="linker_relaxation.html#ID-b861e156-7ced-4e25-b047-455b5b075c1e">Linker Relaxation</a> 类似, 但 linker relaxation 并没有处理
+relax branch, 因为 branch 的地址在 as 时已经是确定的了, 不需要linker 处理
+</p>
+</div>
+</div>
 </div>
 
 <div id="outline-container-org0000042" class="outline-3">
@@ -772,7 +828,7 @@ bfd 源码为有一些 elfnn-&lt;arch&gt;.c/elfxx_&lt;arch&gt;.c, nn 是指 elfn
 Makefile.in:
 </p>
 
-<pre class="example" id="org0000030">
+<pre class="example" id="org0000034">
 elf32-riscv.c : elfnn-riscv.c
     $(AM_V_at)echo "#line 1 \"elfnn-riscv.c\"" &gt; $@
     $(AM_V_GEN)$(SED) -e s/NN/32/g &lt; $&lt; &gt;&gt; $@
@@ -803,8 +859,8 @@ elfnn-riscv.c:
 <h4 id="org000003c"><span class="section-number-4">1.5.1.</span> objcopy</h4>
 <div class="outline-text-4" id="text-1-5-1">
 </div>
-<div id="outline-container-org0000039" class="outline-5">
-<h5 id="org0000039"><span class="section-number-5">1.5.1.1.</span> 生成 bin</h5>
+<div id="outline-container-org000003b" class="outline-5">
+<h5 id="org000003b"><span class="section-number-5">1.5.1.1.</span> 生成 bin</h5>
 <div class="outline-text-5" id="text-1-5-1-1">
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-comment-delimiter">// </span><span class="org-comment">2023-03-29 17:59</span>
@@ -815,7 +871,7 @@ elfnn-riscv.c:
 </pre>
 </div>
 
-<pre class="example" id="org0000034">
+<pre class="example" id="org0000038">
 $&gt; gcc tset.c -O0 -g3
 $&gt; objcopy -O binary a.out a.bin
 $&gt; du -b
@@ -827,7 +883,7 @@ objcopy 只会复制 elf 中特定的 section: `SEC_HAS_CONTENTS | SEC_READONLY 
 SEC_DATA`, 并且不会复制 debug 相关的 section
 </p>
 
-<pre class="example" id="org0000035">
+<pre class="example" id="org0000039">
 $&gt; objdump -h ./a.out
 
 ./a.out:     file format elf64-x86-64
@@ -873,7 +929,7 @@ section 0~22 会被复制, bss 和 debug 相关的 section 不会被复制, 总�
 注意这个大小和统计 PT_LOAD segment 的大小并不相同:
 </p>
 
-<pre class="example" id="org0000036">
+<pre class="example" id="org000003a">
 $&gt; readelf -a a.out
 ...
 Program Headers:
@@ -939,9 +995,9 @@ Program Headers:
 </div>
 
 
-<div id="outline-container-org0000043" class="outline-2 references">
-<h2 id="org0000043">Backlinks</h2>
-<div class="outline-text-2" id="text-org0000043">
+<div id="outline-container-org0000047" class="outline-2 references">
+<h2 id="org0000047">Backlinks</h2>
+<div class="outline-text-2" id="text-org0000047">
 <p>
 <a href="retargeting_gcc_to_riscv.html#ID-303d0f7f-03c2-4f31-ad7e-064162e3af10">Retargeting GCC To RISC-V</a>
 (<i>Retargeting GCC To RISC-V &gt; binutils</i>):   <a href="binutils.html#ID-28890ac4-f012-4934-afb2-1db09e6fc514">binutils</a>
@@ -953,7 +1009,7 @@ Program Headers:
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-03-29 Wed 19:17<br />
-Last updated: 2023-09-25 Mon 13:43</p>
+Last updated: 2023-10-18 Wed 16:06</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
