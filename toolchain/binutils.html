@@ -45,14 +45,15 @@
 <li><a href="#org0000021">1.2.2. mips_ip</a></li>
 <li><a href="#org0000024">1.2.3. macro</a></li>
 <li><a href="#org0000027">1.2.4. append_insn</a></li>
-<li><a href="#org000002b">1.2.5. relax branch</a></li>
+<li><a href="#ID-ea61eeed-3af7-42e3-9777-a18f5093042f">1.2.5. relax branch</a></li>
+<li><a href="#org000002c">1.2.6. frag</a></li>
 </ul>
 </li>
 <li><a href="#org0000042">1.3. objdump</a></li>
 <li><a href="#org0000031">1.4. BFD</a></li>
 <li><a href="#org000003d">1.5. usage</a>
 <ul>
-<li><a href="#org000003c">1.5.1. objcopy</a></li>
+<li><a href="#org000003f">1.5.1. objcopy</a></li>
 </ul>
 </li>
 </ul>
@@ -433,9 +434,9 @@ objdump 会使用 opcodes 中提供的 print_insn_riscv 等函数
 </div>
 
 
-<div id="outline-container-org0000047" class="outline-4 references">
-<h4 id="org0000047">Backlinks</h4>
-<div class="outline-text-4" id="text-org0000047">
+<div id="outline-container-org0000049" class="outline-4 references">
+<h4 id="org0000049">Backlinks</h4>
+<div class="outline-text-4" id="text-org0000049">
 <p>
 <a href="gdb_target_arch.html#ID-853d6271-a0b6-4ae0-bba1-667a2a3d8505">GDB Target Arch</a>
 (<i>GDB Target Arch &gt; porting new arch &gt; porting</i>):     gdb 的 disass 依赖 <a href="#ID-e78f85b3-7a6b-4ce8-aecc-665873d8b6ad">opcodes</a>. core, exec 数据的读取依赖 <a href="bfd_tutorial.html#ID-7569396e-eef7-485b-a1eb-8a545dec44ba">bfd</a>
@@ -738,13 +739,17 @@ append_insn 主要的工作是根据 reloc_type 决定 imm 或 offset 如何处�
 <li>使用常量的指令可以直接把 constant 编码到指令中, 只是需要考虑不同的类型
 (I,S,U) 对 imm 的编码不太一样</li>
 
-<li>使用 symbol 的指令无法把 symbol 的地址直接编码到指令中, assembling 阶段只能确定 symbol 和 reloc_type, 最终地址在链接阶段由 处理</li>
+<li>使用 symbol 的指令无法把 symbol 的地址直接编码到指令中, 汇编阶段只能确定
+symbol 和 reloc_type, 最终地址在链接阶段由 处理</li>
+
+<li>有一个例外是 branch 指令: 如果 branch target 是 constant 但过大或者是 symbol,
+会通过 relax branch 把它替换成其它指令</li>
 </ol>
 </div>
 </div>
 
-<div id="outline-container-org000002b" class="outline-4">
-<h4 id="org000002b"><span class="section-number-4">1.2.5.</span> relax branch</h4>
+<div id="outline-container-ID-ea61eeed-3af7-42e3-9777-a18f5093042f" class="outline-4">
+<h4 id="ID-ea61eeed-3af7-42e3-9777-a18f5093042f"><span class="section-number-4">1.2.5.</span> relax branch</h4>
 <div class="outline-text-4" id="text-1-2-5">
 <p>
 当 branch 指令的 target 在编译时不确定, 或者确定的但过远, as 会通过 relax branch 把它替换成其它的指令 (例如 blt 可能会被换成 bge + jal)
@@ -798,6 +803,256 @@ relax branch. 一种可能的 linker relaxation 中实现方法是: 让 blt 默�
 </p>
 </div>
 </div>
+
+<div id="outline-container-org000002c" class="outline-4">
+<h4 id="org000002c"><span class="section-number-4">1.2.6.</span> frag</h4>
+<div class="outline-text-4" id="text-1-2-6">
+<p>
+riscv_ip 生成指令的编码 (有可能是 partial 的) 暂存在 `insn-&gt;insn_code` 中,
+`append_insn` 会在 `install_insn` 时把它写到一个 frag 中, 最后的
+`write_object_file` 会把所有 frag 写到最终的 object 文件中.
+</p>
+
+<p>
+每个 frag 的大小不定, 可以存放多条 fixed insn 和一条 relax insn, 所谓 fixed insn
+是指类似于 `addi a0,a0,1` 这种编码确定的指令, relax insn 是指 `jal symbol` 这种不确定的指令, 以及 `.fill`, `.space` 这种的 pesudo-op.
+</p>
+
+<p>
+as 会分多个阶段处理 frag 中的 relax insn, 以把它变成最终的指令.
+</p>
+
+<p>
+以下面的代码为例:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-keyword">.extern</span> hello
+<span class="org-function-name">_start</span>:
+    <span class="org-comment-delimiter"># </span><span class="org-comment">&#31532;&#19968;&#20010; frag</span>
+    <span class="org-keyword">addi</span> a0<span class="org-parenthesis">,</span>a0<span class="org-parenthesis">,</span>0
+    <span class="org-keyword">addi</span> a0<span class="org-parenthesis">,</span>a0<span class="org-parenthesis">,</span>10
+    <span class="org-keyword">blt</span> a0<span class="org-parenthesis">,</span>a1<span class="org-parenthesis">,</span>hello
+
+    <span class="org-comment-delimiter"># </span><span class="org-comment">&#31532;&#20108;&#20010; frag</span>
+    <span class="org-keyword">addi</span> a0<span class="org-parenthesis">,</span>a0<span class="org-parenthesis">,</span>0
+    <span class="org-keyword">.fill</span> 20<span class="org-parenthesis">,</span> 8<span class="org-parenthesis">,</span> 1
+
+    <span class="org-comment-delimiter"># </span><span class="org-comment">&#31532;&#19977;&#20010; frag</span>
+    <span class="org-keyword">addi</span> a0<span class="org-parenthesis">,</span>a0<span class="org-parenthesis">,</span>0
+    <span class="org-keyword">.fill</span> 10<span class="org-parenthesis">,</span> 4<span class="org-parenthesis">,</span> 1
+</pre>
+</div>
+
+<p>
+在 `write_object_file` 中通过 `dmp_frags` dump 出 frag 信息:
+</p>
+
+<pre class="example" id="org000002b">
+before relax
+--------------------
+SEGMENT .text
+    FRAGMENT @ 0x6bbe9cd0
+    # 这个 frag 是 blt 导致的, 因为它的 target 是 symbol, 不是 fixed insn
+    machine_dep
+    # machine_dep 表示 fr_type, 将来 `md_convert_frag_branch` 会处理它
+    13 05 05 00 13 05 05 00 63 40 b5 00 	addr=0(0x0)
+    #~~~~~~~~~~~~~~~~~~~~~~ ~~~~~~~~~~~
+    #两条 addi 的编码       blt 的编码
+    fr_fix=8
+    # fr_fix=8 表示 frag 的数据部分 (literal) 前 8 bytes 是 fixed insn
+    # fix 与 var 的区别在后面 `write_contents` 时可以看到
+    fr_var=4
+    # fr_var=4 表示 frag 的数据部分 (literal) 后 4 bytes 是 relax insn (例如 blt xxx 或 .fill xxx)
+    fr_offset=0
+    # fr_offset 对 machine_dep 没用, 但对 rs_fill 有用
+    chars @ 0x6bbe9d48
+    # 0x6bbe9d48 是 frag literal 的地址, 前面的 13 05 05 00 13 05 05 00 63 40 b5 00
+    # 保存在这里
+
+    FRAGMENT @ 0x6bbe9d58
+    # 这个 frag 是由 fill 20 导致的. 另外, 这个 frag 的地址 (0x6bbe9d58)
+    # 比上一个 frag 的 fr_literal 大 16 bytes, 虽然上一个 frag 的 fix+var=12, 但
+    # as 这时知道经过后面的 relax 时它实际需要 16 bytes (参考 relaxed_branch_length 函数)
+    rs_fill(20)
+    13 05 05 00 01 00 00 00 00 00 00 00 		 repeated 20 times, fixed length if # chars == 0)
+    #~~~~~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~~
+   # addi       fill 的 `8,1` 参数
+    addr=0(0x0)
+    fr_fix=4
+    fr_var=8
+    fr_offset=20
+    # fr_offset=20 表示 fill 20 次
+    chars @ 0x6bbe9dd0
+
+    FRAGMENT @ 0x6bbe9de0
+    # 这个 frag 由 `.fill 10` 导致
+    rs_fill(10)
+    13 05 05 00 01 00 00 00 		 repeated 10 times, fixed length if # chars == 0)
+    addr=0(0x0)
+    fr_fix=4
+    fr_var=4
+    fr_offset=10
+    chars @ 0x6bbe9e58
+
+    FRAGMENT @ 0x6bbe9ee0
+    rs_fill(0)
+             repeated 0 times, fixed length if # chars == 0)
+    addr=0(0x0)
+    fr_fix=0
+    fr_var=0
+    fr_offset=0
+    chars @ 0x6bbe9f58
+
+after relax
+--------------------
+SEGMENT .text
+    FRAGMENT @ 0x6bbe9cd0
+    machine_dep
+13 05 05 00 13 05 05 00 63 40 b5 00 00 00 00 00 	addr=0(0x0)
+# relax_seg 后 blt 对应的 `63 40 b5 00` 被扩展成 8 bytes, 因为 relax branch 认为需要把 blt
+# 替换成 bge+jal
+    fr_fix=8
+    fr_var=8
+    fr_offset=0
+    chars @ 0x6bbe9d48
+
+    FRAGMENT @ 0x6bbe9d58
+    rs_fill(20)
+    13 05 05 00 01 00 00 00 00 00 00 00 		 repeated 20 times, fixed length if # chars == 0)
+    addr=16(0x10)
+    fr_fix=4
+    fr_var=8
+    fr_offset=20
+    chars @ 0x6bbe9dd0
+
+    FRAGMENT @ 0x6bbe9de0
+    rs_fill(10)
+    13 05 05 00 01 00 00 00 		 repeated 10 times, fixed length if # chars == 0)
+    addr=180(0xb4)
+    fr_fix=4
+    fr_var=4
+    fr_offset=10
+    chars @ 0x6bbe9e58
+
+    FRAGMENT @ 0x6bbe9e60
+    unknown type
+    addr=224(0xe0)
+    fr_fix=0
+    fr_var=1
+    fr_offset=2
+    chars @ 0x6bbe9ed8
+
+    FRAGMENT @ 0x6bbe9ee0
+    rs_fill(0)
+             repeated 0 times, fixed length if # chars == 0)
+    addr=224(0xe0)
+    fr_fix=0
+    fr_var=0
+    fr_offset=0
+    chars @ 0x6bbe9f58
+
+after size_seg
+--------------------
+SEGMENT .text
+    FRAGMENT @ 0x6bbe9cd0
+    rs_fill(0)
+    13 05 05 00 13 05 05 00 63 54 b5 00 6f 00 00 00 		 repeated 0 times, fixed length if # chars == 0)
+    # size_seg 后 blt 会替换为 bge+jal, 但地址部分还是空的, 因为 object 的布局目前还不确定
+    addr=0(0x0)
+    fr_fix=16
+    fr_var=0
+    fr_offset=0
+    chars @ 0x6bbe9d48
+
+    FRAGMENT @ 0x6bbe9d58
+    rs_fill(20)
+    13 05 05 00 01 00 00 00 00 00 00 00 		 repeated 20 times, fixed length if # chars == 0)
+    addr=16(0x10)
+    fr_fix=4
+    fr_var=8
+    fr_offset=20
+    chars @ 0x6bbe9dd0
+
+    FRAGMENT @ 0x6bbe9de0
+    rs_fill(10)
+    13 05 05 00 01 00 00 00 		 repeated 10 times, fixed length if # chars == 0)
+    addr=180(0xb4)
+    fr_fix=4
+    fr_var=4
+    fr_offset=10
+    chars @ 0x6bbe9e58
+
+final:
+--------------------
+SEGMENT .text
+    FRAGMENT @ 0x6bbe9cd0
+    rs_fill(0)
+    13 05 05 00 13 05 a5 00 63 54 b5 00 6f f0 5f ff 		 repeated 0 times, fixed length if # chars == 0)
+    # `write_contents` 时 frag 与最终的输出才完全一致
+    addr=0(0x0)
+    fr_fix=16
+    # fr_fix 从 8 变成了 16, 因为 blt 已经变成了 bge+jal
+    fr_var=0
+    fr_offset=0
+    chars @ 0x6bbe9d48
+
+    FRAGMENT @ 0x6bbe9d58
+    rs_fill(20)
+    13 05 05 00 01 00 00 00 00 00 00 00 		 repeated 20 times, fixed length if # chars == 0)
+    addr=16(0x10)
+    fr_fix=4
+    fr_var=8
+    fr_offset=20
+    chars @ 0x6bbe9dd0
+
+    FRAGMENT @ 0x6bbe9de0
+    rs_fill(10)
+    13 05 05 00 01 00 00 00 		 repeated 10 times, fixed length if # chars == 0)
+    addr=180(0xb4)
+    fr_fix=4
+    fr_var=4
+    fr_offset=10
+    chars @ 0x6bbe9e58
+</pre>
+
+<p>
+`write_content` 会编历所有 frag, 把 fixed 数据写到 object, 对于 rs_fill 之类的会特殊处理:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-function-name">write_contents</span><span class="org-parenthesis">(</span>
+    <span class="org-type">bfd</span> *<span class="org-variable-name">abfd</span> ATTRIBUTE_UNUSED<span class="org-parenthesis">,</span> <span class="org-type">asection</span> *<span class="org-variable-name">sec</span><span class="org-parenthesis">,</span> <span class="org-type">void</span> *<span class="org-variable-name">xxx</span> ATTRIBUTE_UNUSED<span class="org-parenthesis">)</span>:
+  <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>f = seginfo-&gt;frchainP-&gt;frch_root;
+       f;
+       f = f-&gt;fr_next<span class="org-parenthesis">)</span>:
+      <span class="org-comment-delimiter">/* </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: frag &#20013; fix &#30340;&#37096;&#20998;</span><span class="org-comment-delimiter"> */</span>
+      <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>f-&gt;fr_fix<span class="org-parenthesis">)</span>:
+          bfd_set_section_contents <span class="org-parenthesis">(</span>stdoutput<span class="org-parenthesis">,</span> sec<span class="org-parenthesis">,</span>
+                    f-&gt;fr_literal<span class="org-parenthesis">,</span> <span class="org-parenthesis">(</span><span class="org-type">file_ptr</span><span class="org-parenthesis">)</span> offset<span class="org-parenthesis">,</span>
+                    <span class="org-parenthesis">(</span><span class="org-type">bfd_size_type</span><span class="org-parenthesis">)</span> f-&gt;fr_fix<span class="org-parenthesis">)</span>;
+          offset += f-&gt;fr_fix;
+
+      fill_size = f-&gt;fr_var;
+      count = f-&gt;fr_offset;
+      fill_literal = f-&gt;fr_literal + f-&gt;fr_fix;
+
+      <span class="org-comment-delimiter">/* </span><span class="org-comment">&#36825;&#37324;&#20351;&#29992;&#20102; buf &#26469;&#21152;&#36895; fr_literal &#21040; bfd &#30340; memcpy</span><span class="org-comment-delimiter"> */</span>
+      <span class="org-type">char</span> <span class="org-variable-name">buf</span>[256];
+      <span class="org-type">char</span> *<span class="org-variable-name">bufp</span>;
+      n_per_buf = <span class="org-keyword">sizeof</span> <span class="org-parenthesis">(</span>buf<span class="org-parenthesis">)</span> / fill_size;
+      <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>i = n_per_buf<span class="org-parenthesis">,</span> bufp = buf; i; i--<span class="org-parenthesis">,</span> bufp += fill_size<span class="org-parenthesis">)</span>:
+          memcpy <span class="org-parenthesis">(</span>bufp<span class="org-parenthesis">,</span> fill_literal<span class="org-parenthesis">,</span> fill_size<span class="org-parenthesis">)</span>;
+      <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>; count &gt; 0; count -= n_per_buf<span class="org-parenthesis">)</span>:
+          n_per_buf = n_per_buf &gt; count ? count : n_per_buf;
+          <span class="org-function-name">bfd_set_section_contents</span>
+            <span class="org-parenthesis">(</span><span class="org-type">stdoutput</span><span class="org-parenthesis">,</span> <span class="org-type">sec</span><span class="org-parenthesis">,</span> <span class="org-type">buf</span><span class="org-parenthesis">,</span> <span class="org-parenthesis">(</span><span class="org-type">file_ptr</span><span class="org-parenthesis">)</span> offset<span class="org-parenthesis">,</span>
+             <span class="org-parenthesis">(</span><span class="org-type">bfd_size_type</span><span class="org-parenthesis">)</span> <span class="org-type">n_per_buf</span> * <span class="org-variable-name">fill_size</span><span class="org-parenthesis">)</span>;
+          offset += n_per_buf * fill_size;
+</pre>
+</div>
+</div>
+</div>
 </div>
 
 <div id="outline-container-org0000042" class="outline-3">
@@ -829,7 +1084,7 @@ bfd 源码为有一些 elfnn-&lt;arch&gt;.c/elfxx_&lt;arch&gt;.c, nn 是指 elfn
 Makefile.in:
 </p>
 
-<pre class="example" id="org0000034">
+<pre class="example" id="org0000035">
 elf32-riscv.c : elfnn-riscv.c
     $(AM_V_at)echo "#line 1 \"elfnn-riscv.c\"" &gt; $@
     $(AM_V_GEN)$(SED) -e s/NN/32/g &lt; $&lt; &gt;&gt; $@
@@ -856,12 +1111,12 @@ elfnn-riscv.c:
 <h3 id="org000003d"><span class="section-number-3">1.5.</span> usage</h3>
 <div class="outline-text-3" id="text-1-5">
 </div>
-<div id="outline-container-org000003c" class="outline-4">
-<h4 id="org000003c"><span class="section-number-4">1.5.1.</span> objcopy</h4>
+<div id="outline-container-org000003f" class="outline-4">
+<h4 id="org000003f"><span class="section-number-4">1.5.1.</span> objcopy</h4>
 <div class="outline-text-4" id="text-1-5-1">
 </div>
-<div id="outline-container-org000003b" class="outline-5">
-<h5 id="org000003b"><span class="section-number-5">1.5.1.1.</span> 生成 bin</h5>
+<div id="outline-container-org000003c" class="outline-5">
+<h5 id="org000003c"><span class="section-number-5">1.5.1.1.</span> 生成 bin</h5>
 <div class="outline-text-5" id="text-1-5-1-1">
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-comment-delimiter">// </span><span class="org-comment">2023-03-29 17:59</span>
@@ -872,7 +1127,7 @@ elfnn-riscv.c:
 </pre>
 </div>
 
-<pre class="example" id="org0000038">
+<pre class="example" id="org0000039">
 $&gt; gcc tset.c -O0 -g3
 $&gt; objcopy -O binary a.out a.bin
 $&gt; du -b
@@ -884,7 +1139,7 @@ objcopy 只会复制 elf 中特定的 section: `SEC_HAS_CONTENTS | SEC_READONLY 
 SEC_DATA`, 并且不会复制 debug 相关的 section
 </p>
 
-<pre class="example" id="org0000039">
+<pre class="example" id="org000003a">
 $&gt; objdump -h ./a.out
 
 ./a.out:     file format elf64-x86-64
@@ -930,7 +1185,7 @@ section 0~22 会被复制, bss 和 debug 相关的 section 不会被复制, 总�
 注意这个大小和统计 PT_LOAD segment 的大小并不相同:
 </p>
 
-<pre class="example" id="org000003a">
+<pre class="example" id="org000003b">
 $&gt; readelf -a a.out
 ...
 Program Headers:
@@ -996,9 +1251,9 @@ Program Headers:
 </div>
 
 
-<div id="outline-container-org0000049" class="outline-2 references">
-<h2 id="org0000049">Backlinks</h2>
-<div class="outline-text-2" id="text-org0000049">
+<div id="outline-container-org000004a" class="outline-2 references">
+<h2 id="org000004a">Backlinks</h2>
+<div class="outline-text-2" id="text-org000004a">
 <p>
 <a href="retargeting_gcc_to_riscv.html#ID-303d0f7f-03c2-4f31-ad7e-064162e3af10">Retargeting GCC To RISC-V</a>
 (<i>Retargeting GCC To RISC-V &gt; binutils</i>):   <a href="binutils.html#ID-28890ac4-f012-4934-afb2-1db09e6fc514">binutils</a>
@@ -1010,7 +1265,7 @@ Program Headers:
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-03-29 Wed 19:17<br />
-Last updated: 2023-10-18 Wed 17:03</p>
+Last updated: 2023-10-24 Tue 18:28</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
