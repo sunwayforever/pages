@@ -435,9 +435,9 @@ objdump 会使用 opcodes 中提供的 print_insn_riscv 等函数
 </div>
 
 
-<div id="outline-container-org000004a" class="outline-4 references">
-<h4 id="org000004a">Backlinks</h4>
-<div class="outline-text-4" id="text-org000004a">
+<div id="outline-container-org000004b" class="outline-4 references">
+<h4 id="org000004b">Backlinks</h4>
+<div class="outline-text-4" id="text-org000004b">
 <p>
 <a href="gdb_target_arch.html#ID-853d6271-a0b6-4ae0-bba1-667a2a3d8505">GDB Target Arch</a>
 (<i>GDB Target Arch &gt; porting new arch &gt; porting</i>):     gdb 的 disass 依赖 <a href="#ID-e78f85b3-7a6b-4ce8-aecc-665873d8b6ad">opcodes</a>. core, exec 数据的读取依赖 <a href="bfd_tutorial.html#ID-7569396e-eef7-485b-a1eb-8a545dec44ba">bfd</a>
@@ -740,11 +740,13 @@ append_insn 主要的工作是根据 reloc_type 决定 imm 或 offset 如何处�
 <li>使用常量的指令可以直接把 constant 编码到指令中, 只是需要考虑不同的类型
 (I,S,U) 对 imm 的编码不太一样</li>
 
-<li>使用 symbol 的指令无法把 symbol 的地址直接编码到指令中, 汇编阶段只能确定
-symbol 和 reloc_type, 最终地址在链接阶段由 处理</li>
+<li>指令使用了编译时可知的 symbol, 在 riscv_ip 时无法直接编码 (因为处理当前 insn
+时 symbol 地址还没计算出来), 但 as 后续可以 fixup</li>
 
-<li>有一个例外是 branch 指令: 如果 branch target 是 constant 但过大或者是 symbol,
-会通过 relax branch 把它替换成其它指令</li>
+<li>as 时有些符号无法 fixup (例如外部符号或跨 section 的符号), 需要在链接阶段由处理</li>
+
+<li>还有一个例外是 branch 指令: 如果 branch target 是 constant 但过大或者是
+symbol, 会通过 relax branch 把它替换成其它指令</li>
 </ol>
 </div>
 </div>
@@ -859,7 +861,10 @@ SEGMENT .text
     # machine_dep 表示 fr_type, 将来 `md_convert_frag_branch` 会处理它
     13 05 05 00 13 05 05 00 63 40 b5 00 	addr=0(0x0)
     #~~~~~~~~~~~~~~~~~~~~~~ ~~~~~~~~~~~
-    #两条 addi 的编码       blt 的编码
+    # 两条 addi 的编码       blt 的编码
+    # 第二条 addi a0,a0,10 编码为 13 05 05 00 而不是 13 05 a5 00 是因为 addi
+    # 中的 10 这个 imm 需要通过 `fixup_segment` 去 fix, 因为 addi 的 imm 部分
+    # 可能是一个 label
     fr_fix=8
     # fr_fix=8 表示 frag 的数据部分 (literal) 前 8 bytes 是 fixed insn
     # fix 与 var 的区别在后面 `write_contents` 时可以看到
@@ -1275,9 +1280,9 @@ Program Headers:
 </div>
 
 
-<div id="outline-container-org000004b" class="outline-2 references">
-<h2 id="org000004b">Backlinks</h2>
-<div class="outline-text-2" id="text-org000004b">
+<div id="outline-container-org000004c" class="outline-2 references">
+<h2 id="org000004c">Backlinks</h2>
+<div class="outline-text-2" id="text-org000004c">
 <p>
 <a href="retargeting_gcc_to_riscv.html#ID-303d0f7f-03c2-4f31-ad7e-064162e3af10">Retargeting GCC To RISC-V</a>
 (<i>Retargeting GCC To RISC-V &gt; binutils</i>):   <a href="binutils.html#ID-28890ac4-f012-4934-afb2-1db09e6fc514">binutils</a>
@@ -1289,7 +1294,7 @@ Program Headers:
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-03-29 Wed 19:17<br />
-Last updated: 2023-10-24 Tue 19:46</p>
+Last updated: 2023-10-25 Wed 10:51</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
