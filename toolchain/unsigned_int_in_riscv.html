@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>Unsigned Int In RISC-V</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">Unsigned Int In RISC-V</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000001">1. Unsigned Int In RISC-V</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000001" class="outline-2">
+<h2 id="org0000001"><span class="section-number-2">1.</span> Unsigned Int In RISC-V</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="https://forums.sifive.com/t/how-can-i-repeat-the-coremark-score/1947">https://forums.sifive.com/t/how-can-i-repeat-the-coremark-score/1947</a>
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdint.h&gt;</span>
+
+<span class="org-preprocessor">#ifdef</span> BAD
+<span class="org-keyword">typedef</span> <span class="org-type">uint32_t</span> <span class="org-type">INT</span>;
+<span class="org-preprocessor">#else</span>
+<span class="org-keyword">typedef</span> <span class="org-type">int32_t</span> <span class="org-type">INT</span>;
+<span class="org-preprocessor">#endif</span>
+
+<span class="org-type">void</span> <span class="org-function-name">matrix_add_const</span><span class="org-parenthesis">(</span><span class="org-type">INT</span> <span class="org-variable-name">N</span><span class="org-parenthesis">,</span> <span class="org-type">INT</span> *<span class="org-variable-name">A</span><span class="org-parenthesis">,</span> <span class="org-type">INT</span> <span class="org-variable-name">val</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">INT</span> <span class="org-variable-name">i</span><span class="org-parenthesis">,</span> <span class="org-variable-name">j</span>;
+    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>i = 0; i &lt; N; i++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+        <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>j = 0; j &lt; N; j++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+            A[i * N + j] += val;
+        <span class="org-parenthesis">}</span>
+    <span class="org-parenthesis">}</span>
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org0000000">
+// good:
+// riscv64-linux-gnu-gcc-10 test.c -Ofast -c
+0000000000000000 &lt;matrix_add_const&gt;:
+   0:   02a05963                blez    a0,32 &lt;.L1&gt;
+   4:   fff5069b                addiw   a3,a0,-1
+   8:   1682                    slli    a3,a3,0x20
+   a:   82f9                    srli    a3,a3,0x1e
+   c:   00458793                addi    a5,a1,4
+  10:   00251893                slli    a7,a0,0x2
+  14:   96be                    add     a3,a3,a5
+  16:   4801                    li      a6,0
+
+0000000000000018 &lt;.L3&gt;:
+  18:   87ae                    mv      a5,a1 # a1 是 i*N
+
+000000000000001a &lt;.L4&gt;:
+  1a:   4398                    lw      a4,0(a5)
+  1c:   0791                    addi    a5,a5,4
+  1e:   9f31                    addw    a4,a4,a2
+  20:   fee7ae23                sw      a4,-4(a5)
+  24:   fef69be3                bne     a3,a5,1a &lt;.L4&gt;
+  28:   2805                    addiw   a6,a6,1
+  2a:   95c6                    add     a1,a1,a7
+  2c:   96c6                    add     a3,a3,a7
+  2e:   ff0515e3                bne     a0,a6,18 &lt;.L3&gt;
+
+0000000000000032 &lt;.L1&gt;:
+  32:   8082                    ret
+
+// bad:
+// riscv64-linux-gnu-gcc-10 test.c -Ofast -c -DBAD
+0000000000000000 &lt;matrix_add_const&gt;:
+   0:   882a                    mv      a6,a0
+   2:   4301                    li      t1,0
+   4:   4881                    li      a7,0
+   6:   c505                    beqz    a0,2e &lt;.L9&gt;
+
+0000000000000008 &lt;.L2&gt;:
+   8:   871a                    mv      a4,t1
+
+000000000000000a &lt;.L4&gt;:
+
+,---- 计算偏移量时需要做无符号扩展
+|    a:   02071793                slli    a5,a4,0x20
+|    e:   83f9                    srli    a5,a5,0x1e
+`----
+  10:   97ae                    add     a5,a5,a1
+  12:   4394                    lw      a3,0(a5)
+  14:   2705                    addiw   a4,a4,1
+  16:   9eb1                    addw    a3,a3,a2
+  18:   c394                    sw      a3,0(a5)
+  1a:   fee818e3                bne     a6,a4,a &lt;.L4&gt;
+  1e:   2885                    addiw   a7,a7,1
+  20:   0065033b                addw    t1,a0,t1
+  24:   0105083b                addw    a6,a0,a6
+  28:   ff1510e3                bne     a0,a7,8 &lt;.L2&gt;
+  2c:   8082                    ret
+</pre>
+
+<p>
+rv64 下 uint32_t 需要显式的无符号扩展的场景有:
+</p>
+
+<ol class="org-ol">
+<li>涉及到宽度有变化的类型转换, 例如 uint32_t -&gt; int64_t</li>
+
+<li>像上面的例子, 做为地址使用. 实际上也是 uint32_t -&gt; int64_t, 因为 riscv 内存寻址时必须使用整个基地址寄存器的所有 bit (例如它没有办法只使用 a0 的低 32 位)</li>
+
+<li>&#x2026;</li>
+</ol>
+
+<p>
+上面的问题最根本的原因是, int32_t/uint32_t 的在做为地址时需要扩展成 64bit, 而
+riscv 大部分指令会自动做符号扩展, 所以针对 int32_t 的符号扩展可以省掉, 但无符号扩展则必须通过显式的 zext 类指令(例如 slli+srli), 所以 rv64 上涉及访存的变量用
+int32_t 性能好于 uint32_t.
+</p>
+
+<p>
+另外, 由于符号扩展会在高位加入符号位, 所以涉及 bit 操作时用 signed 则可能出错,
+例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-comment-delimiter">// </span><span class="org-comment">2023-04-27 20:48</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdint.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int8_t</span> <span class="org-variable-name">tmp</span> = -1;
+    <span class="org-type">int8_t</span> <span class="org-variable-name">sign</span> = tmp &amp; <span class="org-parenthesis">(</span>1 &lt;&lt; 7<span class="org-parenthesis">)</span>;
+    <span class="org-comment-delimiter">/* </span><span class="org-comment"><span class="org-hl-todo"><span class="custom">NOTE</span></span></span><span class="org-comment">: gcc &#20808;&#25226;&#24038;&#20391; sign &#31526;&#21495;&#25193;&#23637;&#25104; int32_t, &#20026; 0xffffff80, &#21491;&#20391;&#20063;&#26159;&#20197;</span>
+<span class="org-comment">     * int32_t &#20026;&#35745;&#31639;, &#23548;&#33268;&#32467;&#26524;&#20026; 0x00000080. &#22914;&#26524; int8_t &#25442;&#25104; uint8_t &#21017;&#27809;&#26377;&#38382;</span>
+<span class="org-comment">     * &#39064;, &#22240;&#20026;&#27809;&#26377;&#31526;&#21495;&#25193;&#23637;. &#25152;&#20197; bit &#25805;&#20316;&#26368;&#22909;&#29992; unsigned</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>sign == <span class="org-parenthesis">(</span>tmp &amp; <span class="org-parenthesis">(</span>1 &lt;&lt; 7<span class="org-parenthesis">)))</span> <span class="org-parenthesis">{</span>
+        printf<span class="org-parenthesis">(</span><span class="org-string">"ok\n"</span><span class="org-parenthesis">)</span>;
+    <span class="org-parenthesis">}</span>
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<p>
+综上, 由于有符号/无符号扩展的原因, 用 signed int 性能好一些, 但 unsigned int 更不容易出一些奇怪的错误.
+</p>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-11-17 Fri 11:42<br />
+Last updated: 2023-11-17 Fri 14:12</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
