@@ -1,0 +1,663 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>ART Image Format</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">ART Image Format</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000030">1. ART Image Format</a>
+<ul>
+<li><a href="#org000000e">1.1. boot.art 格式</a>
+<ul>
+<li><a href="#org0000002">1.1.1. ImageHeader</a></li>
+<li><a href="#org0000005">1.1.2. image_space</a></li>
+<li><a href="#org0000008">1.1.3. live_bitmap</a></li>
+<li><a href="#org000000b">1.1.4. image_roots_</a></li>
+</ul>
+</li>
+<li><a href="#org0000021">1.2. 生成 boot.art</a>
+<ul>
+<li><a href="#org0000011">1.2.1. Runtime::Create</a></li>
+<li><a href="#org0000014">1.2.2. GenerateImage</a></li>
+<li><a href="#org0000017">1.2.3. dex2oat</a></li>
+<li><a href="#org000001a">1.2.4. ImageWriter::Write</a></li>
+<li><a href="#org000001e">1.2.5. ElfFixup::Fixup</a></li>
+</ul>
+</li>
+<li><a href="#org000002d">1.3. 使用 boot.art</a>
+<ul>
+<li><a href="#org0000024">1.3.1. Runtime::Create</a></li>
+<li><a href="#org0000027">1.3.2. ImageSpace::Init</a></li>
+<li><a href="#org000002a">1.3.3. ImageSpace 如何被使用</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000030" class="outline-2">
+<h2 id="org0000030"><span class="section-number-2">1.</span> ART Image Format</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org000000e" class="outline-3">
+<h3 id="org000000e"><span class="section-number-3">1.1.</span> boot.art 格式</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+boot.art 文件主要由四部分构成:
+</p>
+
+<ol class="org-ol">
+<li>ImageHeader</li>
+<li>image_space</li>
+<li>live_bitmap</li>
+<li>image_roots</li>
+</ol>
+</div>
+
+<div id="outline-container-org0000002" class="outline-4">
+<h4 id="org0000002"><span class="section-number-4">1.1.1.</span> ImageHeader</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+ImageHeader 位于 boot.art 的开头, 主要用来描述 image_space,
+live_bitmap, image_roots 等需要映射到内存中的位置和大小等.
+</p>
+
+<ol class="org-ol">
+<li><p>
+image_begin_
+</p>
+
+<p>
+指 image_space 需要映射到这个绝对地址. 这个地址在 image_space.cc 的
+GenerateImage 时指定 (ChooseRelocationOffsetDelta), 其值为
+ART_BASE_ADDRESS + 一个随机的 delta 值, ART_BASE_ADDRESS 为
+0x70000000
+</p></li>
+
+<li><p>
+image_size_
+</p>
+
+<p>
+指 image_space 的大小, 使用 boot.art 启动的虚拟机时,
+runtime-&gt;Heap()-&gt;ImageSpace::init 时, 会将 boot.art 中从 0 到
+image_size_ 的内容映射到进程的 image_begin_ 处.
+</p></li>
+
+<li><p>
+image_bitmap_offset_ 和 image_bitmap_size_
+</p>
+
+<p>
+指 boot.art 中 live_bitmap 的内容的偏移量和大小. 
+live_bitmap 在 ImageSpace::init 时也会被映射进来, 但它们不需要被映射到固定的位置, 所以关于 live_bitmap 并没有类似于 image_begin 的数据. 
+</p>
+
+<p>
+观察一个进程的 maps:
+</p>
+
+<pre class="example" id="org0000000">
+~@sunway-work&gt; adb shell cat /proc/19947/maps | grep -i "boot"
+6f745000-7025d000 rw-p 00000000 b3:15 39845      /data/dalvik-cache/arm/system@framework@boot.art
+7025d000-71ce8000 r--p 00000000 b3:15 39844      /data/dalvik-cache/arm/system@framework@boot.oat
+71ce8000-7319b000 r-xp 01a8b000 b3:15 39844      /data/dalvik-cache/arm/system@framework@boot.oat
+7319b000-7319c000 rw-p 02f3e000 b3:15 39844      /data/dalvik-cache/arm/system@framework@boot.oat
+b4cc9000-b4cf6000 r--p 00b18000 b3:15 39845      /data/dalvik-cache/arm/system@framework@boot.art
+b5200000-b5201000 r--p 00000000 b3:15 39844      /data/dalvik-cache/arm/system@framework@boot.oat
+</pre>
+
+<p>
+第一行对应于 boot.art 中 image_space 部分的映射, 可以看到
+image_begin_ 应该是 0x6f745000, 不考虑对齐的话, image_size_ 应该是
+0x7025d000-0x6f745000
+第五行对应于 boot.art 中的 live_bitmap 部分, 映射的起始地址
+0x00b18000 应该对应于 image_bitmap_offset_
+</p>
+
+<p>
+另外, 从 maps 中可能还能推测出一个信息:
+image_space 被加载后是可以修改 (r&#x2013;p), 但它的 live_bitmap 是不可写的 (r&#x2013;p), 这可能意味着 image_space 上无法分配和释放对象, 但`某些
+`已存在的对象可以被修改? (例如 DexCache?)
+</p></li>
+
+<li><p>
+oat_data_begin_, oat_data_end_
+</p>
+
+<p>
+指 boot.oat 的 oatdata 需要被映射到的区域. 这个区域实际上是紧随着
+image_space 映射的区域之后, 例如上面 example 提到的第二行.
+</p>
+
+<p>
+image_space 中会有许多 ArtMethod 对象, ArtMetho 会有许多函数指针,
+例如 entry_point_from_quick_compiled_code_, 这些指针在进行 dex2oat
+时本来是指向 boot.oat 中 oatexec 区域的 native code 的, 当
+image_writer 最终需要保存 image_space 时, 这些 ArtMethod 指向的
+boot.oat 的指针如何保存? 答案就是将 boot.oat 像 image_space 一样映射到 oat_data_begin_ 处, 同时修改 ArtMethod 中的函数指针使其指向
+oat_data_begin_ 开始的区域 (ImageWriter::FixupMethod)
+</p></li>
+
+<li><p>
+image_roots_
+</p>
+
+<p>
+image_roots_ 是指向 image_space 的一些对象的指针.
+</p></li>
+</ol>
+
+<p>
+关于 boot.art 及 boot.oat 的 copy, fixup, patch 等信息, 可以参考
+dex2oat.cc 中的这一段 comment:
+</p>
+
+<pre class="example" id="org0000001">
+Notes on the interleaving of creating the image and oat file to
+ensure the references between the two are correct.
+
+Currently we have a memory layout that looks something like this:
+
++--------------+
+| image        |
++--------------+
+| boot oat     |
++--------------+
+| alloc spaces |
++--------------+
+
+There are several constraints on the loading of the image and boot.oat.
+
+1. The image is expected to be loaded at an absolute address and
+contains Objects with absolute pointers within the image.
+
+2. There are absolute pointers from Methods in the image to their
+code in the oat.
+
+3. There are absolute pointers from the code in the oat to Methods
+in the image.
+
+4. There are absolute pointers from code in the oat to other code
+in the oat.
+
+To get this all correct, we go through several steps.
+
+1. We have already created that oat file above with
+CreateOatFile. Originally this was just our own proprietary file
+but now it is contained within an ELF dynamic object (aka an .so
+file). The Compiler returned by CreateOatFile provides
+PatchInformation for references to oat code and Methods that need
+to be update once we know where the oat file will be located
+after the image.
+
+2. We create the image file. It needs to know where the oat file
+will be loaded after itself. Originally when oat file was simply
+memory mapped so we could predict where its contents were based
+on the file size. Now that it is an ELF file, we need to inspect
+the ELF file to understand the in memory segment layout including
+where the oat header is located within. ElfPatcher's Patch method
+uses the PatchInformation from the Compiler to touch up absolute
+references in the oat file.
+
+3. We fixup the ELF program headers so that dlopen will try to
+load the .so at the desired location at runtime by offsetting the
+Elf32_Phdr.p_vaddr values by the desired base address.
+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000005" class="outline-4">
+<h4 id="org0000005"><span class="section-number-4">1.1.2.</span> image_space</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+boot.art 中 image_space 保存着 dex2oat 时 java 堆中所有的和
+image_classes 相关的 class 和 object. 
+</p>
+
+<p>
+所谓的 image_classes, 是指 framework 下 preloaded-classes 中列出来的
+class. 
+</p>
+
+<p>
+在 CompilerDriver 的 PreCompile 阶段, CompilerDriver 会通过
+LoadImageClasses 先把 preloaded-classes 中列出的 class 都加载进来, 然后通过 class_linker-&gt;VisitClasses 再扫描一次当前已经加载的所有 class,
+把它们都加到 image_classes 中. 这样做是因为加载 preloaded-classes 时可能会导致 preloaded-classes 的基类, 接口都其他相关的类也被加载进来, 这些后来加载的类也会被算到 image_classes.
+</p>
+
+<p>
+CompilerDriver 然后再加载 bootclasspath 中所有的 dex 中的类, 对某些类还会执行初始化的动作.
+</p>
+
+<p>
+最后, CompilerDriver 通过
+heap-&gt;VisitObjects(FindClinitImageClassesCallback) 扫描一次 heap, 对于那些 clinit 阶段生成的对象的 class, 也会相应的加到 image_classes 中.
+</p>
+
+<p>
+到此, image_classes 会生成完毕了. 
+</p>
+
+<p>
+在 ImageWriter::Write 阶段, 会先通过 PruneNonImageClasses 把
+ClassLinker 的 class_table_ 中那些非 image_classes 的类都清除, 然后执行一个 GC, 导致 heap 上只会保留 image_classes 相关的类和对象. 
+</p>
+
+<p>
+通过 AllocMemory 分配一个和当前 heap 大小一致的 tmp_image_space 空间,
+以及一个 live_bitmap 空间. 
+</p>
+
+<p>
+通过 CalculateNewObjectOffsets, CopyAndFixupObjects 重置各个对象的引用关系并移到到 tmp_image_space. 所谓重置, 参考 getImageAddress 和
+GetOatAddress, 就是要将对象中引用的 原 heap 中的 X 修改为引用
+image_begin_ 中的 X, 或将 ArtMethod 引用的代码指向新的 oat_data_begin_
+区域, 这个过程和 dalvik 中的 copying GC 的移动过程基本是一样的, 例如,
+都使用了 forward address.
+</p>
+
+<p>
+最终, 将 tmp_image_space 和 live_bitmap 加上相应的 ImageHeader 写到
+boot.art 就可以了. 
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000008" class="outline-4">
+<h4 id="org0000008"><span class="section-number-4">1.1.3.</span> live_bitmap</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<p>
+live_bitmap 与 image_space 对应, 其大小为 image_space 的 1/64 (不考虑对齐的话)
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000000b" class="outline-4">
+<h4 id="org000000b"><span class="section-number-4">1.1.4.</span> image_roots_</h4>
+<div class="outline-text-4" id="text-1-1-4">
+<p>
+主要保存着一个 DexCache 的数组和一个 ClassRoot 数组, DexCache 相应于
+image_space 中所有对象的 cache. ClassRoot 中保存着一些基本的 class, 例如 java.lang.Class, java.lang.Object, java.lang.String 等.
+</p>
+
+<p>
+当 runtime 从 image 启动时, ClassLinker::InitFromImage 会从
+ImageHeader 中读取 ClassRoot, 不需要再重新加载这些基本类.
+</p>
+
+<p>
+若 ClassLinker::InitWithoutImage, 则需要通过 AllocClass 自己加载
+java.lang.Class 这些基本类了.  ClassRoot 和 DexCache 的保存是必要的,因为 image_space 中的对象需要和 DexCache 及 ClassRoot 中的数据对应.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000021" class="outline-3">
+<h3 id="org0000021"><span class="section-number-3">1.2.</span> 生成 boot.art</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+zygote 启动时会使用 -Ximage 参数表明 java 进程需要使用 boot.art 来加载
+image_space, 若检测到不存在 boot.art, 则会调用 dex2oat 来生成. 调用
+dex2oat 时会通过 &#x2013;image 参数表明 dex2oat 需要生成 boot.art.
+</p>
+</div>
+
+<div id="outline-container-org0000011" class="outline-4">
+<h4 id="org0000011"><span class="section-number-4">1.2.1.</span> Runtime::Create</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<div class="org-src-container">
+<pre class="src src-text">JNI_CreateJavaVM
+  Runtime::Create
+    Runtime::Init
+      Heap::Heap
+        if (!image_file_name.empty()):
+          ImageSpace::Create
+            bool found_image = FindImageFilename
+            if (found_image):
+              return ImageSpace::Init
+            else:
+              GenerateImage
+              return ImageSpace::Init
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000014" class="outline-4">
+<h4 id="org0000014"><span class="section-number-4">1.2.2.</span> GenerateImage</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<div class="org-src-container">
+<pre class="src src-text">ImageSpace::GenerateImage
+  // &#35774;&#32622; "dex2oat" &#21487;&#25191;&#34892;&#31243;&#24207;&#30340;&#36335;&#24452;
+  std::string dex2oat(Runtime::Current()-&gt;GetCompilerExecutable());
+  arg_vector.push_back(dex2oat);
+
+  // &#35774;&#32622; "--image" &#21442;&#25968;, &#20351; dex2oat &#30693;&#36947;&#35201;&#29983;&#25104; boot.art
+  std::string image_option_string("--image=");
+  image_option_string += image_filename;
+  arg_vector.push_back(image_option_string);
+
+  // &#25351;&#23450;&#35201;&#29983;&#25104;&#30340; boot.art &#30340; image_begin_ &#21442;&#25968;
+  arg_vector.push_back(StringPrintf("--base=0x%x", ART_BASE_ADDRESS + base_offset));
+
+  // Exec &#20250; fork &#23376;&#36827;&#31243;&#25191;&#34892; arg_vector, &#24182;&#31561;&#24453;&#23376;&#36827;&#31243;&#36820;&#22238;
+  return Exec(arg_vector, error_msg);
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000017" class="outline-4">
+<h4 id="org0000017"><span class="section-number-4">1.2.3.</span> dex2oat</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<div class="org-src-container">
+<pre class="src src-text">dex2oat:
+  Dex2Oat::Create(&amp;p_dex2oat,runtime_options,*compiler_options,..)
+    // &#21551;&#21160; runtime, runtime_options &#20013;&#27809;&#26377; -Ximage &#21442;&#25968;, &#25152;&#20197;
+    // runtime &#19981;&#20250;&#21021;&#22987;&#21270; image_space
+    dex2oat-&gt;CreateRuntime(runtime_options, instruction_set)
+  // &#20174; preloaded-classes &#20013;&#35835;&#21462; image_classes_  
+  dex2oat-&gt;ReadImageClassesFromZip(image_classes_zip_filename,..)
+  // &#24320;&#22987;&#32534;&#35793;&#24182;&#29983;&#25104; boot.oat
+  dex2oat-&gt;CreateOatFile(boot_image_option,..)
+    driver = new CompilerDriver(compiler_options_,...)
+    driver-&gt;CompileAll(class_loader, dex_files, &amp;timings);
+      CompilerDriver::PreCompile(class_loader, dex_files,..)
+      CompilerDriver::Compile(class_loader, dex_files,...)
+    OatWriter oat_writer(dex_files, ...)
+    driver-&gt;WriteElf(android_root, is_host, dex_files, &amp;oat_writer, oat_file)
+  dex2oat-&gt;CreateImageFile
+    ImageWriter image_writer(compiler);
+    image_writer.Write(image_filename, image_base, oat_filename, oat_location)
+    ElfFixup::Fixup(oat_file.get(), oat_data_begin)
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000001a" class="outline-4">
+<h4 id="org000001a"><span class="section-number-4">1.2.4.</span> ImageWriter::Write</h4>
+<div class="outline-text-4" id="text-1-2-4">
+<div class="org-src-container">
+<pre class="src src-text">ImageWriter::Write
+  // &#21508;&#31181; bridge, trampoline &#20989;&#25968;&#23384;&#22312;&#21040; boot.oat &#20013;,
+  // &#32780;&#29983;&#25104; boot.art &#20013;&#30340; ArtMethod &#38656;&#35201;&#24341;&#29992;&#23427;&#20204;, &#22240;&#27492;&#36825;&#20123;
+  // &#20989;&#25968;&#38656;&#35201;&#32463;&#36807;&#21518;&#38754;&#30340; GetOatAddress &#36716;&#25442;
+  interpreter_to_interpreter_bridge_offset_ =
+      oat_file_-&gt;GetOatHeader().GetInterpreterToInterpreterBridgeOffset();
+  // &#20174; ClassLinker &#30340; class_table_ &#20013;&#38500;&#25481;&#38750; image_classes_ &#30340;&#31867;, &#25152;&#35859;
+  // image_classes_, &#26159;&#25351;&#21644; preloaded-classes &#30456;&#20851;&#30340;&#37027;&#20123;&#31867;
+  PruneNonImageClasses();
+  gc::Heap* heap = Runtime::Current()-&gt;GetHeap();
+  // &#30830;&#20445; heap &#20013;&#21482;&#23384;&#22312;&#21644; image_classes_ &#30456;&#20851;&#30340;&#31867;&#21644;&#23545;&#35937;
+  heap-&gt;CollectGarbage(false);
+  AllocMemory()
+    // &#26681;&#25454;&#24403;&#21069; heap &#30340;&#22823;&#23567;&#20998;&#37197;&#19968;&#22359;&#20020;&#26102;&#20869;&#23384; image_, &#26368;&#32456;&#36825;&#22359;&#20869;&#23384;&#21644;
+    // &#21518;&#38754;&#20998;&#37197;&#30340; image_bitmap_ &#20250;&#19968;&#36215;&#34987;&#20889;&#20837;&#21040; boot.art
+    // &#35201;&#27880;&#24847;&#30340;&#26159;, image_.Begin() &#21644; image_begin_ &#27809;&#26377;&#20851;&#31995;: image_ &#20869;&#23384;&#30340;&#22320;&#22336;&#19981;&#26159;&#22266;&#23450;&#30340;. 
+    size_t length = RoundUp(Runtime::Current()-&gt;GetHeap()-&gt;GetTotalMemory(), kPageSize);
+    image_.reset(MemMap::MapAnonymous("image writer image", NULL, length, PROT_READ | PROT_WRITE,
+                                    true, &amp;error_msg));
+    // Create the image bitmap.
+    // image_bitmap_ &#36825;&#22359;&#20869;&#23384;&#30340;&#22823;&#23567;&#20026; length/64
+    image_bitmap_.reset(gc::accounting::ContinuousSpaceBitmap::Create("image bitmap", image_-&gt;Begin(),
+                                                                    length));
+
+  // &#36941;&#21382; heap &#19978;&#25152;&#26377;&#23545;&#35937;, &#20998;&#37197;&#19968;&#20010;&#30456;&#23545;&#20110; image_.Begin() &#30340; offset, &#20445;&#23384;&#22312; LockWord &#20013;,
+  // &#26356;&#26032; image_bitmap_, &#24182;&#29983;&#25104; ImageHeader
+  CalculateNewObjectOffsets(oat_loaded_size, oat_data_offset);
+    // &#23545;&#26576;&#19968;&#20010;&#23545;&#35937;, &#25191;&#34892;&#20197;&#19979;&#30340; callback:
+    ImageWriter::AssignImageOffset
+      SetImageOffset(object, image_end_);
+        mirror::Object* obj = reinterpret_cast&lt;mirror::Object*&gt;(image_-&gt;Begin() + offset);
+        image_bitmap_-&gt;Set(obj);
+        object-&gt;SetLockWord(LockWord::FromForwardingAddress(offset), false);
+        image_end_ += RoundUp(object-&gt;SizeOf(), 8);  // 64-bit alignment
+
+  // &#22797;&#21046;&#25152;&#26377;&#23545;&#35937;&#23545; AllocMemory &#20998;&#37197;&#30340;&#20020;&#26102;&#20869;&#23384;, &#20351;&#29992;&#19978;&#19968;&#27493;&#35745;&#31639;&#30340; offset      
+  CopyAndFixupObjects();
+    // &#23545;&#26576;&#19968;&#20010;&#23545;&#35937;, &#25191;&#34892;&#20197;&#19979; callback:
+    CopyAndFixupObjectsCallback
+      // offset &#26159;&#19978;&#19968;&#27493;&#20998;&#37197;&#30340; offset
+      size_t offset = image_writer-&gt;GetImageOffset(obj);
+      // image_ &#26159; AllocMemory &#20998;&#37197;&#30340;&#20020;&#26102;&#20869;&#23384;
+      byte* dst = image_writer-&gt;image_-&gt;Begin() + offset;
+      const byte* src = reinterpret_cast&lt;const byte*&gt;(obj);
+      size_t n = obj-&gt;SizeOf();
+      memcpy(dst, src, n);
+    // &#25152;&#26377;&#23545;&#35937;&#34987; copy &#21040; image_ &#21518;, &#23545;&#35937;&#20013;&#24341;&#29992;&#30340;&#22320;&#22336;&#36824;&#27809;&#26377; fixup:
+    // &#36824;&#26159;&#21407;&#22987; heap &#20013;&#30340;&#22320;&#22336;, &#38656;&#35201;&#36890;&#36807; FixupObject &#23558;&#23545;&#35937;&#20013;&#21508; field &#30340;&#24341;&#29992;
+    // &#20462;&#25913;&#20026;&#30456;&#23545;&#20110; image_begin_ &#30340;&#24341;&#29992;
+    image_writer-&gt;FixupObject(obj, copy);
+      // fixup &#30340;&#36807;&#31243;&#20027;&#35201;&#26159;&#36890;&#36807;&#22914;&#19979;&#30340; FixupVisitor &#23436;&#25104;:
+      Object* ref = obj-&gt;GetFieldObject(offset);
+      // getImageAddress(ref) = (image_begin_ + GetImageOffset(ref)) !
+      copy_-&gt;SetFieldObjectWithoutWriteBarrier(offset, image_writer_-&gt;GetImageAddress(ref));
+
+      // ArtMethod &#24341;&#29992;&#20102; oat &#20013;&#30340;&#20989;&#25968;, &#20063;&#38656;&#35201;&#26681;&#25454; oat_file_begin_ &#36827;&#34892; fixup
+      if (orig-&gt;IsArtMethod&lt;kVerifyNone&gt;()):
+        FixupMethod(orig-&gt;AsArtMethod&lt;kVerifyNone&gt;(), down_cast&lt;ArtMethod*&gt;(copy));
+
+  // &#19981;&#28165;&#26970; ART &#22312;&#29983;&#25104; boot.art &#26368;&#21518;&#38454;&#27573;&#30340; patch oat &#25110; patch elf &#20855;&#20307;&#26159;&#20570;&#20160;&#20040;&#30340;,
+  // &#20294;&#20174;&#20195;&#30721;&#29255;&#26029;&#19978;&#30475;, &#21644; arm literal &#26377;&#20851;, &#32780;&#19988; arm literal &#20570;&#20026;&#25968;&#25454;&#22312; native code
+  // &#26102;&#37117;&#26159;&#36890;&#36807;&#32477;&#23545;&#22320;&#22336;&#24341;&#29992;&#30340;, &#24403; oat_data &#34987;&#21152;&#36733;&#21040; oat_data_begin_ &#21518;, literal &#22320;&#22336;
+  // &#21464;&#21270;&#23548;&#33268;&#20102;&#30456;&#24212;&#30340;&#20195;&#30721;&#20013;&#30340;&#22320;&#22336;&#37117;&#38656;&#35201;&#25913;&#21464;
+  PatchOatCodeAndMethods(oat_file.get());
+
+  image_file(OS::CreateEmptyFile(image_filename.c_str()));
+  image_file-&gt;WriteFully(image_-&gt;Begin(), image_end_)
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000001e" class="outline-4">
+<h4 id="org000001e"><span class="section-number-4">1.2.5.</span> ElfFixup::Fixup</h4>
+<div class="outline-text-4" id="text-1-2-5">
+<p>
+ImageWriter::Writer 完成以后, boot.oat 文件会通过 ElfFixup::Fixup, 把其中的各种 section, segment, symbol 等的地址都从以 0 为基址的相对地址移动到绝对地址上 (参照 oat_data_begin_). 后面 ImageSpace::OpenOatFile
+时会使用这些绝对地址.
+</p>
+
+<p>
+例如: 
+</p>
+<pre class="example" id="org000001d">
+&gt; oatdump --image=/system/framework/boot.art
+...
+OAT DATA BEGIN:0x7025e000
+...
+&gt; readelf -a system@framework@boot.oat
+...
+  [ 4] .rodata           PROGBITS        7025e000 001000 1a8a000 00   A  0   0 4096
+...
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000002d" class="outline-3">
+<h3 id="org000002d"><span class="section-number-3">1.3.</span> 使用 boot.art</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+runtime 启动时会使用 -Ximage 表明需要加载 boot.art, 若 boot.art 确实存在, 则会加载 boot.art. 另外, dex2oat 为其它 app 生成 oat (而不是生成
+boot.oat) 时, 会通过&#x2013;boot-image 来表示它需要使用 boot.art, 这时它启动的 runtime 也会有 -Ximage 参数.
+</p>
+
+<p>
+当 runtime 找到 boot.art 后, 通过 ImageSpace::Init 加载 boot.art 
+</p>
+</div>
+
+<div id="outline-container-org0000024" class="outline-4">
+<h4 id="org0000024"><span class="section-number-4">1.3.1.</span> Runtime::Create</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<div class="org-src-container">
+<pre class="src src-text">JNI_CreateJavaVM
+  Runtime::Create
+    Runtime::Init
+      Heap::Heap
+        ImageSpace::Create
+          ImageSpace::Init
+        AddSpace(image_space);
+        // &#36825;&#19968;&#21477;&#34920;&#26126;&#20102; zygote &#20351;&#29992; image_space &#26102;&#30340;&#20869;&#23384;&#24067;&#23616;:
+        // +--------------+
+        // | image        |
+        // +--------------+
+        // | boot oat     |
+        // +--------------+
+        // | alloc spaces |
+        // +--------------+
+        requested_alloc_space_begin = AlignUp(oat_file_end_addr, kPageSize);
+      // Heap::Heap() ends here
+      // 
+      if (GetHeap()-&gt;HasImageSpace()):
+        class_linker_-&gt;InitFromImage();
+          // boo.oat &#24050;&#32463;&#34987;&#21152;&#36733;&#21040;&#21512;&#36866;&#30340;&#20301;&#32622; (oat_file_begin_), &#35774;&#32622; cl &#30340;&#19968;&#20123;&#20989;&#25968;&#25351;&#38024;
+          quick_resolution_trampoline_ = oat_file.GetOatHeader().GetQuickResolutionTrampoline();
+          ...
+          // &#20174; image_header &#30340; image_roots &#20013;&#33719;&#24471; DexCache &#23545;&#35937;&#30340;&#22320;&#22336;, &#26368;&#32456;&#21152;&#20837;&#21040; class path &#21644; dex_caches_ &#20013;
+          Object* dex_caches_object = space-&gt;GetImageHeader().GetImageRoot(ImageHeader::kDexCaches);
+          ...
+          // &#20174; image_header &#30340; image_roots &#20013;&#33719;&#24471; class_roots, &#24182;&#29992;&#23427;&#21021;&#22987;&#21270; runtime &#30340; class_roots_
+          class_roots(hs.NewHandle(space-&gt;GetImageHeader().GetImageRoot(ImageHeader::kClassRoots)-&gt;AsObjectArray&lt;mirror::Class&gt;()));
+          class_roots_ = GcRoot&lt;mirror::ObjectArray&lt;mirror::Class&gt;&gt;(class_roots.Get());
+          Class::SetClassClass(class_roots-&gt;Get(kJavaLangClass));
+          Reference::SetClass(GetClassRoot(kJavaLangRefReference));
+          ...
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000027" class="outline-4">
+<h4 id="org0000027"><span class="section-number-4">1.3.2.</span> ImageSpace::Init</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<div class="org-src-container">
+<pre class="src src-text">ImageSpace::Init
+  // &#20174;&#25991;&#20214;&#22836;&#35835;&#21462; ImageHeader
+  file-&gt;ReadFully(&amp;image_header, sizeof(image_header));
+  // &#23558; file-&gt;Fd() &#23545;&#24212;&#30340;&#25991;&#20214;&#30340; 0 &#21040; image_header.image_size_ &#30340;&#20869;&#23481;
+  // &#26144;&#23556;&#21040; image_header.image_begin_ &#20026;&#39318;&#22320;&#22336;&#30340;&#20869;&#23384;.
+  // &#25152;&#20197; map &#23601;&#26159; image_space &#30340;&#20869;&#23481;
+  map(MemMap::MapFileAtAddress(image_header.GetImageBegin(),
+                              image_header.GetImageSize(),
+                              PROT_READ | PROT_WRITE,
+                              MAP_PRIVATE,
+                              file-&gt;Fd(),
+                              0,...))
+  // &#20174;&#25991;&#20214;&#30340; image_header.image_bitmap_offset_ &#20301;&#32622;&#24320;&#22987;, &#26144;&#23556;
+  // image_header.image_bitmap_size_ &#22823;&#23567;&#30340;&#20869;&#23481;&#21040;&#20219;&#24847;&#22320;&#22336; (nullptr)
+  image_map(MemMap::MapFileAtAddress(nullptr, image_header.GetImageBitmapSize(),
+                               PROT_READ, MAP_PRIVATE,
+                               file-&gt;Fd(),
+                               image_header.GetBitmapOffset(),
+                               ...
+                               ))
+  // &#20351;&#29992; image_map &#21019;&#24314; image_space &#30340; bitmap &#25968;&#25454;&#32467;&#26500;
+  bitmap(ContinuousSpaceBitmap::CreateFromMemMap(bitmap_name, image_map.release(),
+                               reinterpret_cast&lt;byte*&gt;(map-&gt;Begin()),
+                               map-&gt;Size()));
+
+  // &#20351;&#29992; map &#21019;&#24314; image_space &#30340;&#25968;&#25454;&#32467;&#26500;
+  space(new ImageSpace(image_filename, image_location,
+                               map.release(), bitmap.release()));
+
+  // &#23558; boot.oat &#21152;&#36733;&#21040; image_space &#20043;&#21518;, &#21363; oat_file_begin_ &#22788;
+  // &#26368;&#32456;&#26159;&#36890;&#36807; ElfFile.Load &#25226; boot.oat &#21152;&#36733;&#21040; oat_file_begin_ &#22788;,
+  // ElfFile.Load &#21487;&#20197;&#25226; boot.oat &#30340; oatdata &#21152;&#36733;&#21040;&#29305;&#23450;&#30340;&#20301;&#32622;, &#26159;&#22240;&#20026; ElfFixup &#26102;&#24050;&#32463;
+  // &#23558; oat_data_begin_ &#20449;&#24687;&#20889;&#20837;&#21040;&#20102; elf &#25991;&#20214;&#20013;
+  space-&gt;oat_file_.reset(space-&gt;OpenOatFile(image_filename, error_msg));
+    // image_header.GetOatDataBegin &#21363; oat_data_begin_, &#36825;&#20010;&#20540;&#19982; boot.oat &#20013;&#30340;&#30456;&#24212;&#30340;&#20540;&#26159;&#19968;&#33268;&#30340;
+    oat_file = OatFile::Open(oat_filename, oat_filename, image_header.GetOatDataBegin(),...)
+      OpenElfFile(file.get(), location, requested_base, false, executable, error_msg)
+        ElfFileOpen(file, requested_base, writable, executable, error_msg);
+          // elf_file_ &#36890;&#36807; elf &#25991;&#20214;&#33258;&#36523;&#30340;&#20449;&#24687;&#23601;&#21487;&#20197;&#25226; elf &#21152;&#36733;&#21040; oat_file_begin_ &#22788;
+          elf_file_-&gt;Load(executable, error_msg);
+
+  // &#19979;&#38754;&#20174; image_space &#20013;&#21021;&#22987;&#21270;&#19968;&#20123; runtime &#38656;&#35201;&#30340;&#25968;&#25454;
+  Object* resolution_method = image_header.GetImageRoot(ImageHeader::kResolutionMethod);
+  runtime-&gt;SetResolutionMethod(down_cast&lt;mirror::ArtMethod*&gt;(resolution_method));
+  ...
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000002a" class="outline-4">
+<h4 id="org000002a"><span class="section-number-4">1.3.3.</span> ImageSpace 如何被使用</h4>
+<div class="outline-text-4" id="text-1-3-3">
+<p>
+首先, 基本的 class (class_roots 中的 class) 在 Runtime.InitFromImage
+阶段就被指向 ImageSpace.
+</p>
+
+<p>
+其次, FindClass 时会使用到 ImageSpace 的 DexCache, 并找到 ImageSpace
+中的 class:
+</p>
+<div class="org-src-container">
+<pre class="src src-text">ClassLinker::FindClass
+  Class* klass = LookupClass(descriptor, class_loader.Get());
+    // &#20174; cl &#30340; class_table_ &#20013;&#26597;&#25214;
+    Class* result = LookupClassFromTableLocked(descriptor, class_loader, hash);
+    if (!result):
+      // &#20174; ImageSpace &#20013;&#26597;&#25214;
+      Class* result = LookupClassFromImage(descriptor);
+        ObjectArray&lt;mirror::DexCache&gt;* dex_caches = GetImageDexCaches();
+        for each dex_cache:
+          DexFile* dex_file = dex_cache-&gt;GetDexFile();
+          DexFile::StringId* string_id = dex_file-&gt;FindStringId(descriptor);
+          DexFile::TypeId* type_id = dex_file-&gt;FindTypeId(dex_file-&gt;GetIndexForStringId(*string_id));
+          klass = dex_cache-&gt;GetResolvedType(type_idx);
+    // &#20854;&#23427;&#26041;&#24335;&#26469; FindClass      
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2017-04-01 Sat 00:00<br />
+Last updated: 2023-11-20 Mon 12:00</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>

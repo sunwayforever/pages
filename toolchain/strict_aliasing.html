@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>Strict Aliasing</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">Strict Aliasing</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000000">1. Strict Aliasing</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000000" class="outline-2">
+<h2 id="org0000000"><span class="section-number-2">1.</span> Strict Aliasing</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+aliasing 是指编译器总是假设两个指针可能指向同一块内存, 导致无法进行某些优化.
+</p>
+
+<p>
+strict aliasing 是指编译器放松一下前面的假设, 认为某些条件下两个指令不会指向同一块内存, 从而能进行优化.
+</p>
+
+<p>
+通过 `-O2` 或 `-fstrict-aliasing` 可以打开 strict aliasing. 如果代码不符合
+strict aliasing rule, 则会出现一些问题
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdlib.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;string.h&gt;</span>
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">no alias</span><span class="org-comment-delimiter"> */</span>
+<span class="org-comment-delimiter">/* </span><span class="org-comment">strict alias rule &#35748;&#20026; int &#21644; short &#31867;&#22411;&#30340;&#25351;&#20196; =&#19981;&#20250;= &#25351;&#21521;&#21516;&#19968;&#22359;&#20869;&#23384;</span><span class="org-comment-delimiter"> */</span>
+<span class="org-type">void</span> <span class="org-function-name">test_1</span><span class="org-parenthesis">(</span><span class="org-type">int</span> *<span class="org-variable-name">a</span><span class="org-parenthesis">,</span> <span class="org-type">short</span> *<span class="org-variable-name">b</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    *a = 0x12345678;
+    b[0] = 0xabcd;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"0x%x\n"</span><span class="org-parenthesis">,</span> *a<span class="org-parenthesis">)</span>;
+<span class="org-parenthesis">}</span>
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">no alias</span><span class="org-comment-delimiter"> */</span>
+<span class="org-comment-delimiter">/* </span><span class="org-comment">__restrict &#21578;&#35785;&#32534;&#35793;&#22120; a &#19981;&#26159; alias</span><span class="org-comment-delimiter"> */</span>
+<span class="org-type">void</span> <span class="org-function-name">test_4</span><span class="org-parenthesis">(</span><span class="org-type">int</span> *<span class="org-variable-name">__restrict</span> a<span class="org-parenthesis">,</span> <span class="org-type">int</span> *<span class="org-variable-name">b</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    *a = 0x12345678;
+    b[0] = 0xabcd;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"0x%x\n"</span><span class="org-parenthesis">,</span> *a<span class="org-parenthesis">)</span>;
+<span class="org-parenthesis">}</span>
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">may alias</span><span class="org-comment-delimiter"> */</span>
+<span class="org-comment-delimiter">/* </span><span class="org-comment">&#30456;&#21516;&#30340;&#25968;&#25454;&#31867;&#22411; (int/unsiged int/const int) &#20043;&#38388;&#26159; alias</span><span class="org-comment-delimiter"> */</span>
+<span class="org-type">void</span> <span class="org-function-name">test_2</span><span class="org-parenthesis">(</span><span class="org-type">int</span> *<span class="org-variable-name">a</span><span class="org-parenthesis">,</span> <span class="org-type">unsigned</span> <span class="org-type">int</span> *<span class="org-variable-name">b</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    *a = 0x12345678;
+    b[0] = 0xabcd;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"0x%x\n"</span><span class="org-parenthesis">,</span> *a<span class="org-parenthesis">)</span>;
+<span class="org-parenthesis">}</span>
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">may alias</span><span class="org-comment-delimiter"> */</span>
+<span class="org-comment-delimiter">/* </span><span class="org-comment">char &#31867;&#22411;&#24635;&#26159;&#20854;&#23427;&#20219;&#24847;&#31867;&#22411;&#30340; alias</span><span class="org-comment-delimiter"> */</span>
+<span class="org-type">void</span> <span class="org-function-name">test_3</span><span class="org-parenthesis">(</span><span class="org-type">int</span> *<span class="org-variable-name">a</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">b</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    *a = 0x12345678;
+    b[0] = 0xa;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"0x%x\n"</span><span class="org-parenthesis">,</span> *a<span class="org-parenthesis">)</span>;
+<span class="org-parenthesis">}</span>
+
+<span class="org-comment-delimiter">/* </span><span class="org-comment">may alias</span><span class="org-comment-delimiter"> */</span>
+<span class="org-comment-delimiter">/* </span><span class="org-comment">short_may_alias &#30456;&#24403;&#20110; char, &#23427;&#24635;&#26159;&#20854;&#23427;&#31867;&#22411;&#30340; alias</span><span class="org-comment-delimiter"> */</span>
+<span class="org-keyword">typedef</span> <span class="org-type">short</span> <span class="org-keyword">__attribute__</span><span class="org-parenthesis">((</span><span class="org-type">__may_alias__</span><span class="org-parenthesis">))</span> <span class="org-type">short_may_alias</span>;
+<span class="org-type">void</span> <span class="org-function-name">test_5</span><span class="org-parenthesis">(</span><span class="org-type">int</span> *<span class="org-variable-name">a</span><span class="org-parenthesis">,</span> <span class="org-type">short_may_alias</span> *<span class="org-variable-name">b</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    *a = 0x12345678;
+    b[0] = 0xabcd;
+    printf<span class="org-parenthesis">(</span><span class="org-string">"0x%x\n"</span><span class="org-parenthesis">,</span> *a<span class="org-parenthesis">)</span>;
+<span class="org-parenthesis">}</span>
+
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">a</span> = 0;
+    test_1<span class="org-parenthesis">(</span>&amp;a<span class="org-parenthesis">,</span> <span class="org-parenthesis">(</span><span class="org-type">short</span> *<span class="org-parenthesis">)</span>&amp;a<span class="org-parenthesis">)</span>;
+    test_4<span class="org-parenthesis">(</span>&amp;a<span class="org-parenthesis">,</span> &amp;a<span class="org-parenthesis">)</span>;
+
+    test_2<span class="org-parenthesis">(</span>&amp;a<span class="org-parenthesis">,</span> <span class="org-parenthesis">(</span><span class="org-type">unsigned</span> <span class="org-type">int</span> *<span class="org-parenthesis">)</span>&amp;a<span class="org-parenthesis">)</span>;
+    test_3<span class="org-parenthesis">(</span>&amp;a<span class="org-parenthesis">,</span> <span class="org-parenthesis">(</span><span class="org-type">char</span> *<span class="org-parenthesis">)</span>&amp;a<span class="org-parenthesis">)</span>;
+    test_5<span class="org-parenthesis">(</span>&amp;a<span class="org-parenthesis">,</span> <span class="org-parenthesis">(</span><span class="org-type">short</span> *<span class="org-parenthesis">)</span>&amp;a<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-right" />
+</colgroup>
+<tbody>
+<tr>
+<td class="org-right">0x12345678</td>
+</tr>
+
+<tr>
+<td class="org-right">0x12345678</td>
+</tr>
+
+<tr>
+<td class="org-right">0xabcd</td>
+</tr>
+
+<tr>
+<td class="org-right">0x1234560a</td>
+</tr>
+
+<tr>
+<td class="org-right">0x1234abcd</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+为了避免 strict aliasing 导致问题, 可以:
+</p>
+
+<ol class="org-ol">
+<li>用 `-fno-strict-alising` 关掉 strict aliasing</li>
+
+<li><p>
+尽量不要使用指针的 reinterpret cast 造成 type punning, 而是使用 union 或通过
+memcpy, 例如
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-type">void</span> <span class="org-function-name">foo_bad</span><span class="org-parenthesis">(</span><span class="org-type">char</span>* <span class="org-variable-name">buffer</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> *<span class="org-variable-name">p</span> = *<span class="org-parenthesis">((</span><span class="org-type">int</span>*<span class="org-parenthesis">)</span>buffer<span class="org-parenthesis">)</span>;
+    *p = 0x1;
+<span class="org-parenthesis">}</span>
+
+<span class="org-type">void</span> <span class="org-function-name">foo_good</span><span class="org-parenthesis">(</span><span class="org-type">char</span>* <span class="org-variable-name">buffer</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">tmp</span> = 0x1;
+    memcpy<span class="org-parenthesis">(</span>buffer<span class="org-parenthesis">,</span> &amp;tmp<span class="org-parenthesis">,</span> <span class="org-keyword">sizeof</span><span class="org-parenthesis">(</span>tmp<span class="org-parenthesis">))</span>;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<p>
+使用 memcpy/union 不仅能避免 strict aliasing 问题, 还能避免对齐的问题
+</p></li>
+
+<li>如果实在需要 alias, 只使用 char 或 may_alias 类型</li>
+</ol>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-11-20 Mon 14:48<br />
+Last updated: 2023-11-20 Mon 15:50</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>

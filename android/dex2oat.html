@@ -1,0 +1,433 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>dex2oat</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">dex2oat</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000033">1. dex2oat</a>
+<ul>
+<li><a href="#org0000015">1.1. when dex2oat MAYBE invoked</a>
+<ul>
+<li><a href="#org0000000">1.1.1. zygote init [zygote]</a></li>
+<li><a href="#org000000f">1.1.2. performDexOpt [installd]</a></li>
+<li><a href="#org0000012">1.1.3. app launch [app]</a></li>
+</ul>
+</li>
+<li><a href="#org0000018">1.2. dex2oat</a></li>
+<li><a href="#org000001b">1.3. compilation reason</a></li>
+<li><a href="#org0000030">1.4. control compilation</a>
+<ul>
+<li><a href="#org000002d">1.4.1. practice</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000033" class="outline-2">
+<h2 id="org0000033"><span class="section-number-2">1.</span> dex2oat</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org0000015" class="outline-3">
+<h3 id="org0000015"><span class="section-number-3">1.1.</span> when dex2oat MAYBE invoked</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-org0000000" class="outline-4">
+<h4 id="org0000000"><span class="section-number-4">1.1.1.</span> zygote init [zygote]</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<div class="org-src-container">
+<pre class="src src-c">Runtime::Init<span class="org-parenthesis">()</span>:
+  Heap::Heap<span class="org-parenthesis">()</span>
+    <span class="org-function-name">CreateBootImage</span><span class="org-parenthesis">()</span>
+      <span class="org-function-name">GenerateImage</span><span class="org-parenthesis">()</span>
+        Exec<span class="org-parenthesis">(</span><span class="org-string">"dex2oat"</span><span class="org-parenthesis">)</span>
+</pre>
+</div>
+
+<p>
+zygote init 是会确定的调用 dex2oat 来编译
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000000f" class="outline-4">
+<h4 id="org000000f"><span class="section-number-4">1.1.2.</span> performDexOpt [installd]</h4>
+<div class="outline-text-4" id="text-1-1-2">
+</div>
+<div id="outline-container-org0000003" class="outline-5">
+<h5 id="org0000003"><span class="section-number-5">1.1.2.1.</span> post first boot</h5>
+<div class="outline-text-5" id="text-1-1-2-1">
+<div class="org-src-container">
+<pre class="src src-c">SystemServer::startOtherServices:
+  mPackageManagerService.updatePackagesIfNeeded<span class="org-parenthesis">()</span>;
+    <span class="org-function-name">performDexOpt</span><span class="org-parenthesis">(</span><span class="org-type">pkgs</span><span class="org-parenthesis">,</span> <span class="org-type">mIsPreNUpgrade</span> <span class="org-comment-delimiter">/* </span><span class="org-comment">showDialog</span><span class="org-comment-delimiter"> */</span><span class="org-parenthesis">,</span>
+                                  getCompilerFilterForReason<span class="org-parenthesis">(</span>causeFirstBoot ? REASON_FIRST_BOOT : REASON_BOOT<span class="org-parenthesis">))</span>;
+
+</pre>
+</div>
+<p>
+pm.dexopt.first-boot 默认为 interpret-only, 所以会 verify 所有函数, 并编译 jni stub
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000006" class="outline-5">
+<h5 id="org0000006"><span class="section-number-5">1.1.2.2.</span> post boot</h5>
+<div class="outline-text-5" id="text-1-1-2-2">
+<div class="org-src-container">
+<pre class="src src-c">BackgroundDexOptService::runPostBootUpdate:
+  pm.performDexOpt<span class="org-parenthesis">(</span>pkg<span class="org-parenthesis">,</span>
+                  <span class="org-comment-delimiter">/* </span><span class="org-comment">checkProfiles</span><span class="org-comment-delimiter"> */</span> <span class="org-constant">false</span><span class="org-parenthesis">,</span>
+                  PackageManagerService.REASON_BOOT<span class="org-parenthesis">,</span>
+                  <span class="org-comment-delimiter">/* </span><span class="org-comment">force</span><span class="org-comment-delimiter"> */</span> <span class="org-constant">false</span><span class="org-parenthesis">)</span>;
+
+</pre>
+</div>
+<p>
+pm.dexopt.boot 默认为 verify-profile, 只会生成 jni stub, 所以会生成oat
+文件, 但除了 jni, 其它函数并没有被编译.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000009" class="outline-5">
+<h5 id="org0000009"><span class="section-number-5">1.1.2.3.</span> idle optimization</h5>
+<div class="outline-text-5" id="text-1-1-2-3">
+<div class="org-src-container">
+<pre class="src src-c">BackgroundDexOptService::runIdleOptimization:
+  pm.performDexOpt<span class="org-parenthesis">(</span>pkg<span class="org-parenthesis">,</span><span class="org-comment-delimiter">/* </span><span class="org-comment">checkProfiles</span><span class="org-comment-delimiter"> */</span> <span class="org-constant">true</span><span class="org-parenthesis">,</span>PackageManagerService.REASON_BACKGROUND_DEXOPT<span class="org-parenthesis">,</span><span class="org-comment-delimiter">/* </span><span class="org-comment">force</span><span class="org-comment-delimiter"> */</span> <span class="org-constant">false</span><span class="org-parenthesis">)</span>
+    pm.performDexOptLI<span class="org-parenthesis">(</span>pkg<span class="org-parenthesis">,</span>....<span class="org-parenthesis">,</span>checkProfiles<span class="org-parenthesis">)</span>
+      mInstaller.dexopt<span class="org-parenthesis">(</span>...<span class="org-parenthesis">)</span>
+</pre>
+</div>
+<p>
+pm.dexopt.bg-dexopt 默认为 speed-profile, 所以 runIdleOptimization会真正的调用 dex2oat 编译
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000000c" class="outline-5">
+<h5 id="org000000c"><span class="section-number-5">1.1.2.4.</span> post package install</h5>
+<div class="outline-text-5" id="text-1-1-2-4">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-constant">installPackageLI</span>:
+  mPackageDexOptimizer.performDexOpt<span class="org-parenthesis">(</span>pkg<span class="org-parenthesis">,</span> pkg.usesLibraryFiles<span class="org-parenthesis">,</span>
+                                   null <span class="org-comment-delimiter">/* </span><span class="org-comment">instructionSets</span><span class="org-comment-delimiter"> */</span><span class="org-parenthesis">,</span> <span class="org-constant">false</span> <span class="org-comment-delimiter">/* </span><span class="org-comment">checkProfiles</span><span class="org-comment-delimiter"> */</span><span class="org-parenthesis">,</span>
+                                   getCompilerFilterForReason<span class="org-parenthesis">(</span>REASON_INSTALL<span class="org-parenthesis">))</span>;
+</pre>
+</div>
+<p>
+pm.dexopt.install 默认为 interpret-only, 所以 installPackageLI 只会做
+verify 和 编译 jni stub
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000012" class="outline-4">
+<h4 id="org0000012"><span class="section-number-4">1.1.3.</span> app launch [app]</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<div class="org-src-container">
+<pre class="src src-c">ClassLinker::OpenDexFilesFromOat:
+  OatFileAssistant oat_file_assistant<span class="org-parenthesis">(</span>dex_location<span class="org-parenthesis">,</span> oat_location<span class="org-parenthesis">,</span> kRuntimeISA<span class="org-parenthesis">,</span> ...<span class="org-parenthesis">)</span>;
+  oat_file_assistant.MakeUpToDate<span class="org-parenthesis">(</span>&amp;error_msg<span class="org-parenthesis">)</span>
+    <span class="org-function-name">GenerateOatFile</span><span class="org-parenthesis">(</span><span class="org-type">error_msg</span><span class="org-parenthesis">)</span>;
+      <span class="org-function-name">Dex2Oat</span><span class="org-parenthesis">(</span><span class="org-type">args</span><span class="org-parenthesis">,</span> <span class="org-type">error_msg</span><span class="org-parenthesis">)</span>
+</pre>
+</div>
+
+<p>
+实际上, app 启动时并不能对 app 自身的 apk 进行 dex2oat, 因为它并没有写文件的权限. 若 apk 的 oat 被手动删除, 则通常 post boot 时会负责重新生成它.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000018" class="outline-3">
+<h3 id="org0000018"><span class="section-number-3">1.2.</span> dex2oat</h3>
+<div class="outline-text-3" id="text-1-2">
+<ul class="org-ul">
+<li><p>
+dex2oat
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-constant">dexopt</span>:
+  <span class="org-function-name">run_dex2oat</span><span class="org-parenthesis">(</span><span class="org-type">input_fd</span><span class="org-parenthesis">,</span> <span class="org-type">out_fd</span><span class="org-parenthesis">,</span> <span class="org-type">image_fd</span><span class="org-parenthesis">,</span> <span class="org-type">input_file_name</span><span class="org-parenthesis">,</span> <span class="org-type">out_path</span><span class="org-parenthesis">,</span> <span class="org-type">swap_fd</span><span class="org-parenthesis">,</span>...<span class="org-parenthesis">)</span>;
+<span class="org-constant">dex2oat</span>:
+  <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>dex2oat-&gt;IsImage<span class="org-parenthesis">())</span>:
+    result = CompileImage<span class="org-parenthesis">(</span>*dex2oat<span class="org-parenthesis">)</span>;
+  <span class="org-keyword">else</span>:
+    result = CompileApp<span class="org-parenthesis">(</span>*dex2oat<span class="org-parenthesis">)</span>;
+<span class="org-constant">CompileImage</span>:
+  dex2oat.Compile<span class="org-parenthesis">()</span>;
+  dex2oat.WriteOatFiles<span class="org-parenthesis">()</span>;
+<span class="org-constant">Compile</span>:
+  driver_= new CompilerDriver<span class="org-parenthesis">(</span>...<span class="org-parenthesis">)</span>
+  driver_-&gt;CompileAll<span class="org-parenthesis">(</span>class_loader_<span class="org-parenthesis">,</span> dex_files_<span class="org-parenthesis">,</span> ...<span class="org-parenthesis">)</span>;
+</pre>
+</div></li>
+
+<li><p>
+CompileDriver
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-constant">CompileAll</span>:
+  <span class="org-function-name">PreCompile</span><span class="org-parenthesis">(</span><span class="org-type">class_loader</span><span class="org-parenthesis">,</span> <span class="org-type">dex_files</span><span class="org-parenthesis">,</span> <span class="org-type">timings</span><span class="org-parenthesis">)</span>;
+  <span class="org-function-name">Compile</span><span class="org-parenthesis">(</span><span class="org-type">class_loader</span><span class="org-parenthesis">,</span> <span class="org-type">dex_files</span><span class="org-parenthesis">,</span> <span class="org-type">timings</span><span class="org-parenthesis">)</span>;
+<span class="org-constant">Compile</span>:
+  <span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-keyword">const</span> <span class="org-type">DexFile</span>* <span class="org-variable-name">dex_file</span> : dex_files<span class="org-parenthesis">)</span>:
+    CompileDexFile<span class="org-parenthesis">(</span>class_loader<span class="org-parenthesis">,</span>
+                   *dex_file<span class="org-parenthesis">,</span>
+                   dex_files<span class="org-parenthesis">,</span>
+                   parallel_thread_pool_.get<span class="org-parenthesis">(),</span>
+                   parallel_thread_count_<span class="org-parenthesis">,</span>
+                   timings<span class="org-parenthesis">)</span>;
+<span class="org-constant">CompileDexFile</span>:
+  <span class="org-type">CompileClassVisitor</span> <span class="org-variable-name">visitor</span>;
+  visitor.visit<span class="org-parenthesis">()</span>
+    <span class="org-function-name">CompileMethod</span><span class="org-parenthesis">(</span>soa.Self<span class="org-parenthesis">(),</span> <span class="org-type">driver</span><span class="org-parenthesis">,</span> it.GetMethodCodeItem<span class="org-parenthesis">(),</span>...<span class="org-parenthesis">)</span>;
+<span class="org-constant">CompileMethod</span>:
+  <span class="org-keyword">if</span> <span class="org-parenthesis">((</span>access_flags &amp; kAccNative<span class="org-parenthesis">)</span> != 0<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    compiled_method = driver-&gt;GetCompiler<span class="org-parenthesis">()</span>-&gt;JniCompile<span class="org-parenthesis">(</span>access_flags<span class="org-parenthesis">,</span> method_idx<span class="org-parenthesis">,</span> dex_file<span class="org-parenthesis">)</span>;
+  <span class="org-keyword">else</span>:
+    compiled_method = driver-&gt;GetCompiler<span class="org-parenthesis">()</span>-&gt;Compile<span class="org-parenthesis">(</span>code_item<span class="org-parenthesis">,</span> access_flags<span class="org-parenthesis">,</span> invoke_type<span class="org-parenthesis">,</span>
+                                                 class_def_idx<span class="org-parenthesis">,</span> method_idx<span class="org-parenthesis">,</span> class_loader<span class="org-parenthesis">,</span>
+                                                 dex_file<span class="org-parenthesis">,</span> dex_cache<span class="org-parenthesis">)</span>;
+</pre>
+</div></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000001b" class="outline-3">
+<h3 id="org000001b"><span class="section-number-3">1.3.</span> compilation reason</h3>
+<div class="outline-text-3" id="text-1-3">
+<ul class="org-ul">
+<li>REASON_FIRST_BOOT</li>
+<li>REASON_BOOT</li>
+<li>REASON_INSTALL</li>
+<li>REASON_BACKGROUND_DEXOPT</li>
+<li>REASON_AB_OTA</li>
+<li>REASON_NON_SYSTEM_LIBRARY</li>
+<li>REASON_SHARED_APK</li>
+<li>REASON_FORCED_DEXOPT</li>
+<li>REASON_CORE_APP</li>
+</ul>
+
+<p>
+上层调用 mPackageDexOptimizer.performDexOpt 时会传入相应的 reason,
+PackageDexOptimizer 根据 pm.dexopt.xxx 的值决定使用何种
+compiler_filter
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000030" class="outline-3">
+<h3 id="org0000030"><span class="section-number-3">1.4.</span> control compilation</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+because dex2oat is invoked in serveral different ways, for each way,
+we need use different approach to control the compilation.
+</p>
+
+<ol class="org-ol">
+<li><p>
+art runtime
+</p>
+
+<p>
+art runime may call `exec(dex2oat)` directly to dexopt some
+jar/apk/dex files
+</p>
+
+<ol class="org-ol">
+<li><p>
+for boot image
+</p>
+
+<p>
+compiled-filer is controled by `dalvik.vm.image-dex2oat-filter`
+</p></li>
+
+<li><p>
+for dex/apk
+</p>
+
+<p>
+compiled-filer is controled by `dalvik.vm.dex2oat-filter`
+</p></li>
+</ol></li>
+
+<li><p>
+PackageDexOptimizer
+</p>
+
+<p>
+in most cases, dex2oat is invoked through `PackageManagerService -&gt;
+PackageDexOptimizer -&gt; installed`, the compiled-filer is controled
+by:
+</p>
+
+<ul class="org-ul">
+<li>pm.dexopt.ab-ota</li>
+<li>pm.dexopt.bg-dexopt</li>
+<li>pm.dexopt.boot</li>
+<li>pm.dexopt.core-app</li>
+<li>pm.dexopt.first-boot</li>
+<li>pm.dexopt.forced-dexopt</li>
+<li>pm.dexopt.install</li>
+<li>pm.dexopt.nsys-library</li>
+<li>pm.dexopt.shared-apk</li>
+</ul></li>
+
+<li><p>
+force compilation
+</p>
+
+<div class="org-src-container">
+<pre class="src src-shell"><span class="org-comment-delimiter"># </span><span class="org-comment">force compile my-package</span>
+adb shell cmd package compile -m speed -f my-package
+<span class="org-comment-delimiter"># </span><span class="org-comment">force compile all packages</span>
+adb shell cmd package compile -m speed -f -a
+</pre>
+</div></li>
+
+<li>build time dexpreopt
+
+<ul class="org-ul">
+<li>WITH_DEXPREOPT</li>
+<li>PRODUCT_DEX_PREOPT_DEFAULT_FLAGS</li>
+<li>WITH_DEXPREOPT_BOOT_IMG_ONLY</li>
+<li>WITH_DEXPREOPT_PIC</li>
+</ul></li>
+
+<li><p>
+jit
+</p>
+
+<p>
+jit is controled by system property: `dalvik.vm.usejit`
+</p></li>
+</ol>
+</div>
+
+
+<div id="outline-container-org000002d" class="outline-4">
+<h4 id="org000002d"><span class="section-number-4">1.4.1.</span> practice</h4>
+<div class="outline-text-4" id="text-1-4-1">
+</div>
+<div id="outline-container-org000001e" class="outline-5">
+<h5 id="org000001e"><span class="section-number-5">1.4.1.1.</span> disable global jit</h5>
+<div class="outline-text-5" id="text-1-4-1-1">
+<div class="org-src-container">
+<pre class="src src-shell">adb shell stop
+adb shell setprop dalvik.vm.usejit false
+adb shell start
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000021" class="outline-5">
+<h5 id="org0000021"><span class="section-number-5">1.4.1.2.</span> disable global aot</h5>
+<div class="outline-text-5" id="text-1-4-1-2">
+<ol class="org-ol">
+<li><p>
+disable WITH_DEXPREOPT and rebuild android
+</p>
+
+<p>
+build-time dexpreopt will strip dex from jar/apk, if we want
+disable aot for all package (boot.oat and app), we must keep the
+dex for framework.jar&#x2026;
+</p></li>
+
+<li>delete oat files in <i>data/dalvik-cache</i> and /data/app/oat</li>
+
+<li>change system properties like `pm.dexopt.xxx` and
+`dalvikvm.vm.[image-]dex2oat-filter` to `interpret-only` or lower
+value</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000024" class="outline-5">
+<h5 id="org0000024"><span class="section-number-5">1.4.1.3.</span> global interpret-only</h5>
+<div class="outline-text-5" id="text-1-4-1-3">
+<ol class="org-ol">
+<li>disable global aot</li>
+<li>disable global jit</li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-org0000027" class="outline-5">
+<h5 id="org0000027"><span class="section-number-5">1.4.1.4.</span> disable aot for app</h5>
+<div class="outline-text-5" id="text-1-4-1-4">
+<ol class="org-ol">
+<li>delete package oat file in /data/app/oat</li>
+<li>it's better to change those `pm.dexopt.xxx` system properties to
+make sure app is not re-compiled</li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-org000002a" class="outline-5">
+<h5 id="org000002a"><span class="section-number-5">1.4.1.5.</span> disable jit for app</h5>
+<div class="outline-text-5" id="text-1-4-1-5">
+<p>
+there is no easy way to disable jit locally. we must change the
+AndroidManifest.xml of the apk.
+</p>
+
+<p>
+the AndroidManifest.xml need add `android:vmSafeMode="true"` under the
+`&lt;application&gt;` tag
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2017-02-03 Fri 00:00<br />
+Last updated: 2023-11-20 Mon 11:55</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>

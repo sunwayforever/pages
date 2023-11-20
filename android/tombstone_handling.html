@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>Android Tombstone Handling</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">Android Tombstone Handling</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org000001a">1. Android Tombstone Handling</a>
+<ul>
+<li><a href="#org0000000">1.1. 进程主动调用 abort()</a></li>
+<li><a href="#org0000003">1.2. tgkill 进入 kernel</a></li>
+<li><a href="#org0000006">1.3. 调用 signal handler</a></li>
+<li><a href="#org0000009">1.4. debugger</a></li>
+<li><a href="#org000000c">1.5. debuggerd</a></li>
+<li><a href="#org000000f">1.6. sigreturn</a></li>
+<li><a href="#org0000012">1.7. 唤醒 debuggerd</a></li>
+<li><a href="#org0000017">1.8. 总结</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000001a" class="outline-2">
+<h2 id="org000001a"><span class="section-number-2">1.</span> Android Tombstone Handling</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+以 SIGABORT 为例, 说明如何生成 tombstone
+</p>
+</div>
+
+<div id="outline-container-org0000000" class="outline-3">
+<h3 id="org0000000"><span class="section-number-3">1.1.</span> 进程主动调用 abort()</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+abort() 最终会调用 tgkill(SIGABORT)
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000003" class="outline-3">
+<h3 id="org0000003"><span class="section-number-3">1.2.</span> tgkill 进入 kernel</h3>
+<div class="outline-text-3" id="text-1-2">
+<ol class="org-ol">
+<li>当前 user space 的上下文被保存到 kernel stack</li>
+<li>SIGABORT 保存在 pending_signals 中</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000006" class="outline-3">
+<h3 id="org0000006"><span class="section-number-3">1.3.</span> 调用 signal handler</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+tgkill syscall 通过 ret_from_intr 返回到 userspace 前, handle_signal
+会负责保证 signal handler 被调用
+</p>
+
+<ol class="org-ol">
+<li>在 userspace stack 上保存 kernel stack 的 sigframe</li>
+<li>当前 SIGABORT 信号被 block, 保证 signal handler 执行过程中不会再次 handle SIGABORT 信号</li>
+<li>branch 到 userspace 的 debugger signal handler</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000009" class="outline-3">
+<h3 id="org0000009"><span class="section-number-3">1.4.</span> debugger</h3>
+<div class="outline-text-3" id="text-1-4">
+<ol class="org-ol">
+<li>通过 socket 通知 debuggerd</li>
+<li>将 SIGABORT 的 action 修改为 default</li>
+<li>通过 kill(SIGABORT) 向自己再次发送 SIGABORT 信号, 但由于
+handle_signal 已经将这个信号 block, 所以并不会在这里马上触发. 后面
+debuggerd 部分会看到 debuggerd 会等待这个信号</li>
+<li>调用 sigreturn</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org000000c" class="outline-3">
+<h3 id="org000000c"><span class="section-number-3">1.5.</span> debuggerd</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+debuggerd 收到来自 debugger 的请求后, 会:
+</p>
+
+<ol class="org-ol">
+<li>通过 ptrace attach 到目标进程 (attach 会隐含着发送一个 SIGSTOP)</li>
+<li>通知目标进程继续执行</li>
+<li>通过 waitpid 等待之前发给目标进程的 SIGSTOP</li>
+<li>再次通过 waitpid 等待目标进程第二次收到 SIGABORT</li>
+<li>收到第二个 SIGABORT 后会通过 ptrace 的 PT_GETREGS 等方法获得
+tombstone 相关信息</li>
+<li>将 SIGABORT 通过 ptrace 的 CONTINUE 转给目标进程, 后者会最终异常退出</li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-org000000f" class="outline-3">
+<h3 id="org000000f"><span class="section-number-3">1.6.</span> sigreturn</h3>
+<div class="outline-text-3" id="text-1-6">
+<p>
+debugger 的 sigreturn 系统调用会:
+</p>
+
+<ol class="org-ol">
+<li>进入到 kernel</li>
+<li>通过 sigframe 恢复 kernel stack 为最初 abort 时的 kernel stack, 最终 tombstone 打印的值均来自这个 sigframe</li>
+<li>将 SIGABORT unblock</li>
+<li>返回到 userspace, 由于此时有一个 pending 的 SIGABORT, 所以会先唤醒
+debugger 后再返回到 userspace</li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-org0000012" class="outline-3">
+<h3 id="org0000012"><span class="section-number-3">1.7.</span> 唤醒 debuggerd</h3>
+<div class="outline-text-3" id="text-1-7">
+<p>
+debuggerd 因为第二次 SIGABORT 被唤醒, 这时目标进程的 kernel stack 中保存的是第一次 SIGABORT 的 context, 所以 debuggerd 可以用 ptrace 拿到正确的数据
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000017" class="outline-3">
+<h3 id="org0000017"><span class="section-number-3">1.8.</span> 总结</h3>
+<div class="outline-text-3" id="text-1-8">
+
+<div id="org0000015" class="figure">
+<p><img src="../extra/tombstone_handling.png" alt="tombstone_handling.png" />
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2017-02-14 Tue 00:00<br />
+Last updated: 2023-11-20 Mon 12:00</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
