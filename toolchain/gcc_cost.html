@@ -125,9 +125,9 @@ riscv 的 TARGET_RTX_COSTS 实现在 riscv_rtx_costs:
 </div>
 
 
-<div id="outline-container-org0000000" class="outline-4 references">
-<h4 id="org0000000">Backlinks</h4>
-<div class="outline-text-4" id="text-org0000000">
+<div id="outline-container-org0000024" class="outline-4 references">
+<h4 id="org0000024">Backlinks</h4>
+<div class="outline-text-4" id="text-org0000024">
 <p>
 <a href="../../../../Syncthing/Gitbox/drops/note/toolchain/gcc_expand_mult.html#ID-5cd7feb7-6e6c-47b5-b63c-6465c8354c1a">GCC Expand Mult</a>
 (<i>GCC Expand Mult &gt; impls &gt; set_src_cost</i>):  set_src_cost 最终会调用到 <a href="#ID-50a2267b-7dd0-4a07-997f-9dcc76933ba3">TARGET_RTX_COSTS</a> 这个 target hook
@@ -363,12 +363,52 @@ Disassembly of section .text:
 两次 foo 调用至少有一次会导致 unaligned access, 这里就需要 trap_handler 来处理了
 (参考 <a href="../../../../Syncthing/Gitbox/drops/note/toolchain/spike.html#ID-3985c93c-c7ba-4aa5-abbc-565d8f32155c">Spike</a> 中的 handle_misaligned_fetch)
 </p>
+
+<p>
+或者通过 <a href="../../../../Syncthing/Gitbox/drops/note/toolchain/strict_aliasing.html#ID-b9e67760-505d-4dab-b333-1a270676f357">may_alias</a> 的指明存在 type punning:
+</p>
 </div>
 
 
-<div id="outline-container-org0000009" class="outline-6 references">
-<h6 id="org0000009">Backlinks</h6>
-<div class="outline-text-6" id="text-org0000009">
+<div id="outline-container-org000000a" class="outline-6 references">
+<h6 id="org000000a">Backlinks</h6>
+<div class="outline-text-6" id="text-org000000a">
+<p>
+<a href="../../../../Syncthing/Gitbox/drops/note/toolchain/gcc_builtin.html#ID-b9dd7f04-f7f7-4a70-8f00-9e446df3339e">GCC Builtin</a>
+(<i>GCC Builtin &gt; builtin optimization</i>):  另外, builtin 还可以利用 mtune 信息产生针对某一个 tune 的优化代码, 但 libc 中只 能产生针对某个 arch 的 `通用` 代码. 例如 <a href="#ID-f497b668-4fa4-4876-845b-134dd50783e2">branch_cost</a>
+</p>
+
+
+<pre class="example" id="org0000009">
+$&gt; cat test.c
+
+#include &lt;stdint.h&gt;
+
+typedef int64_t __attribute__((may_alias, aligned(1))) misaligned_int64_t;
+
+void foo(misaligned_int64_t *x) {
+    x = __builtin_assume_aligned(x, 2);
+    *x = 1;
+}
+
+$&gt; riscv64-unknown-linux-gnu-gcc test.c -c -O3
+$&gt; riscv64-unknown-linux-gnu-objdump -d test.o
+
+0000000000000000 &lt;foo&gt;:
+   0:   4785                    li      a5,1
+   2:   00f51023                sh      a5,0(a0)
+   6:   00051123                sh      zero,2(a0)
+   a:   00051223                sh      zero,4(a0)
+   e:   00051323                sh      zero,6(a0)
+  12:   8082                    ret
+</pre>
+</div>
+</div>
+
+
+<div id="outline-container-org000000d" class="outline-6 references">
+<h6 id="org000000d">Backlinks</h6>
+<div class="outline-text-6" id="text-org000000d">
 <p>
 <a href="../../../../Syncthing/Gitbox/drops/note/toolchain/gcc_target_hook.html#ID-ecd308f9-413b-467a-8d55-10bd7485a2bc">GCC Target Hook</a>
 (<i>GCC Target Hook &gt; cost 相关 &gt; TARGET_SLOW_UNALIGNED_ACCESS</i>):   <a href="#ID-98f35525-3f8c-4f76-8478-6cab3f3182be">TARGET_SLOW_UNALIGNED_ACCESS</a>
@@ -390,19 +430,7 @@ Disassembly of section .text:
 <a href="../../../../Syncthing/Gitbox/drops/note/toolchain/gcc_scheduler.html#ID-38916ef6-f300-47db-8c70-41e3256af352">TARGET_SCHED_ISSUE_RATE</a> 会使用这个 tune_param
 </p>
 </div>
-
-
-<div id="outline-container-org000000c" class="outline-6 references">
-<h6 id="org000000c">Backlinks</h6>
-<div class="outline-text-6" id="text-org000000c">
-<p>
-<a href="../../../../Syncthing/Gitbox/drops/note/toolchain/gcc_builtin.html#ID-b9dd7f04-f7f7-4a70-8f00-9e446df3339e">GCC Builtin</a>
-(<i>GCC Builtin &gt; builtin optimization</i>):  另外, builtin 还可以利用 mtune 信息产生针对某一个 tune 的优化代码, 但 libc 中只 能产生针对某个 arch 的 `通用` 代码. 例如 <a href="#ID-f497b668-4fa4-4876-845b-134dd50783e2">branch_cost</a>
-</p>
 </div>
-</div>
-</div>
-
 
 <div id="outline-container-ID-f497b668-4fa4-4876-845b-134dd50783e2" class="outline-5">
 <h5 id="ID-f497b668-4fa4-4876-845b-134dd50783e2"><span class="section-number-5">1.2.1.4.</span> branch_cost</h5>
@@ -421,7 +449,7 @@ Disassembly of section .text:
 当增大 branch_cost 时会生成这样的代码:
 </p>
 
-<pre class="example" id="org0000012">
+<pre class="example" id="org0000013">
 0000000000000000 &lt;foo&gt;:
    0:   41f5579b                sraiw   a5,a0,0x1f
    4:   8d3d                    xor     a0,a0,a5
@@ -433,7 +461,7 @@ Disassembly of section .text:
 当减小 branch_cost 时会生成使用 branch 的代码:
 </p>
 
-<pre class="example" id="org0000013">
+<pre class="example" id="org0000014">
 0000000000000000 &lt;foo&gt;:
    0:   87aa                    mv      a5,a0
    2:   00055463                bgez    a0,a &lt;.L2&gt;
@@ -457,7 +485,7 @@ expand_abs 可以根据 branch_cost 决定生成什么样的代码, 但 libc 的
 虽然使用 mtune=size 把 branch_cost 设为 1, 但 libc 的 abs 的实现是固定的, 不会改变.
 </p>
 
-<pre class="example" id="org0000014">
+<pre class="example" id="org0000015">
 $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc  test.c -O2   -fno-builtin -nostartfiles -static -mtune=size
 $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./a.out
 
@@ -477,8 +505,8 @@ $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./a.out
 </div>
 </div>
 
-<div id="outline-container-org0000015" class="outline-5">
-<h5 id="org0000015"><span class="section-number-5">1.2.1.5.</span> memory_cost</h5>
+<div id="outline-container-org0000016" class="outline-5">
+<h5 id="org0000016"><span class="section-number-5">1.2.1.5.</span> memory_cost</h5>
 <div class="outline-text-5" id="text-1-2-1-5">
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-constant">riscv_rtx_costs</span>:
@@ -507,9 +535,9 @@ $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./a.out
 </div>
 
 
-<div id="outline-container-org000001e" class="outline-4 references">
-<h4 id="org000001e">Backlinks</h4>
-<div class="outline-text-4" id="text-org000001e">
+<div id="outline-container-org000001f" class="outline-4 references">
+<h4 id="org000001f">Backlinks</h4>
+<div class="outline-text-4" id="text-org000001f">
 <p>
 <a href="../../../../Syncthing/Gitbox/drops/note/toolchain/gcc_backend.html#ID-02e7f924-9cf7-4e3d-8ceb-1765fd3a2bed">GCC Backend</a>
 (<i>GCC Backend &gt; misc &gt; mcpu/mtune/march/mabi &gt; mtune</i>):   <a href="#ID-2c365cee-bb91-4b01-a9b2-e2aff0c3e475">mtune</a>
@@ -526,9 +554,9 @@ $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./a.out
 
 
 
-<div id="outline-container-org0000024" class="outline-2 references">
-<h2 id="org0000024">Backlinks</h2>
-<div class="outline-text-2" id="text-org0000024">
+<div id="outline-container-org0000025" class="outline-2 references">
+<h2 id="org0000025">Backlinks</h2>
+<div class="outline-text-2" id="text-org0000025">
 <p>
 <a href="../../../../Syncthing/Gitbox/drops/note/toolchain/gcc.html#ID-19df5597-4fd4-47a1-9534-f6e0c327e8d5">GCC</a>
 (<i>GCC &gt; Cost</i>):   <a href="../../../../Syncthing/Gitbox/drops/note/toolchain/gcc_cost.html#ID-2599fa0b-be86-4b12-a480-ee638a440b1d">Cost</a>
@@ -550,7 +578,7 @@ $&gt; /opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./a.out
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2022-04-24 Sun 15:49<br />
-Last updated: 2023-11-27 Mon 16:36</p>
+Last updated: 2023-11-27 Mon 16:56</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
