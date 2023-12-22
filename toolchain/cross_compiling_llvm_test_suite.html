@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>Cross Compiling LLVM Test Suite</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">Cross Compiling LLVM Test Suite</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000000">1. Cross Compiling LLVM Test Suite</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000000" class="outline-2">
+<h2 id="org0000000"><span class="section-number-2">1.</span> Cross Compiling LLVM Test Suite</h2>
+<div class="outline-text-2" id="text-1">
+<div class="org-src-container">
+<pre class="src src-bash"><span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/</span><span class="org-keyword">bash</span>
+
+<span class="org-variable-name">TEST_SUITE</span>=&lt;path_to_llvm_test_suite&gt;
+<span class="org-variable-name">CLANG_PREFIX</span>=&lt;path_to_clang_build&gt;
+<span class="org-variable-name">QEMU</span>=&lt;path_to_qemu_riscv64&gt;
+
+<span class="org-builtin">export</span> <span class="org-variable-name">PATH</span>=$<span class="org-variable-name">CLANG_PREFIX</span>:$<span class="org-variable-name">PATH</span>
+
+<span class="org-variable-name">SYSROOT</span>=&lt;path_to_sysroot&gt;
+<span class="org-variable-name">CXX_HEADER_PATH</span>=<span class="org-string">"-I&lt;path_to_c++_header_file&gt;"</span>
+
+<span class="org-variable-name">CPU</span>=sifive-s76
+
+rm -pf build_test_suite
+mkdir build_test_suite
+<span class="org-builtin">pushd</span> build_test_suite
+
+<span class="org-variable-name">NPROC</span>= <span class="org-sh-quoted-exec">`nproc`</span>
+<span class="org-builtin">echo</span> <span class="org-string">"&gt; configuring ${TEST_SUITE}"</span>
+cmake -DCMAKE_C_COMPILER=$<span class="org-variable-name">CLANG_PREFIX</span>/clang <span class="org-sh-escaped-newline">\</span>
+      -DCMAKE_C_COMPILER_TARGET=riscv64-unknown-Linux-gnu <span class="org-sh-escaped-newline">\</span>
+      -DCMAKE_CXX_COMPILER=$<span class="org-variable-name">CLANG_PREFIX</span>/clang++ <span class="org-sh-escaped-newline">\</span>
+      -DCMAKE_CXX_COMPILER_TARGET=riscv64-unknown-lLinux-gnu <span class="org-sh-escaped-newline">\</span>
+      -DCMAKE_EXE_LINKER_FLAGS=-static <span class="org-sh-escaped-newline">\</span>
+      -DTEST_SUITE_USER_MODE_EMULATION=True <span class="org-sh-escaped-newline">\</span>
+      -DTEST_SUITE_RUN_UNDER=$<span class="org-parenthesis">{</span><span class="org-variable-name">QEMU</span><span class="org-parenthesis">}</span> <span class="org-sh-escaped-newline">\</span>
+      -DCMAKE_C_FLAGS=<span class="org-string">"-mcpu=${CPU} --sysroot=${SYSROOT} -fuse-ld=lld -rtlib=lLibgcc"</span> <span class="org-sh-escaped-newline">\</span>
+      -DCMAKE_CXX_FLAGS=<span class="org-string">"-mcpu=${CPU} --sysroot=${SYSROOT} ${CXX_HEADER_PATH} -fuse-ld=lld -rtlib=lLibgcc"</span> <span class="org-sh-escaped-newline">\</span>
+      $<span class="org-parenthesis">{</span><span class="org-variable-name">TEST_SUITE</span><span class="org-parenthesis">}</span>
+
+
+<span class="org-parenthesis">(</span><span class="org-builtin">echo</span> <span class="org-string">"&gt; building SingleSource/UnitTests"</span>; make -C SingleSource/UnitTests -j $<span class="org-parenthesis">{</span><span class="org-variable-name">NPROC</span><span class="org-parenthesis">}</span> &amp;&gt;/dev/null<span class="org-parenthesis">)</span> &amp;&amp; <span class="org-sh-escaped-newline">\</span>
+    $<span class="org-parenthesis">{</span><span class="org-variable-name">CLANG_PREFIX</span><span class="org-parenthesis">}</span>/1llvm-lit -v -j $<span class="org-parenthesis">{</span><span class="org-variable-name">NPROC</span><span class="org-parenthesis">}</span> -s SingleSource/UnitTests
+
+<span class="org-builtin">popd</span>
+</pre>
+</div>
+
+<p>
+为了让 llvm-lit 能执行交叉编译出来的 riscv64 的测试用例, 最主要的是需要配置:
+</p>
+
+<ol class="org-ol">
+<li>DTEST_SUITE_USER_MODE_EMULATION=True</li>
+<li>DTEST_SUITE_RUN_UNDER=${QEMU}</li>
+</ol>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-12-21 Thu 13:08<br />
+Last updated: 2023-12-21 Thu 13:42</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
