@@ -103,8 +103,8 @@ startfile/libgcc</li>
 </ol>
 
 <p>
-对 riscv 来说, 定义这些变量比较繁锁, gcc 提供了一个 multilib-generator 脚本来生成这些变量. config.gcc 中使用 multilib-generator 针对不同的 target 预先生成了几套例如 `t-linux-multilib`, `t-elf-multilib` 等, 用户可以通过
-`&#x2013;with-multilib-generator` 向 multilib-generator 传递特定的参数, 生成自己需要的配置
+对 riscv 来说, 定义这些变量比较繁锁, gcc 提供了一个 multilib-generator 脚本来生成这些变量. config.gcc 中使用 multilib-generator 针对不同的 target 预先生成了几套例如 <code>t-linux-multilib</code>, <code>t-elf-multilib</code> 等, 用户可以通过
+<code>--with-multilib-generator</code> 向 multilib-generator 传递特定的参数, 生成自己需要的配置
 </p>
 
 <p>
@@ -154,26 +154,41 @@ lp64d
 </div>
 
 <p>
-通过 `gcc -print-multi-os-directory` 可以确定运行时 march/mabi 会找到哪个
+通过 <code>gcc -print-multi-os-directory</code> 可以确定运行时 march/mabi 会找到哪个
 multilib dir.
 </p>
 
 <p>
-以上 makefile 中定义的的 MULTILIB_XXX 变量最终会通过 <a href="gcc_spec.html#ID-83be724e-1d17-4c7c-8a19-9bb9c0c7b08a">spec</a> 保存在 gcc 中, gcc 的
-`set_multilib_dir` 函数会通过解析 spec 确定 multilib dir
+以上 makefile 中定义的的 MULTILIB_XXX 变量最终会通过 <a href="gcc_spec.html#ID-83be724e-1d17-4c7c-8a19-9bb9c0c7b08a">spec</a> 保存在 gcc 中
 </p>
 
 <p>
-无论是通过 find_file (查找 startfile) 或构造 library path (处理 spec 中的 %D),
-都会通过 <code>for_each_path</code> 函数, 后者在构造查找路径时会考虑 multilib dir
+gcc 调用 <code>find_file</code> (查找 startfile) 或构造 library path (处理 spec 中的 %D) 时,
+需要:
 </p>
+
+<ol class="org-ol">
+<li>先通过 <code>add_prefix</code> 确定 <code>startfile_prefixes</code>, 包括:
+
+<ul class="org-ul">
+<li>gcc -B 指定的 path</li>
+<li>SYSROOT</li>
+<li>GCC_EXEC_PREFIX</li>
+<li>startfile_prefix_spec</li>
+<li>&#x2026;</li>
+</ul></li>
+
+<li>通过 <code>set_multilib_dir</code> 解析 spec 确定 multilib dir</li>
+
+<li><code>for_each_path</code> 会在 <code>startfile_prefixes</code> 的路径后加上 multilib dir 得到最终的路径, 例如 <code>&lt;SYSROOT&gt;/lib32/ilp32</code></li>
+</ol>
 </div>
 
 <div id="outline-container-org0000001" class="outline-5">
 <h5 id="org0000001"><span class="section-number-5">1.1.1.1.</span> startfile_prefix_spec</h5>
 <div class="outline-text-5" id="text-1-1-1-1">
 <p>
-startfile 查找时除了 multilib spec, 还使用了硬编码的 startfile_prefix_spec
+startfile_prefixes 包含了硬编码的 startfile_prefix_spec
 </p>
 
 <pre class="example" id="org0000000">
@@ -198,7 +213,7 @@ startfile 查找时除了 multilib spec, 还使用了硬编码的 startfile_pref
 </pre>
 
 <p>
-gcc 会从 sysroot/lib32/ilp32e 目录中查找 rv32xxx/ilp32e 对应的 startfile
+gcc 会把 sysroot/lib32/ilp32e 加入到 startfile_prefixes
 </p>
 
 <div class="org-src-container">
@@ -211,6 +226,10 @@ gcc 会从 sysroot/lib32/ilp32e 目录中查找 rv32xxx/ilp32e 对应的 startfi
 <span class="org-parenthesis">}</span>
 </pre>
 </div>
+
+<p>
+由于 multlib dir 会被加到 startfile_prefixes 之后, 导致 print-search-dir 时会看到这种奇怪的 path: <code>sysroot/lib32/ilp32e/lib32/ilp32</code>
+</p>
 </div>
 </div>
 
@@ -253,7 +272,7 @@ lib64/lp64d;@march=rv64imafdc@mabi=lp64d
 
 <p>
 实际就是 <code>MULTILIB_REQUIRED</code>. 然后编译系统会解析这个输出, 为 libgcc 等构造多个
-build 目录, 并在对应的 Makefile 中生成 `march=rv32imac` 这些 flag, 例如:
+build 目录, 并在对应的 Makefile 中生成 <code>march=rv32imac</code> 这些 flag, 例如:
 </p>
 
 <pre class="example" id="org000000c">
@@ -275,10 +294,9 @@ riscv64-unknown-linux-gnu/libgcc/Makefile
 <div class="outline-text-4" id="text-1-1-3">
 <ul class="org-ul">
 <li>makefile 指定的 MULTILIB_XXX 保存在 gcc spec 中</li>
-<li>gcc 运行时主要通过 `MULTILIB_REUSE` 确定 march/mabi 对应的 multilib</li>
-<li>startfile 使用了固定的 multilib 配置</li>
-<li>编译 startfile/libgcc 时通过 `gcc &#x2013;print-multi-lib` 确定需要输出的 multilib 目录和
-flag</li>
+<li>gcc 运行时主要通过 <code>multilib_reuse</code> spec 确定 march/mabi 对应的 multilib dir, 查找 startfile 或生成 library path 时会考虑这个 multilib dir</li>
+<li>编译 startfile/libgcc 时通过 <code>gcc --print-multi-lib</code> 确定需要输出的 multilib
+dir 和 flag</li>
 </ul>
 </div>
 </div>
@@ -366,7 +384,7 @@ gcc -v
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2024-01-02 Tue 16:33<br />
-Last updated: 2024-01-03 Wed 15:51</p>
+Last updated: 2024-01-03 Wed 18:37</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
