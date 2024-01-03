@@ -34,15 +34,15 @@
 <ul>
 <li><a href="#org000000f">1.1. gcc</a>
 <ul>
-<li><a href="#org0000004">1.1.1. 运行时查找 multilib dir</a></li>
+<li><a href="#org0000008">1.1.1. 运行时查找 multilib dir</a></li>
 <li><a href="#org0000009">1.1.2. 编译出 multilib dir</a></li>
-<li><a href="#org000000c">1.1.3. 总结</a></li>
+<li><a href="#org0000010">1.1.3. 总结</a></li>
 </ul>
 </li>
 <li><a href="#org0000019">1.2. libc</a>
 <ul>
 <li><a href="#org0000013">1.2.1. glibc</a></li>
-<li><a href="#org0000016">1.2.2. newlib</a></li>
+<li><a href="#org000001a">1.2.2. newlib</a></li>
 </ul>
 </li>
 <li><a href="#org000001c">1.3. debug</a></li>
@@ -78,8 +78,8 @@ startfile/libgcc</li>
 </ol>
 </div>
 
-<div id="outline-container-org0000004" class="outline-4">
-<h4 id="org0000004"><span class="section-number-4">1.1.1.</span> 运行时查找 multilib dir</h4>
+<div id="outline-container-org0000008" class="outline-4">
+<h4 id="org0000008"><span class="section-number-4">1.1.1.</span> 运行时查找 multilib dir</h4>
 <div class="outline-text-4" id="text-1-1-1">
 <p>
 解决问题 1 依赖于 makefile 中定义的几个变量:
@@ -155,12 +155,17 @@ lp64d
 
 <p>
 通过 `gcc -print-multi-os-directory` 可以确定运行时 march/mabi 会找到哪个
-multilib 目录.
+multilib dir.
 </p>
 
 <p>
-以上 makefile 中定义的的 MULTILIB_XXX 变量最终会通过 <a href="gcc_spec.html#ID-83be724e-1d17-4c7c-8a19-9bb9c0c7b08a">Spec</a> 保存在 gcc 中, gcc 的
-`set_multilib_dir` 函数会通过解析 spec 确定 multilib 目录
+以上 makefile 中定义的的 MULTILIB_XXX 变量最终会通过 <a href="gcc_spec.html#ID-83be724e-1d17-4c7c-8a19-9bb9c0c7b08a">spec</a> 保存在 gcc 中, gcc 的
+`set_multilib_dir` 函数会通过解析 spec 确定 multilib dir
+</p>
+
+<p>
+无论是通过 find_file (查找 startfile) 或构造 library path (处理 spec 中的 %D),
+都会通过 <code>for_each_path</code> 函数, 后者在构造查找路径时会考虑 multilib dir
 </p>
 </div>
 
@@ -168,8 +173,7 @@ multilib 目录.
 <h5 id="org0000001"><span class="section-number-5">1.1.1.1.</span> startfile_prefix_spec</h5>
 <div class="outline-text-5" id="text-1-1-1-1">
 <p>
-startfile 查找时使用了 startfile_prefix_spec, 而不是前面提到的 multilib spec, 而
-startfile_prefix_spec 是在代码中写死的:
+startfile 查找时除了 multilib spec, 还使用了硬编码的 startfile_prefix_spec
 </p>
 
 <pre class="example" id="org0000000">
@@ -194,9 +198,39 @@ startfile_prefix_spec 是在代码中写死的:
 </pre>
 
 <p>
-所以即使通过 multilib 指定了 ilp32e 的 REUSE 配置, 但 gcc 还是会尝试从
-libxxx/ilp32e 目录中查找 startfile
+gcc 会从 sysroot/lib32/ilp32e 目录中查找 rv32xxx/ilp32e 对应的 startfile
 </p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">if</span> <span class="org-parenthesis">(</span>*startfile_prefix_spec != 0 &amp;&amp;
+    do_spec_2<span class="org-parenthesis">(</span>startfile_prefix_spec<span class="org-parenthesis">,</span> <span class="org-constant">NULL</span><span class="org-parenthesis">)</span> == 0 &amp;&amp;
+    do_spec_1<span class="org-parenthesis">(</span><span class="org-string">" "</span><span class="org-parenthesis">,</span> 0<span class="org-parenthesis">,</span> <span class="org-constant">NULL</span><span class="org-parenthesis">)</span> == 0<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-keyword">const</span> <span class="org-type">char</span> *<span class="org-variable-name">arg</span> : argbuf<span class="org-parenthesis">)</span>
+        add_sysrooted_prefix<span class="org-parenthesis">(</span>
+            &amp;startfile_prefixes<span class="org-parenthesis">,</span> arg<span class="org-parenthesis">,</span> <span class="org-string">"BINUTILS"</span><span class="org-parenthesis">,</span> PREFIX_PRIORITY_LAST<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">,</span> 1<span class="org-parenthesis">)</span>;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000005" class="outline-5">
+<h5 id="org0000005"><span class="section-number-5">1.1.1.2.</span> linker_spec</h5>
+<div class="outline-text-5" id="text-1-1-1-2">
+<p>
+dynamic linker 属于 libc, 但它有不一样的 multilib 配置
+</p>
+
+<ol class="org-ol">
+<li>它的位置在 sysroot/lib/ld-linux-{march}-{mabi}.so.1</li>
+<li><p>
+gcc 在 linker_spec 硬编码了 dynmaic linker 的位置
+</p>
+
+<pre class="example" id="org0000004">
+#define GLIBC_DYNAMIC_LINKER "/lib/ld-linux-riscv" XLEN_SPEC "-" ABI_SPEC ".so.1"
+</pre></li>
+</ol>
 </div>
 </div>
 </div>
@@ -209,7 +243,7 @@ libxxx/ilp32e 目录中查找 startfile
 dir, 例如:
 </p>
 
-<pre class="example" id="org0000007">
+<pre class="example" id="org000000b">
 .;
 lib32/ilp32;@march=rv32imac@mabi=ilp32
 lib32/ilp32d;@march=rv32imafdc@mabi=ilp32d
@@ -222,7 +256,7 @@ lib64/lp64d;@march=rv64imafdc@mabi=lp64d
 build 目录, 并在对应的 Makefile 中生成 `march=rv32imac` 这些 flag, 例如:
 </p>
 
-<pre class="example" id="org0000008">
+<pre class="example" id="org000000c">
 riscv64-unknown-linux-gnu/lib32/ilp32/libgcc/Makefile
 riscv64-unknown-linux-gnu/lib32/ilp32d/libgcc/Makefile
 riscv64-unknown-linux-gnu/lib64/lp64/libgcc/Makefile
@@ -236,8 +270,8 @@ riscv64-unknown-linux-gnu/libgcc/Makefile
 </div>
 </div>
 
-<div id="outline-container-org000000c" class="outline-4">
-<h4 id="org000000c"><span class="section-number-4">1.1.3.</span> 总结</h4>
+<div id="outline-container-org0000010" class="outline-4">
+<h4 id="org0000010"><span class="section-number-4">1.1.3.</span> 总结</h4>
 <div class="outline-text-4" id="text-1-1-3">
 <ul class="org-ul">
 <li>makefile 指定的 MULTILIB_XXX 保存在 gcc spec 中</li>
@@ -261,7 +295,7 @@ flag</li>
 glibc 并没有像 gcc 一样内置 multilib 支持, riscv-gnu-toolchain 是通过主动编译出多个 glibc 并安装到对应的目录实现 multilib
 </p>
 
-<pre class="example" id="org0000012">
+<pre class="example" id="org0000016">
 $&gt; cat configure
 ...
 if test "x$enable_multilib" != xno; then :
@@ -303,8 +337,8 @@ multilib 配置无关
 </div>
 </div>
 
-<div id="outline-container-org0000016" class="outline-4">
-<h4 id="org0000016"><span class="section-number-4">1.2.2.</span> newlib</h4>
+<div id="outline-container-org000001a" class="outline-4">
+<h4 id="org000001a"><span class="section-number-4">1.2.2.</span> newlib</h4>
 <div class="outline-text-4" id="text-1-2-2">
 <p>
 newlib 的 build 系统使用了和 gcc 相同的 config-ml.in, 因此它依赖于 <code>gcc
@@ -317,12 +351,13 @@ newlib 的 build 系统使用了和 gcc 相同的 config-ml.in, 因此它依赖�
 <div id="outline-container-org000001c" class="outline-3">
 <h3 id="org000001c"><span class="section-number-3">1.3.</span> debug</h3>
 <div class="outline-text-3" id="text-1-3">
-<p>
-gcc &#x2013;print-search-dirs
-gcc &#x2013;print-file-name crt1.o
-gcc &#x2013;print-multi-lib
-gcc &#x2013;print-multi-os-directory
-</p>
+<pre class="example" id="org0000020">
+gcc --print-search-dirs
+gcc --print-file-name crt1.o
+gcc --print-multi-lib
+gcc --print-multi-os-directory
+gcc -v
+</pre>
 </div>
 </div>
 </div>
@@ -331,7 +366,7 @@ gcc &#x2013;print-multi-os-directory
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2024-01-02 Tue 16:33<br />
-Last updated: 2024-01-03 Wed 12:03</p>
+Last updated: 2024-01-03 Wed 15:51</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
