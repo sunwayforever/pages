@@ -32,13 +32,13 @@
 <ul>
 <li><a href="#org0000012">1. Bare Metal</a>
 <ul>
-<li><a href="#org0000000">1.1. qemu arm bare metal example</a></li>
-<li><a href="#org0000003">1.2. newlib</a></li>
-<li><a href="#org0000006">1.3. nosys.specs</a></li>
-<li><a href="#org000000f">1.4. libgcc, crt0.o 与 nostdlib, nodefaultlibs, nostartfiles</a>
+<li><a href="#org0000000">1.1. overview</a></li>
+<li><a href="#org0000003">1.2. crt</a></li>
+<li><a href="#org0000007">1.3. 实现</a></li>
+<li><a href="#org0000010">1.4. 其它</a>
 <ul>
-<li><a href="#ID-27a07646-18c6-4504-b36e-a5d63871a0d2">1.4.1. libgcc</a></li>
-<li><a href="#org000000c">1.4.2. crt0.o</a></li>
+<li><a href="#org000000a">1.4.1. 禁用 crt/libc</a></li>
+<li><a href="#org000000d">1.4.2. qemu arm bare metal example</a></li>
 </ul>
 </li>
 </ul>
@@ -52,104 +52,70 @@
 <div class="outline-text-2" id="text-1">
 </div>
 <div id="outline-container-org0000000" class="outline-3">
-<h3 id="org0000000"><span class="section-number-3">1.1.</span> qemu arm bare metal example</h3>
+<h3 id="org0000000"><span class="section-number-3">1.1.</span> overview</h3>
 <div class="outline-text-3" id="text-1-1">
 <p>
-<a href="https://balau82.wordpress.com/2010/02/28/hello-world-for-bare-metal-arm-using-qemu/">https://balau82.wordpress.com/2010/02/28/hello-world-for-bare-metal-arm-using-qemu/</a>
-</p>
-
-<p>
-为了验证 kws 在 mips bare metal 上的情况, 使用 qemu arm bare metal example 来测试 bare metal 的基本概念
-</p>
-
-<p>
-支持 bare metal 的方法:
+baremetal(以及工具链)与 linux 的主要区别:
 </p>
 
 <ol class="org-ol">
-<li>针对板子写 start.s, 初始化 sp 等, 然后跳转到 main</li>
-<li>linker script 需要把 start.o 放在板子要求的地址上, 同时需要提供一些符号, 例如
-newlib 中的 _sbrk 需要 linker script 定义 `end` 以后才能支持 malloc</li>
-<li>使用 nosys.specs 把 newlib 做为 libc, 同时使用 libnosys 给 _fork, _exit 等函数提供 dummy 实现, 避免 newlib 编译不过</li>
+<li><p>
+libc
+</p>
+
+<p>
+linux 使用 glibc, baremetal 使用 newlib, 并且会使用 newlib 提供的 libgloss,
+libnosys 等支持 io, malloc 等原本需要 linux 支持的功能
+</p></li>
+
+<li><p>
+crt
+</p>
+
+<p>
+linux 下使用 gcc 提供的 crt, baremetal 使用了 libgloss 提供的 crt, 但
+libgloss 只提供了 crt{0,i,n,begin,end}.o, 没有提供 crt{beginS,endS}.o 等
+</p></li>
+
+<li><p>
+multilib
+</p>
+
+<p>
+baremetal 环境下 multilib 的配置会有些区别, 例如会针对适用于嵌入式环境的扩展
+(e,c,&#x2026;) 定义 multilib
+</p></li>
+
+<li><p>
+动态链接
+</p>
+
+<p>
+baremetal 不支持动态链接(以及 PIE)
+</p></li>
+
+<li><p>
+其它
+</p>
+
+<p>
+baremetal 有时会使用自定义的 linker script, 并禁用 crt 及 libc
+</p></li>
 </ol>
 </div>
 </div>
 
 <div id="outline-container-org0000003" class="outline-3">
-<h3 id="org0000003"><span class="section-number-3">1.2.</span> newlib</h3>
-</div>
-
-<div id="outline-container-org0000006" class="outline-3">
-<h3 id="org0000006"><span class="section-number-3">1.3.</span> nosys.specs</h3>
-<div class="outline-text-3" id="text-1-3">
+<h3 id="org0000003"><span class="section-number-3">1.2.</span> crt</h3>
+<div class="outline-text-3" id="text-1-2">
 <p>
-参考 <a href="gcc_spec.html#ID-83be724e-1d17-4c7c-8a19-9bb9c0c7b08a">GCC Spec</a>
-</p>
-</div>
-</div>
-
-<div id="outline-container-org000000f" class="outline-3">
-<h3 id="org000000f"><span class="section-number-3">1.4.</span> libgcc, crt0.o 与 nostdlib, nodefaultlibs, nostartfiles</h3>
-<div class="outline-text-3" id="text-1-4">
-<p>
-<a href="http://cs107e.github.io/guides/gcc/">http://cs107e.github.io/guides/gcc/</a>
-<a href="https://gcc.gnu.org/onlinedocs/gccint/Libgcc.html">https://gcc.gnu.org/onlinedocs/gccint/Libgcc.html</a>
+<a href="https://dev.gentoo.org/~vapier/crt.txt">https://dev.gentoo.org/~vapier/crt.txt</a>
 </p>
 
 <p>
-nodefaultlibs: 不使用 libc, libgcc
-nostartfiles: 不使用  crt0.o, crt1.o, crtend.o 等 startfiles
-nostdlib: nodefaultlibs + nostartfiles
-</p>
-</div>
-
-<div id="outline-container-ID-27a07646-18c6-4504-b36e-a5d63871a0d2" class="outline-4">
-<h4 id="ID-27a07646-18c6-4504-b36e-a5d63871a0d2"><span class="section-number-4">1.4.1.</span> libgcc</h4>
-<div class="outline-text-4" id="text-1-4-1">
-<p>
-GCC provides a low-level runtime library, libgcc.a or libgcc_s.so.1 on some
-platforms. GCC generates calls to routines in this library automatically,
-whenever it needs to perform some operation that is too complicated to emit
-inline code for.
+以 crt0.o 为例:
 </p>
 
-<ol class="org-ol">
-<li>libgcc 是为了弥补平台本身对某些功能的支持问题, 例如 soft-float</li>
-
-<li>gcc 会针对某些代码生成对 libgcc 的隐式的调用, 例如 gcc 会把对 thread_local 的变量的读写的代码编译成对 libgcc 中 emutls 相关函数的调用, 所以针对 libgcc 的编译错误经常不那么直观</li>
-
-<li>libgcc 的主要功能包括:
-<ul class="org-ul">
-<li>emutls 相关</li>
-<li>automic 相关</li>
-<li>soft float 相关</li>
-<li>clear_cache</li>
-<li>数学运算, 包括乘除移位等</li>
-</ul></li>
-</ol>
-</div>
-
-
-<div id="outline-container-org0000009" class="outline-5 references">
-<h5 id="org0000009">Backlinks</h5>
-<div class="outline-text-5" id="text-org0000009">
-<p>
-<a href="thread_local_storage.html#ID-aee24416-b9d0-4295-9511-7dcf4b29468d">Thread Local Storage</a>
-(<i>Thread Local Storage &gt; android tls &gt; emutls</i>):  android toolchain 使用 emutls 来支持 `__thread` 关键字. gcc 的 emutls 实现在 <a href="#ID-27a07646-18c6-4504-b36e-a5d63871a0d2">libgcc</a> 中, clang 的实现在 libcompiler_rt
-</p>
-
-<p>
-<a href="gcc_backend.html#ID-c1ff5b55-a6cd-41c5-aab9-248f52262030">optab_libfunc</a>
-(<i>GCC Backend &gt; insn selection &gt; optab &gt; optab_libfunc</i>):  对于复杂的功能, 会通过 optab_libfunc 生成对某个外部函数的调用, 例如 __divsf3. 这 些函数是在 <a href="#ID-27a07646-18c6-4504-b36e-a5d63871a0d2">libgcc</a> 中实现的.
-</p>
-</div>
-</div>
-</div>
-
-
-<div id="outline-container-org000000c" class="outline-4">
-<h4 id="org000000c"><span class="section-number-4">1.4.2.</span> crt0.o</h4>
-<div class="outline-text-4" id="text-1-4-2">
 <p>
 crt0.o 会提供一个 _start 符号, 它的代码差不多是这样的:
 </p>
@@ -213,6 +179,94 @@ crt0.o 会提供一个 _start 符号, 它的代码差不多是这样的:
 </div>
 </div>
 </div>
+
+<div id="outline-container-org0000007" class="outline-3">
+<h3 id="org0000007"><span class="section-number-3">1.3.</span> 实现</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+baremetal 与 linux 工具链的区别主要体现在 <a href="gcc_spec.html#ID-83be724e-1d17-4c7c-8a19-9bb9c0c7b08a">spec</a> 中, spec 的定义和处理是在
+`gcc.cc`, 它会使用 config.gcc 中定义的头文件:
+</p>
+
+<pre class="example" id="org0000006">
+riscv*-*-elf* | riscv*-*-rtems*)
+    tm_file="elfos.h newlib-stdint.h ${tm_file} riscv/elf.h"
+    tmake_file="${tmake_file} riscv/t-riscv"
+
+riscv*-*-linux*)
+    tm_file="elfos.h gnu-user.h linux.h glibc-stdint.h ${tm_file} riscv/linux.h"
+    tmake_file="${tmake_file} riscv/t-riscv riscv/t-linux"
+</pre>
+
+<p>
+其中 linux.h 和 elf.h 会定义不同的 spec, 让 gcc/ld 使用不同的 STARTFILE_SPEC 和
+LIB_SPEC 等
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000010" class="outline-3">
+<h3 id="org0000010"><span class="section-number-3">1.4.</span> 其它</h3>
+<div class="outline-text-3" id="text-1-4">
+</div>
+<div id="outline-container-org000000a" class="outline-4">
+<h4 id="org000000a"><span class="section-number-4">1.4.1.</span> 禁用 crt/libc</h4>
+<div class="outline-text-4" id="text-1-4-1">
+<p>
+baremetal 有时会使用下面的 flag 禁用 crt/libc/libgcc:
+</p>
+
+<ol class="org-ol">
+<li><p>
+nodefaultlibs
+</p>
+
+<p>
+不使用 libc, libgcc
+</p></li>
+
+<li><p>
+nostartfiles
+</p>
+
+<p>
+不使用 crt0.o 等 startfiles
+</p></li>
+
+<li><p>
+nostdlib
+</p>
+
+<p>
+nodefaultlibs + nostartfiles
+</p></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org000000d" class="outline-4">
+<h4 id="org000000d"><span class="section-number-4">1.4.2.</span> qemu arm bare metal example</h4>
+<div class="outline-text-4" id="text-1-4-2">
+<p>
+<a href="https://balau82.wordpress.com/2010/02/28/hello-world-for-bare-metal-arm-using-qemu/">https://balau82.wordpress.com/2010/02/28/hello-world-for-bare-metal-arm-using-qemu/</a>
+</p>
+
+<p>
+为了验证 kws 在 mips bare metal 上的情况, 使用 qemu arm bare metal example 来测试 bare metal 的基本概念
+</p>
+
+<p>
+支持 bare metal 的方法:
+</p>
+
+<ol class="org-ol">
+<li>针对板子写 start.s, 初始化 sp 等, 然后跳转到 main</li>
+<li>linker script 需要把 start.o 放在板子要求的地址上, 同时需要提供一些符号, 例如
+newlib 中的 _sbrk 需要 linker script 定义 `end` 以后才能支持 malloc</li>
+<li>通过 nosys.specs 使用 libnosys 给 _fork, _exit 等函数提供 dummy 实现, 避免编译不过</li>
+</ol>
+</div>
+</div>
 </div>
 </div>
 </div>
@@ -220,7 +274,7 @@ crt0.o 会提供一个 _start 符号, 它的代码差不多是这样的:
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2020-09-29 Tue 00:00<br />
-Last updated: 2023-10-13 Fri 15:11</p>
+Last updated: 2024-01-09 Tue 11:53</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
