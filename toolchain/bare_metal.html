@@ -30,10 +30,17 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents" role="doc-toc">
 <ul>
-<li><a href="#org0000012">1. Bare Metal</a>
+<li><a href="#org000001f">1. Bare Metal</a>
 <ul>
 <li><a href="#org0000000">1.1. overview</a></li>
-<li><a href="#org0000003">1.2. crt</a></li>
+<li><a href="#org000000f">1.2. crt</a>
+<ul>
+<li><a href="#org0000003">1.2.1. crt0.o</a></li>
+<li><a href="#org0000006">1.2.2. crti.o, crtn.o</a></li>
+<li><a href="#org0000009">1.2.3. crtbegin.o, crtendi.o</a></li>
+<li><a href="#org000000c">1.2.4. crtbeginS.o, crtendS.o</a></li>
+</ul>
+</li>
 <li><a href="#org0000007">1.3. 实现</a></li>
 <li><a href="#org0000010">1.4. 其它</a>
 <ul>
@@ -47,8 +54,8 @@
 </div>
 </div>
 
-<div id="outline-container-org0000012" class="outline-2">
-<h2 id="org0000012"><span class="section-number-2">1.</span> Bare Metal</h2>
+<div id="outline-container-org000001f" class="outline-2">
+<h2 id="org000001f"><span class="section-number-2">1.</span> Bare Metal</h2>
 <div class="outline-text-2" id="text-1">
 </div>
 <div id="outline-container-org0000000" class="outline-3">
@@ -105,78 +112,85 @@ baremetal 有时会使用自定义的 linker script, 并禁用 crt 及 libc
 </div>
 </div>
 
-<div id="outline-container-org0000003" class="outline-3">
-<h3 id="org0000003"><span class="section-number-3">1.2.</span> crt</h3>
+<div id="outline-container-org000000f" class="outline-3">
+<h3 id="org000000f"><span class="section-number-3">1.2.</span> crt</h3>
 <div class="outline-text-3" id="text-1-2">
 <p>
 <a href="https://dev.gentoo.org/~vapier/crt.txt">https://dev.gentoo.org/~vapier/crt.txt</a>
 </p>
+</div>
 
+<div id="outline-container-org0000003" class="outline-4">
+<h4 id="org0000003"><span class="section-number-4">1.2.1.</span> crt0.o</h4>
+<div class="outline-text-4" id="text-1-2-1">
 <p>
-以 crt0.o 为例:
+以 riscv 的 crt0.o 为例, 它提供 _start 做为程序入口, _start 的主要功能有:
 </p>
 
+<ol class="org-ol">
+<li>初始化 <a href="mips_tutorial.html#ID-dad2ac71-9292-447c-8f15-5882363d5993">GP</a></li>
+<li>清空 BSS</li>
+<li>通过 atexit 注册 _libc_fini_array, 以便在程序结束时调用 <a href="elf.html#ID-bd3ae9c9-674f-46f7-84d6-af4a2ef12d07">finit_array</a></li>
+<li>通过 _libc_init_array 以调用 <a href="elf.html#ID-c4a88541-52e0-4e01-bd08-59b806e7696f">init_array</a></li>
+<li>调用 main</li>
+<li>exit</li>
+</ol>
+
 <p>
-crt0.o 会提供一个 _start 符号, 它的代码差不多是这样的:
+它的代码是这样的:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span class="org-comment-delimiter">/* </span><span class="org-comment">ida &#21453;&#32534;&#35793;&#30340;&#32467;&#26524;</span><span class="org-comment-delimiter"> */</span>
-<span class="org-type">void</span> <span class="org-variable-name">__fastcall</span> start<span class="org-parenthesis">()</span> <span class="org-parenthesis">{</span>
-    <span class="org-type">int</span> <span class="org-variable-name">v0</span>;  <span class="org-comment-delimiter">// </span><span class="org-comment">r0@4</span>
+<pre class="src src-asm">    <span class="org-keyword">.text</span>
+    <span class="org-keyword">.global</span> _start _start :
+    <span class="org-comment-delimiter"># </span><span class="org-comment">&#21021;&#22987;&#21270; GP</span>
+    <span class="org-keyword">.option</span> push.option norelax
+<span class="org-function-name">1</span>:  <span class="org-keyword">auipc</span> gp<span class="org-parenthesis">,</span>% pcrel_hi<span class="org-parenthesis">(</span>__global_pointer$<span class="org-parenthesis">)</span>
+    <span class="org-keyword">addi</span> gp<span class="org-parenthesis">,</span> gp<span class="org-parenthesis">,</span> % pcrel_lo<span class="org-parenthesis">(</span>1b<span class="org-parenthesis">)</span>
+    <span class="org-keyword">.option</span> pop
 
-    stack_init<span class="org-parenthesis">()</span>;
-    memset<span class="org-parenthesis">()</span>;
-    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>atexit<span class="org-parenthesis">)</span> atexit<span class="org-parenthesis">(</span>_libc_fini_array<span class="org-parenthesis">)</span>;
-    _libc_init_array<span class="org-parenthesis">()</span>;
-    v0 = main<span class="org-parenthesis">(</span>0<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">)</span>;
-    exit<span class="org-parenthesis">(</span>v0<span class="org-parenthesis">)</span>;
-<span class="org-parenthesis">}</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">&#28165;&#31354; bss</span>
+    <span class="org-keyword">la</span> a0<span class="org-parenthesis">,</span>_edata
+    <span class="org-keyword">la</span> a2<span class="org-parenthesis">,</span> _end
+    <span class="org-keyword">sub</span> a2<span class="org-parenthesis">,</span> a2<span class="org-parenthesis">,</span> a0
+    <span class="org-keyword">li</span> a1<span class="org-parenthesis">,</span> 0
+    <span class="org-keyword">call</span> memset
+
+    <span class="org-comment-delimiter"># </span><span class="org-comment">atexit &#27880;&#20876; __libc_fini_array</span>
+    <span class="org-keyword">.weak</span> atexit
+    <span class="org-keyword">la</span> a0<span class="org-parenthesis">,</span> atexit
+    <span class="org-keyword">beqz</span> a0<span class="org-parenthesis">,</span>.Lweak_atexit
+    <span class="org-keyword">.weak</span> __libc_fini_array
+    <span class="org-keyword">la</span> a0<span class="org-parenthesis">,</span>__libc_fini_array <span class="org-comment-delimiter">#</span><span class="org-comment">Register global termination functions call atexit</span>
+    <span class="org-keyword">call</span>    atexit
+
+    <span class="org-comment-delimiter"># </span><span class="org-comment">&#35843;&#29992; __libc_init_array</span>
+    <span class="org-keyword">call</span> __libc_init_array
+
+    <span class="org-comment-delimiter"># </span><span class="org-comment">&#35843;&#29992; main</span>
+    <span class="org-keyword">lw</span> a0<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">(</span>sp<span class="org-parenthesis">)</span> <span class="org-comment-delimiter">#</span><span class="org-comment">a0 = argc</span>
+    <span class="org-keyword">addi</span> a1<span class="org-parenthesis">,</span> sp<span class="org-parenthesis">,</span> __SIZEOF_POINTER__ <span class="org-comment-delimiter">#</span><span class="org-comment">a1 = argv</span>
+    <span class="org-keyword">li</span> a2<span class="org-parenthesis">,</span> 0 <span class="org-comment-delimiter">#</span><span class="org-comment">a2 = envp = NULL</span>
+    <span class="org-keyword">call</span> main
+
+    <span class="org-comment-delimiter"># </span><span class="org-comment">exit</span>
+    <span class="org-keyword">tail</span> exit
+    <span class="org-keyword">.size</span> _start<span class="org-parenthesis">,</span>.- _start
 </pre>
 </div>
-
-<p>
-其中 _libc_init_array 会调用 .init_array 中的函数指针
-</p>
-
-<div class="org-src-container">
-<pre class="src src-c"><span class="org-comment-delimiter">/* </span><span class="org-comment">ida &#21453;&#32534;&#35793;&#30340;&#32467;&#26524;</span><span class="org-comment-delimiter"> */</span>
-<span class="org-type">int</span> <span class="org-variable-name">__fastcall</span> _libc_init_array<span class="org-parenthesis">()</span>
-<span class="org-parenthesis">{</span>
-    <span class="org-type">int</span> <span class="org-variable-name">result</span>; <span class="org-comment-delimiter">// </span><span class="org-comment">r0@3</span>
-    <span class="org-type">int</span> <span class="org-variable-name">v5</span>; <span class="org-comment-delimiter">// </span><span class="org-comment">r4@4</span>
-    <span class="org-type">unsigned</span> <span class="org-type">int</span> <span class="org-variable-name">v6</span>; <span class="org-comment-delimiter">// </span><span class="org-comment">r5@4</span>
-    <span class="org-type">int</span> <span class="org-parenthesis">(</span><span class="org-type">__fastcall</span> *<span class="org-variable-name">v7</span><span class="org-parenthesis">)(</span>_DWORD<span class="org-parenthesis">)</span>; <span class="org-comment-delimiter">// </span><span class="org-comment">t1@5</span>
-
-    result = init_proc<span class="org-parenthesis">()</span>;
-    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span> 0xC &gt;&gt; 2 <span class="org-parenthesis">)</span>
-    <span class="org-parenthesis">{</span>
-        v5 = 0;
-
-        <span class="org-comment-delimiter">/*</span>
-<span class="org-comment">         * ~/download@sunway-t14&gt; readelf -a ./a.out |grep __init_array_start</span>
-<span class="org-comment">         *           100: 000186cc     0 NOTYPE  LOCAL  DEFAULT    7 __init_array_start</span>
-<span class="org-comment">         *</span>
-<span class="org-comment-delimiter">         */</span>
-
-        v6 = 0x186C8u;
-        <span class="org-keyword">do</span>
-        <span class="org-parenthesis">{</span>
-            <span class="org-comment-delimiter">/*</span>
-<span class="org-comment">             * * 0x186c8+4 &#26159; __init_array_start &#30340;&#31532;&#19968;&#20010;&#20989;&#25968;&#25351;&#38024;&#30340;&#22320;&#22336;</span>
-<span class="org-comment-delimiter">             */</span>
-            v7 = *<span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-parenthesis">(</span><span class="org-type">__fastcall</span> **<span class="org-parenthesis">)(</span>_DWORD<span class="org-parenthesis">))(</span>v6 + 4<span class="org-parenthesis">)</span>;
-            v6 += 4;
-            ++v5;
-            <span class="org-comment-delimiter">/* </span><span class="org-comment">&#35843;&#29992;&#36825;&#20010;&#20989;&#25968;</span><span class="org-comment-delimiter"> */</span>
-            result = v7<span class="org-parenthesis">(</span>result<span class="org-parenthesis">)</span>;
-        <span class="org-parenthesis">}</span>
-        <span class="org-keyword">while</span> <span class="org-parenthesis">(</span> 0xC &gt;&gt; 2 != v5 <span class="org-parenthesis">)</span>;
-    <span class="org-parenthesis">}</span>
-    <span class="org-keyword">return</span> result;
-<span class="org-parenthesis">}</span>
-</pre>
 </div>
+</div>
+
+<div id="outline-container-org0000006" class="outline-4">
+<h4 id="org0000006"><span class="section-number-4">1.2.2.</span> crti.o, crtn.o</h4>
+</div>
+
+<div id="outline-container-org0000009" class="outline-4">
+<h4 id="org0000009"><span class="section-number-4">1.2.3.</span> crtbegin.o, crtendi.o</h4>
+</div>
+
+<div id="outline-container-org000000c" class="outline-4">
+<h4 id="org000000c"><span class="section-number-4">1.2.4.</span> crtbeginS.o, crtendS.o</h4>
 </div>
 </div>
 
@@ -188,7 +202,7 @@ baremetal 与 linux 工具链的区别主要体现在 <a href="gcc_spec.html#ID-
 `gcc.cc`, 它会使用 config.gcc 中定义的头文件:
 </p>
 
-<pre class="example" id="org0000006">
+<pre class="example" id="org0000012">
 riscv*-*-elf* | riscv*-*-rtems*)
     tm_file="elfos.h newlib-stdint.h ${tm_file} riscv/elf.h"
     tmake_file="${tmake_file} riscv/t-riscv"
@@ -274,7 +288,7 @@ newlib 中的 _sbrk 需要 linker script 定义 `end` 以后才能支持 malloc<
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2020-09-29 Tue 00:00<br />
-Last updated: 2024-01-09 Tue 11:53</p>
+Last updated: 2024-01-09 Tue 15:16</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
