@@ -1,0 +1,490 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>SEXT and ZEXT in RISC-V</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">SEXT and ZEXT in RISC-V</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000014">1. SEXT and ZEXT in RISCV-V</a>
+<ul>
+<li><a href="#ID-e39f8091-2455-4ec1-8d65-bd9c33582a64">1.1. sext</a>
+<ul>
+<li><a href="#org0000004">1.1.1. implicit sext</a></li>
+<li><a href="#org0000008">1.1.2. sext in gcc</a></li>
+</ul>
+</li>
+<li><a href="#ID-6e49e901-ce30-4e8c-8759-f5459e638ec4">1.2. zext</a></li>
+<li><a href="#org000000e">1.3. 总结</a></li>
+<li><a href="#org0000011">1.4. 其它</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000014" class="outline-2">
+<h2 id="org0000014"><span class="section-number-2">1.</span> SEXT and ZEXT in RISCV-V</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-ID-e39f8091-2455-4ec1-8d65-bd9c33582a64" class="outline-3">
+<h3 id="ID-e39f8091-2455-4ec1-8d65-bd9c33582a64"><span class="section-number-3">1.1.</span> sext</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+
+<div id="outline-container-org0000004" class="outline-4">
+<h4 id="org0000004"><span class="section-number-4">1.1.1.</span> implicit sext</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+有些 RISC-V 指令(大部分都带 w 后缀, 除了 lui, lh, lb 等)只会写目的寄存器的一部分,
+例如低 32 位, 寄存器中没有被写的部分需会通过隐式的 sext 补上符号位, 而不是保留原来的数据. 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">lw</span> <span class="org-keyword">a0</span><span class="org-parenthesis">,</span> 0<span class="org-parenthesis">(</span>a0<span class="org-parenthesis">)</span>
+<span class="org-function-name">sext</span>.w a0<span class="org-parenthesis">,</span> a0    <span class="org-comment-delimiter"># </span><span class="org-comment">&lt;-- &#36825;&#26465;&#25351;&#20196;&#24182;&#19981;&#38656;&#35201;, &#22240;&#20026; lw &#20250;&#38544;&#24335;&#30340;&#23545; a0 &#20570; sext</span>
+<span class="org-function-name">addi</span> <span class="org-keyword">a0</span><span class="org-parenthesis">,</span> a0<span class="org-parenthesis">,</span> 1
+</pre>
+</div>
+
+<p>
+另外, `sext.w a0, a1` 实际是 `addiw a0, a1, 0` 的伪指令, 因为 `addiw a0, a1, 0`
+隐含着对 a0 的符号扩展
+</p>
+
+<p>
+具体可以分为以下几类:
+</p>
+
+<ol class="org-ol">
+<li><p>
+load 数据的宽度小于 XLEN 时, 例如 lh, lb 以及 rv64 的 lw
+</p>
+
+<pre class="example" id="org0000000">
+x[rd] = sext(M[x[rs1] + sext(offset)][31:0])
+</pre>
+
+<ul class="org-ul">
+<li>lw (rv64), lh, lb 会进行 sext</li>
+<li>lwu (rv64), lhu, lbu 会进行 zext</li>
+</ul></li>
+
+<li><p>
+lui (rv64)
+</p>
+
+<p>
+和 load 指令类似, 只不过要 load 的数据来自立即数
+</p>
+
+<pre class="example" id="org0000001">
+x[rd] = sext(immediate[31:12] &lt;&lt; 12)
+</pre></li>
+
+<li><p>
+rv64 中的 xxxw 指令, 例如 addiw, slliw, mulw, amoxor.w, &#x2026;
+</p>
+
+<pre class="example" id="org0000002">
+x[rd] = sext((x[rs1] + sext(immediate))[31:0])
+</pre></li>
+
+<li><p>
+rv{32,64}{f,d} 中的 xxx.x.w, 例如 fmv.x.w
+</p>
+
+<pre class="example" id="org0000003">
+x[rd] = sext(f[rs1][31:0])
+</pre></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000008" class="outline-4">
+<h4 id="org0000008"><span class="section-number-4">1.1.2.</span> sext in gcc</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<p>
+gcc 涉及到类型转换时本来需要生成 sext 指令, 但由于 implicit sext, 这些 sext 实际上并没有必要, 例如
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-type">int64_t</span> <span class="org-function-name">foo</span><span class="org-parenthesis">(</span><span class="org-type">int32_t</span> <span class="org-variable-name">a</span><span class="org-parenthesis">,</span> <span class="org-type">int32_t</span> <span class="org-variable-name">b</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span> <span class="org-keyword">return</span> a + b; <span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<p>
+`gcc -O0` 时:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">foo</span>:
+    ...
+    <span class="org-keyword">addw</span>    a5<span class="org-parenthesis">,</span>a4<span class="org-parenthesis">,</span>a5
+    <span class="org-keyword">sext.w</span>  a5<span class="org-parenthesis">,</span>a5
+    <span class="org-comment-delimiter">#</span><span class="org-comment">~~~~~~~~~~~~</span>
+    <span class="org-comment-delimiter">#</span><span class="org-comment">...</span>
+    <span class="org-keyword">mv</span>      a0<span class="org-parenthesis">,</span>a5
+    <span class="org-comment-delimiter">#</span><span class="org-comment">...</span>
+    <span class="org-keyword">jr</span>      ra
+</pre>
+</div>
+
+<p>
+实际上 addw 包括 implicit sext, 所以 sext.w 并不需要:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">foo</span>:
+    <span class="org-keyword">addw</span>    a0<span class="org-parenthesis">,</span>a0<span class="org-parenthesis">,</span>a1
+    <span class="org-keyword">ret</span>
+</pre>
+</div>
+
+<p>
+这个优化只需要 md 中的一个 pattern 即可:
+</p>
+
+<pre class="example" id="org0000007">
+(define_insn "*addsi3_extended"
+  [(set (match_operand:DI               0 "register_operand" "=r,r")
+    (sign_extend:DI
+         (plus:SI (match_operand:SI 1 "register_operand" " r,r")
+              (match_operand:SI 2 "arith_operand"    " r,I"))))]
+  "TARGET_64BIT"
+  "add%i2w\t%0,%1,%2"
+  # %i2 是指 %2 是 immediate 时输出 `i`, 即 addiw, 否则输出 ``, 即 addw
+  [(set_attr "type" "arith")
+   (set_attr "mode" "SI")])
+</pre>
+
+<p>
+但目前 gcc (13.2.0) 还不能去掉所有多余的 sext, 例如
+</p>
+
+<p>
+<a href="https://github.com/riscv-collab/riscv-gcc/issues/152">Unnecessary sext.w after amoor.w in __atomic_fetch_or on RV64</a>
+</p>
+
+<p>
+除了修改 md 的 pattern 让它去掉多余的 sext，还可以通过单独的优化 pass 来完成这件事，例如：<a href="https://llvm.org/devmtg/2022-11/slides/TechTalk21-RISC-VSignExtensionOptimizations.pdf">RISC-V SExt W Removal</a>，基本思想是如果 sext.w 操作的寄存器是某个
+implicit sext 指令的输出，则这个 sext.w 是多余的。
+</p>
+
+<p>
+另外, sext.w 并非都是多余的, 因为有些指令没有 implicit sext, 例如 and 指令:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-type">int32_t</span> <span class="org-function-name">a0</span><span class="org-parenthesis">(</span><span class="org-type">int64_t</span> <span class="org-variable-name">a</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span> <span class="org-keyword">return</span> a; <span class="org-parenthesis">}</span>
+<span class="org-type">int32_t</span> <span class="org-function-name">a1</span><span class="org-parenthesis">(</span><span class="org-type">int64_t</span> <span class="org-variable-name">a</span><span class="org-parenthesis">,</span> <span class="org-type">int64_t</span> <span class="org-variable-name">b</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span> <span class="org-keyword">return</span> a &amp; b; <span class="org-parenthesis">}</span>
+<span class="org-type">int64_t</span> <span class="org-function-name">b1</span><span class="org-parenthesis">(</span><span class="org-type">int32_t</span> <span class="org-variable-name">a</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span> <span class="org-keyword">return</span> a; <span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">a0</span>:
+    <span class="org-keyword">sext.w</span>  a0<span class="org-parenthesis">,</span>a0
+    <span class="org-keyword">ret</span>
+<span class="org-function-name">a1</span>:
+    <span class="org-keyword">and</span>     a0<span class="org-parenthesis">,</span>a0<span class="org-parenthesis">,</span>a1
+    <span class="org-keyword">sext.w</span>  a0<span class="org-parenthesis">,</span>a0
+    <span class="org-keyword">ret</span>
+<span class="org-function-name">b1</span>:
+    <span class="org-keyword">ret</span>
+</pre>
+</div>
+
+<p>
+所以:
+</p>
+
+<ol class="org-ol">
+<li>int64_t 转换为 int32_t 时需要显式的 sext.w</li>
+<li>int32_t 转换为 int64_t 时不需要显式的 sext.w, 因为 gcc 假设 int32_t 本身就是
+sext</li>
+</ol>
+
+<p>
+另外, 是否需要 sext 还取决于数据的范围, 若能判断出 MSB 不为 1, 则不需要 sext, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-type">int32_t</span> <span class="org-function-name">b0</span><span class="org-parenthesis">(</span><span class="org-type">int64_t</span> <span class="org-variable-name">a</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span> <span class="org-keyword">return</span> a &amp; 1; <span class="org-parenthesis">}</span>
+<span class="org-type">int32_t</span> <span class="org-function-name">b1</span><span class="org-parenthesis">(</span><span class="org-type">int64_t</span> <span class="org-variable-name">a</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span> <span class="org-keyword">return</span> a &amp; 1 &lt;&lt; 30; <span class="org-parenthesis">}</span>
+<span class="org-type">int32_t</span> <span class="org-function-name">b2</span><span class="org-parenthesis">(</span><span class="org-type">int64_t</span> <span class="org-variable-name">a</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span> <span class="org-keyword">return</span> a &amp; 1 &lt;&lt; 31; <span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">b0</span>:
+        <span class="org-keyword">andi</span>    a0<span class="org-parenthesis">,</span>a0<span class="org-parenthesis">,</span>1
+        <span class="org-keyword">ret</span>
+<span class="org-function-name">b1</span>:
+        <span class="org-keyword">li</span>      a5<span class="org-parenthesis">,</span>1073741824
+        <span class="org-keyword">and</span>     a0<span class="org-parenthesis">,</span>a0<span class="org-parenthesis">,</span>a5
+        <span class="org-keyword">ret</span>
+<span class="org-function-name">b2</span>:
+        <span class="org-keyword">li</span>      a5<span class="org-parenthesis">,</span>-2147483648
+        <span class="org-keyword">and</span>     a0<span class="org-parenthesis">,</span>a0<span class="org-parenthesis">,</span>a5
+        <span class="org-keyword">sext.w</span>  a0<span class="org-parenthesis">,</span>a0
+        <span class="org-keyword">ret</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-ID-6e49e901-ce30-4e8c-8759-f5459e638ec4" class="outline-3">
+<h3 id="ID-6e49e901-ce30-4e8c-8759-f5459e638ec4"><span class="section-number-3">1.2.</span> zext</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+<a href="https://forums.sifive.com/t/how-can-i-repeat-the-coremark-score/1947">https://forums.sifive.com/t/how-can-i-repeat-the-coremark-score/1947</a>
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdint.h&gt;</span>
+
+<span class="org-preprocessor">#ifdef</span> BAD
+<span class="org-keyword">typedef</span> <span class="org-type">uint32_t</span> <span class="org-type">INT</span>;
+<span class="org-preprocessor">#else</span>
+<span class="org-keyword">typedef</span> <span class="org-type">int32_t</span> <span class="org-type">INT</span>;
+<span class="org-preprocessor">#endif</span>
+
+<span class="org-type">void</span> <span class="org-function-name">matrix_add_const</span><span class="org-parenthesis">(</span><span class="org-type">INT</span> <span class="org-variable-name">N</span><span class="org-parenthesis">,</span> <span class="org-type">INT</span> *<span class="org-variable-name">A</span><span class="org-parenthesis">,</span> <span class="org-type">INT</span> <span class="org-variable-name">val</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">INT</span> <span class="org-variable-name">i</span><span class="org-parenthesis">,</span> <span class="org-variable-name">j</span>;
+    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>i = 0; i &lt; N; i++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+        <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>j = 0; j &lt; N; j++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+            A[i * N + j] += val;
+        <span class="org-parenthesis">}</span>
+    <span class="org-parenthesis">}</span>
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org000000b">
+// good:
+// riscv64-linux-gnu-gcc-10 test.c -Ofast -c
+0000000000000000 &lt;matrix_add_const&gt;:
+   0:   02a05963                blez    a0,32 &lt;.L1&gt;
+   4:   fff5069b                addiw   a3,a0,-1
+   8:   1682                    slli    a3,a3,0x20
+   a:   82f9                    srli    a3,a3,0x1e
+   c:   00458793                addi    a5,a1,4
+  10:   00251893                slli    a7,a0,0x2
+  14:   96be                    add     a3,a3,a5
+  16:   4801                    li      a6,0
+
+0000000000000018 &lt;.L3&gt;:
+  18:   87ae                    mv      a5,a1 # a1 是 i*N
+
+000000000000001a &lt;.L4&gt;:
+  1a:   4398                    lw      a4,0(a5)
+  1c:   0791                    addi    a5,a5,4
+  1e:   9f31                    addw    a4,a4,a2
+  20:   fee7ae23                sw      a4,-4(a5)
+  24:   fef69be3                bne     a3,a5,1a &lt;.L4&gt;
+  28:   2805                    addiw   a6,a6,1
+  2a:   95c6                    add     a1,a1,a7
+  2c:   96c6                    add     a3,a3,a7
+  2e:   ff0515e3                bne     a0,a6,18 &lt;.L3&gt;
+
+0000000000000032 &lt;.L1&gt;:
+  32:   8082                    ret
+
+// bad:
+// riscv64-linux-gnu-gcc-10 test.c -Ofast -c -DBAD
+0000000000000000 &lt;matrix_add_const&gt;:
+   0:   882a                    mv      a6,a0
+   2:   4301                    li      t1,0
+   4:   4881                    li      a7,0
+   6:   c505                    beqz    a0,2e &lt;.L9&gt;
+
+0000000000000008 &lt;.L2&gt;:
+   8:   871a                    mv      a4,t1
+
+000000000000000a &lt;.L4&gt;:
+
+,---- 计算偏移量时需要做无符号扩展
+|    a:   02071793                slli    a5,a4,0x20
+|    e:   83f9                    srli    a5,a5,0x1e
+`----
+  10:   97ae                    add     a5,a5,a1
+  12:   4394                    lw      a3,0(a5)
+  14:   2705                    addiw   a4,a4,1
+  16:   9eb1                    addw    a3,a3,a2
+  18:   c394                    sw      a3,0(a5)
+  1a:   fee818e3                bne     a6,a4,a &lt;.L4&gt;
+  1e:   2885                    addiw   a7,a7,1
+  20:   0065033b                addw    t1,a0,t1
+  24:   0105083b                addw    a6,a0,a6
+  28:   ff1510e3                bne     a0,a7,8 &lt;.L2&gt;
+  2c:   8082                    ret
+</pre>
+
+<p>
+rv64 下 uint32_t 需要显式的无符号扩展的场景有:
+</p>
+
+<ol class="org-ol">
+<li><p>
+uint32 -&gt; 64
+</p>
+
+<p>
+例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdint.h&gt;</span>
+
+<span class="org-type">int64_t</span> <span class="org-function-name">foo</span><span class="org-parenthesis">(</span><span class="org-type">uint32_t</span> <span class="org-variable-name">N</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span> <span class="org-keyword">return</span> N; <span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org000000c">
+0000000000000000 &lt;foo&gt;:
+   0:   1502                    slli    a0,a0,0x20
+   2:   9101                    srli    a0,a0,0x20
+   4:   8082                    ret
+</pre></li>
+
+<li>像上面的例子, 做为地址使用. 实际上也是 uint32_t -&gt; 64, 因为 riscv 内存寻址时必须使用整个基地址寄存器的所有 bit (例如它没有办法只使用 a0 的低 32 位)</li>
+
+<li>&#x2026;</li>
+</ol>
+
+<p>
+上面的问题最根本的原因是, int32_t/uint32_t 的在做为地址时需要扩展成 64bit, 而
+riscv 大部分指令会自动做符号扩展, 所以针对 int32_t 的符号扩展可以省掉, 但无符号扩展则必须通过显式的 zext 类指令(例如 slli+srli), 所以 rv64 上涉及访存的变量用
+int32_t 性能好于 uint32_t. 实际上我们应当使用 size_t 来索引数组(rv64 下 size_t
+为 uint64_t, rv32 下 size_t 为 uint32_t)
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000000e" class="outline-3">
+<h3 id="org000000e"><span class="section-number-3">1.3.</span> 总结</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+除非使用了支持 implicit sext 的指令, 数据转型时可能需要用到 sext/zext 指令, 包括以下的情形:
+</p>
+
+<pre class="example" id="org000000d">
+,---- 64 -&gt; 32 时需要 sext.w, 因为 gcc 假设 32 位数据一定经过 sext, 即使是 uint32
+|
+| int32_t a0(int64_t a) { return a; }
+| uint32_t a1(int64_t a) { return a; }
+| int32_t a2(uint64_t a) { return a; }
+| uint32_t a3(uint64_t a) { return a; }
+|
+| a0:
+|         sext.w  a0,a0
+|         ret
+| a1:
+|         sext.w  a0,a0
+|         ret
+| a2:
+|         sext.w  a0,a0
+|         ret
+| a3:
+|         sext.w  a0,a0
+|         ret
+`----
+
+,---- int32 -&gt; 64 不需要 sext.w, 因为 gcc 认为 int32 本身已经是经过 sext
+|
+| int64_t b0(int32_t a) { return a; }
+| uint64_t b1(int32_t a) { return a; }
+|
+| b0:
+|         ret
+| b1:
+|         ret
+`----
+
+,---- uint32 -&gt; 64 时需要 zext.w, 因为 gcc 假设 uint32 没有经过 zext.
+|
+| int64_t b2(uint32_t a) { return a; }
+| uint64_t b3(uint32_t a) { return a; }
+|
+| b2:
+|         slli    a0,a0,32
+|         srli    a0,a0,32
+|         ret
+| b3:
+|         slli    a0,a0,32
+|         srli    a0,a0,32
+|         ret
+`----
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000011" class="outline-3">
+<h3 id="org0000011"><span class="section-number-3">1.4.</span> 其它</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+由于符号扩展会在高位加入符号位, 所以涉及 bit 操作时用 signed 则可能出错, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-comment-delimiter">// </span><span class="org-comment">2023-04-27 20:48</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdint.h&gt;</span>
+<span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
+
+<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int8_t</span> <span class="org-variable-name">tmp</span> = -1;
+    <span class="org-type">int8_t</span> <span class="org-variable-name">sign</span> = tmp &amp; <span class="org-parenthesis">(</span>1 &lt;&lt; 7<span class="org-parenthesis">)</span>;
+    <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: gcc &#20808;&#25226;&#24038;&#20391; sign &#31526;&#21495;&#25193;&#23637;&#25104; int32_t, &#20026; 0xffffff80, &#21491;&#20391;&#20063;&#26159;&#20197;</span>
+<span class="org-comment">     * int32_t &#20026;&#35745;&#31639;, &#23548;&#33268;&#32467;&#26524;&#20026; 0x00000080. &#22914;&#26524; int8_t &#25442;&#25104; uint8_t &#21017;&#27809;&#26377;&#38382;</span>
+<span class="org-comment">     * &#39064;, &#22240;&#20026;&#27809;&#26377;&#31526;&#21495;&#25193;&#23637;. &#25152;&#20197; bit &#25805;&#20316;&#26368;&#22909;&#29992; unsigned</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>sign == <span class="org-parenthesis">(</span>tmp &amp; <span class="org-parenthesis">(</span>1 &lt;&lt; 7<span class="org-parenthesis">)))</span> <span class="org-parenthesis">{</span>
+        printf<span class="org-parenthesis">(</span><span class="org-string">"ok\n"</span><span class="org-parenthesis">)</span>;
+    <span class="org-parenthesis">}</span>
+    <span class="org-keyword">return</span> 0;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<p>
+综上, 由于有符号/无符号扩展的原因, riscv 用 signed int 可能性能好一些, 但
+unsigned int 更不容易出一些奇怪的错误.
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-11-17 Fri 11:42<br />
+Last updated: 2024-01-11 Thu 16:48</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
