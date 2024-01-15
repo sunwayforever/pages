@@ -30,38 +30,79 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents" role="doc-toc">
 <ul>
-<li><a href="#org000001a">1. SEXT and ZEXT in RISCV-V</a>
+<li><a href="#org000001d">1. SEXT and ZEXT in RISCV-V</a>
 <ul>
-<li><a href="#ID-e39f8091-2455-4ec1-8d65-bd9c33582a64">1.1. sext</a>
+<li><a href="#org0000000">1.1. overview</a></li>
+<li><a href="#ID-e39f8091-2455-4ec1-8d65-bd9c33582a64">1.2. sext</a>
 <ul>
-<li><a href="#org0000008">1.1.1. implicit sext</a></li>
-<li><a href="#org000000e">1.1.2. sext in gcc</a></li>
+<li><a href="#org0000009">1.2.1. implicit sext</a></li>
+<li><a href="#org0000011">1.2.2. sext in gcc</a></li>
 </ul>
 </li>
-<li><a href="#ID-6e49e901-ce30-4e8c-8759-f5459e638ec4">1.2. zext</a></li>
-<li><a href="#org0000014">1.3. 数据转型</a></li>
-<li><a href="#org0000017">1.4. 其它</a></li>
+<li><a href="#ID-6e49e901-ce30-4e8c-8759-f5459e638ec4">1.3. zext</a></li>
+<li><a href="#org0000017">1.4. 数据转型</a></li>
+<li><a href="#org000001a">1.5. 其它</a></li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-org000001a" class="outline-2">
-<h2 id="org000001a"><span class="section-number-2">1.</span> SEXT and ZEXT in RISCV-V</h2>
+<div id="outline-container-org000001d" class="outline-2">
+<h2 id="org000001d"><span class="section-number-2">1.</span> SEXT and ZEXT in RISCV-V</h2>
 <div class="outline-text-2" id="text-1">
 </div>
-<div id="outline-container-ID-e39f8091-2455-4ec1-8d65-bd9c33582a64" class="outline-3">
-<h3 id="ID-e39f8091-2455-4ec1-8d65-bd9c33582a64"><span class="section-number-3">1.1.</span> sext</h3>
+<div id="outline-container-org0000000" class="outline-3">
+<h3 id="org0000000"><span class="section-number-3">1.1.</span> overview</h3>
 <div class="outline-text-3" id="text-1-1">
+<p>
+RISC-V 所有 GPR 都是 XLEN 长度, 导致不同宽度的整型数据进行转换时, 会涉及到
+sext/zext 的问题. 以 rv64 为例, 由于不存在 32 位(以及 16/8 位)的 GPR, 导致
+32/16/8 位整数必需通过 sext/zext 保存在 64 位 GPR 中.
+</p>
+
+<p>
+例如:
+</p>
+
+<ol class="org-ol">
+<li>int32 的 0x00000000f0000000 转换为 int64 时需要通过 sext 变成
+0xfffffffff0000000</li>
+
+<li>uint32 的 0x00000000f0000000 转换为 int64 时需要通过 zext 变成
+0x00000000f0000000</li>
+
+<li>int64 的 0x00000000f0000000 转换成 int32 需要通过 sext 变成 0xfffffffff0000000</li>
+
+<li>uint64 的 0xfffffffff0000000 转换成 uint32 需要通过 zext 变成
+0x00000000f0000000</li>
+</ol>
+
+
+<p>
+为了消除 sext:
+</p>
+
+<ol class="org-ol">
+<li>RISC-V 提供了一些带有 implicit sext 功能的指令</li>
+
+<li>RISC-V psABI 规定函数参数必须是经过 sext 的, 不需要再对它做 sext</li>
+
+<li>通过一些优化, 可以去掉一些不必要的 sext/zext</li>
+</ol>
+</div>
 </div>
 
-<div id="outline-container-org0000008" class="outline-4">
-<h4 id="org0000008"><span class="section-number-4">1.1.1.</span> implicit sext</h4>
-<div class="outline-text-4" id="text-1-1-1">
+<div id="outline-container-ID-e39f8091-2455-4ec1-8d65-bd9c33582a64" class="outline-3">
+<h3 id="ID-e39f8091-2455-4ec1-8d65-bd9c33582a64"><span class="section-number-3">1.2.</span> sext</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+
+<div id="outline-container-org0000009" class="outline-4">
+<h4 id="org0000009"><span class="section-number-4">1.2.1.</span> implicit sext</h4>
+<div class="outline-text-4" id="text-1-2-1">
 <p>
-有些 RISC-V 指令(大部分都带 w 后缀, 除了 lui, lh, lb 等)只会写目的寄存器的一部分,
-例如低 32 位, 寄存器中没有被写的部分需会通过隐式的 sext 补上符号位, 而不是保留原来的数据. 例如:
+有些 RISC-V 指令(大部分都带 w 后缀, 除了 lui, lh, lb 等)只会写目的寄存器的一部分,例如低 32 位, 寄存器中没有被写部分会通过隐式的 sext 补上符号位, 而不是保留原来的数据. 例如:
 </p>
 
 <div class="org-src-container">
@@ -85,7 +126,7 @@
 load 数据的宽度小于 XLEN 时, 例如 lh, lb 以及 rv64 的 lw
 </p>
 
-<pre class="example" id="org0000000">
+<pre class="example" id="org0000003">
 x[rd] = sext(M[x[rs1] + sext(offset)][31:0])
 </pre>
 
@@ -102,7 +143,7 @@ lui (rv64)
 和 load 指令类似, 只不过要 load 的数据来自立即数
 </p>
 
-<pre class="example" id="org0000001">
+<pre class="example" id="org0000004">
 x[rd] = sext(immediate[31:12] &lt;&lt; 12)
 </pre></li>
 
@@ -110,7 +151,7 @@ x[rd] = sext(immediate[31:12] &lt;&lt; 12)
 rv64 中的 xxxw 指令, 例如 addiw, slliw, mulw, amoxor.w, &#x2026;
 </p>
 
-<pre class="example" id="org0000002">
+<pre class="example" id="org0000005">
 x[rd] = sext((x[rs1] + sext(immediate))[31:0])
 </pre></li>
 
@@ -118,20 +159,20 @@ x[rd] = sext((x[rs1] + sext(immediate))[31:0])
 rv{32,64}{f,d} 中的 xxx.x.w, 例如 fmv.x.w
 </p>
 
-<pre class="example" id="org0000003">
+<pre class="example" id="org0000006">
 x[rd] = sext(f[rs1][31:0])
 </pre></li>
 </ol>
 </div>
 </div>
 
-<div id="outline-container-org000000e" class="outline-4">
-<h4 id="org000000e"><span class="section-number-4">1.1.2.</span> sext in gcc</h4>
-<div class="outline-text-4" id="text-1-1-2">
+<div id="outline-container-org0000011" class="outline-4">
+<h4 id="org0000011"><span class="section-number-4">1.2.2.</span> sext in gcc</h4>
+<div class="outline-text-4" id="text-1-2-2">
 </div>
-<div id="outline-container-org0000009" class="outline-5">
-<h5 id="org0000009"><span class="section-number-5">1.1.2.1.</span> implicit sext</h5>
-<div class="outline-text-5" id="text-1-1-2-1">
+<div id="outline-container-org000000b" class="outline-5">
+<h5 id="org000000b"><span class="section-number-5">1.2.2.1.</span> implicit sext</h5>
+<div class="outline-text-5" id="text-1-2-2-1">
 <p>
 gcc 涉及到类型转换时本来需要生成 sext 指令, 但由于 implicit sext, 这些 sext 实际上并没有必要, 例如
 </p>
@@ -171,7 +212,7 @@ gcc 涉及到类型转换时本来需要生成 sext 指令, 但由于 implicit s
 这个优化只需要 md 中的一个 pattern 即可:
 </p>
 
-<pre class="example" id="org0000007">
+<pre class="example" id="org000000a">
 (define_insn "*addsi3_extended"
   [(set (match_operand:DI               0 "register_operand" "=r,r")
     (sign_extend:DI
@@ -199,9 +240,9 @@ gcc 涉及到类型转换时本来需要生成 sext 指令, 但由于 implicit s
 </div>
 </div>
 
-<div id="outline-container-org000000b" class="outline-5">
-<h5 id="org000000b"><span class="section-number-5">1.1.2.2.</span> explicit sext</h5>
-<div class="outline-text-5" id="text-1-1-2-2">
+<div id="outline-container-org000000e" class="outline-5">
+<h5 id="org000000e"><span class="section-number-5">1.2.2.2.</span> explicit sext</h5>
+<div class="outline-text-5" id="text-1-2-2-2">
 <p>
 指令没有 implicit sext 时, 需要显式的 sext:
 </p>
@@ -272,8 +313,8 @@ gcc 涉及到类型转换时本来需要生成 sext 指令, 但由于 implicit s
 </div>
 
 <div id="outline-container-ID-6e49e901-ce30-4e8c-8759-f5459e638ec4" class="outline-3">
-<h3 id="ID-6e49e901-ce30-4e8c-8759-f5459e638ec4"><span class="section-number-3">1.2.</span> zext</h3>
-<div class="outline-text-3" id="text-1-2">
+<h3 id="ID-6e49e901-ce30-4e8c-8759-f5459e638ec4"><span class="section-number-3">1.3.</span> zext</h3>
+<div class="outline-text-3" id="text-1-3">
 <p>
 <a href="https://forums.sifive.com/t/how-can-i-repeat-the-coremark-score/1947">https://forums.sifive.com/t/how-can-i-repeat-the-coremark-score/1947</a>
 </p>
@@ -298,7 +339,7 @@ gcc 涉及到类型转换时本来需要生成 sext 指令, 但由于 implicit s
 </pre>
 </div>
 
-<pre class="example" id="org0000011">
+<pre class="example" id="org0000014">
 // good:
 // riscv64-linux-gnu-gcc-10 test.c -Ofast -c
 0000000000000000 &lt;matrix_add_const&gt;:
@@ -378,7 +419,7 @@ uint32 -&gt; 64
 </pre>
 </div>
 
-<pre class="example" id="org0000012">
+<pre class="example" id="org0000015">
 0000000000000000 &lt;foo&gt;:
    0:   1502                    slli    a0,a0,0x20
    2:   9101                    srli    a0,a0,0x20
@@ -399,9 +440,9 @@ int32_t 性能好于 uint32_t. 实际上我们应当使用 size_t 来索引数�
 </div>
 </div>
 
-<div id="outline-container-org0000014" class="outline-3">
-<h3 id="org0000014"><span class="section-number-3">1.3.</span> 数据转型</h3>
-<div class="outline-text-3" id="text-1-3">
+<div id="outline-container-org0000017" class="outline-3">
+<h3 id="org0000017"><span class="section-number-3">1.4.</span> 数据转型</h3>
+<div class="outline-text-3" id="text-1-4">
 <p>
 许多情况下 sext/zext 都是因为参数和返回值的数据转型导致的, riscv psABI 中关于参数和返回值的 sext 规定:
 </p>
@@ -420,7 +461,7 @@ to XLEN bits.
 数据转型包括以下的情形:
 </p>
 
-<pre class="example" id="org0000013">
+<pre class="example" id="org0000016">
 ,---- 64 -&gt; 32 时需要 sext.w, 因为 psABI 规定比 XLEN 窄的返回值一定经过 sext, 即使是 uint32
 |
 | int32_t a0(int64_t a) { return a; }
@@ -471,9 +512,9 @@ to XLEN bits.
 </div>
 </div>
 
-<div id="outline-container-org0000017" class="outline-3">
-<h3 id="org0000017"><span class="section-number-3">1.4.</span> 其它</h3>
-<div class="outline-text-3" id="text-1-4">
+<div id="outline-container-org000001a" class="outline-3">
+<h3 id="org000001a"><span class="section-number-3">1.5.</span> 其它</h3>
+<div class="outline-text-3" id="text-1-5">
 <p>
 由于符号扩展会在高位加入符号位, 所以涉及 bit 操作时用 signed 则可能出错, 例如:
 </p>
@@ -509,7 +550,7 @@ unsigned int 更不容易出一些奇怪的错误.
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-11-17 Fri 11:42<br />
-Last updated: 2024-01-12 Fri 17:48</p>
+Last updated: 2024-01-15 Mon 11:01</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
