@@ -94,34 +94,44 @@ buffer) 会保证指令的 commit (例如内存的写回) 时按程序的顺序�
 <div class="outline-text-4" id="text-1-1-1">
 <p>
 由于存在 store buffer, invalidate queue, 可以对内存访问进行 defer 或
-combine, 因此存在三种不同的 barrier:
+combine, 因此存在三种不同的 barrier
 </p>
-
-<pre class="example" id="org0000000">
-X
---- barrier ---
-Y
-</pre>
 </div>
 
 <div id="outline-container-org0000001" class="outline-5">
 <h5 id="org0000001"><span class="section-number-5">1.1.1.1.</span> general barrier</h5>
 <div class="outline-text-5" id="text-1-1-1-1">
+<pre class="example" id="org0000000">
+X
+--- barrier ---
+Y
+</pre>
+
 <p>
-flush store buffer 和 invalidate queue, Y 处总是能看到最新的 X 的结果
+flush store buffer 和 invalidate queue, 即 barrier, 之前 (X), 之后 (Y) 三者的顺序在其它 core 看起来保持不变
 </p>
 </div>
 </div>
 
-<div id="outline-container-org0000004" class="outline-5">
-<h5 id="org0000004"><span class="section-number-5">1.1.1.2.</span> read barrier</h5>
+<div id="outline-container-org0000005" class="outline-5">
+<h5 id="org0000005"><span class="section-number-5">1.1.1.2.</span> read barrier</h5>
 <div class="outline-text-5" id="text-1-1-1-2">
 <p>
-flush invalidate queue, Y 处会重新从内存读被 invalidate 的数据, 但未必能读到最新的数据 (取决于另一个 core 是否使用了 write barrier 来 flush store buffer).
+flush invalidate queue, Y 处会重新从内存读被 invalidate 的数据 (但未必能读到最新的数据, 取决于另一个 core 是否使用了 write barrier 来 flush store buffer).
 </p>
 
 <p>
-riscv 中带 `aq` 后缀的原子指令 (amo/lr/sc) 相当于一个 read (acquire) barrier
+riscv 中带 `aq` 后缀的原子指令 (amo/lr/sc) 相当于一个 read (acquire) barrier, 保证如下情况不会发生:
+</p>
+
+<pre class="example" id="org0000004">
+X
+Y
+--- barrier ---
+</pre>
+
+<p>
+即 barrier 自身与 barrier 之后的指令两者的顺序在其它 core 看起来保持不变, 例如保证先读 lr, 再读 Y.
 </p>
 </div>
 </div>
@@ -134,7 +144,17 @@ flush store buffer, 例如 X 处的写操作会写到内存.
 </p>
 
 <p>
-riscv 中带 `rl` 后缀的原子指令 (amo/lr/sc) 相当于一个 write (release) barrier
+riscv 中带 `rl` 后缀的原子指令 (amo/lr/sc) 相当于一个 write (release) barrier, 保证如下情况不会发生:
+</p>
+
+<pre class="example" id="org0000008">
+--- barrier ---
+X
+Y
+</pre>
+
+<p>
+即 barrier 自身与 barrier 之前的指令两者的顺序在其它 core 看起来保持不变, 例如保证先写 X, 再写 sc
 </p>
 </div>
 </div>
@@ -143,6 +163,10 @@ riscv 中带 `rl` 后缀的原子指令 (amo/lr/sc) 相当于一个 write (relea
 <div id="outline-container-org000000d" class="outline-4">
 <h4 id="org000000d"><span class="section-number-4">1.1.2.</span> example</h4>
 <div class="outline-text-4" id="text-1-1-2">
+<p>
+通过 aq, rl, 可以解决前面提到的代码中的问题:
+</p>
+
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-comment-delimiter">// </span><span class="org-comment">thread 1</span>
 result = 2;
@@ -193,7 +217,7 @@ store 隐含着 rl 等. RVTSO 主要是为了与 x86 兼容.
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-07-24 Mon 17:06<br />
-Last updated: 2024-01-18 Thu 16:35</p>
+Last updated: 2024-01-18 Thu 18:14</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
