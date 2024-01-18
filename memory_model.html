@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>Memory Model</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">Memory Model</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000016">1. Memory Model</a>
+<ul>
+<li><a href="#ID-ff35b663-fd3f-4ffb-9273-b2dfe4c741b8">1.1. barrier</a>
+<ul>
+<li><a href="#org000000a">1.1.1. MESI</a></li>
+<li><a href="#org000000d">1.1.2. example</a></li>
+</ul>
+</li>
+<li><a href="#org0000013">1.2. RISC-V memory model</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000016" class="outline-2">
+<h2 id="org0000016"><span class="section-number-2">1.</span> Memory Model</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-ID-ff35b663-fd3f-4ffb-9273-b2dfe4c741b8" class="outline-3">
+<h3 id="ID-ff35b663-fd3f-4ffb-9273-b2dfe4c741b8"><span class="section-number-3">1.1.</span> barrier</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+<a href="https://mariadb.org/wp-content/uploads/2017/11/2017-11-Memory-barriers.pdf">https://mariadb.org/wp-content/uploads/2017/11/2017-11-Memory-barriers.pdf</a>
+</p>
+
+<p>
+<a href="https://www.kernel.org/doc/Documentation/memory-barriers.txt">https://www.kernel.org/doc/Documentation/memory-barriers.txt</a>
+</p>
+
+<p>
+出于性能考虑, cpu 可以对内存访问进行各种优化, 例如 reorder, defer, combine 等,
+通过 barrier 可以对这些优化进行限制, 以避免产生错误的程序, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-comment-delimiter">/* </span><span class="org-comment">thread1</span><span class="org-comment-delimiter"> */</span>
+result = 2;
+ready = 1;
+
+<span class="org-comment-delimiter">// </span><span class="org-comment">thread 2</span>
+<span class="org-keyword">while</span> <span class="org-parenthesis">(</span>ready != 1<span class="org-parenthesis">)</span>
+    ;
+<span class="org-function-name">assert</span><span class="org-parenthesis">(</span>result == 2<span class="org-parenthesis">)</span>;
+</pre>
+</div>
+
+<p>
+由于 reorder 的存在, 上述代码可能会 abort.
+</p>
+
+<p>
+另外, 关于 reorder, 并非是两个指令通过乱序执行交换了顺序. 因为 ROB (reorder
+buffer) 会保证指令的 commit (例如内存的写回) 时按程序的顺序执行. 但`内存写回`和
+`内存对其它 core 可见`并非一回事. 这里的 `reorder` 主要是指由于 memory hierarchy
+的关系 (cache, store buffer, &#x2026;), 其它 core 会看到不同的顺序, 和 cpu 的乱序执行无关, 而是和 memory model 有关.
+</p>
+</div>
+
+<div id="outline-container-org000000a" class="outline-4">
+<h4 id="org000000a"><span class="section-number-4">1.1.1.</span> MESI</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+由于存在 store buffer, invalidate queue, 可以对内存访问进行 defer 或
+combine, 因此存在三种不同的 barrier:
+</p>
+
+<pre class="example" id="org0000000">
+X
+--- barrier ---
+Y
+</pre>
+</div>
+
+<div id="outline-container-org0000001" class="outline-5">
+<h5 id="org0000001"><span class="section-number-5">1.1.1.1.</span> general barrier</h5>
+<div class="outline-text-5" id="text-1-1-1-1">
+<p>
+flush store buffer 和 invalidate queue, Y 处总是能看到最新的 X 的结果
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000004" class="outline-5">
+<h5 id="org0000004"><span class="section-number-5">1.1.1.2.</span> read barrier</h5>
+<div class="outline-text-5" id="text-1-1-1-2">
+<p>
+flush invalidate queue, Y 处会重新从内存读被 invalidate 的数据, 但未必能读到最新的数据 (取决于另一个 core 是否使用了 write barrier 来 flush store buffer).
+</p>
+
+<p>
+riscv 中带 `aq` 后缀的原子指令 (amo/lr/sc) 相当于一个 read (acquire) barrier
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000007" class="outline-5">
+<h5 id="org0000007"><span class="section-number-5">1.1.1.3.</span> write barrier</h5>
+<div class="outline-text-5" id="text-1-1-1-3">
+<p>
+flush store buffer, 例如 X 处的写操作会写到内存.
+</p>
+
+<p>
+riscv 中带 `rl` 后缀的原子指令 (amo/lr/sc) 相当于一个 write (release) barrier
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000000d" class="outline-4">
+<h4 id="org000000d"><span class="section-number-4">1.1.2.</span> example</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-comment-delimiter">// </span><span class="org-comment">thread 1</span>
+result = 2;
+store<span class="org-parenthesis">(</span>&amp;ready<span class="org-parenthesis">,</span> 1<span class="org-parenthesis">,</span> RELEASE<span class="org-parenthesis">)</span>;
+
+<span class="org-comment-delimiter">// </span><span class="org-comment">thread 2</span>
+<span class="org-keyword">while</span> <span class="org-parenthesis">(</span>load<span class="org-parenthesis">(</span>&amp;ready<span class="org-parenthesis">,</span> ACQUIRE<span class="org-parenthesis">)</span> != 1<span class="org-parenthesis">)</span>
+    ;
+<span class="org-function-name">assert</span><span class="org-parenthesis">(</span>result == 2<span class="org-parenthesis">)</span>;
+</pre>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org0000010" class="outline-4 references">
+<h4 id="org0000010">Backlinks</h4>
+<div class="outline-text-4" id="text-org0000010">
+<p>
+<a href="riscv/riscv_tutorial.html#ID-69861e6c-ed76-4e86-ab9d-24f98e5334f4">CAS</a>
+(<i>RISC-V Tutorial &gt; Standard Extention &gt; RV32A &gt; CAS</i>):  另外, AMO 和 LR/SC 都支持额外的 ordering 信息 (aq/rl), 可以做为 <a href="#ID-ff35b663-fd3f-4ffb-9273-b2dfe4c741b8">barrier</a> 使用
+</p>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org0000013" class="outline-3">
+<h3 id="org0000013"><span class="section-number-3">1.2.</span> RISC-V memory model</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+<a href="https://riscv.org/wp-content/uploads/2018/05/14.25-15.00-RISCVMemoryModelTutorial.pdf">https://riscv.org/wp-content/uploads/2018/05/14.25-15.00-RISCVMemoryModelTutorial.pdf</a>
+</p>
+
+<p>
+RVWMO 定义了一种宽松的 memory model, 性能会更好, 同时要求代码中使用 aq/rl 进行更精细的控制.
+</p>
+
+<p>
+RVTSO 比 RVWMO 严格一些, 同时性能也会差一些, 例如所有的 load 隐含着 aq, 所有的
+store 隐含着 rl 等. RVTSO 主要是为了与 x86 兼容.
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2023-07-24 Mon 17:06<br />
+Last updated: 2024-01-18 Thu 16:35</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
