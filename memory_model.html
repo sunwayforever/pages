@@ -34,8 +34,9 @@
 <ul>
 <li><a href="#ID-ff35b663-fd3f-4ffb-9273-b2dfe4c741b8">1.1. barrier</a>
 <ul>
-<li><a href="#org000000a">1.1.1. MESI</a></li>
-<li><a href="#org000000d">1.1.2. example</a></li>
+<li><a href="#org0000000">1.1.1. acquire barrier</a></li>
+<li><a href="#org0000003">1.1.2. release barrier</a></li>
+<li><a href="#org000000d">1.1.3. example</a></li>
 </ul>
 </li>
 <li><a href="#org0000013">1.2. RISC-V memory model</a></li>
@@ -61,120 +62,87 @@
 </p>
 
 <p>
-出于性能考虑, cpu 可以对内存访问进行各种优化, 例如 reorder, defer, combine 等,
+出于性能考虑, cpu/cache 等可以对内存访问进行各种优化, 例如 reorder, defer, combine 等,
 通过 barrier 可以对这些优化进行限制, 以避免产生错误的程序, 例如:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-C"><span class="org-comment-delimiter">/* </span><span class="org-comment">thread1</span><span class="org-comment-delimiter"> */</span>
-result = 2;
-ready = 1;
+<pre class="src src-C">1 <span class="org-comment-delimiter">/* </span><span class="org-comment">thread1</span><span class="org-comment-delimiter"> */</span>
+2 result = 2;
+3 atomic ready = 1;
 
-<span class="org-comment-delimiter">// </span><span class="org-comment">thread 2</span>
-<span class="org-keyword">while</span> <span class="org-parenthesis">(</span>ready != 1<span class="org-parenthesis">)</span>
-    ;
-<span class="org-function-name">assert</span><span class="org-parenthesis">(</span>result == 2<span class="org-parenthesis">)</span>;
+4 <span class="org-comment-delimiter">// </span><span class="org-comment">thread 2</span>
+5 <span class="org-keyword">while</span> <span class="org-parenthesis">(</span>ready != 1<span class="org-parenthesis">)</span>
+6    ;
+7 assert<span class="org-parenthesis">(</span>result == 2<span class="org-parenthesis">)</span>;
 </pre>
 </div>
 
 <p>
-由于 reorder 的存在, 上述代码可能会 abort.
+上述代码可能会 abort, 因为 2/3 可能 reorder, 5/7 可能 reorder.
 </p>
 
 <p>
-另外, 关于 reorder, 并非是两个指令通过乱序执行交换了顺序. 因为 ROB (reorder
-buffer) 会保证指令的 commit (例如内存的写回) 时按程序的顺序执行. 但`内存写回`和
-`内存对其它 core 可见`并非一回事. 这里的 `reorder` 主要是指由于 memory hierarchy
-的关系 (cache, store buffer, &#x2026;), 其它 core 会看到不同的顺序, 和 cpu 的乱序执行无关, 而是和 memory model 有关.
+所谓的 reorder, 并非是两个指令通过乱序执行交换了顺序. 因为 ROB (reorder buffer)
+会保证指令的 commit (例如内存的写回) 时按程序的顺序执行. 但`内存写回`和`内存对其它 core 可见`并非一回事. 这里的 `reorder` 主要是指 memory model (cache, store
+buffer, bus, &#x2026;) 导致内存的可见性针对不同的 core 不相同, 例如 thread1 先给
+result 赋值, 但 thread2 有可能先看到 ready 的赋值
+</p>
+
+<p>
+为了保证上面的结果正确, 需要保证:
+</p>
+
+<ol class="org-ol">
+<li>5/7 不能 reorder</li>
+<li>2/3 不能 reorder</li>
+</ol>
+
+<p>
+前者通过 acquire barrier 保证, 后者通过 release barrier 保证.
 </p>
 </div>
 
-<div id="outline-container-org000000a" class="outline-4">
-<h4 id="org000000a"><span class="section-number-4">1.1.1.</span> MESI</h4>
+<div id="outline-container-org0000000" class="outline-4">
+<h4 id="org0000000"><span class="section-number-4">1.1.1.</span> acquire barrier</h4>
 <div class="outline-text-4" id="text-1-1-1">
 <p>
-由于存在 store buffer, invalidate queue, 可以对内存访问进行 defer 或
-combine, 因此存在三种不同的 barrier
+acquire barrier (read barrier) 表示 barrier 前后的 read 操作不能交换位置.
 </p>
-</div>
-
-<div id="outline-container-org0000001" class="outline-5">
-<h5 id="org0000001"><span class="section-number-5">1.1.1.1.</span> general barrier</h5>
-<div class="outline-text-5" id="text-1-1-1-1">
-<pre class="example" id="org0000000">
-X
---- barrier ---
-Y
-</pre>
 
 <p>
-flush store buffer 和 invalidate queue, 即 barrier, 之前 (X), 之后 (Y) 三者的顺序在其它 core 看起来保持不变
+riscv 中带 `aq` 后缀的原子指令 (amo/lr) 相当于一个 acquire barrier, aq 自身与 aq
+之后的指令保持`顺序`不变, 即 `lr.aq; lw` 相当于 `lr; acquire_barrier; lw`
 </p>
 </div>
 </div>
 
-<div id="outline-container-org0000005" class="outline-5">
-<h5 id="org0000005"><span class="section-number-5">1.1.1.2.</span> read barrier</h5>
-<div class="outline-text-5" id="text-1-1-1-2">
+<div id="outline-container-org0000003" class="outline-4">
+<h4 id="org0000003"><span class="section-number-4">1.1.2.</span> release barrier</h4>
+<div class="outline-text-4" id="text-1-1-2">
 <p>
-flush invalidate queue, Y 处会重新从内存读被 invalidate 的数据 (但未必能读到最新的数据, 取决于另一个 core 是否使用了 write barrier 来 flush store buffer).
+riscv 中带 `rl` 后缀的原子指令 (amo/sc) 相当于一个 release barrier, rl 自身与 rl
+之前的指令保持`顺序`不变, 即 `sc.rl; sw` 相当于 `sc; release_barrier; sw`
 </p>
-
-<p>
-riscv 中带 `aq` 后缀的原子指令 (amo/lr/sc) 相当于一个 read (acquire) barrier, 保证如下情况不会发生:
-</p>
-
-<pre class="example" id="org0000004">
-X
-Y
---- barrier ---
-</pre>
-
-<p>
-即 barrier 自身与 barrier 之后的指令两者的顺序在其它 core 看起来保持不变, 例如保证先读 lr, 再读 Y.
-</p>
-</div>
-</div>
-
-<div id="outline-container-org0000007" class="outline-5">
-<h5 id="org0000007"><span class="section-number-5">1.1.1.3.</span> write barrier</h5>
-<div class="outline-text-5" id="text-1-1-1-3">
-<p>
-flush store buffer, 例如 X 处的写操作会写到内存.
-</p>
-
-<p>
-riscv 中带 `rl` 后缀的原子指令 (amo/lr/sc) 相当于一个 write (release) barrier, 保证如下情况不会发生:
-</p>
-
-<pre class="example" id="org0000008">
---- barrier ---
-X
-Y
-</pre>
-
-<p>
-即 barrier 自身与 barrier 之前的指令两者的顺序在其它 core 看起来保持不变, 例如保证先写 X, 再写 sc
-</p>
-</div>
 </div>
 </div>
 
 <div id="outline-container-org000000d" class="outline-4">
-<h4 id="org000000d"><span class="section-number-4">1.1.2.</span> example</h4>
-<div class="outline-text-4" id="text-1-1-2">
+<h4 id="org000000d"><span class="section-number-4">1.1.3.</span> example</h4>
+<div class="outline-text-4" id="text-1-1-3">
 <p>
-通过 aq, rl, 可以解决前面提到的代码中的问题:
+通过 aquire/release barrier, 可以解决前面提到的代码中的问题:
 </p>
 
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-comment-delimiter">// </span><span class="org-comment">thread 1</span>
 result = 2;
-store<span class="org-parenthesis">(</span>&amp;ready<span class="org-parenthesis">,</span> 1<span class="org-parenthesis">,</span> RELEASE<span class="org-parenthesis">)</span>;
+<span class="org-function-name">__release_barrier__</span><span class="org-parenthesis">()</span>;
+<span class="org-type">atomic</span> <span class="org-variable-name">ready</span> = 1;
 
 <span class="org-comment-delimiter">// </span><span class="org-comment">thread 2</span>
-<span class="org-keyword">while</span> <span class="org-parenthesis">(</span>load<span class="org-parenthesis">(</span>&amp;ready<span class="org-parenthesis">,</span> ACQUIRE<span class="org-parenthesis">)</span> != 1<span class="org-parenthesis">)</span>
-    ;
+<span class="org-keyword">while</span> <span class="org-parenthesis">(</span>ready != 1<span class="org-parenthesis">)</span> <span class="org-function-name">__acquire_barrier__</span><span class="org-parenthesis">()</span>;
+
 <span class="org-function-name">assert</span><span class="org-parenthesis">(</span>result == 2<span class="org-parenthesis">)</span>;
 </pre>
 </div>
@@ -217,7 +185,7 @@ store 隐含着 rl 等. RVTSO 主要是为了与 x86 兼容.
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2023-07-24 Mon 17:06<br />
-Last updated: 2024-01-18 Thu 18:14</p>
+Last updated: 2024-01-18 Thu 21:58</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
