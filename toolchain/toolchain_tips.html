@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>Toolchain Tips</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">Toolchain Tips</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000009">1. Toolchain Tips</a>
+<ul>
+<li><a href="#org0000001">1.1. toolchain triple</a></li>
+<li><a href="#org0000006">1.2. register spill</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000009" class="outline-2">
+<h2 id="org0000009"><span class="section-number-2">1.</span> Toolchain Tips</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org0000001" class="outline-3">
+<h3 id="org0000001"><span class="section-number-3">1.1.</span> toolchain triple</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+具体可以参考 llvm 的 Triple.cpp
+</p>
+
+<pre class="example" id="org0000000">
+&lt;arch&gt;  - &lt;vendor&gt; - &lt;os&gt;    - &lt;environment&gt; - &lt;object_format&gt;
+
+riscv64 - unknown  - linux   - gnu
+mips64  - mti      - windows - musl
+x86-64  - unknown                            - elf
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000006" class="outline-3">
+<h3 id="org0000006"><span class="section-number-3">1.2.</span> register spill</h3>
+<div class="outline-text-3" id="text-1-2">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-type">int</span> <span class="org-function-name">foo</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">a</span><span class="org-parenthesis">,</span> <span class="org-type">int</span> <span class="org-variable-name">b</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">int</span> <span class="org-variable-name">a0</span> = a + b;
+    <span class="org-type">int</span> <span class="org-variable-name">a1</span> = a - b;
+
+    <span class="org-type">int</span> <span class="org-variable-name">b0</span> = a0 + a;
+    <span class="org-type">int</span> <span class="org-variable-name">b1</span> = a1 - b;
+
+    <span class="org-type">int</span> <span class="org-variable-name">c0</span> = b0 + a0 + a;
+    <span class="org-type">int</span> <span class="org-variable-name">c1</span> = b1 - a1 - b;
+
+    <span class="org-type">int</span> <span class="org-variable-name">d0</span> = c0 + b0 + a0 + a;
+    <span class="org-type">int</span> <span class="org-variable-name">d1</span> = c1 - b1 - a1 - b;
+
+    <span class="org-type">int</span> <span class="org-variable-name">k</span> = d0 + d1 + a0 + b0;
+
+    <span class="org-keyword">return</span> a0 + b0 + c0 + d0 + a1 + b1 + c1 + d1 + k;
+<span class="org-parenthesis">}</span>
+</pre>
+</div>
+
+<pre class="example" id="org0000004">
+$&gt; riscv64-unknown-linux-gnu-gcc --version
+riscv64-unknown-linux-gnu-gcc () 13.2.0
+
+$&gt; riscv64-unknown-linux-gnu-gcc test.c -O2  -c -S \
+  -ffixed-s0 -ffixed-s1 -ffixed-s2 -ffixed-s3 -ffixed-s4 \
+  -ffixed-s5 -ffixed-s6 -ffixed-s7 -ffixed-s8 -ffixed-s9 \
+  -ffixed-s10 -ffixed-s11 -ffixed-t0 -ffixed-t1 -ffixed-t2 \
+  -ffixed-t3 -ffixed-t4 -ffixed-t5 -ffixed-t6
+
+$&gt; cat test.s
+
+foo:
+        addw    a2,a0,a1
+        addw    a5,a0,a2
+        addw    a7,a2,a5
+        addi    sp,sp,-16
+        addw    a3,a7,a0
+        sw      a5,12(sp)    &lt;------ spill
+        addw    a5,a5,a3
+        addw    a5,a5,a2
+        subw    a4,a0,a1
+        negw    a6,a1
+        addw    a0,a5,a0
+        addw    a3,a7,a3
+        subw    a5,a6,a4
+        addw    a3,a3,a0
+        addw    a3,a3,a4
+        subw    a5,a5,a4
+        subw    a4,a4,a1
+        addw    a4,a3,a4
+        subw    a3,a6,a1
+        subw    a5,a5,a1
+        addw    a4,a4,a3
+        addw    a0,a0,a5
+        addw    a4,a4,a5
+        lw      a5,12(sp)
+        addw    a0,a0,a2
+        addw    a0,a0,a5
+        addw    a0,a4,a0
+        addi    sp,sp,16
+        jr      ra
+</pre>
+
+<p>
+为了造成 spill, 需要让每个变量的使用范围 (live interval) 越大越好, 所以让每个局部变量都依赖前面所有的中间结果, 让 live interval 变成类似这种形式:
+</p>
+
+<pre class="example" id="org0000005">
+-------------------------
+  -----------------------
+    ---------------------
+      -------------------
+        -----------------
+          ---------------
+</pre>
+
+<p>
+所以为了避免 spill, 局部变量的作用域需要越小越好.
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2024-01-16 Tue 17:04<br />
+Last updated: 2024-01-26 Fri 16:05</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
