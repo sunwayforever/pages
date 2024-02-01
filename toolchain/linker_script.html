@@ -30,31 +30,30 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents" role="doc-toc">
 <ul>
-<li><a href="#org000003d">1. Linker Script</a>
+<li><a href="#org0000039">1. Linker Script</a>
 <ul>
 <li><a href="#org0000001">1.1. 一个简单的 linker script 的例子</a></li>
-<li><a href="#org0000004">1.2. SECTIONS</a></li>
-<li><a href="#org0000012">1.3. symbol</a>
+<li><a href="#org0000005">1.2. SECTIONS</a></li>
+<li><a href="#org0000013">1.3. symbol</a>
 <ul>
-<li><a href="#org0000008">1.3.1. 直接赋值</a></li>
-<li><a href="#org000000c">1.3.2. PROVIDE</a></li>
-<li><a href="#org000000f">1.3.3. PIE</a></li>
+<li><a href="#org0000009">1.3.1. 直接赋值</a></li>
+<li><a href="#org000000d">1.3.2. PROVIDE</a></li>
+<li><a href="#org0000010">1.3.3. PIE</a></li>
 </ul>
 </li>
-<li><a href="#org0000015">1.4. Arithmetic Functions</a></li>
-<li><a href="#org0000018">1.5. ENTRY</a></li>
-<li><a href="#org000001b">1.6. KEEP</a></li>
-<li><a href="#org000002f">1.7. AT</a>
+<li><a href="#org0000016">1.4. Arithmetic Functions</a></li>
+<li><a href="#org0000019">1.5. ENTRY</a></li>
+<li><a href="#org000001c">1.6. KEEP</a></li>
+<li><a href="#org000002b">1.7. AT</a>
 <ul>
-<li><a href="#org0000020">1.7.1. 通过指定 location counter 并不能造成 elf 中的空洞</a></li>
-<li><a href="#org0000024">1.7.2. objcopy 生成过大的 binary</a></li>
-<li><a href="#org000002c">1.7.3. 使用 AT 避免过大的 binary</a></li>
+<li><a href="#org0000024">1.7.1. 使用 AT 避免过大的 binary</a></li>
+<li><a href="#org0000028">1.7.2. 使用 AT 加载 rom</a></li>
 </ul>
 </li>
-<li><a href="#org000003a">1.8. misc</a>
+<li><a href="#org0000036">1.8. misc</a>
 <ul>
-<li><a href="#org0000033">1.8.1. how to get the default linker script</a></li>
-<li><a href="#org0000037">1.8.2. how to use linker script</a></li>
+<li><a href="#org000002f">1.8.1. how to get the default linker script</a></li>
+<li><a href="#org0000033">1.8.2. how to use linker script</a></li>
 </ul>
 </li>
 </ul>
@@ -63,8 +62,8 @@
 </div>
 </div>
 
-<div id="outline-container-org000003d" class="outline-2">
-<h2 id="org000003d"><span class="section-number-2">1.</span> Linker Script</h2>
+<div id="outline-container-org0000039" class="outline-2">
+<h2 id="org0000039"><span class="section-number-2">1.</span> Linker Script</h2>
 <div class="outline-text-2" id="text-1">
 </div>
 <div id="outline-container-org0000001" class="outline-3">
@@ -93,7 +92,7 @@ int main(int argc, char *argv[]) {
     printf("%x\n", &amp;xxx);
 }
 
-$&gt; arm-linux-androideabi-gcc test.c -fPIE -pie -O0 -g3 -T test.lds 
+$&gt; arm-linux-androideabi-gcc test.c -fPIE -pie -O0 -g3 -T test.lds
 
 $&gt; ./a.out
 b886b012
@@ -140,15 +139,15 @@ $&gt; arm-linux-androideabi-objdum -D ./a.out
 </div>
 </div>
 
-<div id="outline-container-org0000004" class="outline-3">
-<h3 id="org0000004"><span class="section-number-3">1.2.</span> SECTIONS</h3>
+<div id="outline-container-org0000005" class="outline-3">
+<h3 id="org0000005"><span class="section-number-3">1.2.</span> SECTIONS</h3>
 <div class="outline-text-3" id="text-1-2">
 <p>
 SECTIONS 是 linker script 最主要的部分, 通过 SECTIONS 把多个文件的
 section 合并成一个 section, 并指定 section 的地址, 例如:
 </p>
 
-<pre class="example">
+<pre class="example" id="org0000004">
 SECTIONS {
     /* 所有输入文件的 .text section 被合并在输出文件的 .text section 中
     * , 并且 .text section 的 vaddr 为 0x20000 */
@@ -176,6 +175,16 @@ SECTIONS {
     .tmp : {
         *(.bss)
     }
+    // section 可以通过 `&gt;` 使用其它的 memory region, 而非默认的 memory region,
+    // 例如 .tmp2 会被放在 ram 的开头, 前面指定的 location counter 不影响 ram
+    // section 还可以通过 AT(xxx) 指定 LMA
+    .tmp2 : AT (0x1000) {
+        /*...*/
+    } &gt; ram
+    // section 通过 section 最后的 AT&gt;xxx 指定 LMA 使用的 memory region
+    .tmp3 : {
+        /*...*/
+    } AT&gt; rom
     /* 所有其它未指定的 section 会自动按同名的方式合并到输出文件中 */
 }
 
@@ -183,16 +192,16 @@ SECTIONS {
 </div>
 </div>
 
-<div id="outline-container-org0000012" class="outline-3">
-<h3 id="org0000012"><span class="section-number-3">1.3.</span> symbol</h3>
+<div id="outline-container-org0000013" class="outline-3">
+<h3 id="org0000013"><span class="section-number-3">1.3.</span> symbol</h3>
 <div class="outline-text-3" id="text-1-3">
 <p>
 通过 linker script 可以给全部符号赋值.
 </p>
 </div>
 
-<div id="outline-container-org0000008" class="outline-4">
-<h4 id="org0000008"><span class="section-number-4">1.3.1.</span> 直接赋值</h4>
+<div id="outline-container-org0000009" class="outline-4">
+<h4 id="org0000009"><span class="section-number-4">1.3.1.</span> 直接赋值</h4>
 <div class="outline-text-4" id="text-1-3-1">
 <pre class="example">
 xxx = 0xabc;
@@ -206,7 +215,7 @@ xxx = 0xabc;
 </pre>
 </div>
 
-<pre class="example" id="org0000007">
+<pre class="example" id="org0000008">
 $&gt; ./a.out
 b71b3abc
 </pre>
@@ -217,8 +226,8 @@ b71b3abc
 </div>
 </div>
 
-<div id="outline-container-org000000c" class="outline-4">
-<h4 id="org000000c"><span class="section-number-4">1.3.2.</span> PROVIDE</h4>
+<div id="outline-container-org000000d" class="outline-4">
+<h4 id="org000000d"><span class="section-number-4">1.3.2.</span> PROVIDE</h4>
 <div class="outline-text-4" id="text-1-3-2">
 <p>
 PROVIDE 与直接赋值差不多, 但有一点差别:
@@ -228,7 +237,7 @@ PROVIDE 与直接赋值差不多, 但有一点差别:
 PROVIDE (xxx = 0xabc);
 </pre>
 
-<pre class="example" id="org000000b">
+<pre class="example" id="org000000c">
 $&gt; cat test.c
 extern int xxx;
 int main(int argc, char *argv[]) {
@@ -245,7 +254,7 @@ int main(int argc, char *argv[]) {
     printf("%x\n", &amp;xxx);
 }
 
-$&gt; arm-linux-androideabi-gcc test2.c -fPIE -pie -O0 -g3 -T test.lds 
+$&gt; arm-linux-androideabi-gcc test2.c -fPIE -pie -O0 -g3 -T test.lds
 $&gt; ./a.out
 ab8c9004
 </pre>
@@ -256,14 +265,14 @@ ab8c9004
 </div>
 </div>
 
-<div id="outline-container-org000000f" class="outline-4">
-<h4 id="org000000f"><span class="section-number-4">1.3.3.</span> PIE</h4>
+<div id="outline-container-org0000010" class="outline-4">
+<h4 id="org0000010"><span class="section-number-4">1.3.3.</span> PIE</h4>
 </div>
 </div>
 
 
-<div id="outline-container-org0000015" class="outline-3">
-<h3 id="org0000015"><span class="section-number-3">1.4.</span> Arithmetic Functions</h3>
+<div id="outline-container-org0000016" class="outline-3">
+<h3 id="org0000016"><span class="section-number-3">1.4.</span> Arithmetic Functions</h3>
 <div class="outline-text-3" id="text-1-4">
 <p>
 给 symbol 或 location counter 赋值时可以使用如何的函数:
@@ -292,8 +301,8 @@ DEFINED (symbol)
 </div>
 
 
-<div id="outline-container-org0000018" class="outline-3">
-<h3 id="org0000018"><span class="section-number-3">1.5.</span> ENTRY</h3>
+<div id="outline-container-org0000019" class="outline-3">
+<h3 id="org0000019"><span class="section-number-3">1.5.</span> ENTRY</h3>
 <div class="outline-text-3" id="text-1-5">
 <pre class="example">
 ENTRY (foo);
@@ -305,56 +314,26 @@ ENTRY (foo);
 </div>
 </div>
 
-<div id="outline-container-org000001b" class="outline-3">
-<h3 id="org000001b"><span class="section-number-3">1.6.</span> KEEP</h3>
+<div id="outline-container-org000001c" class="outline-3">
+<h3 id="org000001c"><span class="section-number-3">1.6.</span> KEEP</h3>
 </div>
 
-<div id="outline-container-org000002f" class="outline-3">
-<h3 id="org000002f"><span class="section-number-3">1.7.</span> AT</h3>
+<div id="outline-container-org000002b" class="outline-3">
+<h3 id="org000002b"><span class="section-number-3">1.7.</span> AT</h3>
 <div class="outline-text-3" id="text-1-7">
-</div>
-<div id="outline-container-org0000020" class="outline-4">
-<h4 id="org0000020"><span class="section-number-4">1.7.1.</span> 通过指定 location counter 并不能造成 elf 中的空洞</h4>
-<div class="outline-text-4" id="text-1-7-1">
-<pre class="example" id="org000001e">
-$&gt; cat test.lds
-PROVIDE (xxx = 0xcafebabe);
-SECTIONS
-{
-    . = 0x10000;
-    .text : { *(.text) }
-    . = 0x9000000;
-    .rodata : { *(.rodata) }
-    .data : { *(.data) }
-    .bss : { *(.bss) }
-}
-
-</pre>
-
 <p>
-正常情况下 rodata 与 text 会在同一个 LOAD segment, 但指定了 location counter 后,
-rodata 会被放在另一个 segment: 即同一个 LOAD segment 总是连续的
+使用 location counter 或在 section 中指定 start, memory region 等影响的都是 VMA, 有时 VMA 与 LMA (load memory address) 并不同, 例如:
 </p>
 
-<pre class="example" id="org000001f">
-Program Headers:
-  Type           Offset   VirtAddr   PhysAddr   FileSiz MemSiz  Flg Align
-  ABIFLAGS       0x020028 0x09000028 0x09000028 0x00018 0x00018 R   0x8
-  LOAD           0x010000 0x00010000 0x00010000 0x00230 0x00230 R E 0x10000
-  LOAD           0x020000 0x09000000 0x09000000 0x00058 0x00078 RW  0x10000
-
- Section to Segment mapping:
-  Segment Sections...
-   00     .MIPS.abiflags 
-   01     .text .init .fini 
-   02     .rodata .MIPS.abiflags .eh_frame .ctors .dtors .sdata .bss
-</pre>
-</div>
+<ol class="org-ol">
+<li>数据需要放在 rom 中, 但运行时需要加载到 ram 中</li>
+<li>数据需要加载到较高的 ram, 但直接放在 ram 中会导致很大的 bin</li>
+</ol>
 </div>
 
 <div id="outline-container-org0000024" class="outline-4">
-<h4 id="org0000024"><span class="section-number-4">1.7.2.</span> objcopy 生成过大的 binary</h4>
-<div class="outline-text-4" id="text-1-7-2">
+<h4 id="org0000024"><span class="section-number-4">1.7.1.</span> 使用 AT 避免过大的 binary</h4>
+<div class="outline-text-4" id="text-1-7-1">
 <p>
 objcopy -O binary 生成的 binary 需要对应到一个 elf 加载后的布局, 所有 LOAD
 segment 的上下限地址决定了 bin 的大小 (objcopy 的结果与 LOAD 的大小只是大致相同,
@@ -362,19 +341,7 @@ segment 的上下限地址决定了 bin 的大小 (objcopy 的结果与 LOAD 的
 segment flag)
 </p>
 
-<pre class="example" id="org0000023">
-#&gt; du a.bin  --apparent-size
-144M    a.bin
-#&gt; du a.out  --apparent-size
-149K    a.out
-</pre>
-</div>
-</div>
-
-<div id="outline-container-org000002c" class="outline-4">
-<h4 id="org000002c"><span class="section-number-4">1.7.3.</span> 使用 AT 避免过大的 binary</h4>
-<div class="outline-text-4" id="text-1-7-3">
-<pre class="example" id="org0000027">
+<pre class="example" id="org000001f">
 PROVIDE (xxx = 0xcafebabe);
 SECTIONS
 {
@@ -403,7 +370,7 @@ SECTIONS
 <p>
 elf:
 </p>
-<pre class="example" id="org0000028">
+<pre class="example" id="org0000020">
 Program Headers:
   Type           Offset   VirtAddr   PhysAddr   FileSiz MemSiz  Flg Align
   ABIFLAGS       0x010240 0x00010240 0x00010240 0x00018 0x00018 R   0x8
@@ -418,7 +385,7 @@ od -x a.out:
 <p>
 0400000 == 0x20000
 </p>
-<pre class="example" id="org0000029">
+<pre class="example" id="org0000021">
 *
 0400000 0000 feca 0000 feca 0000 feca 0000 feca
 0400020 0000 0000 0000 0000 0000 0000 0000 0000
@@ -441,7 +408,7 @@ od -x a.bin:
 O1200000 == 0x50000
 </p>
 
-<pre class="example" id="org000002a">
+<pre class="example" id="org0000022">
 *
 1200000 0000 feca 0000 feca 0000 feca 0000 feca
 1200020 0000 0000 0000 0000 0000 0000 0000 0000
@@ -469,7 +436,7 @@ od -x a.bin:
 01077600000 == 0x8FF0000
 </p>
 
-<pre class="example" id="org000002b">
+<pre class="example" id="org0000023">
 *
 1077600000 0000 feca 0000 feca 0000 feca 0000 feca
 1077600020 0000 0000 0000 0000 0000 0000 0000 0000
@@ -485,32 +452,54 @@ bin 大小为 145M
 最后需要注意的是, 虽然 xxx 位于 bin 的 0x50000 offset (或加载后的 0x60000 地址),
 但代码中涉及到 xxx 的地方还是使用的 VirtAddr, 即 0x9000000, 所以需要程序启动时手动的把 0x60000 的数据复制到 0x9000000
 </p>
+</div>
+</div>
+
+<div id="outline-container-org0000028" class="outline-4">
+<h4 id="org0000028"><span class="section-number-4">1.7.2.</span> 使用 AT 加载 rom</h4>
+<div class="outline-text-4" id="text-1-7-2">
+<p>
+AT 的典型用法是 bin 需要烧到一个较小的 rom 上, 但需要在较大的内存空间里运行, 例如:
+</p>
+
+<pre class="example" id="org0000027">
+MEMORY {
+  rom (rx)   : ORIGIN = 0x8000,     LENGTH = 16K
+  ram (rw!x) : ORIGIN = 0x10000000, LENGTH = 256M
+}
+
+SECTION {
+  .data {
+    /* ... */
+  } &gt; ram AT&gt; rom
+}
+</pre>
 
 <p>
-AT 的典型用法是 bin 需要烧到一个较小的 rom 上, 但需要在较大的内存空间里运行
+.data 数据放在 rom 中, 但对应的 VMA 却在 ram 中, 需要运行时代码把 .data 从 rom搬运到 ram
 </p>
 </div>
 </div>
 </div>
 
-<div id="outline-container-org000003a" class="outline-3">
-<h3 id="org000003a"><span class="section-number-3">1.8.</span> misc</h3>
+<div id="outline-container-org0000036" class="outline-3">
+<h3 id="org0000036"><span class="section-number-3">1.8.</span> misc</h3>
 <div class="outline-text-3" id="text-1-8">
 </div>
-<div id="outline-container-org0000033" class="outline-4">
-<h4 id="org0000033"><span class="section-number-4">1.8.1.</span> how to get the default linker script</h4>
+<div id="outline-container-org000002f" class="outline-4">
+<h4 id="org000002f"><span class="section-number-4">1.8.1.</span> how to get the default linker script</h4>
 <div class="outline-text-4" id="text-1-8-1">
-<pre class="example" id="org0000032">
+<pre class="example" id="org000002e">
 $&gt; gcc test.c -Wl,-verbose
 $&gt; ld --verbose
 </pre>
 </div>
 </div>
 
-<div id="outline-container-org0000037" class="outline-4">
-<h4 id="org0000037"><span class="section-number-4">1.8.2.</span> how to use linker script</h4>
+<div id="outline-container-org0000033" class="outline-4">
+<h4 id="org0000033"><span class="section-number-4">1.8.2.</span> how to use linker script</h4>
 <div class="outline-text-4" id="text-1-8-2">
-<pre class="example" id="org0000036">
+<pre class="example" id="org0000032">
 $&gt; gcc test.c -Wl,--script=test.lds
 $&gt; gcc test.c -T test.lds
 </pre>
@@ -520,10 +509,9 @@ $&gt; gcc test.c -T test.lds
 </div>
 
 
-
-<div id="outline-container-org0000040" class="outline-2 references">
-<h2 id="org0000040">Backlinks</h2>
-<div class="outline-text-2" id="text-org0000040">
+<div id="outline-container-org000003c" class="outline-2 references">
+<h2 id="org000003c">Backlinks</h2>
+<div class="outline-text-2" id="text-org000003c">
 <p>
 <a href="linker_relaxation.html#ID-b861e156-7ced-4e25-b047-455b5b075c1e">Linker Relaxation</a>
 (<i>Linker Relaxation</i>):     即使考虑可以使用 pc 相对地址的函数调用, 由于被调用函数的最终可能会因为    <a href="linker_script.html#ID-1047822f-1bc3-4e98-8874-d7fa2e59260e">LinkerScript</a> 被放在其它的地址, 所以编译 object 时是无法确定被调用函数的 pc 相    对地址的.
@@ -545,7 +533,7 @@ $&gt; gcc test.c -T test.lds
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2017-03-31 Fri 00:00<br />
-Last updated: 2023-03-29 Wed 19:33</p>
+Last updated: 2024-02-01 Thu 11:34</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
