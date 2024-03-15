@@ -69,10 +69,10 @@ cpu 对 unaligned memory access (UMA) 的支持分为几种情况:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-keyword">__attribute__</span><span class="org-parenthesis">((</span><span class="org-type">packed</span><span class="org-parenthesis">))</span> <span class="org-type">X</span> <span class="org-parenthesis">{</span>
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-keyword">__attribute__</span>((packed)) <span class="org-type">X</span> {
     <span class="org-type">short</span> <span class="org-variable-name">a</span>;
     <span class="org-type">int</span> <span class="org-variable-name">b</span>;
-<span class="org-parenthesis">}</span>;
+};
 </pre>
 </div>
 
@@ -85,7 +85,7 @@ cpu 对 unaligned memory access (UMA) 的支持分为几种情况:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span class="org-type">short</span> *<span class="org-variable-name">y</span> = <span class="org-parenthesis">((</span><span class="org-type">char</span> *<span class="org-parenthesis">)</span>&amp;x<span class="org-parenthesis">)</span> + k;
+<pre class="src src-c"><span class="org-type">short</span> *<span class="org-variable-name">y</span> = ((<span class="org-type">char</span> *)&amp;x) + k;
 *y = 1;
 </pre>
 </div>
@@ -99,13 +99,13 @@ cpu 对 unaligned memory access (UMA) 的支持分为几种情况:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+<pre class="src src-c"><span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]) {
     <span class="org-type">int</span> <span class="org-variable-name">x</span> = 10;
-    <span class="org-type">short</span> *<span class="org-variable-name">y</span> = <span class="org-parenthesis">((</span><span class="org-type">char</span> *<span class="org-parenthesis">)</span>&amp;x<span class="org-parenthesis">)</span> + 1;
-    printf<span class="org-parenthesis">(</span><span class="org-string">"test:%p\n"</span><span class="org-parenthesis">,</span> y<span class="org-parenthesis">)</span>;
+    <span class="org-type">short</span> *<span class="org-variable-name">y</span> = ((<span class="org-type">char</span> *)&amp;x) + 1;
+    printf(<span class="org-string">"test:%p\n"</span>, y);
     *y = 1;
     <span class="org-keyword">return</span> 0;
-<span class="org-parenthesis">}</span>
+}
 </pre>
 </div>
 
@@ -114,36 +114,36 @@ spike 对应 store 指令的代码:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span class="org-type">void</span> <span class="org-variable-name">mmu_t</span>::store_slow_path<span class="org-parenthesis">(</span>
-    <span class="org-type">reg_t</span> <span class="org-variable-name">addr</span><span class="org-parenthesis">,</span> <span class="org-type">reg_t</span> <span class="org-variable-name">len</span><span class="org-parenthesis">,</span> <span class="org-keyword">const</span> <span class="org-type">uint8_t</span>* <span class="org-variable-name">bytes</span><span class="org-parenthesis">,</span> <span class="org-type">uint32_t</span> <span class="org-variable-name">xlate_flags</span><span class="org-parenthesis">,</span>
-    <span class="org-type">bool</span> <span class="org-variable-name">actually_store</span><span class="org-parenthesis">,</span> bool UNUSED require_alignment<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>actually_store<span class="org-parenthesis">)</span>
-        check_triggers<span class="org-parenthesis">(</span>
-            triggers::OPERATION_STORE<span class="org-parenthesis">,</span> addr<span class="org-parenthesis">,</span> reg_from_bytes<span class="org-parenthesis">(</span>len<span class="org-parenthesis">,</span> bytes<span class="org-parenthesis">))</span>;
-    printf<span class="org-parenthesis">(</span><span class="org-string">"ssp:1:%x %d\n"</span><span class="org-parenthesis">,</span> addr<span class="org-parenthesis">,</span> len<span class="org-parenthesis">)</span>;
-    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>addr &amp; <span class="org-parenthesis">(</span>len - 1<span class="org-parenthesis">))</span> <span class="org-parenthesis">{</span>
-        <span class="org-type">bool</span> <span class="org-variable-name">gva</span> = <span class="org-parenthesis">((</span>proc<span class="org-parenthesis">)</span> ? proc-&gt;state.v : <span class="org-constant">false</span><span class="org-parenthesis">)</span> ||
-                   <span class="org-parenthesis">(</span>RISCV_XLATE_VIRT &amp; xlate_flags<span class="org-parenthesis">)</span>;
-        <span class="org-keyword">if</span> <span class="org-parenthesis">(</span><span class="org-negation-char">!</span>is_misaligned_enabled<span class="org-parenthesis">())</span> <span class="org-parenthesis">{</span>
-            printf<span class="org-parenthesis">(</span><span class="org-string">"ssp:2:%x\n"</span><span class="org-parenthesis">,</span> addr<span class="org-parenthesis">)</span>;
-            <span class="org-type">throw</span> <span class="org-function-name">trap_store_address_misaligned</span><span class="org-parenthesis">(</span><span class="org-type">gva</span><span class="org-parenthesis">,</span> <span class="org-type">addr</span><span class="org-parenthesis">,</span> 0<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">)</span>;
-        <span class="org-parenthesis">}</span>
+<pre class="src src-c"><span class="org-type">void</span> <span class="org-variable-name">mmu_t</span>::store_slow_path(
+    <span class="org-type">reg_t</span> <span class="org-variable-name">addr</span>, <span class="org-type">reg_t</span> <span class="org-variable-name">len</span>, <span class="org-keyword">const</span> <span class="org-type">uint8_t</span>* <span class="org-variable-name">bytes</span>, <span class="org-type">uint32_t</span> <span class="org-variable-name">xlate_flags</span>,
+    <span class="org-type">bool</span> <span class="org-variable-name">actually_store</span>, bool UNUSED require_alignment) {
+    <span class="org-keyword">if</span> (actually_store)
+        check_triggers(
+            triggers::OPERATION_STORE, addr, reg_from_bytes(len, bytes));
+    printf(<span class="org-string">"ssp:1:%x %d\n"</span>, addr, len);
+    <span class="org-keyword">if</span> (addr &amp; (len - 1)) {
+        <span class="org-type">bool</span> <span class="org-variable-name">gva</span> = ((proc) ? proc-&gt;state.v : <span class="org-constant">false</span>) ||
+                   (RISCV_XLATE_VIRT &amp; xlate_flags);
+        <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>is_misaligned_enabled()) {
+            printf(<span class="org-string">"ssp:2:%x\n"</span>, addr);
+            <span class="org-type">throw</span> <span class="org-function-name">trap_store_address_misaligned</span>(gva, addr, 0, 0);
+        }
 
-        <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>require_alignment<span class="org-parenthesis">)</span> <span class="org-type">throw</span> <span class="org-function-name">trap_store_access_fault</span><span class="org-parenthesis">(</span><span class="org-type">gva</span><span class="org-parenthesis">,</span> <span class="org-type">addr</span><span class="org-parenthesis">,</span> 0<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">)</span>;
+        <span class="org-keyword">if</span> (require_alignment) <span class="org-type">throw</span> <span class="org-function-name">trap_store_access_fault</span>(gva, addr, 0, 0);
 
-        <span class="org-type">reg_t</span> <span class="org-variable-name">len_page0</span> = std::min<span class="org-parenthesis">(</span>len<span class="org-parenthesis">,</span> PGSIZE - addr % PGSIZE<span class="org-parenthesis">)</span>;
-        store_slow_path_intrapage<span class="org-parenthesis">(</span>
-            addr<span class="org-parenthesis">,</span> len_page0<span class="org-parenthesis">,</span> bytes<span class="org-parenthesis">,</span> xlate_flags<span class="org-parenthesis">,</span> actually_store<span class="org-parenthesis">)</span>;
-        <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>len_page0 != len<span class="org-parenthesis">)</span>
-            store_slow_path_intrapage<span class="org-parenthesis">(</span>
-                addr + len_page0<span class="org-parenthesis">,</span> len - len_page0<span class="org-parenthesis">,</span> bytes + len_page0<span class="org-parenthesis">,</span>
-                xlate_flags<span class="org-parenthesis">,</span> actually_store<span class="org-parenthesis">)</span>;
-    <span class="org-parenthesis">}</span> <span class="org-keyword">else</span> <span class="org-parenthesis">{</span>
-        store_slow_path_intrapage<span class="org-parenthesis">(</span>
-            addr<span class="org-parenthesis">,</span> len<span class="org-parenthesis">,</span> bytes<span class="org-parenthesis">,</span> xlate_flags<span class="org-parenthesis">,</span> actually_store<span class="org-parenthesis">)</span>;
-    <span class="org-parenthesis">}</span>
-    printf<span class="org-parenthesis">(</span><span class="org-string">"ssp:3:%x\n"</span><span class="org-parenthesis">,</span> addr<span class="org-parenthesis">)</span>;
-<span class="org-parenthesis">}</span>
+        <span class="org-type">reg_t</span> <span class="org-variable-name">len_page0</span> = std::min(len, PGSIZE - addr % PGSIZE);
+        store_slow_path_intrapage(
+            addr, len_page0, bytes, xlate_flags, actually_store);
+        <span class="org-keyword">if</span> (len_page0 != len)
+            store_slow_path_intrapage(
+                addr + len_page0, len - len_page0, bytes + len_page0,
+                xlate_flags, actually_store);
+    } <span class="org-keyword">else</span> {
+        store_slow_path_intrapage(
+            addr, len, bytes, xlate_flags, actually_store);
+    }
+    printf(<span class="org-string">"ssp:3:%x\n"</span>, addr);
+}
 </pre>
 </div>
 
@@ -177,34 +177,34 @@ ssp:3:fffff9f5
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span class="org-type">void</span> <span class="org-function-name">misaligned_store_trap</span><span class="org-parenthesis">(</span><span class="org-type">uintptr_t</span>* <span class="org-variable-name">regs</span><span class="org-parenthesis">,</span> <span class="org-type">uintptr_t</span> <span class="org-variable-name">mcause</span><span class="org-parenthesis">,</span> <span class="org-type">uintptr_t</span> <span class="org-variable-name">mepc</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+<pre class="src src-c"><span class="org-type">void</span> <span class="org-function-name">misaligned_store_trap</span>(<span class="org-type">uintptr_t</span>* <span class="org-variable-name">regs</span>, <span class="org-type">uintptr_t</span> <span class="org-variable-name">mcause</span>, <span class="org-type">uintptr_t</span> <span class="org-variable-name">mepc</span>) {
     <span class="org-keyword">union</span> <span class="org-type">byte_array</span> <span class="org-variable-name">val</span>;
     <span class="org-type">uintptr_t</span> <span class="org-variable-name">mstatus</span>;
-    <span class="org-type">insn_t</span> <span class="org-variable-name">insn</span> = get_insn<span class="org-parenthesis">(</span>mepc<span class="org-parenthesis">,</span> &amp;mstatus<span class="org-parenthesis">)</span>;
-    <span class="org-type">uintptr_t</span> <span class="org-variable-name">npc</span> = mepc + insn_len<span class="org-parenthesis">(</span>insn<span class="org-parenthesis">)</span>;
+    <span class="org-type">insn_t</span> <span class="org-variable-name">insn</span> = get_insn(mepc, &amp;mstatus);
+    <span class="org-type">uintptr_t</span> <span class="org-variable-name">npc</span> = mepc + insn_len(insn);
     <span class="org-type">int</span> <span class="org-variable-name">len</span>;
 
-    val.intx = GET_RS2<span class="org-parenthesis">(</span>insn<span class="org-parenthesis">,</span> regs<span class="org-parenthesis">)</span>;
-    <span class="org-keyword">if</span> <span class="org-parenthesis">((</span>insn &amp; MASK_SW<span class="org-parenthesis">)</span> == MATCH_SW<span class="org-parenthesis">)</span>
+    val.intx = GET_RS2(insn, regs);
+    <span class="org-keyword">if</span> ((insn &amp; MASK_SW) == MATCH_SW)
         len = 4;
-    <span class="org-keyword">else</span> <span class="org-keyword">if</span> <span class="org-parenthesis">((</span>insn &amp; MASK_SH<span class="org-parenthesis">)</span> == MATCH_SH<span class="org-parenthesis">)</span>
+    <span class="org-keyword">else</span> <span class="org-keyword">if</span> ((insn &amp; MASK_SH) == MATCH_SH)
         len = 2;
-    <span class="org-keyword">else</span> <span class="org-parenthesis">{</span>
+    <span class="org-keyword">else</span> {
         mcause = CAUSE_STORE_ACCESS;
-        write_csr<span class="org-parenthesis">(</span>mcause<span class="org-parenthesis">,</span> mcause<span class="org-parenthesis">)</span>;
-        <span class="org-keyword">return</span> truly_illegal_insn<span class="org-parenthesis">(</span>regs<span class="org-parenthesis">,</span> mcause<span class="org-parenthesis">,</span> mepc<span class="org-parenthesis">,</span> mstatus<span class="org-parenthesis">,</span> insn<span class="org-parenthesis">)</span>;
-    <span class="org-parenthesis">}</span>
+        write_csr(mcause, mcause);
+        <span class="org-keyword">return</span> truly_illegal_insn(regs, mcause, mepc, mstatus, insn);
+    }
 
     <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: misaligned_store &#24322;&#24120;&#26102; mtval &#20026;&#35201; store &#30340;&#22320;&#22336;</span><span class="org-comment-delimiter"> */</span>
     <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: val &#26159; RS2, &#21363;&#35201; store &#30340;&#23492;&#23384;&#22120;</span><span class="org-comment-delimiter"> */</span>
-    <span class="org-type">uintptr_t</span> <span class="org-variable-name">addr</span> = read_csr<span class="org-parenthesis">(</span>mtval<span class="org-parenthesis">)</span>;
+    <span class="org-type">uintptr_t</span> <span class="org-variable-name">addr</span> = read_csr(mtval);
     <span class="org-type">intptr_t</span> <span class="org-variable-name">offs</span> = 0;
     <span class="org-comment-delimiter">/* </span><span class="org-comment">NOTE: &#24490;&#29615;&#22810;&#27425;, &#27599;&#27425;&#20889;&#19968;&#20010; byte</span><span class="org-comment-delimiter"> */</span>
-    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; len; i++<span class="org-parenthesis">)</span>
-        store_uint8_t<span class="org-parenthesis">((</span><span class="org-type">void</span>*<span class="org-parenthesis">)(</span>addr + i<span class="org-parenthesis">),</span> val.bytes[offs + i]<span class="org-parenthesis">,</span> mepc<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; len; i++)
+        store_uint8_t((<span class="org-type">void</span>*)(addr + i), val.bytes[offs + i], mepc);
 
-    write_csr<span class="org-parenthesis">(</span>mepc<span class="org-parenthesis">,</span> npc<span class="org-parenthesis">)</span>;
-<span class="org-parenthesis">}</span>
+    write_csr(mepc, npc);
+}
 </pre>
 </div>
 

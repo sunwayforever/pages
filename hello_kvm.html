@@ -125,19 +125,19 @@ kvm_sregs-&gt;cs) 它包含的实际是 cs 对应的 segment descriptor 的数�
 </p>
 
 <div class="org-src-container">
-<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">setup_protected_mode</span><span class="org-parenthesis">(</span><span class="org-keyword">struct</span> <span class="org-type">kvm_sregs</span> *<span class="org-variable-name">sregs</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-    <span class="org-keyword">struct</span> <span class="org-type">kvm_segment</span> <span class="org-variable-name">seg</span> = <span class="org-parenthesis">{</span>
-        .base = 0<span class="org-parenthesis">,</span>
-        .limit = 0xffffffff<span class="org-parenthesis">,</span>
-        .selector = 1 &lt;&lt; 3<span class="org-parenthesis">,</span>
-        .present = 1<span class="org-parenthesis">,</span>
-        .type = 11<span class="org-parenthesis">,</span> <span class="org-comment-delimiter">/* </span><span class="org-comment">Code: execute, read, accessed</span><span class="org-comment-delimiter"> */</span>
-        .dpl = 0<span class="org-parenthesis">,</span>
-        .db = 1<span class="org-parenthesis">,</span>
-        .s = 1<span class="org-parenthesis">,</span> <span class="org-comment-delimiter">/* </span><span class="org-comment">Code/data</span><span class="org-comment-delimiter"> */</span>
-        .l = 0<span class="org-parenthesis">,</span>
-        .g = 1<span class="org-parenthesis">,</span> <span class="org-comment-delimiter">/* </span><span class="org-comment">4KB granularity</span><span class="org-comment-delimiter"> */</span>
-    <span class="org-parenthesis">}</span>;
+<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">setup_protected_mode</span>(<span class="org-keyword">struct</span> <span class="org-type">kvm_sregs</span> *<span class="org-variable-name">sregs</span>) {
+    <span class="org-keyword">struct</span> <span class="org-type">kvm_segment</span> <span class="org-variable-name">seg</span> = {
+        .base = 0,
+        .limit = 0xffffffff,
+        .selector = 1 &lt;&lt; 3,
+        .present = 1,
+        .type = 11, <span class="org-comment-delimiter">/* </span><span class="org-comment">Code: execute, read, accessed</span><span class="org-comment-delimiter"> */</span>
+        .dpl = 0,
+        .db = 1,
+        .s = 1, <span class="org-comment-delimiter">/* </span><span class="org-comment">Code/data</span><span class="org-comment-delimiter"> */</span>
+        .l = 0,
+        .g = 1, <span class="org-comment-delimiter">/* </span><span class="org-comment">4KB granularity</span><span class="org-comment-delimiter"> */</span>
+    };
 
     sregs-&gt;cr0 |= CR0_PE; <span class="org-comment-delimiter">/* </span><span class="org-comment">enter protected mode</span><span class="org-comment-delimiter"> */</span>
 
@@ -147,11 +147,11 @@ kvm_sregs-&gt;cs) 它包含的实际是 cs 对应的 segment descriptor 的数�
     seg.selector = 2 &lt;&lt; 3;
     sregs-&gt;ds = sregs-&gt;es = sregs-&gt;fs = sregs-&gt;gs = sregs-&gt;ss = seg;
 
-    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>ioctl<span class="org-parenthesis">(</span>vcpu-&gt;fd<span class="org-parenthesis">,</span> KVM_SET_SREGS<span class="org-parenthesis">,</span> &amp;sregs<span class="org-parenthesis">)</span> &lt; 0<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-        perror<span class="org-parenthesis">(</span><span class="org-string">"KVM_SET_SREGS"</span><span class="org-parenthesis">)</span>;
-        exit<span class="org-parenthesis">(</span>1<span class="org-parenthesis">)</span>;
-    <span class="org-parenthesis">}</span>    
-<span class="org-parenthesis">}</span>
+    <span class="org-keyword">if</span> (ioctl(vcpu-&gt;fd, KVM_SET_SREGS, &amp;sregs) &lt; 0) {
+        perror(<span class="org-string">"KVM_SET_SREGS"</span>);
+        exit(1);
+    }    
+}
 </pre>
 </div>
 </div>
@@ -166,9 +166,9 @@ kvm_sregs-&gt;cs) 它包含的实际是 cs 对应的 segment descriptor 的数�
 </p>
 
 <div class="org-src-container">
-<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">setup_paged_32bit_mode</span><span class="org-parenthesis">(</span><span class="org-keyword">struct</span> <span class="org-type">vm</span> *<span class="org-variable-name">vm</span><span class="org-parenthesis">,</span> <span class="org-keyword">struct</span> <span class="org-type">kvm_sregs</span> *<span class="org-variable-name">sregs</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+<pre class="src src-C"><span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">setup_paged_32bit_mode</span>(<span class="org-keyword">struct</span> <span class="org-type">vm</span> *<span class="org-variable-name">vm</span>, <span class="org-keyword">struct</span> <span class="org-type">kvm_sregs</span> *<span class="org-variable-name">sregs</span>) {
     <span class="org-type">uint32_t</span> <span class="org-variable-name">pd_addr</span> = 0x2000;
-    <span class="org-type">uint32_t</span> *<span class="org-variable-name">pd</span> = <span class="org-parenthesis">(</span><span class="org-type">void</span> *<span class="org-parenthesis">)(</span>vm-&gt;mem + pd_addr<span class="org-parenthesis">)</span>;
+    <span class="org-type">uint32_t</span> *<span class="org-variable-name">pd</span> = (<span class="org-type">void</span> *)(vm-&gt;mem + pd_addr);
 
     <span class="org-comment-delimiter">/* </span><span class="org-comment">A single 4MB page to cover the memory region</span><span class="org-comment-delimiter"> */</span>
     pd[0] = PDE32_PRESENT | PDE32_RW | PDE32_USER | PDE32_PS;
@@ -179,11 +179,11 @@ kvm_sregs-&gt;cs) 它包含的实际是 cs 对应的 segment descriptor 的数�
     sregs-&gt;cr0 = CR0_PE | CR0_MP | CR0_ET | CR0_NE | CR0_WP | CR0_AM | CR0_PG;
     sregs-&gt;efer = 0;
 
-    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>ioctl<span class="org-parenthesis">(</span>vcpu-&gt;fd<span class="org-parenthesis">,</span> KVM_SET_SREGS<span class="org-parenthesis">,</span> &amp;sregs<span class="org-parenthesis">)</span> &lt; 0<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-        perror<span class="org-parenthesis">(</span><span class="org-string">"KVM_SET_SREGS"</span><span class="org-parenthesis">)</span>;
-        exit<span class="org-parenthesis">(</span>1<span class="org-parenthesis">)</span>;
-    <span class="org-parenthesis">}</span>
-<span class="org-parenthesis">}</span>
+    <span class="org-keyword">if</span> (ioctl(vcpu-&gt;fd, KVM_SET_SREGS, &amp;sregs) &lt; 0) {
+        perror(<span class="org-string">"KVM_SET_SREGS"</span>);
+        exit(1);
+    }
+}
 </pre>
 </div>
 
@@ -263,11 +263,11 @@ VMCS 中 guest state 中的 sreg 部分, 例如:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-C"><span class="org-type">void</span> <span class="org-function-name">vmx_set_cr0</span><span class="org-parenthesis">(</span><span class="org-keyword">struct</span> <span class="org-type">kvm_vcpu</span> *<span class="org-variable-name">vcpu</span><span class="org-parenthesis">,</span> <span class="org-type">unsigned</span> <span class="org-type">long</span> <span class="org-variable-name">cr0</span><span class="org-parenthesis">)</span>:
+<pre class="src src-C"><span class="org-type">void</span> <span class="org-function-name">vmx_set_cr0</span>(<span class="org-keyword">struct</span> <span class="org-type">kvm_vcpu</span> *<span class="org-variable-name">vcpu</span>, <span class="org-type">unsigned</span> <span class="org-type">long</span> <span class="org-variable-name">cr0</span>):
   <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
-  vmcs_writel<span class="org-parenthesis">(</span>GUEST_CR0<span class="org-parenthesis">,</span> hw_cr0<span class="org-parenthesis">)</span>;
-    <span class="org-function-name">__vmcs_writel</span><span class="org-parenthesis">(</span><span class="org-type">field</span><span class="org-parenthesis">,</span> <span class="org-type">value</span><span class="org-parenthesis">)</span>;
-      <span class="org-function-name">vmx_asm2</span><span class="org-parenthesis">(</span><span class="org-type">vmwrite</span><span class="org-parenthesis">,</span> <span class="org-string">"r"</span><span class="org-parenthesis">(</span><span class="org-type">field</span><span class="org-parenthesis">),</span> <span class="org-string">"rm"</span><span class="org-parenthesis">(</span><span class="org-type">value</span><span class="org-parenthesis">),</span> <span class="org-type">field</span><span class="org-parenthesis">,</span> <span class="org-type">value</span><span class="org-parenthesis">)</span>;
+  vmcs_writel(GUEST_CR0, hw_cr0);
+    <span class="org-function-name">__vmcs_writel</span>(field, value);
+      <span class="org-function-name">vmx_asm2</span>(vmwrite, <span class="org-string">"r"</span>(field), <span class="org-string">"rm"</span>(value), field, value);
   <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
 </pre>
 </div></li>
@@ -292,29 +292,29 @@ ops-&gt;create_vcpu_thread 为 kvm_start_vcpu_thread, 最终会执行 kvm_cpu_ex
 
 <div class="org-src-container">
 <pre class="src src-C"><span class="org-constant">kvm_init</span>:
-  <span class="org-function-name">kvm_memory_listener_register</span><span class="org-parenthesis">(</span><span class="org-type">s</span><span class="org-parenthesis">,</span> &amp;s-&gt;memory_listener<span class="org-parenthesis">,</span> &amp;address_space_memory<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">,</span> <span class="org-string">"kvm-memory"</span><span class="org-parenthesis">)</span>;
+  <span class="org-function-name">kvm_memory_listener_register</span>(s, &amp;s-&gt;memory_listener, &amp;address_space_memory, 0, <span class="org-string">"kvm-memory"</span>);
     <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
-    <span class="org-function-name">kvm_region_add</span><span class="org-parenthesis">(</span><span class="org-type">MemoryListener</span> *<span class="org-variable-name">listener</span><span class="org-parenthesis">,</span><span class="org-type">MemoryRegionSection</span> *<span class="org-variable-name">section</span><span class="org-parenthesis">)</span>;
-      <span class="org-function-name">kvm_set_user_memory_region</span><span class="org-parenthesis">(</span><span class="org-type">kml</span><span class="org-parenthesis">,</span> <span class="org-type">mem</span><span class="org-parenthesis">,</span> <span class="org-constant">false</span><span class="org-parenthesis">)</span>;
-        <span class="org-function-name">kvm_vm_ioctl</span><span class="org-parenthesis">(</span><span class="org-type">s</span><span class="org-parenthesis">,</span> <span class="org-type">KVM_SET_USER_MEMORY_REGION</span><span class="org-parenthesis">,</span> &amp;mem<span class="org-parenthesis">)</span>;
+    <span class="org-function-name">kvm_region_add</span>(<span class="org-type">MemoryListener</span> *<span class="org-variable-name">listener</span>,<span class="org-type">MemoryRegionSection</span> *<span class="org-variable-name">section</span>);
+      <span class="org-function-name">kvm_set_user_memory_region</span>(kml, mem, <span class="org-constant">false</span>);
+        <span class="org-function-name">kvm_vm_ioctl</span>(s, KVM_SET_USER_MEMORY_REGION, &amp;mem);
 
-<span class="org-type">int</span> <span class="org-function-name">kvm_cpu_exec</span><span class="org-parenthesis">(</span><span class="org-type">CPUState</span> *<span class="org-variable-name">cpu</span><span class="org-parenthesis">)</span>:
+<span class="org-type">int</span> <span class="org-function-name">kvm_cpu_exec</span>(<span class="org-type">CPUState</span> *<span class="org-variable-name">cpu</span>):
   <span class="org-keyword">do</span>:
-    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>cpu-&gt;vcpu_dirty<span class="org-parenthesis">)</span>:
-      kvm_arch_put_registers<span class="org-parenthesis">(</span>cpu<span class="org-parenthesis">,</span> KVM_PUT_RUNTIME_STATE<span class="org-parenthesis">)</span>;
-        ret = kvm_getput_regs<span class="org-parenthesis">(</span>x86_cpu<span class="org-parenthesis">,</span> 1<span class="org-parenthesis">)</span>;
-          kvm_getput_reg<span class="org-parenthesis">(</span>&amp;regs.rip<span class="org-parenthesis">,</span> &amp;env-&gt;eip<span class="org-parenthesis">,</span> set<span class="org-parenthesis">)</span>;
+    <span class="org-keyword">if</span> (cpu-&gt;vcpu_dirty):
+      kvm_arch_put_registers(cpu, KVM_PUT_RUNTIME_STATE);
+        ret = kvm_getput_regs(x86_cpu, 1);
+          kvm_getput_reg(&amp;regs.rip, &amp;env-&gt;eip, set);
       cpu-&gt;vcpu_dirty = <span class="org-constant">false</span>;
 
-    run_ret = kvm_vcpu_ioctl<span class="org-parenthesis">(</span>cpu<span class="org-parenthesis">,</span> KVM_RUN<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">)</span>;
+    run_ret = kvm_vcpu_ioctl(cpu, KVM_RUN, 0);
 
-    <span class="org-keyword">switch</span> <span class="org-parenthesis">(</span>run-&gt;exit_reason<span class="org-parenthesis">)</span>:
+    <span class="org-keyword">switch</span> (run-&gt;exit_reason):
       <span class="org-keyword">case</span> KVM_EXIT_IO:
-        kvm_handle_io<span class="org-parenthesis">(</span>run-&gt;io.port<span class="org-parenthesis">,</span> attrs<span class="org-parenthesis">,</span>
-                          <span class="org-parenthesis">(</span><span class="org-type">uint8_t</span> *<span class="org-parenthesis">)</span>run + run-&gt;io.data_offset<span class="org-parenthesis">,</span>
-                          run-&gt;io.direction<span class="org-parenthesis">,</span>
-                          run-&gt;io.size<span class="org-parenthesis">,</span>
-                          run-&gt;io.count<span class="org-parenthesis">)</span>;
+        kvm_handle_io(run-&gt;io.port, attrs,
+                          (<span class="org-type">uint8_t</span> *)run + run-&gt;io.data_offset,
+                          run-&gt;io.direction,
+                          run-&gt;io.size,
+                          run-&gt;io.count);
         <span class="org-keyword">break</span>;
 </pre>
 </div>
@@ -362,11 +362,11 @@ IO 或 MMU 相关的指令还是需要 guest 能 VMEXIT 以便 hypervisor 接手
 </p>
 
 <div class="org-src-container">
-<pre class="src src-C"><span class="org-type">void</span> <span class="org-function-name">nic_write_buffer</span><span class="org-parenthesis">(</span><span class="org-type">char</span>* <span class="org-variable-name">buf</span><span class="org-parenthesis">,</span> <span class="org-type">int</span> <span class="org-variable-name">size</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; N; i++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-        outb<span class="org-parenthesis">(</span>NIC_TX_BUF<span class="org-parenthesis">,</span> *buf++<span class="org-parenthesis">)</span>;
-    <span class="org-parenthesis">}</span>
-<span class="org-parenthesis">}</span>
+<pre class="src src-C"><span class="org-type">void</span> <span class="org-function-name">nic_write_buffer</span>(<span class="org-type">char</span>* <span class="org-variable-name">buf</span>, <span class="org-type">int</span> <span class="org-variable-name">size</span>) {
+    <span class="org-keyword">for</span> (<span class="org-type">int</span> <span class="org-variable-name">i</span> = 0; i &lt; N; i++) {
+        outb(NIC_TX_BUF, *buf++);
+    }
+}
 </pre>
 </div>
 
@@ -379,9 +379,9 @@ IO 或 MMU 相关的指令还是需要 guest 能 VMEXIT 以便 hypervisor 接手
 </p>
 
 <div class="org-src-container">
-<pre class="src src-C"><span class="org-type">void</span> <span class="org-function-name">nic_write_buffer</span><span class="org-parenthesis">(</span><span class="org-type">char</span>* <span class="org-variable-name">buf</span><span class="org-parenthesis">,</span> <span class="org-type">int</span> <span class="org-variable-name">size</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-    vmm_write<span class="org-parenthesis">(</span>NIC_TX_BUF<span class="org-parenthesis">,</span> buf<span class="org-parenthesis">,</span> size<span class="org-parenthesis">)</span>;
-<span class="org-parenthesis">}</span>
+<pre class="src src-C"><span class="org-type">void</span> <span class="org-function-name">nic_write_buffer</span>(<span class="org-type">char</span>* <span class="org-variable-name">buf</span>, <span class="org-type">int</span> <span class="org-variable-name">size</span>) {
+    vmm_write(NIC_TX_BUF, buf, size);
+}
 </pre>
 </div>
 

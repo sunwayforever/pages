@@ -80,15 +80,15 @@ generic_file_read 做为 f_op-&gt;read 的实现.
 <h5 id="org0000000"><span class="section-number-5">1.1.1.1.</span> VFS</h5>
 <div class="outline-text-5" id="text-1-1-1-1">
 <div class="org-src-container">
-<pre class="src src-c"><span class="org-function-name">generic_file_read</span> <span class="org-parenthesis">(</span><span class="org-keyword">struct</span> <span class="org-type">file</span> *<span class="org-variable-name">filp</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> <span class="org-variable-name">__user</span> *buf<span class="org-parenthesis">,</span> <span class="org-type">size_t</span> <span class="org-variable-name">count</span><span class="org-parenthesis">,</span> <span class="org-type">loff_t</span> *<span class="org-variable-name">ppos</span><span class="org-parenthesis">)</span>:
+<pre class="src src-c"><span class="org-function-name">generic_file_read</span> (<span class="org-keyword">struct</span> <span class="org-type">file</span> *<span class="org-variable-name">filp</span>, <span class="org-type">char</span> <span class="org-variable-name">__user</span> *buf, <span class="org-type">size_t</span> <span class="org-variable-name">count</span>, <span class="org-type">loff_t</span> *<span class="org-variable-name">ppos</span>):
   <span class="org-comment-delimiter">// </span><span class="org-comment">iovec &#35760;&#24405;&#20102;&#26412;&#27425;&#35835;&#25805;&#20316;&#35201;&#22635;&#20805;&#30340; buffer &#21644;&#22823;&#23567;</span>
-  <span class="org-keyword">struct</span> iovec local_iov = <span class="org-parenthesis">{</span> .iov_base = buf<span class="org-parenthesis">,</span> .iov_len = count <span class="org-parenthesis">}</span>;
-  __generic_file_aio_read<span class="org-parenthesis">(</span>&amp;kiocb<span class="org-parenthesis">,</span> &amp;local_iov<span class="org-parenthesis">,</span> 1<span class="org-parenthesis">,</span> ppos<span class="org-parenthesis">)</span>;
+  <span class="org-keyword">struct</span> iovec local_iov = { .iov_base = buf, .iov_len = count };
+  __generic_file_aio_read(&amp;kiocb, &amp;local_iov, 1, ppos);
     <span class="org-type">read_descriptor_t</span> <span class="org-variable-name">desc</span>;
     desc.arg.buf = iov[seg].iov_base;
     desc.count = iov[seg].iov_len;
-    <span class="org-function-name">do_generic_file_read</span><span class="org-parenthesis">(</span><span class="org-type">filp</span><span class="org-parenthesis">,</span><span class="org-type">ppos</span><span class="org-parenthesis">,</span>&amp;desc<span class="org-parenthesis">,</span><span class="org-type">file_read_actor</span><span class="org-parenthesis">)</span>;
-      <span class="org-function-name">do_generic_mapping_read</span><span class="org-parenthesis">(</span>filp-&gt;f_mapping<span class="org-parenthesis">,</span>&amp;filp-&gt;f_ra<span class="org-parenthesis">,</span><span class="org-type">filp</span><span class="org-parenthesis">,</span><span class="org-type">ppos</span><span class="org-parenthesis">,</span><span class="org-type">desc</span><span class="org-parenthesis">,</span><span class="org-type">actor</span><span class="org-parenthesis">)</span>;
+    <span class="org-function-name">do_generic_file_read</span>(filp,ppos,&amp;desc,file_read_actor);
+      <span class="org-function-name">do_generic_mapping_read</span>(filp-&gt;f_mapping,&amp;filp-&gt;f_ra,filp,ppos,desc,actor);
 </pre>
 </div>
 </div>
@@ -98,16 +98,16 @@ generic_file_read 做为 f_op-&gt;read 的实现.
 <h5 id="org0000003"><span class="section-number-5">1.1.1.2.</span> Page Cache</h5>
 <div class="outline-text-5" id="text-1-1-1-2">
 <div class="org-src-container">
-<pre class="src src-c"><span class="org-function-name">do_generic_mapping_read</span><span class="org-parenthesis">(</span>filp-&gt;f_mapping<span class="org-parenthesis">,</span>&amp;filp-&gt;f_ra<span class="org-parenthesis">,</span><span class="org-type">filp</span><span class="org-parenthesis">,</span><span class="org-type">ppos</span><span class="org-parenthesis">,</span><span class="org-type">desc</span><span class="org-parenthesis">,</span><span class="org-type">actor</span><span class="org-parenthesis">)</span>;
+<pre class="src src-c"><span class="org-function-name">do_generic_mapping_read</span>(filp-&gt;f_mapping,&amp;filp-&gt;f_ra,filp,ppos,desc,actor);
   <span class="org-comment-delimiter">// </span><span class="org-comment">ppos &#26159;&#35201;&#35835;&#21462;&#30340; offset (&#23383;&#33410;), index &#26159;&#36825;&#20010; offset &#23545;&#24212;&#30340; page cache &#20013;&#30340;</span>
   <span class="org-comment-delimiter">// </span><span class="org-comment">page index. page index &#19982; offset &#26159;&#32447;&#24615;&#30340;&#26144;&#23556;&#20851;&#31995;</span>
   index = *ppos &gt;&gt; PAGE_CACHE_SHIFT;
   <span class="org-comment-delimiter">// </span><span class="org-comment">mapping &#26159; inode-&gt;address_space</span>
   <span class="org-comment-delimiter">// </span><span class="org-comment">!! &#26597;&#25214; page cache !!</span>
-  page = find_get_page<span class="org-parenthesis">(</span>mapping<span class="org-parenthesis">,</span> index<span class="org-parenthesis">)</span>;
-    <span class="org-keyword">return</span> radix_tree_lookup<span class="org-parenthesis">(</span>&amp;mapping-&gt;page_tree<span class="org-parenthesis">,</span> offset<span class="org-parenthesis">)</span>;
+  page = find_get_page(mapping, index);
+    <span class="org-keyword">return</span> radix_tree_lookup(&amp;mapping-&gt;page_tree, offset);
   <span class="org-comment-delimiter">// </span><span class="org-comment">!! page cache miss !!</span>
-  <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>unlikely<span class="org-parenthesis">(</span>page == <span class="org-constant">NULL</span><span class="org-parenthesis">))</span>:
+  <span class="org-keyword">if</span> (unlikely(page == <span class="org-constant">NULL</span>)):
     <span class="org-keyword">goto</span> <span class="org-constant">no_cached_page</span>;
   <span class="org-keyword">else</span>:
     <span class="org-comment-delimiter">// </span><span class="org-comment">!! page cache hit !!</span>
@@ -115,30 +115,30 @@ generic_file_read 做为 f_op-&gt;read 的实现.
 
 <span class="org-constant">no_cached_page</span>:
   <span class="org-comment-delimiter">// </span><span class="org-comment">page cache hit, &#20998;&#37197;&#19968;&#20010;&#26032;&#30340; page, &#21152;&#21040; page cache &#20013;, &#24182; readpage</span>
-  cached_page = page_cache_alloc_cold<span class="org-parenthesis">(</span>mapping<span class="org-parenthesis">)</span>;
+  cached_page = page_cache_alloc_cold(mapping);
   <span class="org-comment-delimiter">// </span><span class="org-comment">&#26032; page &#19982; mapping &#30340; index &#20851;&#32852;, &#21152;&#21040; page cache &#20013;</span>
-  <span class="org-function-name">add_to_page_cache_lru</span><span class="org-parenthesis">(</span><span class="org-type">cached_page</span><span class="org-parenthesis">,</span> <span class="org-type">mapping</span><span class="org-parenthesis">,</span> <span class="org-type">index</span><span class="org-parenthesis">,</span> <span class="org-type">GFP_KERNEL</span><span class="org-parenthesis">)</span>;
+  <span class="org-function-name">add_to_page_cache_lru</span>(cached_page, mapping, index, GFP_KERNEL);
     <span class="org-comment-delimiter">// </span><span class="org-comment">lock page, readpage &#26159;&#20010;&#24322;&#27493;&#30340;&#35843;&#29992; (dma), do_generic_mapping_read &#38656;&#35201;&#36890;&#36807; lock_page &#38459;&#22622;&#20303;</span>
-    <span class="org-function-name">SetPageLocked</span><span class="org-parenthesis">(</span><span class="org-type">page</span><span class="org-parenthesis">)</span>;
+    <span class="org-function-name">SetPageLocked</span>(page);
   <span class="org-keyword">goto</span> <span class="org-constant">read_page</span>;
 
 <span class="org-constant">read_page</span>:
   <span class="org-comment-delimiter">// </span><span class="org-comment">NEXT STAGE</span>
   <span class="org-comment-delimiter">// </span><span class="org-comment">The read will unlock the page</span>
-  mapping-&gt;a_ops-&gt;readpage<span class="org-parenthesis">(</span>filp<span class="org-parenthesis">,</span> page<span class="org-parenthesis">)</span>;
+  mapping-&gt;a_ops-&gt;readpage(filp, page);
   <span class="org-comment-delimiter">// </span><span class="org-comment">&#22240;&#20026; readpage &#26159;&#24322;&#27493;&#30340;, readpage &#36820;&#22238;&#26102; page &#19968;&#33324;&#26159; !update</span>
   <span class="org-comment-delimiter">// </span><span class="org-comment">&#36825;&#37324;&#30340; lock_page &#20250;&#20351;&#20989;&#25968;&#38459;&#22622;&#20303;, &#31561;&#24453;&#24213;&#23618;&#35835;&#25805;&#20316;&#30340;&#32467;&#26463;</span>
-  <span class="org-keyword">if</span> <span class="org-parenthesis">(</span><span class="org-negation-char">!</span>PageUptodate<span class="org-parenthesis">(</span>page<span class="org-parenthesis">))</span>:
-    lock_page<span class="org-parenthesis">(</span>page<span class="org-parenthesis">)</span>;
+  <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>PageUptodate(page)):
+    lock_page(page);
       <span class="org-comment-delimiter">// </span><span class="org-comment">TASK_UNINTERRUPTIBLE, &#25152;&#35859;&#30340; D &#29366;&#24577;</span>
-      <span class="org-function-name">__wait_on_bit_lock</span><span class="org-parenthesis">(</span><span class="org-type">page_waitqueue</span><span class="org-parenthesis">(</span><span class="org-variable-name">page</span><span class="org-parenthesis">),</span> &amp;wait<span class="org-parenthesis">,</span> <span class="org-type">sync_page</span><span class="org-parenthesis">,</span> <span class="org-type">TASK_UNINTERRUPTIBLE</span><span class="org-parenthesis">)</span>;
-    <span class="org-function-name">unlock_page</span><span class="org-parenthesis">(</span><span class="org-type">page</span><span class="org-parenthesis">)</span>;
+      <span class="org-function-name">__wait_on_bit_lock</span>(<span class="org-type">page_waitqueue</span>(<span class="org-variable-name">page</span>), &amp;wait, sync_page, TASK_UNINTERRUPTIBLE);
+    <span class="org-function-name">unlock_page</span>(page);
   <span class="org-keyword">goto</span> <span class="org-constant">page_ok</span>;
 
 <span class="org-constant">page_ok</span>:
   <span class="org-comment-delimiter">// </span><span class="org-comment">actor &#23454;&#38469;&#26159; file_read_actor, &#36127;&#36131;&#23558; page &#30340;&#25968;&#25454;&#22797;&#21046;&#21040; desc, &#21363;</span>
   <span class="org-comment-delimiter">// </span><span class="org-comment">user space &#30340; buffer &#20013;</span>
-  ret = actor<span class="org-parenthesis">(</span>desc<span class="org-parenthesis">,</span> page<span class="org-parenthesis">,</span> offset<span class="org-parenthesis">,</span> nr<span class="org-parenthesis">)</span>;
+  ret = actor(desc, page, offset, nr);
 </pre>
 </div>
 </div>
@@ -166,9 +166,9 @@ Layer 打交道, 它们只需要实现几个回调即可, 比如 get_block
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span class="org-keyword">static</span> <span class="org-type">int</span> <span class="org-function-name">ext2_readpage</span><span class="org-parenthesis">(</span><span class="org-keyword">struct</span> <span class="org-type">file</span> *<span class="org-variable-name">file</span><span class="org-parenthesis">,</span> <span class="org-keyword">struct</span> <span class="org-type">page</span> *<span class="org-variable-name">page</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-    <span class="org-keyword">return</span> mpage_readpage<span class="org-parenthesis">(</span>page<span class="org-parenthesis">,</span> ext2_get_block<span class="org-parenthesis">)</span>;
-<span class="org-parenthesis">}</span>
+<pre class="src src-c"><span class="org-keyword">static</span> <span class="org-type">int</span> <span class="org-function-name">ext2_readpage</span>(<span class="org-keyword">struct</span> <span class="org-type">file</span> *<span class="org-variable-name">file</span>, <span class="org-keyword">struct</span> <span class="org-type">page</span> *<span class="org-variable-name">page</span>) {
+    <span class="org-keyword">return</span> mpage_readpage(page, ext2_get_block);
+}
 </pre>
 </div>
 
@@ -192,31 +192,31 @@ Layer 打交道, 它们只需要实现几个回调即可, 比如 get_block
 <span class="org-comment-delimiter">// </span><span class="org-comment">2. page-&gt;mapping-&gt;host, &#34920;&#31034; page &#23545;&#24212;&#30340; inode</span>
 <span class="org-comment-delimiter">// </span><span class="org-comment">inode &#21644; index &#21487;&#20197;&#26631;&#35782;&#26412;&#27425;&#35201;&#35835;&#21462;&#30340;&#20869;&#23481;</span>
 
-<span class="org-function-name">mpage_readpage</span><span class="org-parenthesis">(</span><span class="org-keyword">struct</span> <span class="org-type">page</span> *<span class="org-variable-name">page</span><span class="org-parenthesis">,</span> <span class="org-type">get_block_t</span> <span class="org-variable-name">get_block</span><span class="org-parenthesis">)</span>:
-  bio = do_mpage_readpage<span class="org-parenthesis">(</span>bio<span class="org-parenthesis">,</span> page<span class="org-parenthesis">,</span> 1<span class="org-parenthesis">,</span> &amp;last_block_in_bio<span class="org-parenthesis">,</span> get_block<span class="org-parenthesis">)</span>;
+<span class="org-function-name">mpage_readpage</span>(<span class="org-keyword">struct</span> <span class="org-type">page</span> *<span class="org-variable-name">page</span>, <span class="org-type">get_block_t</span> <span class="org-variable-name">get_block</span>):
+  bio = do_mpage_readpage(bio, page, 1, &amp;last_block_in_bio, get_block);
     <span class="org-keyword">struct</span> <span class="org-type">inode</span> *<span class="org-variable-name">inode</span> = page-&gt;mapping-&gt;host;
     <span class="org-comment-delimiter">// </span><span class="org-comment">PAGE_CACHE_SHIFT &#20026; 12 (4KB), blkbits &#19968;&#33324;&#20026; 9 (512B)</span>
     <span class="org-comment-delimiter">// </span><span class="org-comment">&#25152;&#20197; block_in_file = page_index * 8</span>
-    block_in_file = page-&gt;index &lt;&lt; <span class="org-parenthesis">(</span>PAGE_CACHE_SHIFT - blkbits<span class="org-parenthesis">)</span>;
+    block_in_file = page-&gt;index &lt;&lt; (PAGE_CACHE_SHIFT - blkbits);
     <span class="org-comment-delimiter">// </span><span class="org-comment">blocks_per_page = 4K &gt;&gt; 9 = 8, &#34920;&#31034;&#19968;&#20010; page &#23481;&#32435; 8 &#20010; block (sector)</span>
     blocks_per_page = PAGE_CACHE_SIZE &gt;&gt; blkbits;
-    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span>page_block = 0; page_block &lt; blocks_per_page; page_block++<span class="org-parenthesis">,</span> block_in_file++<span class="org-parenthesis">)</span>:
+    <span class="org-keyword">for</span> (page_block = 0; page_block &lt; blocks_per_page; page_block++, block_in_file++):
       <span class="org-comment-delimiter">// </span><span class="org-comment">&#23545;&#36825;&#20010; page &#20013;&#30340;&#27599;&#20010; block</span>
       <span class="org-comment-delimiter">// </span><span class="org-comment">&#35843;&#29992;&#25991;&#20214;&#31995;&#32479;&#30456;&#20851;&#30340; get_block, &#20197;&#20415;&#24471;&#21040; block_in_file &#19982;&#30495;&#27491;&#30340; sector_t &#30340;&#23545;&#24212;</span>
       <span class="org-comment-delimiter">// </span><span class="org-comment">&#20851;&#31995;, &#30495;&#27491;&#30340; sector_t &#20445;&#23384;&#22312; bh-&gt;b_blocknr &#20013;</span>
       <span class="org-comment-delimiter">// </span><span class="org-comment">&#36825;&#37324;&#30340; block_in_file &#21482;&#26159;&#30456;&#24403;&#20110;&#25991;&#20214;&#30340;&#20559;&#31227;&#37327;, &#30495;&#27491;&#30340; logical block (sector_t)</span>
       <span class="org-comment-delimiter">// </span><span class="org-comment">&#21482;&#26377;&#25991;&#20214;&#31995;&#32479;&#25165;&#30693;&#36947;</span>
-      get_block<span class="org-parenthesis">(</span>inode<span class="org-parenthesis">,</span> block_in_file<span class="org-parenthesis">,</span> &amp;bh<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">)</span>
+      get_block(inode, block_in_file, &amp;bh, 0)
       <span class="org-comment-delimiter">// </span><span class="org-comment">blocks &#25968;&#32452;&#20445;&#23384;&#30528;&#24490;&#29615;&#36807;&#31243;&#20013;&#23545;&#24212;&#21508;&#20010; block_in_file &#30340; sector_t &#30340;&#20540;</span>
       <span class="org-comment-delimiter">// </span><span class="org-comment">&#22914;&#26524;&#36825;&#20010;&#25968;&#32452;&#20013;&#30340;&#25968;&#25454;&#19981;&#26159;&#36830;&#32493;&#36882;&#22686;&#30340; (&#20363;&#22914; 23456789 &#26159;&#36830;&#32493;&#36882;&#22686;&#30340;), &#34920;&#31034;</span>
       <span class="org-comment-delimiter">// </span><span class="org-comment">&#36825;&#20010; page &#30340;&#25968;&#25454;&#22312;&#29289;&#29702;&#35774;&#22791;&#19978;&#19981;&#26159;&#36830;&#32493;&#30340;, &#35843;&#29992; block_read_full_page</span>
-      <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>page_block &amp;&amp; blocks[page_block-1] != bh.b_blocknr-1<span class="org-parenthesis">)</span>:
-        block_read_full_page<span class="org-parenthesis">(</span>page<span class="org-parenthesis">,</span> get_block<span class="org-parenthesis">)</span>;
+      <span class="org-keyword">if</span> (page_block &amp;&amp; blocks[page_block-1] != bh.b_blocknr-1):
+        block_read_full_page(page, get_block);
         <span class="org-keyword">return</span>
       <span class="org-comment-delimiter">// </span><span class="org-comment">&#29289;&#29702;&#35774;&#22791;&#19978;&#36830;&#32493;, &#20165;&#26500;&#36896;&#19968;&#20010; BIO</span>
-      bio = mpage_alloc<span class="org-parenthesis">(</span>bdev<span class="org-parenthesis">,</span> blocks[0]<span class="org-parenthesis">,</span>nr_pages<span class="org-parenthesis">,</span>GFP_KERNEL<span class="org-parenthesis">)</span>;
-      <span class="org-function-name">bio_add_page</span><span class="org-parenthesis">(</span><span class="org-type">bio</span><span class="org-parenthesis">,</span> <span class="org-type">page</span><span class="org-parenthesis">,</span> <span class="org-type">length</span><span class="org-parenthesis">,</span> 0<span class="org-parenthesis">)</span>
-      <span class="org-function-name">mpage_bio_submit</span><span class="org-parenthesis">(</span><span class="org-type">READ</span><span class="org-parenthesis">,</span> <span class="org-type">bio</span><span class="org-parenthesis">)</span>;
+      bio = mpage_alloc(bdev, blocks[0],nr_pages,GFP_KERNEL);
+      <span class="org-function-name">bio_add_page</span>(bio, page, length, 0)
+      <span class="org-function-name">mpage_bio_submit</span>(READ, bio);
 </pre>
 </div>
 </div>
@@ -239,21 +239,21 @@ buffer page 来 cache 这个 buffer_head.
 
 <div class="org-src-container">
 <pre class="src src-c"><span class="org-comment-delimiter">// </span><span class="org-comment">block_read_full_page &#19982; mpage_readpage &#31867;&#20284;, &#20294;&#30465;&#21435;&#20102;&#21512;&#24182; bio &#30340;&#36807;&#31243;</span>
-<span class="org-function-name">block_read_full_page</span><span class="org-parenthesis">(</span><span class="org-keyword">struct</span> <span class="org-type">page</span> *<span class="org-variable-name">page</span><span class="org-parenthesis">,</span> <span class="org-type">get_block_t</span> *<span class="org-variable-name">get_block</span><span class="org-parenthesis">)</span>:
+<span class="org-function-name">block_read_full_page</span>(<span class="org-keyword">struct</span> <span class="org-type">page</span> *<span class="org-variable-name">page</span>, <span class="org-type">get_block_t</span> *<span class="org-variable-name">get_block</span>):
   <span class="org-keyword">struct</span> inode *inode = page-&gt;mapping-&gt;host;
   <span class="org-comment-delimiter">// </span><span class="org-comment">block_read_full_page &#32467;&#26463;&#21518;, page &#24517;&#28982;&#20250;&#26159;&#19968;&#20010; buffer page</span>
-  <span class="org-keyword">if</span> <span class="org-parenthesis">(</span><span class="org-negation-char">!</span>page_has_buffers<span class="org-parenthesis">(</span>page<span class="org-parenthesis">))</span>
+  <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>page_has_buffers(page))
     <span class="org-comment-delimiter">// </span><span class="org-comment">&#29983;&#25104; 8 &#20010; buffer_head, &#24182;&#23558; page &#36716;&#25442;&#20026; buffer page</span>
-    <span class="org-function-name">create_empty_buffers</span><span class="org-parenthesis">(</span><span class="org-type">page</span><span class="org-parenthesis">,</span> <span class="org-type">blocksize</span><span class="org-parenthesis">,</span> 0<span class="org-parenthesis">)</span>;
-  head = page_buffers<span class="org-parenthesis">(</span>page<span class="org-parenthesis">)</span>;
-  iblock = <span class="org-parenthesis">(</span><span class="org-type">sector_t</span><span class="org-parenthesis">)</span>page-&gt;index &lt;&lt; <span class="org-parenthesis">(</span>PAGE_CACHE_SHIFT - inode-&gt;i_blkbits<span class="org-parenthesis">)</span>;
+    <span class="org-function-name">create_empty_buffers</span>(page, blocksize, 0);
+  head = page_buffers(page);
+  iblock = (<span class="org-type">sector_t</span>)page-&gt;index &lt;&lt; (PAGE_CACHE_SHIFT - inode-&gt;i_blkbits);
 
-  <span class="org-function-name">for_each</span> <span class="org-parenthesis">(</span><span class="org-type">iblock</span><span class="org-parenthesis">,</span> <span class="org-type">bh</span><span class="org-parenthesis">)</span>:
-    get_block<span class="org-parenthesis">(</span>inode<span class="org-parenthesis">,</span> iblock<span class="org-parenthesis">,</span> bh<span class="org-parenthesis">,</span> 0<span class="org-parenthesis">)</span>
+  <span class="org-function-name">for_each</span> (iblock, bh):
+    get_block(inode, iblock, bh, 0)
     <span class="org-type">arr</span>[nr++] = bh;
 
   for_each bh in <span class="org-type">arr</span>:
-    submit_bh<span class="org-parenthesis">(</span>READ<span class="org-parenthesis">,</span> bh<span class="org-parenthesis">)</span>;
+    submit_bh(READ, bh);
 </pre>
 </div>
 </div>
@@ -301,7 +301,7 @@ bio-&gt;bi_end_io 都会在底层 IO 结束时被调用, 并且都会 unlock_pag
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span class="org-function-name">blkdev_get_block</span><span class="org-parenthesis">(</span><span class="org-keyword">struct</span> <span class="org-type">inode</span> *<span class="org-variable-name">inode</span><span class="org-parenthesis">,</span> <span class="org-type">sector_t</span> <span class="org-variable-name">iblock</span><span class="org-parenthesis">,</span> <span class="org-keyword">struct</span> <span class="org-type">buffer_head</span> *<span class="org-variable-name">bh</span><span class="org-parenthesis">)</span>:
+<pre class="src src-c"><span class="org-function-name">blkdev_get_block</span>(<span class="org-keyword">struct</span> <span class="org-type">inode</span> *<span class="org-variable-name">inode</span>, <span class="org-type">sector_t</span> <span class="org-variable-name">iblock</span>, <span class="org-keyword">struct</span> <span class="org-type">buffer_head</span> *<span class="org-variable-name">bh</span>):
   bh-&gt;b_blocknr = iblock;
 </pre>
 </div>
@@ -331,10 +331,10 @@ buffer_head
 <h5 id="org000001b"><span class="section-number-5">1.1.3.1.</span> VFS</h5>
 <div class="outline-text-5" id="text-1-1-3-1">
 <div class="org-src-container">
-<pre class="src src-c"><span class="org-function-name">generic_file_write</span><span class="org-parenthesis">(</span><span class="org-keyword">struct</span> <span class="org-type">file</span> *<span class="org-variable-name">file</span><span class="org-parenthesis">,</span> <span class="org-keyword">const</span> <span class="org-type">char</span> <span class="org-variable-name">__user</span> *buf<span class="org-parenthesis">,</span><span class="org-type">size_t</span> <span class="org-variable-name">count</span><span class="org-parenthesis">,</span> <span class="org-type">loff_t</span> *<span class="org-variable-name">ppos</span><span class="org-parenthesis">)</span>:
-  __generic_file_write_nolock<span class="org-parenthesis">(</span>file<span class="org-parenthesis">,</span> &amp;local_iov<span class="org-parenthesis">,</span> 1<span class="org-parenthesis">,</span> ppos<span class="org-parenthesis">)</span>;
-    __generic_file_aio_write_nolock<span class="org-parenthesis">(</span>&amp;kiocb<span class="org-parenthesis">,</span> iov<span class="org-parenthesis">,</span> nr_segs<span class="org-parenthesis">,</span> ppos<span class="org-parenthesis">)</span>;
-      <span class="org-function-name">generic_file_buffered_write</span><span class="org-parenthesis">(</span><span class="org-type">iocb</span><span class="org-parenthesis">,</span> <span class="org-type">iov</span><span class="org-parenthesis">,</span> <span class="org-type">nr_segs</span><span class="org-parenthesis">,</span> <span class="org-type">pos</span><span class="org-parenthesis">,</span> <span class="org-type">ppos</span><span class="org-parenthesis">,</span> <span class="org-type">count</span><span class="org-parenthesis">,</span> <span class="org-type">written</span><span class="org-parenthesis">)</span>;
+<pre class="src src-c"><span class="org-function-name">generic_file_write</span>(<span class="org-keyword">struct</span> <span class="org-type">file</span> *<span class="org-variable-name">file</span>, <span class="org-keyword">const</span> <span class="org-type">char</span> <span class="org-variable-name">__user</span> *buf,<span class="org-type">size_t</span> <span class="org-variable-name">count</span>, <span class="org-type">loff_t</span> *<span class="org-variable-name">ppos</span>):
+  __generic_file_write_nolock(file, &amp;local_iov, 1, ppos);
+    __generic_file_aio_write_nolock(&amp;kiocb, iov, nr_segs, ppos);
+      <span class="org-function-name">generic_file_buffered_write</span>(iocb, iov, nr_segs, pos, ppos, count, written);
 </pre>
 </div>
 </div>
@@ -344,9 +344,9 @@ buffer_head
 <h5 id="org000001e"><span class="section-number-5">1.1.3.2.</span> Page Cache</h5>
 <div class="outline-text-5" id="text-1-1-3-2">
 <div class="org-src-container">
-<pre class="src src-c"><span class="org-function-name">generic_file_buffered_write</span><span class="org-parenthesis">(</span><span class="org-keyword">struct</span> <span class="org-type">kiocb</span> *<span class="org-variable-name">iocb</span><span class="org-parenthesis">,</span> <span class="org-keyword">const</span> <span class="org-keyword">struct</span> <span class="org-type">iovec</span> *<span class="org-variable-name">iov</span><span class="org-parenthesis">,</span>
-                            <span class="org-type">unsigned</span> <span class="org-type">long</span> <span class="org-variable-name">nr_segs</span><span class="org-parenthesis">,</span> <span class="org-type">loff_t</span> <span class="org-variable-name">pos</span><span class="org-parenthesis">,</span> <span class="org-type">loff_t</span> *<span class="org-variable-name">ppos</span><span class="org-parenthesis">,</span>
-                            <span class="org-type">size_t</span> <span class="org-variable-name">count</span><span class="org-parenthesis">,</span> <span class="org-type">ssize_t</span> <span class="org-variable-name">written</span><span class="org-parenthesis">)</span>:
+<pre class="src src-c"><span class="org-function-name">generic_file_buffered_write</span>(<span class="org-keyword">struct</span> <span class="org-type">kiocb</span> *<span class="org-variable-name">iocb</span>, <span class="org-keyword">const</span> <span class="org-keyword">struct</span> <span class="org-type">iovec</span> *<span class="org-variable-name">iov</span>,
+                            <span class="org-type">unsigned</span> <span class="org-type">long</span> <span class="org-variable-name">nr_segs</span>, <span class="org-type">loff_t</span> <span class="org-variable-name">pos</span>, <span class="org-type">loff_t</span> *<span class="org-variable-name">ppos</span>,
+                            <span class="org-type">size_t</span> <span class="org-variable-name">count</span>, <span class="org-type">ssize_t</span> <span class="org-variable-name">written</span>):
   <span class="org-keyword">struct</span> file *file = iocb-&gt;ki_filp;
   <span class="org-keyword">struct</span> <span class="org-type">address_space</span> * <span class="org-variable-name">mapping</span> = file-&gt;f_mapping;
   <span class="org-keyword">struct</span> <span class="org-type">address_space_operations</span> *<span class="org-variable-name">a_ops</span> = mapping-&gt;a_ops;
@@ -354,24 +354,24 @@ buffer_head
 
   index = pos &gt;&gt; PAGE_CACHE_SHIFT;
   <span class="org-comment-delimiter">// </span><span class="org-comment">&#26597;&#25214; page cache, &#33509;&#19981;&#23384;&#22312;, &#21017;&#26032;&#24314;&#19968;&#20010; page</span>
-  page = __grab_cache_page<span class="org-parenthesis">(</span>mapping<span class="org-parenthesis">,</span>index<span class="org-parenthesis">,</span>&amp;cached_page<span class="org-parenthesis">,</span>&amp;lru_pvec<span class="org-parenthesis">)</span>;
-    page = find_lock_page<span class="org-parenthesis">(</span>mapping<span class="org-parenthesis">,</span> index<span class="org-parenthesis">)</span>;
-    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span><span class="org-negation-char">!</span>page<span class="org-parenthesis">)</span>:
-      *cached_page = page_cache_alloc<span class="org-parenthesis">(</span>mapping<span class="org-parenthesis">)</span>;
-      add_to_page_cache<span class="org-parenthesis">(</span>*cached_page<span class="org-parenthesis">,</span> mapping<span class="org-parenthesis">,</span> index<span class="org-parenthesis">,</span> GFP_KERNEL<span class="org-parenthesis">)</span>;
+  page = __grab_cache_page(mapping,index,&amp;cached_page,&amp;lru_pvec);
+    page = find_lock_page(mapping, index);
+    <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>page):
+      *cached_page = page_cache_alloc(mapping);
+      add_to_page_cache(*cached_page, mapping, index, GFP_KERNEL);
     <span class="org-keyword">return</span> *cached_page
   <span class="org-comment-delimiter">// </span><span class="org-comment">prepare_write &#19982;&#20855;&#20307;&#25991;&#20214;&#31995;&#32479;&#30456;&#20851;, &#36825;&#20010;&#20989;&#25968;&#36820;&#22238;&#21518;, &#21487;&#20197;&#20445;&#35777;</span>
   <span class="org-comment-delimiter">// </span><span class="org-comment">page &#20013;&#24050;&#32463;&#26377;&#30456;&#24212;&#30340; buffer_head, &#24182;&#19988; page &#20013;&#24050;&#32463;&#21253;&#21547;&#21407;&#22987;&#30340;&#25968;&#25454;</span>
   <span class="org-comment-delimiter">// </span><span class="org-comment">(write &#25805;&#20316;&#38656;&#35201;&#22312;&#21407;&#22987;&#25968;&#25454;&#30340;&#22522;&#30784;&#19978;&#36827;&#34892;&#35206;&#30422;)</span>
-  a_ops-&gt;prepare_write<span class="org-parenthesis">(</span>file<span class="org-parenthesis">,</span> page<span class="org-parenthesis">,</span> offset<span class="org-parenthesis">,</span> offset+bytes<span class="org-parenthesis">)</span>;
+  a_ops-&gt;prepare_write(file, page, offset, offset+bytes);
   <span class="org-comment-delimiter">// </span><span class="org-comment">&#25968;&#25454;&#34987;&#20889;&#21040; page</span>
-  <span class="org-function-name">filemap_copy_from_user</span><span class="org-parenthesis">(</span><span class="org-type">page</span><span class="org-parenthesis">,</span> <span class="org-type">offset</span><span class="org-parenthesis">,</span> <span class="org-type">buf</span><span class="org-parenthesis">,</span> <span class="org-type">bytes</span><span class="org-parenthesis">)</span>;
+  <span class="org-function-name">filemap_copy_from_user</span>(page, offset, buf, bytes);
   <span class="org-comment-delimiter">// </span><span class="org-comment">&#26681;&#25454; offset &#21644; size &#30830;&#23450; page &#20013;&#21508;&#20010; buffer_head &#30340;&#29366;&#24577;&#21482;&#26377;&#34987;&#20462;&#25913;</span>
   <span class="org-comment-delimiter">// </span><span class="org-comment">&#21040;&#30340; buffer_head &#25165;&#20250;&#25913;&#20026; dirty, &#21518;&#32493; sync &#26102;&#21482;&#38656;&#35201; sync &#36825;&#19968;&#20010;</span>
   <span class="org-comment-delimiter">// </span><span class="org-comment">buffer_head</span>
-  a_ops-&gt;commit_write<span class="org-parenthesis">(</span>file<span class="org-parenthesis">,</span> page<span class="org-parenthesis">,</span> offset<span class="org-parenthesis">,</span> offset+bytes<span class="org-parenthesis">)</span>;
+  a_ops-&gt;commit_write(file, page, offset, offset+bytes);
   <span class="org-comment-delimiter">// </span><span class="org-comment">balance dirty page (vm_dirty_ratio)</span>
-  <span class="org-function-name">balance_dirty_pages_ratelimited</span><span class="org-parenthesis">()</span>
+  <span class="org-function-name">balance_dirty_pages_ratelimited</span>()
   <span class="org-comment-delimiter">// </span><span class="org-comment">&#38500;&#38750;&#25351;&#23450;&#20102; O_SYNC &#25110; O_DIRECT, &#21542;&#21017; write &#25805;&#20316;&#22312; commit_write &#23601;&#32467;&#26463;&#20102;,</span>
   <span class="org-comment-delimiter">// </span><span class="org-comment">&#30495;&#27491;&#30340; IO &#25805;&#20316;&#21457;&#29983;&#22312; sync &#26102;</span>
 </pre>
@@ -402,9 +402,9 @@ page 中已经有对应的原始数据, 所以它的代码与 block_read_full_pa
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span class="org-type">int</span> <span class="org-function-name">block_prepare_write</span><span class="org-parenthesis">(</span><span class="org-keyword">struct</span> <span class="org-type">page</span> *<span class="org-variable-name">page</span><span class="org-parenthesis">,</span> <span class="org-type">unsigned</span> <span class="org-variable-name">from</span><span class="org-parenthesis">,</span> <span class="org-type">unsigned</span> <span class="org-variable-name">to</span><span class="org-parenthesis">,</span> <span class="org-type">get_block_t</span> *<span class="org-variable-name">get_block</span><span class="org-parenthesis">)</span>:
+<pre class="src src-c"><span class="org-type">int</span> <span class="org-function-name">block_prepare_write</span>(<span class="org-keyword">struct</span> <span class="org-type">page</span> *<span class="org-variable-name">page</span>, <span class="org-type">unsigned</span> <span class="org-variable-name">from</span>, <span class="org-type">unsigned</span> <span class="org-variable-name">to</span>, <span class="org-type">get_block_t</span> *<span class="org-variable-name">get_block</span>):
   <span class="org-keyword">struct</span> inode *inode = page-&gt;mapping-&gt;host;
-  <span class="org-function-name">__block_prepare_write</span><span class="org-parenthesis">(</span><span class="org-type">inode</span><span class="org-parenthesis">,</span> <span class="org-type">page</span><span class="org-parenthesis">,</span> <span class="org-type">from</span><span class="org-parenthesis">,</span> <span class="org-type">to</span><span class="org-parenthesis">,</span> <span class="org-type">get_block</span><span class="org-parenthesis">)</span>;
+  <span class="org-function-name">__block_prepare_write</span>(inode, page, from, to, get_block);
 </pre>
 </div>
 </div>
@@ -419,11 +419,11 @@ writepage 时能找到哪些 buffer_head 是 dirty 的.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c"><span class="org-keyword">static</span> <span class="org-type">int</span> <span class="org-function-name">__block_commit_write</span><span class="org-parenthesis">(</span><span class="org-keyword">struct</span> <span class="org-type">inode</span> *<span class="org-variable-name">inode</span><span class="org-parenthesis">,</span> <span class="org-keyword">struct</span> <span class="org-type">page</span> *<span class="org-variable-name">page</span><span class="org-parenthesis">,</span> <span class="org-type">unsigned</span> <span class="org-variable-name">from</span><span class="org-parenthesis">,</span> <span class="org-type">unsigned</span> <span class="org-variable-name">to</span><span class="org-parenthesis">)</span>:
-  for_each bh in page_buffers<span class="org-parenthesis">(</span>page<span class="org-parenthesis">)</span>:
-    unless <span class="org-parenthesis">(</span>block_end &lt;= from || block_start &gt;= to<span class="org-parenthesis">)</span>:
-      set_buffer_uptodate<span class="org-parenthesis">(</span>bh<span class="org-parenthesis">)</span>;
-      <span class="org-function-name">mark_buffer_dirty</span><span class="org-parenthesis">(</span><span class="org-type">bh</span><span class="org-parenthesis">)</span>;
+<pre class="src src-c"><span class="org-keyword">static</span> <span class="org-type">int</span> <span class="org-function-name">__block_commit_write</span>(<span class="org-keyword">struct</span> <span class="org-type">inode</span> *<span class="org-variable-name">inode</span>, <span class="org-keyword">struct</span> <span class="org-type">page</span> *<span class="org-variable-name">page</span>, <span class="org-type">unsigned</span> <span class="org-variable-name">from</span>, <span class="org-type">unsigned</span> <span class="org-variable-name">to</span>):
+  for_each bh in page_buffers(page):
+    unless (block_end &lt;= from || block_start &gt;= to):
+      set_buffer_uptodate(bh);
+      <span class="org-function-name">mark_buffer_dirty</span>(bh);
 
 </pre>
 </div>
@@ -503,7 +503,7 @@ window, 并通过 get_next_ra_size 分配一个新的(更大的) ahead window</l
 <h5 id="org000003f"><span class="section-number-5">1.1.6.1.</span> vm_area_struct</h5>
 <div class="outline-text-5" id="text-1-1-6-1">
 <div class="org-src-container">
-<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-type">vm_area_struct</span> <span class="org-parenthesis">{</span>
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-type">vm_area_struct</span> {
     <span class="org-comment-delimiter">// </span><span class="org-comment">vma &#20013;&#21644; file map &#30456;&#20851;&#30340;&#25104;&#21592;</span>
     <span class="org-type">unsigned</span> <span class="org-type">long</span> <span class="org-variable-name">vm_start</span>;
     <span class="org-keyword">struct</span> <span class="org-type">rb_node</span> <span class="org-variable-name">vm_rb</span>;
@@ -511,7 +511,7 @@ window, 并通过 get_next_ra_size 分配一个新的(更大的) ahead window</l
     <span class="org-type">unsigned</span> <span class="org-type">long</span> <span class="org-variable-name">vm_pgoff</span>;
     <span class="org-keyword">struct</span> <span class="org-type">file</span> * <span class="org-variable-name">vm_file</span>;
     <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
-<span class="org-parenthesis">}</span>
+}
 </pre>
 </div>
 </div>
@@ -524,21 +524,21 @@ window, 并通过 get_next_ra_size 分配一个新的(更大的) ahead window</l
 <pre class="src src-c"><span class="org-comment-delimiter">// </span><span class="org-comment">&#23454;&#38469;&#20195;&#30721;&#20013; handle_pte_fault &#23545;&#20110; file mapping &#30340;&#35843;&#29992;&#36335;&#24452;&#26159;</span>
 <span class="org-comment-delimiter">// </span><span class="org-comment">do_file_page -&gt; filemap_getpage &#32780;&#19981;&#26159; do_no_page -&gt; filemap_nopage</span>
 <span class="org-comment-delimiter">// </span><span class="org-comment">&#20294;&#20004;&#32773;&#20195;&#30721;&#22522;&#26412;&#31867;&#20284;</span>
-<span class="org-keyword">struct</span> <span class="org-type">page</span> * <span class="org-function-name">filemap_nopage</span><span class="org-parenthesis">(</span><span class="org-keyword">struct</span> <span class="org-type">vm_area_struct</span> * <span class="org-variable-name">area</span><span class="org-parenthesis">,</span> <span class="org-type">address</span><span class="org-parenthesis">,</span> <span class="org-type">int</span> *<span class="org-variable-name">type</span><span class="org-parenthesis">)</span>:
+<span class="org-keyword">struct</span> <span class="org-type">page</span> * <span class="org-function-name">filemap_nopage</span>(<span class="org-keyword">struct</span> <span class="org-type">vm_area_struct</span> * <span class="org-variable-name">area</span>, address, <span class="org-type">int</span> *<span class="org-variable-name">type</span>):
   <span class="org-keyword">struct</span> file *file = area-&gt;vm_file;
   <span class="org-keyword">struct</span> <span class="org-type">address_space</span> *<span class="org-variable-name">mapping</span> = file-&gt;f_mapping;
   <span class="org-keyword">struct</span> <span class="org-type">file_ra_state</span> *<span class="org-variable-name">ra</span> = &amp;file-&gt;f_ra;
   <span class="org-keyword">struct</span> <span class="org-type">inode</span> *<span class="org-variable-name">inode</span> = mapping-&gt;host;
 
-  pgoff = <span class="org-parenthesis">((</span>address - area-&gt;vm_start<span class="org-parenthesis">)</span> &gt;&gt; PAGE_CACHE_SHIFT<span class="org-parenthesis">)</span> + area-&gt;vm_pgoff;
+  pgoff = ((address - area-&gt;vm_start) &gt;&gt; PAGE_CACHE_SHIFT) + area-&gt;vm_pgoff;
   <span class="org-comment-delimiter">// </span><span class="org-comment">madvise (MADV_SEQUENTIAL)</span>
-  <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>VM_SequentialReadHint<span class="org-parenthesis">(</span>area<span class="org-parenthesis">))</span>:
-    page_cache_readahead<span class="org-parenthesis">(</span>mapping<span class="org-parenthesis">,</span> ra<span class="org-parenthesis">,</span> file<span class="org-parenthesis">,</span> pgoff<span class="org-parenthesis">,</span> 1<span class="org-parenthesis">)</span>;
+  <span class="org-keyword">if</span> (VM_SequentialReadHint(area)):
+    page_cache_readahead(mapping, ra, file, pgoff, 1);
   <span class="org-comment-delimiter">// </span><span class="org-comment">some logic related to ra</span>
   <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
   <span class="org-comment-delimiter">// </span><span class="org-comment">&#26597;&#25214; page cache</span>
-  page = find_get_page<span class="org-parenthesis">(</span>mapping<span class="org-parenthesis">,</span> pgoff<span class="org-parenthesis">)</span>;
-  <span class="org-keyword">if</span> <span class="org-parenthesis">(</span><span class="org-negation-char">!</span>page<span class="org-parenthesis">)</span>
+  page = find_get_page(mapping, pgoff);
+  <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>page)
     <span class="org-keyword">goto</span> <span class="org-constant">no_cached_page</span>;
   <span class="org-keyword">else</span>:
     <span class="org-comment-delimiter">// </span><span class="org-comment">assume page is updated for simple case</span>
@@ -548,12 +548,12 @@ window, 并通过 get_next_ra_size 分配一个新的(更大的) ahead window</l
 
 no_cached_page:
   <span class="org-comment-delimiter">// </span><span class="org-comment">&#20998;&#37197; page cache &#24182; readpage</span>
-  page_cache_read<span class="org-parenthesis">(</span>file<span class="org-parenthesis">,</span> pgoff<span class="org-parenthesis">)</span>;
-    <span class="org-function-name">page_cache_alloc_cold</span><span class="org-parenthesis">(</span><span class="org-type">mapping</span><span class="org-parenthesis">)</span>;
-    <span class="org-function-name">add_to_page_cache_lru</span><span class="org-parenthesis">(</span><span class="org-type">page</span><span class="org-parenthesis">,</span> <span class="org-type">mapping</span><span class="org-parenthesis">,</span> <span class="org-type">offset</span><span class="org-parenthesis">,</span> <span class="org-type">GFP_KERNEL</span><span class="org-parenthesis">)</span>;
-    mapping-&gt;a_ops-&gt;readpage<span class="org-parenthesis">(</span>file<span class="org-parenthesis">,</span> page<span class="org-parenthesis">)</span>;
+  page_cache_read(file, pgoff);
+    <span class="org-function-name">page_cache_alloc_cold</span>(mapping);
+    <span class="org-function-name">add_to_page_cache_lru</span>(page, mapping, offset, GFP_KERNEL);
+    mapping-&gt;a_ops-&gt;readpage(file, page);
   <span class="org-comment-delimiter">// </span><span class="org-comment">find page cache again, should hit</span>
-  page = find_get_page<span class="org-parenthesis">(</span>mapping<span class="org-parenthesis">,</span> pgoff<span class="org-parenthesis">)</span>;
+  page = find_get_page(mapping, pgoff);
   <span class="org-comment-delimiter">// </span><span class="org-comment">major fault here</span>
   *type = VM_FAULT_MAJOR;
   <span class="org-keyword">return</span> page
@@ -567,15 +567,15 @@ no_cached_page:
 <div class="outline-text-5" id="text-1-1-6-3">
 <div class="org-src-container">
 <pre class="src src-c"><span class="org-constant">do_page_fault</span>:
-  <span class="org-keyword">__asm__</span><span class="org-parenthesis">(</span><span class="org-string">"movl %%cr2,%0"</span>:<span class="org-string">"=r"</span> <span class="org-parenthesis">(</span>address<span class="org-parenthesis">))</span>;
-  vma = find_vma<span class="org-parenthesis">(</span>mm<span class="org-parenthesis">,</span> address<span class="org-parenthesis">)</span>;
-  <span class="org-keyword">switch</span> <span class="org-parenthesis">(</span>handle_mm_fault<span class="org-parenthesis">(</span>mm<span class="org-parenthesis">,</span> vma<span class="org-parenthesis">,</span> address<span class="org-parenthesis">,</span> write<span class="org-parenthesis">))</span> <span class="org-parenthesis">{</span>
-             handle_pte_fault<span class="org-parenthesis">(</span>mm<span class="org-parenthesis">,</span> vma<span class="org-parenthesis">,</span> address<span class="org-parenthesis">,</span> write_access<span class="org-parenthesis">,</span> pte<span class="org-parenthesis">,</span> pmd<span class="org-parenthesis">)</span>;
-               do_no_page<span class="org-parenthesis">(</span>mm<span class="org-parenthesis">,</span> vma<span class="org-parenthesis">,</span> address<span class="org-parenthesis">,</span> write_access<span class="org-parenthesis">,</span> pte<span class="org-parenthesis">,</span> pmd<span class="org-parenthesis">)</span>;
-                 new_page = vma-&gt;vm_ops-&gt;nopage<span class="org-parenthesis">(</span>vma<span class="org-parenthesis">,</span> address &amp; PAGE_MASK<span class="org-parenthesis">,</span> &amp;ret<span class="org-parenthesis">)</span>;
-                   filemap_nopage<span class="org-parenthesis">(</span>vma<span class="org-parenthesis">,</span> address &amp; PAGE_MASK<span class="org-parenthesis">,</span> &amp;ret<span class="org-parenthesis">)</span>
-                 entry = mk_pte<span class="org-parenthesis">(</span>new_page<span class="org-parenthesis">,</span> vma-&gt;vm_page_prot<span class="org-parenthesis">)</span>;
-                 set_pte<span class="org-parenthesis">(</span>page_table<span class="org-parenthesis">,</span> entry<span class="org-parenthesis">)</span>;
+  <span class="org-keyword">__asm__</span>(<span class="org-string">"movl %%cr2,%0"</span>:<span class="org-string">"=r"</span> (address));
+  vma = find_vma(mm, address);
+  <span class="org-keyword">switch</span> (handle_mm_fault(mm, vma, address, write)) {
+             handle_pte_fault(mm, vma, address, write_access, pte, pmd);
+               do_no_page(mm, vma, address, write_access, pte, pmd);
+                 new_page = vma-&gt;vm_ops-&gt;nopage(vma, address &amp; PAGE_MASK, &amp;ret);
+                   filemap_nopage(vma, address &amp; PAGE_MASK, &amp;ret)
+                 entry = mk_pte(new_page, vma-&gt;vm_page_prot);
+                 set_pte(page_table, entry);
     <span class="org-keyword">case</span> VM_FAULT_MINOR:
       tsk-&gt;min_flt++;
       <span class="org-keyword">break</span>;
@@ -657,19 +657,19 @@ no_cached_page:
 <div class="outline-text-5" id="text-1-2-3-2">
 <div class="org-src-container">
 <pre class="src src-c"><span class="org-constant">submit_bio</span>:
-  <span class="org-function-name">generic_make_request</span><span class="org-parenthesis">(</span><span class="org-type">bio</span><span class="org-parenthesis">)</span>;
+  <span class="org-function-name">generic_make_request</span>(bio);
     <span class="org-comment-delimiter">// </span><span class="org-comment">&#35745;&#31639; bio &#21253;&#25324;&#22810;&#23569;&#20010; sector</span>
-    <span class="org-type">int</span> <span class="org-variable-name">nr_sectors</span> = bio_sectors<span class="org-parenthesis">(</span>bio<span class="org-parenthesis">)</span>;
-    q = bdev_get_queue<span class="org-parenthesis">(</span>bio-&gt;bi_bdev<span class="org-parenthesis">)</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">nr_sectors</span> = bio_sectors(bio);
+    q = bdev_get_queue(bio-&gt;bi_bdev);
       <span class="org-comment-delimiter">// </span><span class="org-comment">block_device-&gt;gendisk-&gt;request_queue</span>
       <span class="org-keyword">return</span> bdev-&gt;bd_disk-&gt;queue;
     <span class="org-comment-delimiter">// </span><span class="org-comment">&#33509; bio-&gt;bi_dev &#25351;&#21521;&#19968;&#20010;&#20998;&#21306;, &#23558; bio-&gt;bi_sector</span>
     <span class="org-comment-delimiter">// </span><span class="org-comment">&#36716;&#25442;&#20026;&#30456;&#23545;&#20110; bio-&gt;bi_dev-&gt;bd_contains &#30340; sector</span>
     <span class="org-comment-delimiter">// </span><span class="org-comment">&#24182;&#23558; bio-&gt;bi_dev &#21464;&#20026; bio-&gt;bi_dev-&gt;bd_contains</span>
-    <span class="org-function-name">blk_partition_remap</span><span class="org-parenthesis">(</span><span class="org-type">bio</span><span class="org-parenthesis">)</span>;
+    <span class="org-function-name">blk_partition_remap</span>(bio);
     <span class="org-comment-delimiter">// </span><span class="org-comment">q-&gt;make_request_fn &#26159;&#22312; block device driver &#21021;&#22987;&#26102;</span>
     <span class="org-comment-delimiter">// </span><span class="org-comment">&#36890;&#36807; blk_init_queue &#25351;&#23450;&#30340;, &#19968;&#33324;&#40664;&#35748;&#30340;&#23454;&#29616;&#20026; __make_request</span>
-    q-&gt;make_request_fn<span class="org-parenthesis">(</span>q<span class="org-parenthesis">,</span> bio<span class="org-parenthesis">)</span>;
+    q-&gt;make_request_fn(q, bio);
 </pre>
 </div>
 </div>
@@ -722,9 +722,9 @@ __make_request 会直接与 IO scheduler 打交道.
 <div class="org-src-container">
 <pre class="src src-c"><span class="org-constant">__make_request</span>:
   sector = bio-&gt;bi_sector;
-  nr_sectors = bio_sectors<span class="org-parenthesis">(</span>bio<span class="org-parenthesis">)</span>;
-  <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>elv_queue_empty<span class="org-parenthesis">(</span>q<span class="org-parenthesis">))</span>:
-    blk_plug_device<span class="org-parenthesis">(</span>q<span class="org-parenthesis">)</span>;
+  nr_sectors = bio_sectors(bio);
+  <span class="org-keyword">if</span> (elv_queue_empty(q)):
+    blk_plug_device(q);
     <span class="org-keyword">goto</span> <span class="org-constant">get_rq</span>;
   <span class="org-comment-delimiter">// </span><span class="org-comment">req &#20445;&#23384;&#30528; elevator &#36820;&#22238;&#30340;&#32467;&#26524;: elevator &#35748;&#20026; bio &#21487;&#20197;&#19982; req</span>
   <span class="org-comment-delimiter">// </span><span class="org-comment">merge &#22312;&#19968;&#36215;&#33267;&#20110;&#20026;&#20160;&#20040; elevator &#35748;&#20026;&#21487;&#20197;&#19982; req merge, &#21442;&#32771;</span>
@@ -732,8 +732,8 @@ __make_request 会直接与 IO scheduler 打交道.
   <span class="org-comment-delimiter">// </span><span class="org-comment">bio &#19982;&#26576;&#20010; req &#26159;&#36830;&#32493;&#30340; (&#20363;&#22914; req-&gt;sector + req-&gt;nr_sectors =</span>
   <span class="org-comment-delimiter">// </span><span class="org-comment">bio-&gt;bi_sector, &#34920;&#31034; bio &#21487;&#20197; merge &#21040; req &#26411;&#23614;), &#21017;&#35748;&#20026; bio &#19982;</span>
   <span class="org-comment-delimiter">// </span><span class="org-comment">req &#26159;&#21487;&#20197; merge &#30340;</span>
-  el_ret = elv_merge<span class="org-parenthesis">(</span>q<span class="org-parenthesis">,</span> &amp;req<span class="org-parenthesis">,</span> bio<span class="org-parenthesis">)</span>;
-  <span class="org-keyword">switch</span> <span class="org-parenthesis">(</span>el_ret<span class="org-parenthesis">)</span>:
+  el_ret = elv_merge(q, &amp;req, bio);
+  <span class="org-keyword">switch</span> (el_ret):
     <span class="org-comment-delimiter">// </span><span class="org-comment">bio &#21487;&#20197; merge &#21040; req &#30340;&#26411;&#23614;</span>
     <span class="org-keyword">case</span> ELEVATOR_BACK_MERGE:
       req-&gt;biotail-&gt;bi_next = bio;
@@ -752,14 +752,14 @@ __make_request 会直接与 IO scheduler 打交道.
     req-&gt;nr_sectors = nr_sectors;
     req-&gt;bio = req-&gt;biotail = bio;
     <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
-    <span class="org-function-name">add_request</span><span class="org-parenthesis">(</span><span class="org-type">q</span><span class="org-parenthesis">,</span> <span class="org-type">req</span><span class="org-parenthesis">)</span>;
-      <span class="org-function-name">__elv_add_request</span><span class="org-parenthesis">()</span>
-        q-&gt;elevator-&gt;ops-&gt;elevator_add_req_fn<span class="org-parenthesis">(</span>q<span class="org-parenthesis">,</span> rq<span class="org-parenthesis">,</span> where<span class="org-parenthesis">)</span>;
+    <span class="org-function-name">add_request</span>(q, req);
+      <span class="org-function-name">__elv_add_request</span>()
+        q-&gt;elevator-&gt;ops-&gt;elevator_add_req_fn(q, rq, where);
         <span class="org-type">int</span> <span class="org-variable-name">nrq</span> = q-&gt;rq.count[READ] + q-&gt;rq.count[WRITE] - q-&gt;in_flight;
-        <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>nrq == q-&gt;unplug_thresh<span class="org-parenthesis">)</span>:
-          __generic_unplug_device<span class="org-parenthesis">(</span>q<span class="org-parenthesis">)</span>;
+        <span class="org-keyword">if</span> (nrq == q-&gt;unplug_thresh):
+          __generic_unplug_device(q);
             <span class="org-comment-delimiter">// </span><span class="org-comment">!! DRIVER !!</span>
-            q-&gt;request_fn<span class="org-parenthesis">(</span>q<span class="org-parenthesis">)</span>;
+            q-&gt;request_fn(q);
 </pre>
 </div>
 

@@ -116,24 +116,24 @@ quantize 分为三步：
 </ol>
 
 <div class="org-src-container">
-<pre class="src src-python"><span class="org-variable-name">calibrate_pass</span> <span class="org-operator">=</span> tvm.transform.module_pass<span class="org-parenthesis">(</span>
-    calibrate<span class="org-parenthesis">(</span>dataset<span class="org-parenthesis">),</span> opt_level<span class="org-operator">=</span>1<span class="org-parenthesis">,</span> name<span class="org-operator">=</span><span class="org-string">"QuantizeCalibrate"</span>
-<span class="org-parenthesis">)</span>
+<pre class="src src-python"><span class="org-variable-name">calibrate_pass</span> <span class="org-operator">=</span> tvm.transform.module_pass(
+    calibrate(dataset), opt_level<span class="org-operator">=</span>1, name<span class="org-operator">=</span><span class="org-string">"QuantizeCalibrate"</span>
+)
 <span class="org-variable-name">quant_passes</span> <span class="org-operator">=</span> [
-    partition<span class="org-parenthesis">(),</span>
-    annotate<span class="org-parenthesis">(),</span>
-    calibrate_pass<span class="org-parenthesis">,</span>
-    tvm.relay.transform.InferType<span class="org-parenthesis">(),</span>
-    realize<span class="org-parenthesis">(),</span>
+    partition(),
+    annotate(),
+    calibrate_pass,
+    tvm.relay.transform.InferType(),
+    realize(),
 ]
 
-<span class="org-variable-name">quantize_seq</span> <span class="org-operator">=</span> tvm.transform.Sequential<span class="org-parenthesis">(</span>quant_passes<span class="org-parenthesis">)</span>
-<span class="org-keyword">with</span> tvm.transform.PassContext<span class="org-parenthesis">(</span>
-    opt_level<span class="org-operator">=</span>3<span class="org-parenthesis">,</span>
-    required_pass<span class="org-operator">=</span>[<span class="org-string">"QuantizeAnnotate"</span><span class="org-parenthesis">,</span> <span class="org-string">"QuantizeCalibrate"</span><span class="org-parenthesis">,</span> <span class="org-string">"QuantizeRealize"</span>]<span class="org-parenthesis">,</span>
-<span class="org-parenthesis">)</span>:
-    <span class="org-keyword">with</span> quantize_context<span class="org-parenthesis">()</span>:
-        <span class="org-variable-name">mod</span> <span class="org-operator">=</span> quantize_seq<span class="org-parenthesis">(</span>mod<span class="org-parenthesis">)</span>
+<span class="org-variable-name">quantize_seq</span> <span class="org-operator">=</span> tvm.transform.Sequential(quant_passes)
+<span class="org-keyword">with</span> tvm.transform.PassContext(
+    opt_level<span class="org-operator">=</span>3,
+    required_pass<span class="org-operator">=</span>[<span class="org-string">"QuantizeAnnotate"</span>, <span class="org-string">"QuantizeCalibrate"</span>, <span class="org-string">"QuantizeRealize"</span>],
+):
+    <span class="org-keyword">with</span> quantize_context():
+        <span class="org-variable-name">mod</span> <span class="org-operator">=</span> quantize_seq(mod)
 </pre>
 </div>
 </div>
@@ -142,23 +142,23 @@ quantize 分为三步：
 <h5 id="org000000a"><span class="section-number-5">1.1.0.1.</span> calibrate</h5>
 <div class="outline-text-5" id="text-1-1-0-1">
 <div class="org-src-container">
-<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">calibrate</span><span class="org-parenthesis">(</span>dataset<span class="org-operator">=</span><span class="org-constant">None</span><span class="org-parenthesis">)</span>:
-    <span class="org-keyword">def</span> <span class="org-function-name">wrapped_func</span><span class="org-parenthesis">(</span>mod<span class="org-parenthesis">,</span> _<span class="org-parenthesis">)</span>:
-        <span class="org-variable-name">cfg</span> <span class="org-operator">=</span> quantize.current_qconfig<span class="org-parenthesis">()</span>
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">calibrate</span>(dataset<span class="org-operator">=</span><span class="org-constant">None</span>):
+    <span class="org-keyword">def</span> <span class="org-function-name">wrapped_func</span>(mod, _):
+        <span class="org-variable-name">cfg</span> <span class="org-operator">=</span> quantize.current_qconfig()
 
         <span class="org-keyword">if</span> cfg.calibrate_mode <span class="org-operator">==</span> <span class="org-string">"kl_divergence"</span>:
-            <span class="org-variable-name">input_scale_func</span> <span class="org-operator">=</span> _kl_scale<span class="org-parenthesis">(</span>mod<span class="org-parenthesis">,</span> dataset<span class="org-parenthesis">)</span>
+            <span class="org-variable-name">input_scale_func</span> <span class="org-operator">=</span> _kl_scale(mod, dataset)
         <span class="org-keyword">elif</span> cfg.calibrate_mode <span class="org-operator">==</span> <span class="org-string">"global_scale"</span>:
             <span class="org-variable-name">input_scale_func</span> <span class="org-operator">=</span> _global_scale
         <span class="org-keyword">elif</span> cfg.calibrate_mode <span class="org-operator">==</span> <span class="org-string">"percentile"</span>:
-            <span class="org-variable-name">input_scale_func</span> <span class="org-operator">=</span> _percentile_scale<span class="org-parenthesis">(</span>mod<span class="org-parenthesis">,</span> dataset<span class="org-parenthesis">)</span>
+            <span class="org-variable-name">input_scale_func</span> <span class="org-operator">=</span> _percentile_scale(mod, dataset)
 
         <span class="org-keyword">if</span> cfg.weight_scale <span class="org-operator">==</span> <span class="org-string">"max"</span>:
             <span class="org-variable-name">weight_scale_func</span> <span class="org-operator">=</span> _max_scale
         <span class="org-keyword">elif</span> cfg.weight_scale <span class="org-operator">==</span> <span class="org-string">"power2"</span>:
             <span class="org-variable-name">weight_scale_func</span> <span class="org-operator">=</span> _power2_scale
 
-        <span class="org-keyword">return</span> _set_params<span class="org-parenthesis">(</span>mod<span class="org-parenthesis">,</span> input_scale_func<span class="org-parenthesis">,</span> weight_scale_func<span class="org-parenthesis">)</span>
+        <span class="org-keyword">return</span> _set_params(mod, input_scale_func, weight_scale_func)
 
     <span class="org-keyword">return</span> wrapped_func
 
@@ -168,20 +168,20 @@ _set_params:
     <span class="org-comment-delimiter">#      </span><span class="org-comment">"nbit_input": 8,</span>
     <span class="org-comment-delimiter">#      </span><span class="org-comment">"nbit_weight": 8,</span>
     <span class="org-comment-delimiter">#      </span><span class="org-comment">"nbit_activation": 32,</span>
-    <span class="org-variable-name">nbit</span> <span class="org-operator">=</span> cfg.get_nbit_by_kind<span class="org-parenthesis">(</span>kind<span class="org-parenthesis">)</span>
+    <span class="org-variable-name">nbit</span> <span class="org-operator">=</span> cfg.get_nbit_by_kind(kind)
     <span class="org-variable-name">valid_bit</span> <span class="org-operator">=</span> nbit <span class="org-operator">-</span> attrs.sign
     <span class="org-keyword">if</span> kind <span class="org-operator">==</span> quantize.QAnnotateKind.WEIGHT:
-        <span class="org-variable-name">scale</span> <span class="org-operator">=</span> weight_scale_func<span class="org-parenthesis">(</span>expr<span class="org-parenthesis">)</span>
+        <span class="org-variable-name">scale</span> <span class="org-operator">=</span> weight_scale_func(expr)
     <span class="org-keyword">else</span>:
-        <span class="org-variable-name">scale</span> <span class="org-operator">=</span> input_scale_func<span class="org-parenthesis">(</span>expr<span class="org-parenthesis">)</span>
+        <span class="org-variable-name">scale</span> <span class="org-operator">=</span> input_scale_func(expr)
 
     <span class="org-comment-delimiter"># </span><span class="org-comment">&#36825;&#37324;&#26174;&#31034; tvm &#30340;&#37327;&#21270;&#26159;&#23545;&#31216;&#37327;&#21270;, &#19978;&#38754;&#35745;&#31639;&#30340; scale &#22312;&#21407;&#29702;&#19978;&#24212;&#35813;&#31561;&#20110;</span>
     <span class="org-comment-delimiter"># </span><span class="org-comment">np.max(np.abs(orig_data))</span>
 
     <span class="org-variable-name">valid_range</span> <span class="org-operator">=</span> 2 <span class="org-operator">**</span> valid_bit
-    <span class="org-variable-name">const_params</span>[ndom_scale] <span class="org-operator">=</span> _make_const<span class="org-parenthesis">(</span>scale <span class="org-operator">/</span> valid_range<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">const_params</span>[nclip_min] <span class="org-operator">=</span> _make_const<span class="org-parenthesis">(</span><span class="org-operator">-</span><span class="org-parenthesis">(</span>valid_range <span class="org-operator">-</span> 1<span class="org-parenthesis">))</span>
-    <span class="org-variable-name">const_params</span>[nclip_max] <span class="org-operator">=</span> _make_const<span class="org-parenthesis">((</span>valid_range <span class="org-operator">-</span> 1<span class="org-parenthesis">))</span>
+    <span class="org-variable-name">const_params</span>[ndom_scale] <span class="org-operator">=</span> _make_const(scale <span class="org-operator">/</span> valid_range)
+    <span class="org-variable-name">const_params</span>[nclip_min] <span class="org-operator">=</span> _make_const(<span class="org-operator">-</span>(valid_range <span class="org-operator">-</span> 1))
+    <span class="org-variable-name">const_params</span>[nclip_max] <span class="org-operator">=</span> _make_const((valid_range <span class="org-operator">-</span> 1))
 </pre>
 </div>
 </div>
@@ -190,16 +190,16 @@ _set_params:
 <h6 id="org0000000"><span class="section-number-6">1.1.0.1.1.</span> percentile</h6>
 <div class="outline-text-6" id="text-1-1-0-1-1">
 <div class="org-src-container">
-<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">_percentile_scale</span><span class="org-parenthesis">(</span>mod<span class="org-parenthesis">,</span> dataset<span class="org-parenthesis">)</span>:
-    <span class="org-variable-name">cfg</span> <span class="org-operator">=</span> quantize.current_qconfig<span class="org-parenthesis">()</span>
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">_percentile_scale</span>(mod, dataset):
+    <span class="org-variable-name">cfg</span> <span class="org-operator">=</span> quantize.current_qconfig()
     <span class="org-variable-name">chunk_by</span> <span class="org-operator">=</span> cfg.calibrate_chunk_by
     <span class="org-variable-name">scales</span> <span class="org-operator">=</span> []
-    <span class="org-keyword">for</span> samples <span class="org-keyword">in</span> collect_stats<span class="org-parenthesis">(</span>mod<span class="org-parenthesis">,</span> dataset<span class="org-parenthesis">,</span> chunk_by<span class="org-parenthesis">)</span>:
-        logging.info<span class="org-parenthesis">(</span><span class="org-string">"finding threshold with percentile for calibration..."</span><span class="org-parenthesis">)</span>
-        <span class="org-keyword">with</span> mp.Pool<span class="org-parenthesis">()</span> <span class="org-keyword">as</span> pool:
-            <span class="org-variable-name">scales</span> <span class="org-operator">+=</span> <span class="org-builtin">list</span><span class="org-parenthesis">(</span>pool.<span class="org-builtin">map</span><span class="org-parenthesis">(</span>_find_scale_by_percentile<span class="org-parenthesis">,</span> samples<span class="org-parenthesis">))</span>
+    <span class="org-keyword">for</span> samples <span class="org-keyword">in</span> collect_stats(mod, dataset, chunk_by):
+        logging.info(<span class="org-string">"finding threshold with percentile for calibration..."</span>)
+        <span class="org-keyword">with</span> mp.Pool() <span class="org-keyword">as</span> pool:
+            <span class="org-variable-name">scales</span> <span class="org-operator">+=</span> <span class="org-builtin">list</span>(pool.<span class="org-builtin">map</span>(_find_scale_by_percentile, samples))
 
-    <span class="org-keyword">def</span> <span class="org-function-name">func</span><span class="org-parenthesis">(</span>_<span class="org-parenthesis">)</span>:
+    <span class="org-keyword">def</span> <span class="org-function-name">func</span>(_):
         <span class="org-comment-delimiter"># </span><span class="org-comment">func &#36820;&#22238;&#27599;&#19968;&#23618;&#30340; scale (&#23454;&#38469;&#19978;&#30456;&#24403;&#20110;&#27599;&#23618;&#30340;`&#26368;&#22823;&#20540;`, &#21518;&#32493;&#20250;&#36890;&#36807;</span>
         <span class="org-comment-delimiter"># </span><span class="org-comment">scale/valid_range &#33719;&#24471;&#26368;&#32456;&#30340; scale)</span>
         <span class="org-variable-name">scale</span> <span class="org-operator">=</span> scales[func.scale_idx]
@@ -212,28 +212,28 @@ _set_params:
 
 
 <span class="org-comment-delimiter"># </span><span class="org-comment">&#20351;&#29992; calibrate_dataset &#33719;&#24471;&#27599;&#19968;&#23618;&#30340;&#36755;&#20986;</span>
-<span class="org-keyword">def</span> <span class="org-function-name">collect_stats</span><span class="org-parenthesis">(</span>mod<span class="org-parenthesis">,</span> dataset<span class="org-parenthesis">,</span> chunk_by<span class="org-operator">=-</span>1<span class="org-parenthesis">)</span>:
-    <span class="org-variable-name">runtime</span> <span class="org-operator">=</span> _get_profile_runtime<span class="org-parenthesis">(</span>mod<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">num_outputs</span> <span class="org-operator">=</span> runtime.get_num_outputs<span class="org-parenthesis">()</span>
+<span class="org-keyword">def</span> <span class="org-function-name">collect_stats</span>(mod, dataset, chunk_by<span class="org-operator">=-</span>1):
+    <span class="org-variable-name">runtime</span> <span class="org-operator">=</span> _get_profile_runtime(mod)
+    <span class="org-variable-name">num_outputs</span> <span class="org-operator">=</span> runtime.get_num_outputs()
 
-    <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span><span class="org-parenthesis">(</span>0<span class="org-parenthesis">,</span> num_outputs<span class="org-parenthesis">,</span> chunk_by<span class="org-parenthesis">)</span>:
-        <span class="org-variable-name">outputs</span> <span class="org-operator">=</span> [[] <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span><span class="org-parenthesis">(</span><span class="org-builtin">min</span><span class="org-parenthesis">(</span>chunk_by<span class="org-parenthesis">,</span> num_outputs <span class="org-operator">-</span> i<span class="org-parenthesis">))</span>]
+    <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(0, num_outputs, chunk_by):
+        <span class="org-variable-name">outputs</span> <span class="org-operator">=</span> [[] <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(<span class="org-builtin">min</span>(chunk_by, num_outputs <span class="org-operator">-</span> i))]
         <span class="org-keyword">for</span> batch <span class="org-keyword">in</span> dataset:
-            runtime.set_input<span class="org-parenthesis">(</span><span class="org-operator">**</span>batch<span class="org-parenthesis">)</span>
-            runtime.run<span class="org-parenthesis">()</span>
-            <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span><span class="org-parenthesis">(</span>i<span class="org-parenthesis">,</span> <span class="org-builtin">min</span><span class="org-parenthesis">(</span>i <span class="org-operator">+</span> chunk_by<span class="org-parenthesis">,</span> num_outputs<span class="org-parenthesis">))</span>:
-                outputs[j <span class="org-operator">-</span> i].append<span class="org-parenthesis">(</span>runtime.get_output<span class="org-parenthesis">(</span>j<span class="org-parenthesis">)</span>.numpy<span class="org-parenthesis">())</span>
-        <span class="org-keyword">yield</span> [np.concatenate<span class="org-parenthesis">(</span>output<span class="org-parenthesis">)</span>.reshape<span class="org-parenthesis">(</span><span class="org-operator">-</span>1<span class="org-parenthesis">)</span> <span class="org-keyword">for</span> output <span class="org-keyword">in</span> outputs]
+            runtime.set_input(<span class="org-operator">**</span>batch)
+            runtime.run()
+            <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(i, <span class="org-builtin">min</span>(i <span class="org-operator">+</span> chunk_by, num_outputs)):
+                outputs[j <span class="org-operator">-</span> i].append(runtime.get_output(j).numpy())
+        <span class="org-keyword">yield</span> [np.concatenate(output).reshape(<span class="org-operator">-</span>1) <span class="org-keyword">for</span> output <span class="org-keyword">in</span> outputs]
 
 
 <span class="org-comment-delimiter"># </span><span class="org-comment">&#36825;&#20010;&#20989;&#25968;&#30456;&#24403;&#20110;&#19968;&#20010; get_k_largest &#20989;&#25968;, &#20854;&#20013; k=percentile*(arr.size), &#29992;&#26469;&#36991;&#20813;</span>
 <span class="org-comment-delimiter"># </span><span class="org-comment">&#20010;&#21035;&#26497;&#22823;&#30340;&#20540;&#36896;&#25104;&#37327;&#21270;&#35823;&#24046;</span>
 <span class="org-comment-delimiter"># </span><span class="org-comment">file:~/Gitbox/code/leetcode/go/src/kth_largest_element_in_an_array/kth_largest_element_in_an_array.go</span>
-<span class="org-keyword">def</span> <span class="org-function-name">_find_scale_by_percentile</span><span class="org-parenthesis">(</span>arr<span class="org-parenthesis">,</span> percentile<span class="org-operator">=</span>0.99999<span class="org-parenthesis">)</span>:
-    <span class="org-keyword">assert</span> <span class="org-builtin">isinstance</span><span class="org-parenthesis">(</span>arr<span class="org-parenthesis">,</span> np.ndarray<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">x</span> <span class="org-operator">=</span> np.<span class="org-builtin">abs</span><span class="org-parenthesis">(</span>arr<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">max_k</span> <span class="org-operator">=</span> <span class="org-builtin">int</span><span class="org-parenthesis">(</span>x.size <span class="org-operator">*</span> percentile<span class="org-parenthesis">)</span>
-    <span class="org-keyword">return</span> np.partition<span class="org-parenthesis">(</span>x<span class="org-parenthesis">,</span> max_k<span class="org-parenthesis">)</span>[max_k]
+<span class="org-keyword">def</span> <span class="org-function-name">_find_scale_by_percentile</span>(arr, percentile<span class="org-operator">=</span>0.99999):
+    <span class="org-keyword">assert</span> <span class="org-builtin">isinstance</span>(arr, np.ndarray)
+    <span class="org-variable-name">x</span> <span class="org-operator">=</span> np.<span class="org-builtin">abs</span>(arr)
+    <span class="org-variable-name">max_k</span> <span class="org-operator">=</span> <span class="org-builtin">int</span>(x.size <span class="org-operator">*</span> percentile)
+    <span class="org-keyword">return</span> np.partition(x, max_k)[max_k]
 </pre>
 </div>
 </div>
@@ -277,21 +277,21 @@ for i in range( 128 , 2048 ):
 <span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 
 
-<span class="org-keyword">def</span> <span class="org-function-name">kl_divergence</span><span class="org-parenthesis">(</span>p<span class="org-parenthesis">,</span> q<span class="org-parenthesis">)</span>:
-    <span class="org-keyword">return</span> np.<span class="org-builtin">sum</span><span class="org-parenthesis">(</span>p <span class="org-operator">*</span> np.log<span class="org-parenthesis">(</span>p <span class="org-operator">/</span> q<span class="org-parenthesis">))</span>
+<span class="org-keyword">def</span> <span class="org-function-name">kl_divergence</span>(p, q):
+    <span class="org-keyword">return</span> np.<span class="org-builtin">sum</span>(p <span class="org-operator">*</span> np.log(p <span class="org-operator">/</span> q))
 
 
-<span class="org-keyword">def</span> <span class="org-function-name">check</span><span class="org-parenthesis">(</span>P<span class="org-parenthesis">,</span> target_bins<span class="org-parenthesis">)</span>:
-    <span class="org-variable-name">Q</span> <span class="org-operator">=</span> np.array<span class="org-parenthesis">(</span>[np.average<span class="org-parenthesis">(</span>x<span class="org-parenthesis">)</span> <span class="org-keyword">for</span> x <span class="org-keyword">in</span> np.split<span class="org-parenthesis">(</span>P<span class="org-parenthesis">,</span> target_bins<span class="org-parenthesis">)</span>]<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">Q</span> <span class="org-operator">=</span> np.repeat<span class="org-parenthesis">(</span>Q<span class="org-parenthesis">,</span> <span class="org-builtin">len</span><span class="org-parenthesis">(</span>P<span class="org-parenthesis">)</span> <span class="org-operator">//</span> target_bins<span class="org-parenthesis">)</span>
+<span class="org-keyword">def</span> <span class="org-function-name">check</span>(P, target_bins):
+    <span class="org-variable-name">Q</span> <span class="org-operator">=</span> np.array([np.average(x) <span class="org-keyword">for</span> x <span class="org-keyword">in</span> np.split(P, target_bins)])
+    <span class="org-variable-name">Q</span> <span class="org-operator">=</span> np.repeat(Q, <span class="org-builtin">len</span>(P) <span class="org-operator">//</span> target_bins)
 
-    <span class="org-keyword">return</span> kl_divergence<span class="org-parenthesis">(</span>P <span class="org-operator">/</span> np.<span class="org-builtin">sum</span><span class="org-parenthesis">(</span>P<span class="org-parenthesis">),</span> Q <span class="org-operator">/</span> np.<span class="org-builtin">sum</span><span class="org-parenthesis">(</span>Q<span class="org-parenthesis">))</span>
+    <span class="org-keyword">return</span> kl_divergence(P <span class="org-operator">/</span> np.<span class="org-builtin">sum</span>(P), Q <span class="org-operator">/</span> np.<span class="org-builtin">sum</span>(Q))
 
 
 <span class="org-keyword">if</span> <span class="org-builtin">__name__</span> <span class="org-operator">==</span> <span class="org-string">"__main__"</span>:
-    <span class="org-builtin">print</span><span class="org-parenthesis">(</span>check<span class="org-parenthesis">(</span>np.array<span class="org-parenthesis">(</span>[1<span class="org-parenthesis">,</span> 2<span class="org-parenthesis">,</span> 3<span class="org-parenthesis">,</span> 4<span class="org-parenthesis">,</span> 5<span class="org-parenthesis">,</span> 6<span class="org-parenthesis">,</span> 7<span class="org-parenthesis">,</span> 8]<span class="org-parenthesis">),</span> 2<span class="org-parenthesis">))</span>
-    <span class="org-builtin">print</span><span class="org-parenthesis">(</span>check<span class="org-parenthesis">(</span>np.array<span class="org-parenthesis">(</span>[1<span class="org-parenthesis">,</span> 3<span class="org-parenthesis">,</span> 5<span class="org-parenthesis">,</span> 7<span class="org-parenthesis">,</span> 2<span class="org-parenthesis">,</span> 4<span class="org-parenthesis">,</span> 6<span class="org-parenthesis">,</span> 8]<span class="org-parenthesis">),</span> 2<span class="org-parenthesis">))</span>
-    <span class="org-builtin">print</span><span class="org-parenthesis">(</span>check<span class="org-parenthesis">(</span>np.array<span class="org-parenthesis">(</span>[2<span class="org-parenthesis">,</span> 2<span class="org-parenthesis">,</span> 2<span class="org-parenthesis">,</span> 2<span class="org-parenthesis">,</span> 6<span class="org-parenthesis">,</span> 6<span class="org-parenthesis">,</span> 6<span class="org-parenthesis">,</span> 6]<span class="org-parenthesis">),</span> 2<span class="org-parenthesis">))</span>
+    <span class="org-builtin">print</span>(check(np.array([1, 2, 3, 4, 5, 6, 7, 8]), 2))
+    <span class="org-builtin">print</span>(check(np.array([1, 3, 5, 7, 2, 4, 6, 8]), 2))
+    <span class="org-builtin">print</span>(check(np.array([2, 2, 2, 2, 6, 6, 6, 6]), 2))
 </pre>
 </div>
 
@@ -312,8 +312,8 @@ calibrate_dataset
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">_global_scale</span><span class="org-parenthesis">(</span>sq_call<span class="org-parenthesis">)</span>:
-    <span class="org-variable-name">cfg</span> <span class="org-operator">=</span> quantize.current_qconfig<span class="org-parenthesis">()</span>
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">_global_scale</span>(sq_call):
+    <span class="org-variable-name">cfg</span> <span class="org-operator">=</span> quantize.current_qconfig()
     <span class="org-keyword">return</span> cfg.global_scale
 </pre>
 </div>
@@ -369,64 +369,64 @@ relay::qnn::transform::Legalize 被执行的
 <span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">from</span> tvm <span class="org-keyword">import</span> relay
 
-<span class="org-variable-name">x_data</span> <span class="org-operator">=</span> np.array<span class="org-parenthesis">((</span>1<span class="org-parenthesis">,</span> 153<span class="org-parenthesis">,</span> 2<span class="org-parenthesis">,</span> 178<span class="org-parenthesis">))</span>.reshape<span class="org-parenthesis">((</span>1<span class="org-parenthesis">,</span> 4<span class="org-parenthesis">))</span>
-<span class="org-variable-name">y_data</span> <span class="org-operator">=</span> np.array<span class="org-parenthesis">((</span>204<span class="org-parenthesis">,</span> 178<span class="org-parenthesis">,</span> 1<span class="org-parenthesis">,</span> 8<span class="org-parenthesis">))</span>.reshape<span class="org-parenthesis">((</span>1<span class="org-parenthesis">,</span> 4<span class="org-parenthesis">))</span>
+<span class="org-variable-name">x_data</span> <span class="org-operator">=</span> np.array((1, 153, 2, 178)).reshape((1, 4))
+<span class="org-variable-name">y_data</span> <span class="org-operator">=</span> np.array((204, 178, 1, 8)).reshape((1, 4))
 
 <span class="org-variable-name">x_scale</span> <span class="org-operator">=</span> y_scale <span class="org-operator">=</span> z_scale <span class="org-operator">=</span> 0.00784314
 <span class="org-variable-name">x_zero_point</span> <span class="org-operator">=</span> y_zero_point <span class="org-operator">=</span> z_zero_point <span class="org-operator">=</span> 127
 
 
-<span class="org-keyword">def</span> <span class="org-function-name">dequant</span><span class="org-parenthesis">(</span>data<span class="org-parenthesis">,</span> scale<span class="org-parenthesis">,</span> zp<span class="org-parenthesis">)</span>:
-    <span class="org-keyword">return</span> scale <span class="org-operator">*</span> <span class="org-parenthesis">(</span>np.asarray<span class="org-parenthesis">(</span>data<span class="org-parenthesis">)</span> <span class="org-operator">-</span> zp<span class="org-parenthesis">)</span>
+<span class="org-keyword">def</span> <span class="org-function-name">dequant</span>(data, scale, zp):
+    <span class="org-keyword">return</span> scale <span class="org-operator">*</span> (np.asarray(data) <span class="org-operator">-</span> zp)
 
 
-<span class="org-keyword">def</span> <span class="org-function-name">quant</span><span class="org-parenthesis">(</span>data<span class="org-parenthesis">,</span> scale<span class="org-parenthesis">,</span> zp<span class="org-parenthesis">)</span>:
-    <span class="org-variable-name">z</span> <span class="org-operator">=</span> np.around<span class="org-parenthesis">(</span>data <span class="org-operator">/</span> scale <span class="org-operator">+</span> zp<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">q_min</span> <span class="org-operator">=</span> np.iinfo<span class="org-parenthesis">(</span>np.uint8<span class="org-parenthesis">)</span>.<span class="org-builtin">min</span>
-    <span class="org-variable-name">q_max</span> <span class="org-operator">=</span> np.iinfo<span class="org-parenthesis">(</span>np.uint8<span class="org-parenthesis">)</span>.<span class="org-builtin">max</span>
-    <span class="org-keyword">return</span> np.clip<span class="org-parenthesis">(</span>z<span class="org-parenthesis">,</span> q_min<span class="org-parenthesis">,</span> q_max<span class="org-parenthesis">)</span>
+<span class="org-keyword">def</span> <span class="org-function-name">quant</span>(data, scale, zp):
+    <span class="org-variable-name">z</span> <span class="org-operator">=</span> np.around(data <span class="org-operator">/</span> scale <span class="org-operator">+</span> zp)
+    <span class="org-variable-name">q_min</span> <span class="org-operator">=</span> np.iinfo(np.uint8).<span class="org-builtin">min</span>
+    <span class="org-variable-name">q_max</span> <span class="org-operator">=</span> np.iinfo(np.uint8).<span class="org-builtin">max</span>
+    <span class="org-keyword">return</span> np.clip(z, q_min, q_max)
 
 
-<span class="org-keyword">def</span> <span class="org-function-name">mul_manually</span><span class="org-parenthesis">()</span>:
-    <span class="org-keyword">return</span> quant<span class="org-parenthesis">(</span>
-        dequant<span class="org-parenthesis">(</span>x_data<span class="org-parenthesis">,</span> x_scale<span class="org-parenthesis">,</span> x_zero_point<span class="org-parenthesis">)</span> <span class="org-operator">*</span> dequant<span class="org-parenthesis">(</span>y_data<span class="org-parenthesis">,</span> y_scale<span class="org-parenthesis">,</span> y_zero_point<span class="org-parenthesis">),</span>
-        z_scale<span class="org-parenthesis">,</span>
-        z_zero_point<span class="org-parenthesis">,</span>
-    <span class="org-parenthesis">)</span>
+<span class="org-keyword">def</span> <span class="org-function-name">mul_manually</span>():
+    <span class="org-keyword">return</span> quant(
+        dequant(x_data, x_scale, x_zero_point) <span class="org-operator">*</span> dequant(y_data, y_scale, y_zero_point),
+        z_scale,
+        z_zero_point,
+    )
 
 
 <span class="org-keyword">if</span> <span class="org-builtin">__name__</span> <span class="org-operator">==</span> <span class="org-string">"__main__"</span>:
-    <span class="org-variable-name">x</span> <span class="org-operator">=</span> relay.var<span class="org-parenthesis">(</span><span class="org-string">"x"</span><span class="org-parenthesis">,</span> shape<span class="org-operator">=</span><span class="org-parenthesis">(</span>1<span class="org-parenthesis">,</span> 4<span class="org-parenthesis">),</span> dtype<span class="org-operator">=</span><span class="org-string">"uint8"</span><span class="org-parenthesis">)</span>
-    <span class="org-variable-name">y</span> <span class="org-operator">=</span> relay.var<span class="org-parenthesis">(</span><span class="org-string">"y"</span><span class="org-parenthesis">,</span> shape<span class="org-operator">=</span><span class="org-parenthesis">(</span>1<span class="org-parenthesis">,</span> 4<span class="org-parenthesis">),</span> dtype<span class="org-operator">=</span><span class="org-string">"uint8"</span><span class="org-parenthesis">)</span>
-    <span class="org-variable-name">z</span> <span class="org-operator">=</span> relay.qnn.op.mul<span class="org-parenthesis">(</span>
-        lhs<span class="org-operator">=</span>x<span class="org-parenthesis">,</span>
-        rhs<span class="org-operator">=</span>y<span class="org-parenthesis">,</span>
-        lhs_scale<span class="org-operator">=</span>relay.const<span class="org-parenthesis">(</span>x_scale<span class="org-parenthesis">,</span> <span class="org-string">"float32"</span><span class="org-parenthesis">),</span>
-        lhs_zero_point<span class="org-operator">=</span>relay.const<span class="org-parenthesis">(</span>x_zero_point<span class="org-parenthesis">,</span> <span class="org-string">"int32"</span><span class="org-parenthesis">),</span>
-        rhs_scale<span class="org-operator">=</span>relay.const<span class="org-parenthesis">(</span>y_scale<span class="org-parenthesis">,</span> <span class="org-string">"float32"</span><span class="org-parenthesis">),</span>
-        rhs_zero_point<span class="org-operator">=</span>relay.const<span class="org-parenthesis">(</span>y_zero_point<span class="org-parenthesis">,</span> <span class="org-string">"int32"</span><span class="org-parenthesis">),</span>
-        output_scale<span class="org-operator">=</span>relay.const<span class="org-parenthesis">(</span>z_scale<span class="org-parenthesis">,</span> <span class="org-string">"float32"</span><span class="org-parenthesis">),</span>
-        output_zero_point<span class="org-operator">=</span>relay.const<span class="org-parenthesis">(</span>z_zero_point<span class="org-parenthesis">,</span> <span class="org-string">"int32"</span><span class="org-parenthesis">),</span>
-    <span class="org-parenthesis">)</span>
+    <span class="org-variable-name">x</span> <span class="org-operator">=</span> relay.var(<span class="org-string">"x"</span>, shape<span class="org-operator">=</span>(1, 4), dtype<span class="org-operator">=</span><span class="org-string">"uint8"</span>)
+    <span class="org-variable-name">y</span> <span class="org-operator">=</span> relay.var(<span class="org-string">"y"</span>, shape<span class="org-operator">=</span>(1, 4), dtype<span class="org-operator">=</span><span class="org-string">"uint8"</span>)
+    <span class="org-variable-name">z</span> <span class="org-operator">=</span> relay.qnn.op.mul(
+        lhs<span class="org-operator">=</span>x,
+        rhs<span class="org-operator">=</span>y,
+        lhs_scale<span class="org-operator">=</span>relay.const(x_scale, <span class="org-string">"float32"</span>),
+        lhs_zero_point<span class="org-operator">=</span>relay.const(x_zero_point, <span class="org-string">"int32"</span>),
+        rhs_scale<span class="org-operator">=</span>relay.const(y_scale, <span class="org-string">"float32"</span>),
+        rhs_zero_point<span class="org-operator">=</span>relay.const(y_zero_point, <span class="org-string">"int32"</span>),
+        output_scale<span class="org-operator">=</span>relay.const(z_scale, <span class="org-string">"float32"</span>),
+        output_zero_point<span class="org-operator">=</span>relay.const(z_zero_point, <span class="org-string">"int32"</span>),
+    )
 
-    <span class="org-variable-name">func</span> <span class="org-operator">=</span> relay.Function<span class="org-parenthesis">(</span>[x<span class="org-parenthesis">,</span> y]<span class="org-parenthesis">,</span> z<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> tvm.IRModule.from_expr<span class="org-parenthesis">(</span>func<span class="org-parenthesis">)</span>
-    <span class="org-builtin">print</span><span class="org-parenthesis">(</span><span class="org-string">"----------before qnn transform----------"</span><span class="org-parenthesis">)</span>
-    <span class="org-builtin">print</span><span class="org-parenthesis">(</span>mod<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.transform.InferType<span class="org-parenthesis">()(</span>mod<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.qnn.transform.CanonicalizeOps<span class="org-parenthesis">()(</span>mod<span class="org-parenthesis">)</span>
-    <span class="org-builtin">print</span><span class="org-parenthesis">(</span><span class="org-string">"----------after qnn transform----------"</span><span class="org-parenthesis">)</span>
-    <span class="org-builtin">print</span><span class="org-parenthesis">(</span>mod<span class="org-parenthesis">)</span>
+    <span class="org-variable-name">func</span> <span class="org-operator">=</span> relay.Function([x, y], z)
+    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> tvm.IRModule.from_expr(func)
+    <span class="org-builtin">print</span>(<span class="org-string">"----------before qnn transform----------"</span>)
+    <span class="org-builtin">print</span>(mod)
+    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.transform.InferType()(mod)
+    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.qnn.transform.CanonicalizeOps()(mod)
+    <span class="org-builtin">print</span>(<span class="org-string">"----------after qnn transform----------"</span>)
+    <span class="org-builtin">print</span>(mod)
     <span class="org-variable-name">func</span> <span class="org-operator">=</span> mod[<span class="org-string">"main"</span>]
 
-    <span class="org-variable-name">intrp</span> <span class="org-operator">=</span> relay.create_executor<span class="org-parenthesis">(</span><span class="org-string">"graph"</span><span class="org-parenthesis">,</span> device<span class="org-operator">=</span>tvm.cpu<span class="org-parenthesis">(</span>0<span class="org-parenthesis">),</span> target<span class="org-operator">=</span><span class="org-string">"llvm"</span><span class="org-parenthesis">)</span>
-    <span class="org-variable-name">op_res</span> <span class="org-operator">=</span> intrp.evaluate<span class="org-parenthesis">(</span>func<span class="org-parenthesis">)(</span>x_data<span class="org-parenthesis">,</span> y_data<span class="org-parenthesis">)</span>
+    <span class="org-variable-name">intrp</span> <span class="org-operator">=</span> relay.create_executor(<span class="org-string">"graph"</span>, device<span class="org-operator">=</span>tvm.cpu(0), target<span class="org-operator">=</span><span class="org-string">"llvm"</span>)
+    <span class="org-variable-name">op_res</span> <span class="org-operator">=</span> intrp.evaluate(func)(x_data, y_data)
 
-    <span class="org-builtin">print</span><span class="org-parenthesis">(</span><span class="org-string">"----------"</span><span class="org-parenthesis">)</span>
-    <span class="org-builtin">print</span><span class="org-parenthesis">(</span>op_res.numpy<span class="org-parenthesis">())</span>
-    <span class="org-builtin">print</span><span class="org-parenthesis">(</span><span class="org-string">"----------"</span><span class="org-parenthesis">)</span>
-    <span class="org-variable-name">golden</span> <span class="org-operator">=</span> mul_manually<span class="org-parenthesis">()</span>
-    <span class="org-builtin">print</span><span class="org-parenthesis">(</span>golden.astype<span class="org-parenthesis">(</span><span class="org-string">"uint8"</span><span class="org-parenthesis">))</span>
+    <span class="org-builtin">print</span>(<span class="org-string">"----------"</span>)
+    <span class="org-builtin">print</span>(op_res.numpy())
+    <span class="org-builtin">print</span>(<span class="org-string">"----------"</span>)
+    <span class="org-variable-name">golden</span> <span class="org-operator">=</span> mul_manually()
+    <span class="org-builtin">print</span>(golden.astype(<span class="org-string">"uint8"</span>))
 </pre>
 </div>
 
@@ -469,27 +469,27 @@ def @main(%x: Tensor[(1, 4), uint8], %y: Tensor[(1, 4), uint8]) -&gt; Tensor[(1,
 <h5 id="org0000019"><span class="section-number-5">1.2.1.2.</span> How is `QnnMulCanonicalize` invoked</h5>
 <div class="outline-text-5" id="text-1-2-1-2">
 <div class="org-src-container">
-<pre class="src src-C++">QNN_REGISTER_BINARY_OP<span class="org-parenthesis">(</span><span class="org-string">"mul"</span><span class="org-parenthesis">)</span>
-    .describe<span class="org-parenthesis">(</span><span class="org-string">"Elementwise mul with with broadcasting for quantized tensors."</span><span class="org-parenthesis">)</span>
-    .set_support_level<span class="org-parenthesis">(</span>11<span class="org-parenthesis">)</span>
-    .set_attr&lt;FTVMLegalize&gt;<span class="org-parenthesis">(</span><span class="org-string">"FTVMQnnCanonicalize"</span><span class="org-parenthesis">,</span> QnnMulCanonicalize<span class="org-parenthesis">)</span>;
+<pre class="src src-C++">QNN_REGISTER_BINARY_OP(<span class="org-string">"mul"</span>)
+    .describe(<span class="org-string">"Elementwise mul with with broadcasting for quantized tensors."</span>)
+    .set_support_level(11)
+    .set_attr&lt;FTVMLegalize&gt;(<span class="org-string">"FTVMQnnCanonicalize"</span>, QnnMulCanonicalize);
 
-<span class="org-type">Pass</span> <span class="org-function-name">Legalize</span><span class="org-parenthesis">()</span> <span class="org-parenthesis">{</span>
+<span class="org-type">Pass</span> <span class="org-function-name">Legalize</span>() {
   <span class="org-type">Array</span>&lt;<span class="org-type">Pass</span>&gt; <span class="org-variable-name">pass_seqs</span>;
-  pass_seqs.push_back<span class="org-parenthesis">(</span><span class="org-constant">relay</span>::<span class="org-constant">transform</span>::Legalize<span class="org-parenthesis">(</span><span class="org-string">"FTVMQnnLegalize"</span><span class="org-parenthesis">))</span>;
-  pass_seqs.push_back<span class="org-parenthesis">(</span><span class="org-constant">relay</span>::<span class="org-constant">transform</span>::Legalize<span class="org-parenthesis">(</span><span class="org-string">"FTVMQnnCanonicalize"</span><span class="org-parenthesis">))</span>;
-  <span class="org-constant">relay</span>::<span class="org-constant">transform</span>::<span class="org-type">Pass</span> <span class="org-variable-name">seq</span> = <span class="org-constant">relay</span>::<span class="org-constant">transform</span>::Sequential<span class="org-parenthesis">(</span>pass_seqs<span class="org-parenthesis">)</span>;
+  pass_seqs.push_back(<span class="org-constant">relay</span>::<span class="org-constant">transform</span>::Legalize(<span class="org-string">"FTVMQnnLegalize"</span>));
+  pass_seqs.push_back(<span class="org-constant">relay</span>::<span class="org-constant">transform</span>::Legalize(<span class="org-string">"FTVMQnnCanonicalize"</span>));
+  <span class="org-constant">relay</span>::<span class="org-constant">transform</span>::<span class="org-type">Pass</span> <span class="org-variable-name">seq</span> = <span class="org-constant">relay</span>::<span class="org-constant">transform</span>::Sequential(pass_seqs);
   <span class="org-keyword">return</span> seq;
-<span class="org-parenthesis">}</span>
+}
 
-<span class="org-type">Array</span>&lt;<span class="org-type">Pass</span>&gt; <span class="org-function-name">GetPassPrefix</span><span class="org-parenthesis">(</span><span class="org-keyword">const</span> <span class="org-type">Map</span>&lt;<span class="org-constant">tvm</span>::Integer<span class="org-parenthesis">,</span> <span class="org-constant">tvm</span>::Target&gt;&amp; <span class="org-variable-name">targets</span><span class="org-parenthesis">,</span> <span class="org-type">bool</span> <span class="org-variable-name">is_vm</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+<span class="org-type">Array</span>&lt;<span class="org-type">Pass</span>&gt; <span class="org-function-name">GetPassPrefix</span>(<span class="org-keyword">const</span> <span class="org-type">Map</span>&lt;<span class="org-constant">tvm</span>::Integer, <span class="org-constant">tvm</span>::Target&gt;&amp; <span class="org-variable-name">targets</span>, <span class="org-type">bool</span> <span class="org-variable-name">is_vm</span>) {
   <span class="org-type">Array</span>&lt;<span class="org-type">Pass</span>&gt; <span class="org-variable-name">pass_seqs</span>;
-  <span class="org-type">Array</span>&lt;<span class="org-constant">runtime</span>::String&gt; <span class="org-variable-name">entry_functions</span><span class="org-parenthesis">{</span><span class="org-string">"main"</span><span class="org-parenthesis">}</span>;
+  <span class="org-type">Array</span>&lt;<span class="org-constant">runtime</span>::String&gt; <span class="org-variable-name">entry_functions</span>{<span class="org-string">"main"</span>};
   <span class="org-comment-delimiter">// </span><span class="org-comment">..</span>
   <span class="org-comment-delimiter">// </span><span class="org-comment">Run all dialect legalization passes.</span>
-  pass_seqs.push_back<span class="org-parenthesis">(</span><span class="org-constant">relay</span>::<span class="org-constant">qnn</span>::<span class="org-constant">transform</span>::Legalize<span class="org-parenthesis">())</span>;
+  pass_seqs.push_back(<span class="org-constant">relay</span>::<span class="org-constant">qnn</span>::<span class="org-constant">transform</span>::Legalize());
   <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
-<span class="org-parenthesis">}</span>
+}
 
 </pre>
 </div>

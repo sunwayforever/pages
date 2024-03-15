@@ -101,19 +101,19 @@ system-lib 机制是为了解决有些系统不支持 dlopen, dlsym 的问题. �
 <h4 id="org0000009"><span class="section-number-4">1.1.2.</span> C++ Runtime</h4>
 <div class="outline-text-4" id="text-1-1-2">
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> tvm
-<span class="org-keyword">from</span> tvm <span class="org-keyword">import</span> relay
+<pre class="src src-ipython">import tvm
+from tvm import relay
 
-<span class="org-variable-name">x</span> <span class="org-operator">=</span> relay.var<span class="org-parenthesis">(</span><span class="org-string">"x"</span><span class="org-parenthesis">,</span> shape<span class="org-operator">=</span><span class="org-parenthesis">(</span>1<span class="org-parenthesis">,</span> 1000<span class="org-parenthesis">),</span> dtype<span class="org-operator">=</span><span class="org-string">"float32"</span><span class="org-parenthesis">)</span>
-<span class="org-variable-name">y</span> <span class="org-operator">=</span> relay.add<span class="org-parenthesis">(</span>x<span class="org-parenthesis">,</span> x<span class="org-parenthesis">)</span>
-<span class="org-variable-name">func</span> <span class="org-operator">=</span> relay.Function<span class="org-parenthesis">(</span>[x]<span class="org-parenthesis">,</span> y<span class="org-parenthesis">)</span>
-<span class="org-variable-name">mod</span> <span class="org-operator">=</span> tvm.IRModule.from_expr<span class="org-parenthesis">(</span>func<span class="org-parenthesis">)</span>
-<span class="org-builtin">print</span><span class="org-parenthesis">(</span>mod<span class="org-parenthesis">)</span>
+x = relay.var("x", shape=(1, 1000), dtype="float32")
+y = relay.add(x, x)
+func = relay.Function([x], y)
+mod = tvm.IRModule.from_expr(func)
+print(mod)
 
-<span class="org-keyword">with</span> tvm.transform.PassContext<span class="org-parenthesis">(</span>opt_level<span class="org-operator">=</span>1<span class="org-parenthesis">)</span>:
-    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.build<span class="org-parenthesis">(</span>mod<span class="org-parenthesis">,</span> target<span class="org-operator">=</span><span class="org-string">"llvm --system-lib --runtime=c++"</span><span class="org-parenthesis">,</span> params<span class="org-operator">=</span><span class="org-constant">None</span><span class="org-parenthesis">)</span>
+with tvm.transform.PassContext(opt_level=1):
+    mod = relay.build(mod, target="llvm --system-lib --runtime=c++", params=None)
 
-mod.lib.save<span class="org-parenthesis">(</span><span class="org-string">"/tmp/a.o"</span><span class="org-parenthesis">)</span>
+mod.lib.save("/tmp/a.o")
 </pre>
 </div>
 
@@ -188,25 +188,25 @@ TVMBackendRegisterSystemLibSymbol("tvmgen_default_fused_add",tvmgen_default_fuse
 <h5 id="org0000003"><span class="section-number-5">1.1.2.1.</span> __tvm_module_startup</h5>
 <div class="outline-text-5" id="text-1-1-2-1">
 <div class="org-src-container">
-<pre class="src src-c++"><span class="org-type">void</span> <span class="org-constant">CodeGenCPU</span>::<span class="org-function-name">AddStartupFunction</span><span class="org-parenthesis">()</span> <span class="org-parenthesis">{</span>
-  <span class="org-keyword">if</span> <span class="org-parenthesis">(</span><span class="org-negation-char">!</span>target_c_runtime_<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+<pre class="src src-c++"><span class="org-type">void</span> <span class="org-constant">CodeGenCPU</span>::<span class="org-function-name">AddStartupFunction</span>() {
+  <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>target_c_runtime_) {
     <span class="org-comment-delimiter">// </span><span class="org-comment">&#26500;&#36896; __tvm_module_startup &#20989;&#25968;</span>
-    function_ = <span class="org-constant">llvm</span>::<span class="org-constant">Function</span>::Create<span class="org-parenthesis">(</span>ftype<span class="org-parenthesis">,</span> <span class="org-constant">llvm</span>::<span class="org-constant">Function</span>::InternalLinkage<span class="org-parenthesis">,</span>
-                                       <span class="org-string">"__tvm_module_startup"</span><span class="org-parenthesis">,</span> module_.get<span class="org-parenthesis">())</span>;
-    <span class="org-constant">llvm</span>::<span class="org-type">BasicBlock</span>* <span class="org-variable-name">startup_entry</span> = <span class="org-constant">llvm</span>::<span class="org-constant">BasicBlock</span>::Create<span class="org-parenthesis">(</span>*ctx_<span class="org-parenthesis">,</span> <span class="org-string">"entry"</span><span class="org-parenthesis">,</span> function_<span class="org-parenthesis">)</span>;
+    function_ = <span class="org-constant">llvm</span>::<span class="org-constant">Function</span>::Create(ftype, <span class="org-constant">llvm</span>::<span class="org-constant">Function</span>::InternalLinkage,
+                                       <span class="org-string">"__tvm_module_startup"</span>, module_.get());
+    <span class="org-constant">llvm</span>::<span class="org-type">BasicBlock</span>* <span class="org-variable-name">startup_entry</span> = <span class="org-constant">llvm</span>::<span class="org-constant">BasicBlock</span>::Create(*ctx_, <span class="org-string">"entry"</span>, function_);
     <span class="org-comment-delimiter">// </span><span class="org-comment">__tvm_module_startup &#35843;&#29992; f_tvm_register_system_symbol_</span>
-    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-keyword">const</span> <span class="org-keyword">auto</span>&amp; <span class="org-variable-name">kv</span> : export_system_symbols_<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-      builder_-&gt;CreateCall<span class="org-parenthesis">(</span>f_tvm_register_system_symbol_<span class="org-parenthesis">,</span>
-                           <span class="org-parenthesis">{</span>name<span class="org-parenthesis">,</span> builder_-&gt;CreateBitCast<span class="org-parenthesis">(</span>kv.second<span class="org-parenthesis">,</span> t_void_p_<span class="org-parenthesis">)})</span>;
-    <span class="org-parenthesis">}</span>
+    <span class="org-keyword">for</span> (<span class="org-keyword">const</span> <span class="org-keyword">auto</span>&amp; <span class="org-variable-name">kv</span> : export_system_symbols_) {
+      builder_-&gt;CreateCall(f_tvm_register_system_symbol_,
+                           {name, builder_-&gt;CreateBitCast(kv.second, t_void_p_)});
+    }
     <span class="org-comment-delimiter">// </span><span class="org-comment">&#25226; __tvm_module_startup &#21152;&#21040; elf &#30340; .ctor &#20013;</span>
-    <span class="org-constant">llvm</span>::appendToGlobalCtors<span class="org-parenthesis">(</span>*module_<span class="org-parenthesis">,</span> function_<span class="org-parenthesis">,</span> 65535<span class="org-parenthesis">)</span>;
-  <span class="org-parenthesis">}</span>
-<span class="org-parenthesis">}</span>
+    <span class="org-constant">llvm</span>::appendToGlobalCtors(*module_, function_, 65535);
+  }
+}
 
-f_tvm_register_system_symbol_ = <span class="org-constant">llvm</span>::<span class="org-constant">Function</span>::Create<span class="org-parenthesis">(</span>
-    <span class="org-constant">llvm</span>::<span class="org-constant">FunctionType</span>::get<span class="org-parenthesis">(</span>t_int_<span class="org-parenthesis">,</span> <span class="org-parenthesis">{</span>t_char_-&gt;getPointerTo<span class="org-parenthesis">(),</span> t_void_p_<span class="org-parenthesis">},</span> <span class="org-constant">false</span><span class="org-parenthesis">),</span>
-    <span class="org-constant">llvm</span>::<span class="org-constant">Function</span>::ExternalLinkage<span class="org-parenthesis">,</span> <span class="org-string">"TVMBackendRegisterSystemLibSymbol"</span><span class="org-parenthesis">,</span> module_.get<span class="org-parenthesis">())</span>;
+f_tvm_register_system_symbol_ = <span class="org-constant">llvm</span>::<span class="org-constant">Function</span>::Create(
+    <span class="org-constant">llvm</span>::<span class="org-constant">FunctionType</span>::get(t_int_, {t_char_-&gt;getPointerTo(), t_void_p_}, <span class="org-constant">false</span>),
+    <span class="org-constant">llvm</span>::<span class="org-constant">Function</span>::ExternalLinkage, <span class="org-string">"TVMBackendRegisterSystemLibSymbol"</span>, module_.get());
 </pre>
 </div>
 
@@ -215,17 +215,17 @@ f_tvm_register_system_symbol_ = <span class="org-constant">llvm</span>::<span cl
 </p>
 
 <div class="org-src-container">
-<pre class="src src-asm"><span class="org-function-name">.text</span>:0000000000000340 __tvm_module_startup proc near          ; DATA XREF: .ctors:0000000000000D50
+<pre class="src src-asm"><span class="org-function-name">.text</span>:0000000000000340 __tvm_module_startup proc near          <span class="org-comment-delimiter">; </span><span class="org-comment">DATA XREF: .ctors:0000000000000D50</span>
 <span class="org-function-name">.text</span>:0000000000000340                 push    rax
-<span class="org-function-name">.text</span>:0000000000000341                 lea     rdi<span class="org-parenthesis">,</span> a__tvm_module_c ; <span class="org-string">"__tvm_module_ctx"</span>
-<span class="org-function-name">.text</span>:0000000000000348                 mov     rsi<span class="org-parenthesis">,</span> cs:__tvm_module_ctx_ptr
-<span class="org-function-name">.text</span>:000000000000034F                 call    TVMBackendRegisterSystemLibSymbol ; PIC mode
-<span class="org-function-name">.text</span>:0000000000000354                 lea     rdi<span class="org-parenthesis">,</span> aTvmgen_default ; <span class="org-string">"tvmgen_default_fused_add"</span>
-<span class="org-function-name">.text</span>:000000000000035B                 mov     rsi<span class="org-parenthesis">,</span> cs:tvmgen_default_fused_add_ptr
+<span class="org-function-name">.text</span>:0000000000000341                 lea     rdi, a__tvm_module_c <span class="org-comment-delimiter">; </span><span class="org-comment">"__tvm_module_ctx"</span>
+<span class="org-function-name">.text</span>:0000000000000348                 mov     rsi, cs:__tvm_module_ctx_ptr
+<span class="org-function-name">.text</span>:000000000000034F                 call    TVMBackendRegisterSystemLibSymbol <span class="org-comment-delimiter">; </span><span class="org-comment">PIC mode</span>
+<span class="org-function-name">.text</span>:0000000000000354                 lea     rdi, aTvmgen_default <span class="org-comment-delimiter">; </span><span class="org-comment">"tvmgen_default_fused_add"</span>
+<span class="org-function-name">.text</span>:000000000000035B                 mov     rsi, cs:tvmgen_default_fused_add_ptr
 <span class="org-function-name">.text</span>:0000000000000362                 pop     rax
 <span class="org-function-name">.text</span>:0000000000000363
-<span class="org-function-name">.text</span>:0000000000000363 loc_363:                                ; DATA XREF: .eh_frame:0000000000000D78
-<span class="org-function-name">.text</span>:0000000000000363                 jmp     TVMBackendRegisterSystemLibSymbol ; PIC mode
+<span class="org-function-name">.text</span>:0000000000000363 loc_363:                                <span class="org-comment-delimiter">; </span><span class="org-comment">DATA XREF: .eh_frame:0000000000000D78</span>
+<span class="org-function-name">.text</span>:0000000000000363                 jmp     TVMBackendRegisterSystemLibSymbol <span class="org-comment-delimiter">; </span><span class="org-comment">PIC mode</span>
 <span class="org-function-name">.text</span>:0000000000000363 __tvm_module_startup endp
 </pre>
 </div>
@@ -240,21 +240,21 @@ TVMBackendRegisterSystemLibSymbol 是 tvm runtime 提供的函数
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c++"><span class="org-type">int</span> <span class="org-function-name">TVMBackendRegisterSystemLibSymbol</span><span class="org-parenthesis">(</span><span class="org-keyword">const</span> <span class="org-type">char</span>* <span class="org-variable-name">name</span><span class="org-parenthesis">,</span> <span class="org-type">void</span>* <span class="org-variable-name">ptr</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-  <span class="org-constant">tvm</span>::<span class="org-constant">runtime</span>::<span class="org-constant">SystemLibrary</span>::Global<span class="org-parenthesis">()</span>-&gt;RegisterSymbol<span class="org-parenthesis">(</span>name<span class="org-parenthesis">,</span> ptr<span class="org-parenthesis">)</span>;
+<pre class="src src-c++"><span class="org-type">int</span> <span class="org-function-name">TVMBackendRegisterSystemLibSymbol</span>(<span class="org-keyword">const</span> <span class="org-type">char</span>* <span class="org-variable-name">name</span>, <span class="org-type">void</span>* <span class="org-variable-name">ptr</span>) {
+  <span class="org-constant">tvm</span>::<span class="org-constant">runtime</span>::<span class="org-constant">SystemLibrary</span>::Global()-&gt;RegisterSymbol(name, ptr);
   <span class="org-keyword">return</span> 0;
-<span class="org-parenthesis">}</span>
+}
 
 <span class="org-comment-delimiter">// </span><span class="org-comment">system_library.cc</span>
-<span class="org-type">void</span> <span class="org-function-name">RegisterSymbol</span><span class="org-parenthesis">(</span><span class="org-keyword">const</span> <span class="org-constant">std</span>::<span class="org-type">string</span>&amp; <span class="org-variable-name">name</span><span class="org-parenthesis">,</span> <span class="org-type">void</span>* <span class="org-variable-name">ptr</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-    <span class="org-constant">std</span>::<span class="org-type">lock_guard</span>&lt;<span class="org-constant">std</span>::mutex&gt; <span class="org-variable-name">lock</span><span class="org-parenthesis">(</span>mutex_<span class="org-parenthesis">)</span>;
-    <span class="org-keyword">auto</span> <span class="org-variable-name">it</span> = tbl_.find<span class="org-parenthesis">(</span>name<span class="org-parenthesis">)</span>;
-    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>it != tbl_.end<span class="org-parenthesis">()</span> &amp;&amp; ptr != it-&gt;second<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-      LOG<span class="org-parenthesis">(</span>WARNING<span class="org-parenthesis">)</span> &lt;&lt; <span class="org-string">"SystemLib symbol "</span> &lt;&lt; name &lt;&lt; <span class="org-string">" get overriden to a different address "</span> &lt;&lt; ptr
+<span class="org-type">void</span> <span class="org-function-name">RegisterSymbol</span>(<span class="org-keyword">const</span> <span class="org-constant">std</span>::<span class="org-type">string</span>&amp; <span class="org-variable-name">name</span>, <span class="org-type">void</span>* <span class="org-variable-name">ptr</span>) {
+    <span class="org-constant">std</span>::<span class="org-type">lock_guard</span>&lt;<span class="org-constant">std</span>::mutex&gt; <span class="org-variable-name">lock</span>(mutex_);
+    <span class="org-keyword">auto</span> <span class="org-variable-name">it</span> = tbl_.find(name);
+    <span class="org-keyword">if</span> (it != tbl_.end() &amp;&amp; ptr != it-&gt;second) {
+      LOG(WARNING) &lt;&lt; <span class="org-string">"SystemLib symbol "</span> &lt;&lt; name &lt;&lt; <span class="org-string">" get overriden to a different address "</span> &lt;&lt; ptr
                    &lt;&lt; <span class="org-string">"-&gt;"</span> &lt;&lt; it-&gt;second;
-    <span class="org-parenthesis">}</span>
+    }
     tbl_[name] = ptr;
-  <span class="org-parenthesis">}</span>
+  }
 
 </pre>
 </div>
@@ -265,15 +265,15 @@ symbol -&gt; function 的 mapping, 但它与 DSOLibrary 一样提供了 GetSymbo
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c++"><span class="org-type">void</span>* <span class="org-function-name">GetSymbol</span><span class="org-parenthesis">(</span><span class="org-keyword">const</span> <span class="org-type">char</span>* <span class="org-variable-name">name</span><span class="org-parenthesis">)</span> <span class="org-keyword">final</span> <span class="org-parenthesis">{</span>
-    <span class="org-constant">std</span>::<span class="org-type">lock_guard</span>&lt;<span class="org-constant">std</span>::mutex&gt; <span class="org-variable-name">lock</span><span class="org-parenthesis">(</span>mutex_<span class="org-parenthesis">)</span>;
-    <span class="org-keyword">auto</span> <span class="org-variable-name">it</span> = tbl_.find<span class="org-parenthesis">(</span>name<span class="org-parenthesis">)</span>;
-    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>it != tbl_.end<span class="org-parenthesis">())</span> <span class="org-parenthesis">{</span>
+<pre class="src src-c++"><span class="org-type">void</span>* <span class="org-function-name">GetSymbol</span>(<span class="org-keyword">const</span> <span class="org-type">char</span>* <span class="org-variable-name">name</span>) <span class="org-keyword">final</span> {
+    <span class="org-constant">std</span>::<span class="org-type">lock_guard</span>&lt;<span class="org-constant">std</span>::mutex&gt; <span class="org-variable-name">lock</span>(mutex_);
+    <span class="org-keyword">auto</span> <span class="org-variable-name">it</span> = tbl_.find(name);
+    <span class="org-keyword">if</span> (it != tbl_.end()) {
         <span class="org-keyword">return</span> it-&gt;second;
-    <span class="org-parenthesis">}</span> <span class="org-keyword">else</span> <span class="org-parenthesis">{</span>
+    } <span class="org-keyword">else</span> {
         <span class="org-keyword">return</span> <span class="org-constant">nullptr</span>;
-    <span class="org-parenthesis">}</span>
-<span class="org-parenthesis">}</span>
+    }
+}
 </pre>
 </div>
 
@@ -301,7 +301,7 @@ symbol -&gt; function 的 mapping, 但它与 DSOLibrary 一样提供了 GetSymbo
 </p>
 
 <p>
-c runtime 的目标场景是那些无法支持 ctor (即 .init/.init_array) 的环境, 例如不支持 rtld 或没有 startfiles 的情况 <a href="toolchain/elf.html#org0000023">init_array 如何被调用</a>
+c runtime 的目标场景是那些无法支持 ctor (即 .init/.init_array) 的环境, 例如不支持 rtld 或没有 startfiles 的情况 <a href="toolchain/elf.html#org0000000">init_array 如何被调用</a>
 </p>
 
 <p>
@@ -318,18 +318,18 @@ C Runtime 会利用 tvm::codegen::CreateMetadataModule 完成与 c++ 的 __tvm_m
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> tvm
-<span class="org-keyword">from</span> tvm <span class="org-keyword">import</span> relay
+<pre class="src src-ipython">import tvm
+from tvm import relay
 
-<span class="org-variable-name">x</span> <span class="org-operator">=</span> relay.var<span class="org-parenthesis">(</span><span class="org-string">"x"</span><span class="org-parenthesis">,</span> shape<span class="org-operator">=</span><span class="org-parenthesis">(</span>1<span class="org-parenthesis">,</span> 1000<span class="org-parenthesis">),</span> dtype<span class="org-operator">=</span><span class="org-string">"float32"</span><span class="org-parenthesis">)</span>
-<span class="org-variable-name">y</span> <span class="org-operator">=</span> relay.add<span class="org-parenthesis">(</span>x<span class="org-parenthesis">,</span> x<span class="org-parenthesis">)</span>
-<span class="org-variable-name">func</span> <span class="org-operator">=</span> relay.Function<span class="org-parenthesis">(</span>[x]<span class="org-parenthesis">,</span> y<span class="org-parenthesis">)</span>
-<span class="org-variable-name">mod</span> <span class="org-operator">=</span> tvm.IRModule.from_expr<span class="org-parenthesis">(</span>func<span class="org-parenthesis">)</span>
+x = relay.var("x", shape=(1, 1000), dtype="float32")
+y = relay.add(x, x)
+func = relay.Function([x], y)
+mod = tvm.IRModule.from_expr(func)
 
-<span class="org-keyword">with</span> tvm.transform.PassContext<span class="org-parenthesis">(</span>opt_level<span class="org-operator">=</span>1<span class="org-parenthesis">)</span>:
-    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.build<span class="org-parenthesis">(</span>mod<span class="org-parenthesis">,</span> target<span class="org-operator">=</span><span class="org-string">"llvm  --system-lib --runtime=c"</span><span class="org-parenthesis">,</span> params<span class="org-operator">=</span><span class="org-constant">None</span><span class="org-parenthesis">)</span>
+with tvm.transform.PassContext(opt_level=1):
+    mod = relay.build(mod, target="llvm  --system-lib --runtime=c", params=None)
 
-mod.lib.export_library<span class="org-parenthesis">(</span><span class="org-string">"/tmp/a.tar"</span><span class="org-parenthesis">)</span>
+mod.lib.export_library("/tmp/a.tar")
 
 </pre>
 </div>
@@ -409,17 +409,17 @@ lib0.o 中的 TVMSystemLibEntryPoint 最终会返回
 
 <div class="org-src-container">
 <pre class="src src-c++"><span class="org-comment-delimiter">// </span><span class="org-comment">crt_runtime_api.c</span>
-<span class="org-type">int</span> <span class="org-function-name">SystemLibraryCreate</span><span class="org-parenthesis">(</span><span class="org-type">TVMValue</span>* <span class="org-variable-name">args</span><span class="org-parenthesis">,</span> <span class="org-type">int</span>* <span class="org-variable-name">type_codes</span><span class="org-parenthesis">,</span> <span class="org-type">int</span> <span class="org-variable-name">num_args</span><span class="org-parenthesis">,</span> <span class="org-type">TVMValue</span>* <span class="org-variable-name">ret_val</span><span class="org-parenthesis">,</span>
-                        <span class="org-type">int</span>* <span class="org-variable-name">ret_type_codes</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+<span class="org-type">int</span> <span class="org-function-name">SystemLibraryCreate</span>(<span class="org-type">TVMValue</span>* <span class="org-variable-name">args</span>, <span class="org-type">int</span>* <span class="org-variable-name">type_codes</span>, <span class="org-type">int</span> <span class="org-variable-name">num_args</span>, <span class="org-type">TVMValue</span>* <span class="org-variable-name">ret_val</span>,
+                        <span class="org-type">int</span>* <span class="org-variable-name">ret_type_codes</span>) {
 
   <span class="org-keyword">const</span> <span class="org-type">TVMModule</span>* <span class="org-variable-name">system_lib</span>;
-  system_lib = TVMSystemLibEntryPoint<span class="org-parenthesis">()</span>;
-  TVMModCreateFromCModule<span class="org-parenthesis">(</span>system_lib<span class="org-parenthesis">,</span> &amp;system_lib_handle<span class="org-parenthesis">)</span>;
+  system_lib = TVMSystemLibEntryPoint();
+  TVMModCreateFromCModule(system_lib, &amp;system_lib_handle);
 
   ret_val[0].v_handle = system_lib_handle;
   ret_type_codes[0] = kTVMModuleHandle;
   <span class="org-keyword">return</span> 0;
-<span class="org-parenthesis">}</span>
+}
 
 </pre>
 </div>
@@ -457,11 +457,11 @@ lib0.o 中的 TVMSystemLibEntryPoint 最终会返回
 在 target 中使用 mtriple, mcpu 指定, 由 llvm 负责交叉编译.
 </p>
 <div class="org-src-container">
-<pre class="src src-python"><span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.build<span class="org-parenthesis">(</span>
-    mod<span class="org-parenthesis">,</span>
-    target<span class="org-operator">=</span><span class="org-string">"llvm  --system-lib --runtime=c, -mtriple=armv8l-linux-gnueabihf -mcpu=cortex-m7"</span><span class="org-parenthesis">,</span>
-    params<span class="org-operator">=</span><span class="org-constant">None</span><span class="org-parenthesis">,</span>
-<span class="org-parenthesis">)</span>
+<pre class="src src-python"><span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.build(
+    mod,
+    target<span class="org-operator">=</span><span class="org-string">"llvm  --system-lib --runtime=c, -mtriple=armv8l-linux-gnueabihf -mcpu=cortex-m7"</span>,
+    params<span class="org-operator">=</span><span class="org-constant">None</span>,
+)
 </pre>
 </div></li>
 
@@ -564,44 +564,44 @@ tvm/apps/microtvm/zephyr/template_project
 <span class="org-keyword">import</span> tempfile
 
 
-<span class="org-keyword">def</span> <span class="org-function-name">get_model</span><span class="org-parenthesis">()</span>:
-    <span class="org-variable-name">x</span> <span class="org-operator">=</span> relay.var<span class="org-parenthesis">(</span><span class="org-string">"x"</span><span class="org-parenthesis">,</span> relay.TensorType<span class="org-parenthesis">(</span>[1<span class="org-parenthesis">,</span> 10]<span class="org-parenthesis">,</span> <span class="org-string">"float32"</span><span class="org-parenthesis">))</span>
-    <span class="org-variable-name">y</span> <span class="org-operator">=</span> relay.add<span class="org-parenthesis">(</span>x<span class="org-parenthesis">,</span> x<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">f</span> <span class="org-operator">=</span> relay.Function<span class="org-parenthesis">(</span>[x]<span class="org-parenthesis">,</span> y<span class="org-parenthesis">)</span>
+<span class="org-keyword">def</span> <span class="org-function-name">get_model</span>():
+    <span class="org-variable-name">x</span> <span class="org-operator">=</span> relay.var(<span class="org-string">"x"</span>, relay.TensorType([1, 10], <span class="org-string">"float32"</span>))
+    <span class="org-variable-name">y</span> <span class="org-operator">=</span> relay.add(x, x)
+    <span class="org-variable-name">f</span> <span class="org-operator">=</span> relay.Function([x], y)
 
-    <span class="org-variable-name">relay_mod</span> <span class="org-operator">=</span> tvm.IRModule.from_expr<span class="org-parenthesis">(</span>f<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">relay_mod</span> <span class="org-operator">=</span> relay.transform.InferType<span class="org-parenthesis">()(</span>relay_mod<span class="org-parenthesis">)</span>
+    <span class="org-variable-name">relay_mod</span> <span class="org-operator">=</span> tvm.IRModule.from_expr(f)
+    <span class="org-variable-name">relay_mod</span> <span class="org-operator">=</span> relay.transform.InferType()(relay_mod)
     <span class="org-keyword">return</span> relay_mod
 
 
-<span class="org-keyword">def</span> <span class="org-function-name">run_model</span><span class="org-parenthesis">()</span>:
-    <span class="org-variable-name">relay_mod</span> <span class="org-operator">=</span> get_model<span class="org-parenthesis">()</span>
-    <span class="org-keyword">with</span> tvm.transform.PassContext<span class="org-parenthesis">(</span>opt_level<span class="org-operator">=</span>3<span class="org-parenthesis">,</span> config<span class="org-operator">=</span><span class="org-parenthesis">{</span><span class="org-string">"tir.disable_vectorize"</span>: <span class="org-constant">True</span><span class="org-parenthesis">})</span>:
-        <span class="org-variable-name">model</span> <span class="org-operator">=</span> relay.build<span class="org-parenthesis">(</span>
-            relay_mod<span class="org-parenthesis">,</span> target<span class="org-operator">=</span>tvm.target.target.micro<span class="org-parenthesis">(</span><span class="org-string">"host"</span><span class="org-parenthesis">),</span> params<span class="org-operator">=</span><span class="org-constant">None</span>
-        <span class="org-parenthesis">)</span>
+<span class="org-keyword">def</span> <span class="org-function-name">run_model</span>():
+    <span class="org-variable-name">relay_mod</span> <span class="org-operator">=</span> get_model()
+    <span class="org-keyword">with</span> tvm.transform.PassContext(opt_level<span class="org-operator">=</span>3, config<span class="org-operator">=</span>{<span class="org-string">"tir.disable_vectorize"</span>: <span class="org-constant">True</span>}):
+        <span class="org-variable-name">model</span> <span class="org-operator">=</span> relay.build(
+            relay_mod, target<span class="org-operator">=</span>tvm.target.target.micro(<span class="org-string">"host"</span>), params<span class="org-operator">=</span><span class="org-constant">None</span>
+        )
 
-    <span class="org-variable-name">project</span> <span class="org-operator">=</span> tvm.micro.generate_project<span class="org-parenthesis">(</span>
-        <span class="org-string">"/home/sunway/source/tvm/build/standalone_crt/template/host"</span><span class="org-parenthesis">,</span>
-        model<span class="org-parenthesis">,</span>
-        tempfile.TemporaryDirectory<span class="org-parenthesis">()</span>.name<span class="org-parenthesis">,</span>
-    <span class="org-parenthesis">)</span>
+    <span class="org-variable-name">project</span> <span class="org-operator">=</span> tvm.micro.generate_project(
+        <span class="org-string">"/home/sunway/source/tvm/build/standalone_crt/template/host"</span>,
+        model,
+        tempfile.TemporaryDirectory().name,
+    )
 
-    project.build<span class="org-parenthesis">()</span>
-    project.flash<span class="org-parenthesis">()</span>
+    project.build()
+    project.flash()
 
-    <span class="org-keyword">with</span> tvm.micro.Session<span class="org-parenthesis">(</span>project.transport<span class="org-parenthesis">())</span> <span class="org-keyword">as</span> session:
-        <span class="org-variable-name">debug_module</span> <span class="org-operator">=</span> tvm.micro.create_local_debug_executor<span class="org-parenthesis">(</span>
-            model.get_graph_json<span class="org-parenthesis">(),</span> session.get_system_lib<span class="org-parenthesis">(),</span> session.device
-        <span class="org-parenthesis">)</span>
-        debug_module.set_input<span class="org-parenthesis">(</span><span class="org-string">"x"</span><span class="org-parenthesis">,</span> np.ones<span class="org-parenthesis">((</span>1<span class="org-parenthesis">,</span> 10<span class="org-parenthesis">)))</span>
-        debug_module.run<span class="org-parenthesis">()</span>
-        <span class="org-builtin">print</span><span class="org-parenthesis">(</span>debug_module.get_output<span class="org-parenthesis">(</span>0<span class="org-parenthesis">))</span>
+    <span class="org-keyword">with</span> tvm.micro.Session(project.transport()) <span class="org-keyword">as</span> session:
+        <span class="org-variable-name">debug_module</span> <span class="org-operator">=</span> tvm.micro.create_local_debug_executor(
+            model.get_graph_json(), session.get_system_lib(), session.device
+        )
+        debug_module.set_input(<span class="org-string">"x"</span>, np.ones((1, 10)))
+        debug_module.run()
+        <span class="org-builtin">print</span>(debug_module.get_output(0))
 
 
 <span class="org-keyword">if</span> <span class="org-builtin">__name__</span> <span class="org-operator">==</span> <span class="org-string">"__main__"</span>:
     <span class="org-comment-delimiter"># </span><span class="org-comment">Project API &#21487;&#20197;&#29992;&#26469;&#22312; pc &#19978;&#36828;&#31243;&#22312;&#26495;&#23376;&#19978;&#25191;&#34892; model</span>
-    run_model<span class="org-parenthesis">()</span>
+    run_model()
 </pre>
 </div>
 
@@ -628,50 +628,50 @@ Project API 对外提供的主要接口是 generate_project, host-driven 时会�
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">generate_project</span><span class="org-parenthesis">(</span>
-    template_project_dir: Union[pathlib.Path<span class="org-parenthesis">,</span> <span class="org-builtin">str</span>]<span class="org-parenthesis">,</span>
-    module: ExportableModule<span class="org-parenthesis">,</span>
-    generated_project_dir: Union[pathlib.Path<span class="org-parenthesis">,</span> <span class="org-builtin">str</span>]<span class="org-parenthesis">,</span>
-    options: <span class="org-builtin">dict</span> <span class="org-operator">=</span> <span class="org-constant">None</span><span class="org-parenthesis">,</span>
-<span class="org-parenthesis">)</span>:
-    <span class="org-variable-name">template</span> <span class="org-operator">=</span> TemplateProject.from_directory<span class="org-parenthesis">(</span><span class="org-builtin">str</span><span class="org-parenthesis">(</span>template_project_dir<span class="org-parenthesis">))</span>
-    <span class="org-keyword">return</span> template.generate_project<span class="org-parenthesis">(</span>module<span class="org-parenthesis">,</span> <span class="org-builtin">str</span><span class="org-parenthesis">(</span>generated_project_dir<span class="org-parenthesis">),</span> options<span class="org-parenthesis">)</span>
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">generate_project</span>(
+    template_project_dir: Union[pathlib.Path, <span class="org-builtin">str</span>],
+    module: ExportableModule,
+    generated_project_dir: Union[pathlib.Path, <span class="org-builtin">str</span>],
+    options: <span class="org-builtin">dict</span> <span class="org-operator">=</span> <span class="org-constant">None</span>,
+):
+    <span class="org-variable-name">template</span> <span class="org-operator">=</span> TemplateProject.from_directory(<span class="org-builtin">str</span>(template_project_dir))
+    <span class="org-keyword">return</span> template.generate_project(module, <span class="org-builtin">str</span>(generated_project_dir), options)
 
 
 <span class="org-keyword">class</span> <span class="org-type">TemplateProject</span>:
     @<span class="org-builtin">classmethod</span>
-    <span class="org-keyword">def</span> <span class="org-function-name">from_directory</span><span class="org-parenthesis">(</span>cls<span class="org-parenthesis">,</span> template_project_dir<span class="org-parenthesis">)</span>:
-        <span class="org-keyword">return</span> cls<span class="org-parenthesis">(</span>client.instantiate_from_dir<span class="org-parenthesis">(</span>template_project_dir<span class="org-parenthesis">))</span>
+    <span class="org-keyword">def</span> <span class="org-function-name">from_directory</span>(cls, template_project_dir):
+        <span class="org-keyword">return</span> cls(client.instantiate_from_dir(template_project_dir))
 
 <span class="org-comment-delimiter"># </span><span class="org-comment">&#22312; template_project_dir &#26159;&#26597;&#25214; microtvm_api_server.py &#25110;</span>
 <span class="org-comment-delimiter"># </span><span class="org-comment">launch_microtvm_api_server.sh&#29992; popen &#21551;&#21160;&#19968;&#20010;&#23376;&#36827;&#31243;&#25191;&#34892;&#36825;&#20010; script, &#36825;&#20010;</span>
 <span class="org-comment-delimiter"># </span><span class="org-comment">script &#20250;&#22312;&#19968;&#20010; while loop &#20013;&#31561;&#24453;&#21518;&#32493;&#21629;&#20196;, &#27604;&#22914; generate_project</span>
 
-<span class="org-keyword">def</span> <span class="org-function-name">instantiate_from_dir</span><span class="org-parenthesis">(</span>project_dir: typing.Union[pathlib.Path<span class="org-parenthesis">,</span> <span class="org-builtin">str</span>]<span class="org-parenthesis">,</span> debug: <span class="org-builtin">bool</span> <span class="org-operator">=</span> <span class="org-constant">False</span><span class="org-parenthesis">)</span>:
+<span class="org-keyword">def</span> <span class="org-function-name">instantiate_from_dir</span>(project_dir: typing.Union[pathlib.Path, <span class="org-builtin">str</span>], debug: <span class="org-builtin">bool</span> <span class="org-operator">=</span> <span class="org-constant">False</span>):
     <span class="org-variable-name">args</span> <span class="org-operator">=</span> <span class="org-constant">None</span>
-    <span class="org-variable-name">project_dir</span> <span class="org-operator">=</span> pathlib.Path<span class="org-parenthesis">(</span>project_dir<span class="org-parenthesis">)</span>
+    <span class="org-variable-name">project_dir</span> <span class="org-operator">=</span> pathlib.Path(project_dir)
 
     <span class="org-variable-name">python_script</span> <span class="org-operator">=</span> project_dir <span class="org-operator">/</span> SERVER_PYTHON_FILENAME
-    <span class="org-keyword">if</span> python_script.is_file<span class="org-parenthesis">()</span>:
-        <span class="org-variable-name">args</span> <span class="org-operator">=</span> [sys.executable<span class="org-parenthesis">,</span> <span class="org-builtin">str</span><span class="org-parenthesis">(</span>python_script<span class="org-parenthesis">)</span>]
+    <span class="org-keyword">if</span> python_script.is_file():
+        <span class="org-variable-name">args</span> <span class="org-operator">=</span> [sys.executable, <span class="org-builtin">str</span>(python_script)]
 
     <span class="org-variable-name">launch_script</span> <span class="org-operator">=</span> project_dir <span class="org-operator">/</span> SERVER_LAUNCH_SCRIPT_FILENAME
-    <span class="org-keyword">if</span> launch_script.is_file<span class="org-parenthesis">()</span>:
-        <span class="org-variable-name">args</span> <span class="org-operator">=</span> [<span class="org-builtin">str</span><span class="org-parenthesis">(</span>launch_script<span class="org-parenthesis">)</span>]
+    <span class="org-keyword">if</span> launch_script.is_file():
+        <span class="org-variable-name">args</span> <span class="org-operator">=</span> [<span class="org-builtin">str</span>(launch_script)]
 
-    <span class="org-variable-name">api_server_read_fd</span><span class="org-parenthesis">,</span> <span class="org-variable-name">tvm_write_fd</span> <span class="org-operator">=</span> os.pipe<span class="org-parenthesis">()</span>
-    <span class="org-variable-name">tvm_read_fd</span><span class="org-parenthesis">,</span> <span class="org-variable-name">api_server_write_fd</span> <span class="org-operator">=</span> os.pipe<span class="org-parenthesis">()</span>
+    <span class="org-variable-name">api_server_read_fd</span>, <span class="org-variable-name">tvm_write_fd</span> <span class="org-operator">=</span> os.pipe()
+    <span class="org-variable-name">tvm_read_fd</span>, <span class="org-variable-name">api_server_write_fd</span> <span class="org-operator">=</span> os.pipe()
 
-    args.extend<span class="org-parenthesis">(</span>[<span class="org-string">"--read-fd"</span><span class="org-parenthesis">,</span> <span class="org-builtin">str</span><span class="org-parenthesis">(</span>api_server_read_fd<span class="org-parenthesis">),</span> <span class="org-string">"--write-fd"</span><span class="org-parenthesis">,</span> <span class="org-builtin">str</span><span class="org-parenthesis">(</span>api_server_write_fd<span class="org-parenthesis">)</span>]<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">api_server_proc</span> <span class="org-operator">=</span> subprocess.Popen<span class="org-parenthesis">(</span>  <span class="org-comment-delimiter"># </span><span class="org-comment">pylint: disable=unused-variable</span>
-        args<span class="org-parenthesis">,</span> bufsize<span class="org-operator">=</span>0<span class="org-parenthesis">,</span> pass_fds<span class="org-operator">=</span><span class="org-parenthesis">(</span>api_server_read_fd<span class="org-parenthesis">,</span> api_server_write_fd<span class="org-parenthesis">),</span> cwd<span class="org-operator">=</span>project_dir
-    <span class="org-parenthesis">)</span>
-    os.close<span class="org-parenthesis">(</span>api_server_read_fd<span class="org-parenthesis">)</span>
-    os.close<span class="org-parenthesis">(</span>api_server_write_fd<span class="org-parenthesis">)</span>
+    args.extend([<span class="org-string">"--read-fd"</span>, <span class="org-builtin">str</span>(api_server_read_fd), <span class="org-string">"--write-fd"</span>, <span class="org-builtin">str</span>(api_server_write_fd)])
+    <span class="org-variable-name">api_server_proc</span> <span class="org-operator">=</span> subprocess.Popen(  <span class="org-comment-delimiter"># </span><span class="org-comment">pylint: disable=unused-variable</span>
+        args, bufsize<span class="org-operator">=</span>0, pass_fds<span class="org-operator">=</span>(api_server_read_fd, api_server_write_fd), cwd<span class="org-operator">=</span>project_dir
+    )
+    os.close(api_server_read_fd)
+    os.close(api_server_write_fd)
 
-    <span class="org-keyword">return</span> ProjectAPIClient<span class="org-parenthesis">(</span>
-        os.fdopen<span class="org-parenthesis">(</span>tvm_read_fd<span class="org-parenthesis">,</span> <span class="org-string">"rb"</span><span class="org-parenthesis">,</span> buffering<span class="org-operator">=</span>0<span class="org-parenthesis">),</span> os.fdopen<span class="org-parenthesis">(</span>tvm_write_fd<span class="org-parenthesis">,</span> <span class="org-string">"wb"</span><span class="org-parenthesis">,</span> buffering<span class="org-operator">=</span>0<span class="org-parenthesis">)</span>
-    <span class="org-parenthesis">)</span>
+    <span class="org-keyword">return</span> ProjectAPIClient(
+        os.fdopen(tvm_read_fd, <span class="org-string">"rb"</span>, buffering<span class="org-operator">=</span>0), os.fdopen(tvm_write_fd, <span class="org-string">"wb"</span>, buffering<span class="org-operator">=</span>0)
+    )
 
 </pre>
 </div></li>
@@ -682,58 +682,58 @@ Project API 对外提供的主要接口是 generate_project, host-driven 时会�
 
 <div class="org-src-container">
 <pre class="src src-python"><span class="org-comment-delimiter"># </span><span class="org-comment">&#20808; export_model_library, &#28982;&#21518;&#35843;&#29992; client &#30340; generate_project</span>
-<span class="org-keyword">def</span> <span class="org-function-name">generate_project</span><span class="org-parenthesis">(</span><span class="org-keyword">self</span><span class="org-parenthesis">,</span> graph_executor_factory<span class="org-parenthesis">,</span> project_dir<span class="org-parenthesis">,</span> options<span class="org-parenthesis">)</span>:
-    <span class="org-variable-name">model_library_dir</span> <span class="org-operator">=</span> utils.tempdir<span class="org-parenthesis">()</span>
-    <span class="org-variable-name">model_library_format_path</span> <span class="org-operator">=</span> model_library_dir.relpath<span class="org-parenthesis">(</span><span class="org-string">"model.tar"</span><span class="org-parenthesis">)</span>
-    export_model_library_format<span class="org-parenthesis">(</span>graph_executor_factory<span class="org-parenthesis">,</span> model_library_format_path<span class="org-parenthesis">)</span>
+<span class="org-keyword">def</span> <span class="org-function-name">generate_project</span>(<span class="org-keyword">self</span>, graph_executor_factory, project_dir, options):
+    <span class="org-variable-name">model_library_dir</span> <span class="org-operator">=</span> utils.tempdir()
+    <span class="org-variable-name">model_library_format_path</span> <span class="org-operator">=</span> model_library_dir.relpath(<span class="org-string">"model.tar"</span>)
+    export_model_library_format(graph_executor_factory, model_library_format_path)
 
-    <span class="org-keyword">return</span> <span class="org-keyword">self</span>.generate_project_from_mlf<span class="org-parenthesis">(</span>model_library_format_path<span class="org-parenthesis">,</span> project_dir<span class="org-parenthesis">,</span> options<span class="org-parenthesis">)</span>
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>.generate_project_from_mlf(model_library_format_path, project_dir, options)
 
 
-<span class="org-keyword">def</span> <span class="org-function-name">generate_project_from_mlf</span><span class="org-parenthesis">(</span><span class="org-keyword">self</span><span class="org-parenthesis">,</span> model_library_format_path<span class="org-parenthesis">,</span> project_dir<span class="org-parenthesis">,</span> options<span class="org-parenthesis">)</span>:
-    <span class="org-keyword">self</span>._api_client.generate_project<span class="org-parenthesis">(</span>
-        model_library_format_path<span class="org-operator">=</span><span class="org-builtin">str</span><span class="org-parenthesis">(</span>model_library_format_path<span class="org-parenthesis">),</span>
-        standalone_crt_dir<span class="org-operator">=</span>get_standalone_crt_dir<span class="org-parenthesis">(),</span>
-        project_dir<span class="org-operator">=</span>project_dir<span class="org-parenthesis">,</span>
-        options<span class="org-operator">=</span>options<span class="org-parenthesis">,</span>
-    <span class="org-parenthesis">)</span>
+<span class="org-keyword">def</span> <span class="org-function-name">generate_project_from_mlf</span>(<span class="org-keyword">self</span>, model_library_format_path, project_dir, options):
+    <span class="org-keyword">self</span>._api_client.generate_project(
+        model_library_format_path<span class="org-operator">=</span><span class="org-builtin">str</span>(model_library_format_path),
+        standalone_crt_dir<span class="org-operator">=</span>get_standalone_crt_dir(),
+        project_dir<span class="org-operator">=</span>project_dir,
+        options<span class="org-operator">=</span>options,
+    )
     <span class="org-comment-delimiter"># </span><span class="org-comment">...</span>
 
 <span class="org-comment-delimiter"># </span><span class="org-comment">_api_client &#30340; generate_project (&#20197; host &#30340; microtvm_api_server.py &#20026;&#20363;), &#23454;&#38469;</span>
 <span class="org-comment-delimiter"># </span><span class="org-comment">&#23601;&#26159;&#22797;&#21046;&#20102;&#19968;&#22534;&#25991;&#20214;&#21040; GeneratedProject &#30446;&#24405;</span>
-<span class="org-keyword">def</span> <span class="org-function-name">generate_project</span><span class="org-parenthesis">(</span><span class="org-keyword">self</span><span class="org-parenthesis">,</span> model_library_format_path<span class="org-parenthesis">,</span> standalone_crt_dir<span class="org-parenthesis">,</span> project_dir<span class="org-parenthesis">,</span> options<span class="org-parenthesis">)</span>:
-    shutil.copy2<span class="org-parenthesis">(</span>__file__<span class="org-parenthesis">,</span> project_dir <span class="org-operator">/</span> os.path.basename<span class="org-parenthesis">(</span>__file__<span class="org-parenthesis">))</span>
+<span class="org-keyword">def</span> <span class="org-function-name">generate_project</span>(<span class="org-keyword">self</span>, model_library_format_path, standalone_crt_dir, project_dir, options):
+    shutil.copy2(__file__, project_dir <span class="org-operator">/</span> os.path.basename(__file__))
 
     <span class="org-variable-name">project_model_library_format_path</span> <span class="org-operator">=</span> project_dir <span class="org-operator">/</span> MODEL_LIBRARY_FORMAT_RELPATH
-    shutil.copy2<span class="org-parenthesis">(</span>model_library_format_path<span class="org-parenthesis">,</span> project_model_library_format_path<span class="org-parenthesis">)</span>
+    shutil.copy2(model_library_format_path, project_model_library_format_path)
 
     <span class="org-variable-name">extract_path</span> <span class="org-operator">=</span> project_dir <span class="org-operator">/</span> project_model_library_format_path.stem
-    <span class="org-keyword">with</span> tarfile.TarFile<span class="org-parenthesis">(</span>project_model_library_format_path<span class="org-parenthesis">)</span> <span class="org-keyword">as</span> tf:
-        os.makedirs<span class="org-parenthesis">(</span>extract_path<span class="org-parenthesis">)</span>
-        tf.extractall<span class="org-parenthesis">(</span>path<span class="org-operator">=</span>extract_path<span class="org-parenthesis">)</span>
+    <span class="org-keyword">with</span> tarfile.TarFile(project_model_library_format_path) <span class="org-keyword">as</span> tf:
+        os.makedirs(extract_path)
+        tf.extractall(path<span class="org-operator">=</span>extract_path)
 
     <span class="org-variable-name">crt_path</span> <span class="org-operator">=</span> project_dir <span class="org-operator">/</span> <span class="org-string">"crt"</span>
-    os.mkdir<span class="org-parenthesis">(</span>crt_path<span class="org-parenthesis">)</span>
+    os.mkdir(crt_path)
     <span class="org-keyword">for</span> item <span class="org-keyword">in</span> <span class="org-keyword">self</span>.CRT_COPY_ITEMS:
         <span class="org-comment-delimiter"># </span><span class="org-comment">...</span>
 
     <span class="org-comment-delimiter"># </span><span class="org-comment">Populate Makefile.</span>
-    shutil.copy2<span class="org-parenthesis">(</span>pathlib.Path<span class="org-parenthesis">(</span>__file__<span class="org-parenthesis">)</span>.parent <span class="org-operator">/</span> <span class="org-string">"Makefile"</span><span class="org-parenthesis">,</span> project_dir <span class="org-operator">/</span> <span class="org-string">"Makefile"</span><span class="org-parenthesis">)</span>
+    shutil.copy2(pathlib.Path(__file__).parent <span class="org-operator">/</span> <span class="org-string">"Makefile"</span>, project_dir <span class="org-operator">/</span> <span class="org-string">"Makefile"</span>)
 
     <span class="org-comment-delimiter"># </span><span class="org-comment">Populate crt-config.h</span>
     <span class="org-variable-name">crt_config_dir</span> <span class="org-operator">=</span> project_dir <span class="org-operator">/</span> <span class="org-string">"crt_config"</span>
-    crt_config_dir.mkdir<span class="org-parenthesis">()</span>
-    shutil.copy2<span class="org-parenthesis">(</span>
-        os.path.join<span class="org-parenthesis">(</span>os.path.dirname<span class="org-parenthesis">(</span>__file__<span class="org-parenthesis">),</span> <span class="org-string">".."</span><span class="org-parenthesis">,</span> <span class="org-string">"crt_config-template.h"</span><span class="org-parenthesis">),</span>
-        os.path.join<span class="org-parenthesis">(</span>crt_config_dir<span class="org-parenthesis">,</span> <span class="org-string">"crt_config.h"</span><span class="org-parenthesis">),</span>
-    <span class="org-parenthesis">)</span>
+    crt_config_dir.mkdir()
+    shutil.copy2(
+        os.path.join(os.path.dirname(__file__), <span class="org-string">".."</span>, <span class="org-string">"crt_config-template.h"</span>),
+        os.path.join(crt_config_dir, <span class="org-string">"crt_config.h"</span>),
+    )
 
     <span class="org-comment-delimiter"># </span><span class="org-comment">Populate src/</span>
-    <span class="org-variable-name">src_dir</span> <span class="org-operator">=</span> os.path.join<span class="org-parenthesis">(</span>project_dir<span class="org-parenthesis">,</span> <span class="org-string">"src"</span><span class="org-parenthesis">)</span>
-    os.mkdir<span class="org-parenthesis">(</span>src_dir<span class="org-parenthesis">)</span>
-    shutil.copy2<span class="org-parenthesis">(</span>
-        os.path.join<span class="org-parenthesis">(</span>os.path.dirname<span class="org-parenthesis">(</span>__file__<span class="org-parenthesis">),</span> <span class="org-string">"main.cc"</span><span class="org-parenthesis">),</span> os.path.join<span class="org-parenthesis">(</span>src_dir<span class="org-parenthesis">,</span> <span class="org-string">"main.cc"</span><span class="org-parenthesis">)</span>
-    <span class="org-parenthesis">)</span>
+    <span class="org-variable-name">src_dir</span> <span class="org-operator">=</span> os.path.join(project_dir, <span class="org-string">"src"</span>)
+    os.mkdir(src_dir)
+    shutil.copy2(
+        os.path.join(os.path.dirname(__file__), <span class="org-string">"main.cc"</span>), os.path.join(src_dir, <span class="org-string">"main.cc"</span>)
+    )
 
 </pre>
 </div></li>
@@ -743,12 +743,12 @@ generate_project 完成后使用 GeneratedProject 目录中的 microtvm_api_serv
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">generate_project_from_mlf</span><span class="org-parenthesis">(</span><span class="org-keyword">self</span><span class="org-parenthesis">,</span> model_library_format_path<span class="org-parenthesis">,</span> project_dir<span class="org-parenthesis">,</span> options<span class="org-parenthesis">)</span>:
-    <span class="org-keyword">self</span>._api_client.generate_project<span class="org-parenthesis">(</span>
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">generate_project_from_mlf</span>(<span class="org-keyword">self</span>, model_library_format_path, project_dir, options):
+    <span class="org-keyword">self</span>._api_client.generate_project(
         <span class="org-comment-delimiter"># </span><span class="org-comment">...</span>
-    <span class="org-parenthesis">)</span>
+    )
 
-    <span class="org-keyword">return</span> GeneratedProject.from_directory<span class="org-parenthesis">(</span>project_dir<span class="org-parenthesis">,</span> options<span class="org-parenthesis">)</span>
+    <span class="org-keyword">return</span> GeneratedProject.from_directory(project_dir, options)
 </pre>
 </div></li>
 
@@ -789,49 +789,49 @@ Session (Flasher/Transport) [python]     |
 <li><a id="org000002c"></a>初始化 session<br />
 <div class="outline-text-7" id="text-1-3-2-1-1-1">
 <div class="org-src-container">
-<pre class="src src-python">tvm.micro.Session<span class="org-parenthesis">(</span>binary<span class="org-operator">=</span>micro_binary<span class="org-parenthesis">,</span> flasher<span class="org-operator">=</span>flasher<span class="org-parenthesis">)</span>
-    <span class="org-keyword">def</span> <span class="org-function-name">Session</span>.__enter__<span class="org-parenthesis">(</span><span class="org-keyword">self</span><span class="org-parenthesis">)</span>:
-        <span class="org-keyword">self</span>.<span class="org-variable-name">transport_context_manager</span> <span class="org-operator">=</span> <span class="org-keyword">self</span>.flasher.flash<span class="org-parenthesis">(</span><span class="org-keyword">self</span>.binary<span class="org-parenthesis">)</span>
+<pre class="src src-python">tvm.micro.Session(binary<span class="org-operator">=</span>micro_binary, flasher<span class="org-operator">=</span>flasher)
+    <span class="org-keyword">def</span> <span class="org-function-name">Session</span>.__enter__(<span class="org-keyword">self</span>):
+        <span class="org-keyword">self</span>.<span class="org-variable-name">transport_context_manager</span> <span class="org-operator">=</span> <span class="org-keyword">self</span>.flasher.flash(<span class="org-keyword">self</span>.binary)
 
-        <span class="org-keyword">self</span>.<span class="org-variable-name">transport</span> <span class="org-operator">=</span> TransportLogger<span class="org-parenthesis">(</span>
-            <span class="org-keyword">self</span>.session_name<span class="org-parenthesis">,</span> <span class="org-keyword">self</span>.transport_context_manager<span class="org-parenthesis">,</span> level<span class="org-operator">=</span>logging.DEBUG
-        <span class="org-parenthesis">)</span>.__enter__<span class="org-parenthesis">()</span>
+        <span class="org-keyword">self</span>.<span class="org-variable-name">transport</span> <span class="org-operator">=</span> TransportLogger(
+            <span class="org-keyword">self</span>.session_name, <span class="org-keyword">self</span>.transport_context_manager, level<span class="org-operator">=</span>logging.DEBUG
+        ).__enter__()
 
-        <span class="org-keyword">self</span>.<span class="org-variable-name">_rpc</span> <span class="org-operator">=</span> RPCSession<span class="org-parenthesis">(</span>
-            _rpc_connect<span class="org-parenthesis">(</span>
-                <span class="org-keyword">self</span>.session_name<span class="org-parenthesis">,</span>
-                <span class="org-keyword">self</span>._wrap_transport_write<span class="org-parenthesis">,</span>
-                <span class="org-keyword">self</span>._wrap_transport_read<span class="org-parenthesis">,</span>
-                <span class="org-builtin">int</span><span class="org-parenthesis">(</span>timeouts.session_start_retry_timeout_sec <span class="org-operator">*</span> 1e6<span class="org-parenthesis">),</span>
-                <span class="org-builtin">int</span><span class="org-parenthesis">(</span>timeouts.session_start_timeout_sec <span class="org-operator">*</span> 1e6<span class="org-parenthesis">),</span>
-                <span class="org-builtin">int</span><span class="org-parenthesis">(</span>timeouts.session_established_timeout_sec <span class="org-operator">*</span> 1e6<span class="org-parenthesis">),</span>
-            <span class="org-parenthesis">)</span>
-        <span class="org-parenthesis">)</span>
+        <span class="org-keyword">self</span>.<span class="org-variable-name">_rpc</span> <span class="org-operator">=</span> RPCSession(
+            _rpc_connect(
+                <span class="org-keyword">self</span>.session_name,
+                <span class="org-keyword">self</span>._wrap_transport_write,
+                <span class="org-keyword">self</span>._wrap_transport_read,
+                <span class="org-builtin">int</span>(timeouts.session_start_retry_timeout_sec <span class="org-operator">*</span> 1e6),
+                <span class="org-builtin">int</span>(timeouts.session_start_timeout_sec <span class="org-operator">*</span> 1e6),
+                <span class="org-builtin">int</span>(timeouts.session_established_timeout_sec <span class="org-operator">*</span> 1e6),
+            )
+        )
 
 <span class="org-comment-delimiter"># </span><span class="org-comment">&#20854;&#20013; _wrap_transport_write, _wrap_transport_read &#26159;&#23545; transport &#30340;&#31616;&#21333;&#23553;&#35013;</span>
 
-<span class="org-keyword">def</span> <span class="org-function-name">_wrap_transport_read</span><span class="org-parenthesis">(</span><span class="org-keyword">self</span><span class="org-parenthesis">,</span> n<span class="org-parenthesis">,</span> timeout_microsec<span class="org-parenthesis">)</span>:
-    <span class="org-keyword">return</span> <span class="org-keyword">self</span>.transport.read<span class="org-parenthesis">(</span>
-        n<span class="org-parenthesis">,</span> <span class="org-builtin">float</span><span class="org-parenthesis">(</span>timeout_microsec<span class="org-parenthesis">)</span> <span class="org-operator">/</span> 1e6 <span class="org-keyword">if</span> timeout_microsec <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span> <span class="org-keyword">else</span> <span class="org-constant">None</span>
-    <span class="org-parenthesis">)</span>    
+<span class="org-keyword">def</span> <span class="org-function-name">_wrap_transport_read</span>(<span class="org-keyword">self</span>, n, timeout_microsec):
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>.transport.read(
+        n, <span class="org-builtin">float</span>(timeout_microsec) <span class="org-operator">/</span> 1e6 <span class="org-keyword">if</span> timeout_microsec <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span> <span class="org-keyword">else</span> <span class="org-constant">None</span>
+    )    
 
 
-<span class="org-keyword">def</span> <span class="org-function-name">_wrap_transport_write</span><span class="org-parenthesis">(</span><span class="org-keyword">self</span><span class="org-parenthesis">,</span> data<span class="org-parenthesis">,</span> timeout_microsec<span class="org-parenthesis">)</span>:
-    <span class="org-keyword">return</span> <span class="org-keyword">self</span>.transport.write<span class="org-parenthesis">(</span>
-        data<span class="org-parenthesis">,</span> <span class="org-builtin">float</span><span class="org-parenthesis">(</span>timeout_microsec<span class="org-parenthesis">)</span> <span class="org-operator">/</span> 1e6 <span class="org-keyword">if</span> timeout_microsec <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span> <span class="org-keyword">else</span> <span class="org-constant">None</span>
-    <span class="org-parenthesis">)</span>    
+<span class="org-keyword">def</span> <span class="org-function-name">_wrap_transport_write</span>(<span class="org-keyword">self</span>, data, timeout_microsec):
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>.transport.write(
+        data, <span class="org-builtin">float</span>(timeout_microsec) <span class="org-operator">/</span> 1e6 <span class="org-keyword">if</span> timeout_microsec <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span> <span class="org-keyword">else</span> <span class="org-constant">None</span>
+    )    
 
 
-TVM_REGISTER_GLOBAL<span class="org-parenthesis">(</span><span class="org-string">"micro._rpc_connect"</span><span class="org-parenthesis">)</span>.set_body<span class="org-parenthesis">(</span>[]<span class="org-parenthesis">(</span>TVMArgs args<span class="org-parenthesis">,</span> TVMRetValue<span class="org-operator">*</span> rv<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+TVM_REGISTER_GLOBAL(<span class="org-string">"micro._rpc_connect"</span>).set_body([](TVMArgs args, TVMRetValue<span class="org-operator">*</span> rv) {
   MicroTransportChannel<span class="org-operator">*</span> micro_channel <span class="org-operator">=</span>
-      new MicroTransportChannel<span class="org-parenthesis">(</span>args[1]<span class="org-parenthesis">,</span> args[2]<span class="org-parenthesis">,</span> ::std::chrono::microseconds<span class="org-parenthesis">(</span>uint64_t<span class="org-parenthesis">(</span>args[3]<span class="org-parenthesis">)),</span>
-                                ::std::chrono::microseconds<span class="org-parenthesis">(</span>uint64_t<span class="org-parenthesis">(</span>args[4]<span class="org-parenthesis">)),</span>
-                                ::std::chrono::microseconds<span class="org-parenthesis">(</span>uint64_t<span class="org-parenthesis">(</span>args[5]<span class="org-parenthesis">)))</span>;
-  std::unique_ptr<span class="org-operator">&lt;</span>RPCChannel<span class="org-operator">&gt;</span> channel<span class="org-parenthesis">(</span>micro_channel<span class="org-parenthesis">)</span>;
-  auto ep <span class="org-operator">=</span> RPCEndpoint::Create<span class="org-parenthesis">(</span>std::move<span class="org-parenthesis">(</span>channel<span class="org-parenthesis">),</span> args[0]<span class="org-parenthesis">,</span> <span class="org-string">""</span><span class="org-parenthesis">)</span>;
-  auto sess <span class="org-operator">=</span> CreateClientSession<span class="org-parenthesis">(</span>ep<span class="org-parenthesis">)</span>;
-  <span class="org-operator">*</span>rv <span class="org-operator">=</span> CreateRPCSessionModule<span class="org-parenthesis">(</span>sess<span class="org-parenthesis">)</span>;
-<span class="org-parenthesis">})</span>;
+      new MicroTransportChannel(args[1], args[2], ::std::chrono::microseconds(uint64_t(args[3])),
+                                ::std::chrono::microseconds(uint64_t(args[4])),
+                                ::std::chrono::microseconds(uint64_t(args[5])));
+  std::unique_ptr<span class="org-operator">&lt;</span>RPCChannel<span class="org-operator">&gt;</span> channel(micro_channel);
+  auto ep <span class="org-operator">=</span> RPCEndpoint::Create(std::move(channel), args[0], <span class="org-string">""</span>);
+  auto sess <span class="org-operator">=</span> CreateClientSession(ep);
+  <span class="org-operator">*</span>rv <span class="org-operator">=</span> CreateRPCSessionModule(sess);
+});
 </pre>
 </div>
 </div>
@@ -840,55 +840,55 @@ TVM_REGISTER_GLOBAL<span class="org-parenthesis">(</span><span class="org-string
 <li><a id="org000002f"></a>调用 session.get_system_lib<br />
 <div class="outline-text-7" id="text-1-3-2-1-1-2">
 <div class="org-src-container">
-<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">session</span>.get_system_lib<span class="org-parenthesis">(</span><span class="org-keyword">self</span><span class="org-parenthesis">)</span>:
-    <span class="org-keyword">return</span> <span class="org-keyword">self</span>._rpc.get_function<span class="org-parenthesis">(</span><span class="org-string">"runtime.SystemLib"</span><span class="org-parenthesis">)()</span>
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">session</span>.get_system_lib(<span class="org-keyword">self</span>):
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>._rpc.get_function(<span class="org-string">"runtime.SystemLib"</span>)()
 
-PackedFunc RPCModuleNode::GetFunction<span class="org-parenthesis">(</span>const std::string<span class="org-operator">&amp;</span> name<span class="org-parenthesis">,</span> const ObjectPtr<span class="org-operator">&lt;</span>Object<span class="org-operator">&gt;&amp;</span> sptr_to_self<span class="org-parenthesis">)</span> final <span class="org-parenthesis">{</span>
-    <span class="org-keyword">return</span> WrapRemoteFunc<span class="org-parenthesis">(</span>sess_<span class="org-operator">-&gt;</span>GetFunction<span class="org-parenthesis">(</span>name<span class="org-parenthesis">))</span>;                                          
-<span class="org-parenthesis">}</span>
+PackedFunc RPCModuleNode::GetFunction(const std::string<span class="org-operator">&amp;</span> name, const ObjectPtr<span class="org-operator">&lt;</span>Object<span class="org-operator">&gt;&amp;</span> sptr_to_self) final {
+    <span class="org-keyword">return</span> WrapRemoteFunc(sess_<span class="org-operator">-&gt;</span>GetFunction(name));                                          
+}
 
 <span class="org-comment-delimiter"># </span><span class="org-comment">&#20889;&#20837;&#21040; stream &#30340; RPCCode &#20026; kGetGlobalFunc</span>
-PackedFuncHandle RPCClientSession::GetFunction<span class="org-parenthesis">(</span>const std::string<span class="org-operator">&amp;</span> name<span class="org-parenthesis">)</span> final <span class="org-parenthesis">{</span>
-    <span class="org-keyword">return</span> endpoint_<span class="org-operator">-&gt;</span>SysCallRemote<span class="org-parenthesis">(</span>RPCCode::kGetGlobalFunc<span class="org-parenthesis">,</span> name<span class="org-parenthesis">)</span>;
-<span class="org-parenthesis">}</span>
+PackedFuncHandle RPCClientSession::GetFunction(const std::string<span class="org-operator">&amp;</span> name) final {
+    <span class="org-keyword">return</span> endpoint_<span class="org-operator">-&gt;</span>SysCallRemote(RPCCode::kGetGlobalFunc, name);
+}
 
-<span class="org-variable-name">syscall_remote_</span> <span class="org-operator">=</span> PackedFunc<span class="org-parenthesis">(</span>[this]<span class="org-parenthesis">(</span>TVMArgs all_args<span class="org-parenthesis">,</span> TVMRetValue<span class="org-operator">*</span> rv<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-    RPCCode code <span class="org-operator">=</span> static_cast<span class="org-operator">&lt;</span>RPCCode<span class="org-operator">&gt;</span><span class="org-parenthesis">(</span>all_args[0].operator <span class="org-builtin">int</span><span class="org-parenthesis">())</span>;
-    TVMArgs args<span class="org-parenthesis">(</span>all_args.values <span class="org-operator">+</span> 1<span class="org-parenthesis">,</span> all_args.type_codes <span class="org-operator">+</span> 1<span class="org-parenthesis">,</span> all_args.num_args <span class="org-operator">-</span> 1<span class="org-parenthesis">)</span>;
+<span class="org-variable-name">syscall_remote_</span> <span class="org-operator">=</span> PackedFunc([this](TVMArgs all_args, TVMRetValue<span class="org-operator">*</span> rv) {
+    RPCCode code <span class="org-operator">=</span> static_cast<span class="org-operator">&lt;</span>RPCCode<span class="org-operator">&gt;</span>(all_args[0].operator <span class="org-builtin">int</span>());
+    TVMArgs args(all_args.values <span class="org-operator">+</span> 1, all_args.type_codes <span class="org-operator">+</span> 1, all_args.num_args <span class="org-operator">-</span> 1);
 
-    uint64_t packet_nbytes <span class="org-operator">=</span> sizeof<span class="org-parenthesis">(</span>code<span class="org-parenthesis">)</span> <span class="org-operator">+</span> handler_<span class="org-operator">-&gt;</span>PackedSeqGetNumBytes<span class="org-parenthesis">(</span>
-                                                args.values<span class="org-parenthesis">,</span> args.type_codes<span class="org-parenthesis">,</span> args.num_args<span class="org-parenthesis">,</span> true<span class="org-parenthesis">)</span>;
+    uint64_t packet_nbytes <span class="org-operator">=</span> sizeof(code) <span class="org-operator">+</span> handler_<span class="org-operator">-&gt;</span>PackedSeqGetNumBytes(
+                                                args.values, args.type_codes, args.num_args, true);
 
     <span class="org-operator">//</span> All packet begins <span class="org-keyword">with</span> packet nbytes
-    handler_<span class="org-operator">-&gt;</span>Write<span class="org-parenthesis">(</span>packet_nbytes<span class="org-parenthesis">)</span>;
-    handler_<span class="org-operator">-&gt;</span>Write<span class="org-parenthesis">(</span>code<span class="org-parenthesis">)</span>;
-    handler_<span class="org-operator">-&gt;</span>SendPackedSeq<span class="org-parenthesis">(</span>args.values<span class="org-parenthesis">,</span> args.type_codes<span class="org-parenthesis">,</span> args.num_args<span class="org-parenthesis">,</span> true<span class="org-parenthesis">)</span>;
+    handler_<span class="org-operator">-&gt;</span>Write(packet_nbytes);
+    handler_<span class="org-operator">-&gt;</span>Write(code);
+    handler_<span class="org-operator">-&gt;</span>SendPackedSeq(args.values, args.type_codes, args.num_args, true);
 
-    code <span class="org-operator">=</span> HandleUntilReturnEvent<span class="org-parenthesis">(</span>true<span class="org-parenthesis">,</span> [rv]<span class="org-parenthesis">(</span>TVMArgs args<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-      ICHECK_EQ<span class="org-parenthesis">(</span>args.size<span class="org-parenthesis">(),</span> 1<span class="org-parenthesis">)</span>;
+    code <span class="org-operator">=</span> HandleUntilReturnEvent(true, [rv](TVMArgs args) {
+      ICHECK_EQ(args.size(), 1);
       <span class="org-operator">*</span>rv <span class="org-operator">=</span> args[0];
-    <span class="org-parenthesis">})</span>;
-    ICHECK<span class="org-parenthesis">(</span>code <span class="org-operator">==</span> RPCCode::kReturn<span class="org-parenthesis">)</span> <span class="org-operator">&lt;&lt;</span> <span class="org-string">"code="</span> <span class="org-operator">&lt;&lt;</span> static_cast<span class="org-operator">&lt;</span><span class="org-builtin">int</span><span class="org-operator">&gt;</span><span class="org-parenthesis">(</span>code<span class="org-parenthesis">)</span>;
-  <span class="org-parenthesis">})</span>;
+    });
+    ICHECK(code <span class="org-operator">==</span> RPCCode::kReturn) <span class="org-operator">&lt;&lt;</span> <span class="org-string">"code="</span> <span class="org-operator">&lt;&lt;</span> static_cast<span class="org-operator">&lt;</span><span class="org-builtin">int</span><span class="org-operator">&gt;</span>(code);
+  });
 
 <span class="org-comment-delimiter"># </span><span class="org-comment">handler &#26159; EventHandler &#23454;&#20363;</span>
-void RPCEndpoint::Init<span class="org-parenthesis">()</span> <span class="org-parenthesis">{</span>
+void RPCEndpoint::Init() {
   <span class="org-operator">//</span> ...
-  handler_ <span class="org-operator">=</span> std::make_shared<span class="org-operator">&lt;</span>EventHandler<span class="org-operator">&gt;</span><span class="org-parenthesis">(</span><span class="org-operator">&amp;</span>reader_<span class="org-parenthesis">,</span> <span class="org-operator">&amp;</span>writer_<span class="org-parenthesis">,</span> name_<span class="org-parenthesis">,</span> <span class="org-operator">&amp;</span>remote_key_<span class="org-parenthesis">,</span> flush_writer<span class="org-parenthesis">)</span>;
+  handler_ <span class="org-operator">=</span> std::make_shared<span class="org-operator">&lt;</span>EventHandler<span class="org-operator">&gt;</span>(<span class="org-operator">&amp;</span>reader_, <span class="org-operator">&amp;</span>writer_, name_, <span class="org-operator">&amp;</span>remote_key_, flush_writer);
   <span class="org-operator">//</span> ...
-<span class="org-parenthesis">}</span>
+}
 
-<span class="org-keyword">class</span> <span class="org-type">RPCEndpoint</span>::EventHandler : public dmlc::Stream <span class="org-parenthesis">{</span>
+<span class="org-keyword">class</span> <span class="org-type">RPCEndpoint</span>::EventHandler : public dmlc::Stream {
  public:
-  EventHandler<span class="org-parenthesis">(</span>support::RingBuffer<span class="org-operator">*</span> reader<span class="org-parenthesis">,</span> support::RingBuffer<span class="org-operator">*</span> writer<span class="org-parenthesis">,</span> std::string name<span class="org-parenthesis">,</span>
-               std::string<span class="org-operator">*</span> remote_key<span class="org-parenthesis">,</span> std::function<span class="org-operator">&lt;</span>void<span class="org-parenthesis">()</span><span class="org-operator">&gt;</span> flush_writer<span class="org-parenthesis">)</span>
-      : reader_<span class="org-parenthesis">(</span>reader<span class="org-parenthesis">),</span>
-        writer_<span class="org-parenthesis">(</span>writer<span class="org-parenthesis">),</span>
-        name_<span class="org-parenthesis">(</span>name<span class="org-parenthesis">),</span>
-        remote_key_<span class="org-parenthesis">(</span>remote_key<span class="org-parenthesis">),</span>
-        flush_writer_<span class="org-parenthesis">(</span>flush_writer<span class="org-parenthesis">)</span> <span class="org-parenthesis">{}</span>
+  EventHandler(support::RingBuffer<span class="org-operator">*</span> reader, support::RingBuffer<span class="org-operator">*</span> writer, std::string name,
+               std::string<span class="org-operator">*</span> remote_key, std::function<span class="org-operator">&lt;</span>void()<span class="org-operator">&gt;</span> flush_writer)
+      : reader_(reader),
+        writer_(writer),
+        name_(name),
+        remote_key_(remote_key),
+        flush_writer_(flush_writer) {}
 
-void EventHandler::Write<span class="org-parenthesis">(</span>const void<span class="org-operator">*</span> data<span class="org-parenthesis">,</span> size_t size<span class="org-parenthesis">)</span> final <span class="org-parenthesis">{</span> writer_<span class="org-operator">-&gt;</span>Write<span class="org-parenthesis">(</span>data<span class="org-parenthesis">,</span> size<span class="org-parenthesis">)</span>; <span class="org-parenthesis">}</span>        
+void EventHandler::Write(const void<span class="org-operator">*</span> data, size_t size) final { writer_<span class="org-operator">-&gt;</span>Write(data, size); }        
 
 <span class="org-comment-delimiter"># </span><span class="org-comment">&#26368;&#32456;&#22312; stream &#37324;&#20889;&#20102;&#19968;&#20010; "{kGetGlobalFunc}runtime.SystemLib..."</span>
 
@@ -913,37 +913,37 @@ server 端 (mcu 端) 需要应用自己启动 loop, 从transport (例如 serial 
 <div class="org-src-container">
 <pre class="src src-c++"><span class="org-comment-delimiter">// </span><span class="org-comment">writer_func &#26159;&#29992;&#25143;&#33258;&#24049;&#25552;&#20379;&#30340; function, &#29992;&#26469;&#25226; rpc_server &#38656;&#35201;&#36820;&#22238;&#30340;&#25968;&#25454;&#36890;&#36807;&#36825;</span>
 <span class="org-comment-delimiter">// </span><span class="org-comment">&#20010; function &#20889;&#21040; transport &#19978;</span>
-rpc_server = MicroTVMRpcServerInit<span class="org-parenthesis">(</span>&amp;writer_func<span class="org-parenthesis">,</span> <span class="org-constant">nullptr</span><span class="org-parenthesis">)</span>;
+rpc_server = MicroTVMRpcServerInit(&amp;writer_func, <span class="org-constant">nullptr</span>);
 <span class="org-constant">tvm</span>::<span class="org-constant">runtime</span>::<span class="org-constant">micro_rpc</span>::g_write_func = write_func;
 
-<span class="org-type">tvm_crt_error_t</span> <span class="org-variable-name">err</span> = TVMInitializeRuntime<span class="org-parenthesis">()</span>;
-TVMPlatformMemoryAllocate<span class="org-parenthesis">(</span>
-    TVM_CRT_MAX_PACKET_SIZE_BYTES<span class="org-parenthesis">,</span> dev<span class="org-parenthesis">,</span> &amp;receive_buffer_memory<span class="org-parenthesis">)</span>;
+<span class="org-type">tvm_crt_error_t</span> <span class="org-variable-name">err</span> = TVMInitializeRuntime();
+TVMPlatformMemoryAllocate(
+    TVM_CRT_MAX_PACKET_SIZE_BYTES, dev, &amp;receive_buffer_memory);
 <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
-rpc_server-&gt;Initialize<span class="org-parenthesis">()</span>;
+rpc_server-&gt;Initialize();
 
 <span class="org-comment-delimiter">// </span><span class="org-comment">MicroRPCServer &#21021;&#22987;&#21270;&#26102;&#35760;&#24405;&#20102;&#19968;&#20010; unframer_ &#19982; session_ &#32465;&#23450;, &#21518;&#32493;&#29992;&#25143;&#38656;&#35201;&#36890;</span>
 <span class="org-comment-delimiter">// </span><span class="org-comment">&#36807; MicroTVMRpcServerLoop &#25163;&#21160;&#32473; unframer_ &#21890;&#25968;&#25454;, session_ &#25343;&#21040;&#35299;&#26512;&#25968;&#25454;&#21518;&#20250;&#35843;</span>
 <span class="org-comment-delimiter">// </span><span class="org-comment">&#29992; HandleCompleteMessageCb</span>
 <span class="org-comment-delimiter">// </span><span class="org-comment">&#21478;&#19968;&#26041;&#38754;, &#19982; framer_ &#32465;&#23450;&#30340; send_stream_ &#20250;&#29992;&#21040; writer_func (&#36890;&#36807;&#19968;&#20010;&#20840;&#23616;&#21464;&#37327;)</span>
 <span class="org-comment-delimiter">// </span><span class="org-comment">&#25226;&#20135;&#29983;&#30340;&#25968;&#25454;&#20889;&#22238;&#21040; transport &#19978;</span>
-<span class="org-keyword">class</span> <span class="org-type">MicroRPCServer</span> <span class="org-parenthesis">{</span>
+<span class="org-keyword">class</span> <span class="org-type">MicroRPCServer</span> {
    <span class="org-keyword">public</span>:
-    <span class="org-function-name">MicroRPCServer</span><span class="org-parenthesis">(</span>
-        <span class="org-type">uint8_t</span>* <span class="org-variable-name">receive_storage</span><span class="org-parenthesis">,</span> <span class="org-type">size_t</span> <span class="org-variable-name">receive_storage_size_bytes</span><span class="org-parenthesis">,</span>
-        <span class="org-type">microtvm_rpc_channel_write_t</span> <span class="org-variable-name">write_func</span><span class="org-parenthesis">,</span> <span class="org-type">void</span>* <span class="org-variable-name">write_func_ctx</span><span class="org-parenthesis">)</span>
-        : receive_buffer_<span class="org-parenthesis">{</span>receive_storage<span class="org-parenthesis">,</span> receive_storage_size_bytes<span class="org-parenthesis">},</span>
-          framer_<span class="org-parenthesis">{</span>&amp;send_stream_<span class="org-parenthesis">},</span>
-          session_<span class="org-parenthesis">{</span>&amp;framer_<span class="org-parenthesis">,</span> &amp;receive_buffer_<span class="org-parenthesis">,</span> &amp;HandleCompleteMessageCb<span class="org-parenthesis">,</span> <span class="org-keyword">this</span><span class="org-parenthesis">},</span>
-          io_<span class="org-parenthesis">{</span>&amp;session_<span class="org-parenthesis">,</span> &amp;receive_buffer_<span class="org-parenthesis">},</span>
-          unframer_<span class="org-parenthesis">{</span>session_.Receiver<span class="org-parenthesis">()},</span>
-          rpc_server_<span class="org-parenthesis">{</span>&amp;io_<span class="org-parenthesis">},</span>
-          is_running_<span class="org-parenthesis">{</span><span class="org-constant">true</span><span class="org-parenthesis">}</span> <span class="org-parenthesis">{}</span>
+    <span class="org-function-name">MicroRPCServer</span>(
+        <span class="org-type">uint8_t</span>* <span class="org-variable-name">receive_storage</span>, <span class="org-type">size_t</span> <span class="org-variable-name">receive_storage_size_bytes</span>,
+        <span class="org-type">microtvm_rpc_channel_write_t</span> <span class="org-variable-name">write_func</span>, <span class="org-type">void</span>* <span class="org-variable-name">write_func_ctx</span>)
+        : receive_buffer_{receive_storage, receive_storage_size_bytes},
+          framer_{&amp;send_stream_},
+          session_{&amp;framer_, &amp;receive_buffer_, &amp;HandleCompleteMessageCb, <span class="org-keyword">this</span>},
+          io_{&amp;session_, &amp;receive_buffer_},
+          unframer_{session_.Receiver()},
+          rpc_server_{&amp;io_},
+          is_running_{<span class="org-constant">true</span>} {}
 
-    <span class="org-type">void</span> <span class="org-function-name">Initialize</span><span class="org-parenthesis">()</span> <span class="org-parenthesis">{</span>
+    <span class="org-type">void</span> <span class="org-function-name">Initialize</span>() {
         <span class="org-type">uint8_t</span> <span class="org-variable-name">initial_session_nonce</span> = <span class="org-constant">Session</span>::kInvalidNonce;
-        session_.Initialize<span class="org-parenthesis">(</span>initial_session_nonce<span class="org-parenthesis">)</span>;
-    <span class="org-parenthesis">}</span>
+        session_.Initialize(initial_session_nonce);
+    }
 </pre>
 </div>
 </div>
@@ -952,40 +952,40 @@ rpc_server-&gt;Initialize<span class="org-parenthesis">()</span>;
 <li><a id="org0000038"></a>rpc_server loop<br />
 <div class="outline-text-7" id="text-1-3-2-1-2-2">
 <div class="org-src-container">
-<pre class="src src-c++"><span class="org-type">tvm_crt_error_t</span> <span class="org-function-name">MicroTVMRpcServerLoop</span><span class="org-parenthesis">(</span><span class="org-type">microtvm_rpc_server_t</span> <span class="org-variable-name">server_ptr</span><span class="org-parenthesis">,</span> <span class="org-type">uint8_t</span>** <span class="org-variable-name">new_data</span><span class="org-parenthesis">,</span> <span class="org-type">size_t</span>* <span class="org-variable-name">new_data_size_bytes</span><span class="org-parenthesis">)</span>:
-  server-&gt;Loop<span class="org-parenthesis">(</span>new_data<span class="org-parenthesis">,</span> new_data_size_bytes<span class="org-parenthesis">)</span>;
+<pre class="src src-c++"><span class="org-type">tvm_crt_error_t</span> <span class="org-function-name">MicroTVMRpcServerLoop</span>(<span class="org-type">microtvm_rpc_server_t</span> <span class="org-variable-name">server_ptr</span>, <span class="org-type">uint8_t</span>** <span class="org-variable-name">new_data</span>, <span class="org-type">size_t</span>* <span class="org-variable-name">new_data_size_bytes</span>):
+  server-&gt;Loop(new_data, new_data_size_bytes);
 
-<span class="org-type">tvm_crt_error_t</span> <span class="org-function-name">Loop</span><span class="org-parenthesis">(</span><span class="org-type">uint8_t</span>** <span class="org-variable-name">new_data</span><span class="org-parenthesis">,</span> <span class="org-type">size_t</span>* <span class="org-variable-name">new_data_size_bytes</span><span class="org-parenthesis">)</span>: 
-  err = unframer_.Write<span class="org-parenthesis">(</span>*new_data<span class="org-parenthesis">,</span> *new_data_size_bytes<span class="org-parenthesis">,</span> &amp;bytes_consumed<span class="org-parenthesis">)</span>;
+<span class="org-type">tvm_crt_error_t</span> <span class="org-function-name">Loop</span>(<span class="org-type">uint8_t</span>** <span class="org-variable-name">new_data</span>, <span class="org-type">size_t</span>* <span class="org-variable-name">new_data_size_bytes</span>): 
+  err = unframer_.Write(*new_data, *new_data_size_bytes, &amp;bytes_consumed);
 
-<span class="org-type">tvm_crt_error_t</span> <span class="org-constant">Unframer</span>::<span class="org-function-name">Write</span><span class="org-parenthesis">(</span><span class="org-keyword">const</span> <span class="org-type">uint8_t</span>* <span class="org-variable-name">data</span><span class="org-parenthesis">,</span> <span class="org-type">size_t</span> <span class="org-variable-name">data_size_bytes</span><span class="org-parenthesis">,</span><span class="org-type">size_t</span>* <span class="org-variable-name">bytes_consumed</span><span class="org-parenthesis">)</span>:
-    <span class="org-keyword">switch</span> <span class="org-parenthesis">(</span>state_<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+<span class="org-type">tvm_crt_error_t</span> <span class="org-constant">Unframer</span>::<span class="org-function-name">Write</span>(<span class="org-keyword">const</span> <span class="org-type">uint8_t</span>* <span class="org-variable-name">data</span>, <span class="org-type">size_t</span> <span class="org-variable-name">data_size_bytes</span>,<span class="org-type">size_t</span>* <span class="org-variable-name">bytes_consumed</span>):
+    <span class="org-keyword">switch</span> (state_) {
       <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
       <span class="org-keyword">case</span> <span class="org-constant">State</span>::kFindCrcEnd:
-        return_code = FindCrcEnd<span class="org-parenthesis">()</span>;
-          stream_-&gt;PacketDone<span class="org-parenthesis">(</span>crc_ == *<span class="org-keyword">reinterpret_cast</span>&lt;<span class="org-type">uint16_t</span>*&gt;<span class="org-parenthesis">(</span>buffer_<span class="org-parenthesis">))</span>;
-            <span class="org-keyword">switch</span> <span class="org-parenthesis">(</span>header.message_type<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+        return_code = FindCrcEnd();
+          stream_-&gt;PacketDone(crc_ == *<span class="org-keyword">reinterpret_cast</span>&lt;<span class="org-type">uint16_t</span>*&gt;(buffer_));
+            <span class="org-keyword">switch</span> (header.message_type) {
               <span class="org-keyword">default</span>:
-                session_-&gt;message_received_func_<span class="org-parenthesis">(</span>session_-&gt;message_received_func_context_<span class="org-parenthesis">,</span>
-                                         header.message_type<span class="org-parenthesis">,</span> session_-&gt;receive_buffer_<span class="org-parenthesis">)</span>;
+                session_-&gt;message_received_func_(session_-&gt;message_received_func_context_,
+                                         header.message_type, session_-&gt;receive_buffer_);
 
 <span class="org-comment-delimiter">// </span><span class="org-comment">message_received_func_ &#21363; session &#21021;&#22987;&#21270;&#26102;&#30340; HandleCompleteMessageCb</span>
 
-<span class="org-type">void</span> <span class="org-constant">MicroRPCServer</span>::<span class="org-variable-name">HandleCompleteMessage</span><span class="org-parenthesis">(</span>MessageType message_type<span class="org-parenthesis">,</span> FrameBuffer* buf<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-  rpc_server_.ProcessOnePacket<span class="org-parenthesis">()</span>;
-    <span class="org-keyword">this</span>-&gt;Read<span class="org-parenthesis">(</span>&amp;packet_len<span class="org-parenthesis">)</span>;
-    <span class="org-keyword">this</span>-&gt;Read<span class="org-parenthesis">(</span>&amp;code<span class="org-parenthesis">)</span>;
+<span class="org-type">void</span> <span class="org-constant">MicroRPCServer</span>::<span class="org-variable-name">HandleCompleteMessage</span>(MessageType message_type, FrameBuffer* buf) {
+  rpc_server_.ProcessOnePacket();
+    <span class="org-keyword">this</span>-&gt;Read(&amp;packet_len);
+    <span class="org-keyword">this</span>-&gt;Read(&amp;code);
 
-    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>code &gt;= <span class="org-constant">RPCCode</span>::kSyscallCodeStart<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-      <span class="org-keyword">this</span>-&gt;HandleSyscallFunc<span class="org-parenthesis">(</span>code<span class="org-parenthesis">)</span>;
-    <span class="org-parenthesis">}</span> <span class="org-keyword">else</span> <span class="org-parenthesis">{</span>
-      <span class="org-keyword">switch</span> <span class="org-parenthesis">(</span>code<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-        <span class="org-keyword">case</span> <span class="org-constant">RPCCode</span>::kCallFunc: <span class="org-parenthesis">{</span>
-          HandleNormalCallFunc<span class="org-parenthesis">()</span>;
-            TVMFuncCall<span class="org-parenthesis">(</span><span class="org-keyword">reinterpret_cast</span>&lt;<span class="org-type">void</span>*&gt;<span class="org-parenthesis">(</span>call_handle<span class="org-parenthesis">),</span> values<span class="org-parenthesis">,</span> tcodes<span class="org-parenthesis">,</span> num_args<span class="org-parenthesis">,</span> &amp;<span class="org-parenthesis">(</span>ret_value[1]<span class="org-parenthesis">),</span> &amp;<span class="org-parenthesis">(</span>ret_tcode[1]<span class="org-parenthesis">))</span>;
+    <span class="org-keyword">if</span> (code &gt;= <span class="org-constant">RPCCode</span>::kSyscallCodeStart) {
+      <span class="org-keyword">this</span>-&gt;HandleSyscallFunc(code);
+    } <span class="org-keyword">else</span> {
+      <span class="org-keyword">switch</span> (code) {
+        <span class="org-keyword">case</span> <span class="org-constant">RPCCode</span>::kCallFunc: {
+          HandleNormalCallFunc();
+            TVMFuncCall(<span class="org-keyword">reinterpret_cast</span>&lt;<span class="org-type">void</span>*&gt;(call_handle), values, tcodes, num_args, &amp;(ret_value[1]), &amp;(ret_tcode[1]));
 
           <span class="org-keyword">break</span>;
-        <span class="org-parenthesis">}</span>
+        }
       <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
 
 </pre>
@@ -1056,48 +1056,48 @@ MicroTVM 通过 Proejct API 和 MicroTVM RPC 支持 AutoTVM
 <span class="org-keyword">import</span> tempfile
 
 
-<span class="org-keyword">def</span> <span class="org-function-name">get_model</span><span class="org-parenthesis">()</span>:
-    <span class="org-variable-name">x</span> <span class="org-operator">=</span> relay.var<span class="org-parenthesis">(</span><span class="org-string">"x"</span><span class="org-parenthesis">,</span> relay.TensorType<span class="org-parenthesis">(</span>[1<span class="org-parenthesis">,</span> 10]<span class="org-parenthesis">,</span> <span class="org-string">"float32"</span><span class="org-parenthesis">))</span>
-    <span class="org-variable-name">y</span> <span class="org-operator">=</span> relay.add<span class="org-parenthesis">(</span>x<span class="org-parenthesis">,</span> x<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">f</span> <span class="org-operator">=</span> relay.Function<span class="org-parenthesis">(</span>[x]<span class="org-parenthesis">,</span> y<span class="org-parenthesis">)</span>
+<span class="org-keyword">def</span> <span class="org-function-name">get_model</span>():
+    <span class="org-variable-name">x</span> <span class="org-operator">=</span> relay.var(<span class="org-string">"x"</span>, relay.TensorType([1, 10], <span class="org-string">"float32"</span>))
+    <span class="org-variable-name">y</span> <span class="org-operator">=</span> relay.add(x, x)
+    <span class="org-variable-name">f</span> <span class="org-operator">=</span> relay.Function([x], y)
 
-    <span class="org-variable-name">relay_mod</span> <span class="org-operator">=</span> tvm.IRModule.from_expr<span class="org-parenthesis">(</span>f<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">relay_mod</span> <span class="org-operator">=</span> relay.transform.InferType<span class="org-parenthesis">()(</span>relay_mod<span class="org-parenthesis">)</span>
+    <span class="org-variable-name">relay_mod</span> <span class="org-operator">=</span> tvm.IRModule.from_expr(f)
+    <span class="org-variable-name">relay_mod</span> <span class="org-operator">=</span> relay.transform.InferType()(relay_mod)
     <span class="org-keyword">return</span> relay_mod
 
 
-<span class="org-keyword">def</span> <span class="org-function-name">tune</span><span class="org-parenthesis">()</span>:
-    <span class="org-variable-name">relay_mod</span> <span class="org-operator">=</span> get_model<span class="org-parenthesis">()</span>
-    <span class="org-keyword">with</span> tvm.transform.PassContext<span class="org-parenthesis">(</span>opt_level<span class="org-operator">=</span>3<span class="org-parenthesis">,</span> config<span class="org-operator">=</span><span class="org-parenthesis">{</span><span class="org-string">"tir.disable_vectorize"</span>: <span class="org-constant">True</span><span class="org-parenthesis">})</span>:
-        <span class="org-variable-name">tasks</span> <span class="org-operator">=</span> tvm.autotvm.task.extract_from_program<span class="org-parenthesis">(</span>
-            relay_mod[<span class="org-string">"main"</span>]<span class="org-parenthesis">,</span> <span class="org-parenthesis">{},</span> tvm.target.target.micro<span class="org-parenthesis">(</span><span class="org-string">"host"</span><span class="org-parenthesis">)</span>
-        <span class="org-parenthesis">)</span>
+<span class="org-keyword">def</span> <span class="org-function-name">tune</span>():
+    <span class="org-variable-name">relay_mod</span> <span class="org-operator">=</span> get_model()
+    <span class="org-keyword">with</span> tvm.transform.PassContext(opt_level<span class="org-operator">=</span>3, config<span class="org-operator">=</span>{<span class="org-string">"tir.disable_vectorize"</span>: <span class="org-constant">True</span>}):
+        <span class="org-variable-name">tasks</span> <span class="org-operator">=</span> tvm.autotvm.task.extract_from_program(
+            relay_mod[<span class="org-string">"main"</span>], {}, tvm.target.target.micro(<span class="org-string">"host"</span>)
+        )
 
-    <span class="org-variable-name">module_loader</span> <span class="org-operator">=</span> tvm.micro.AutoTvmModuleLoader<span class="org-parenthesis">(</span>
-        template_project_dir<span class="org-operator">=</span><span class="org-string">"~/source/tvm/build/standalone_crt/template/host"</span><span class="org-parenthesis">,</span>
-        project_options<span class="org-operator">=</span><span class="org-parenthesis">{</span><span class="org-string">"verbose"</span>: <span class="org-constant">False</span><span class="org-parenthesis">},</span>
-    <span class="org-parenthesis">)</span>
-    <span class="org-variable-name">runner</span> <span class="org-operator">=</span> tvm.autotvm.LocalRunner<span class="org-parenthesis">(</span>
-        number<span class="org-operator">=</span>1<span class="org-parenthesis">,</span> repeat<span class="org-operator">=</span>1<span class="org-parenthesis">,</span> timeout<span class="org-operator">=</span>100<span class="org-parenthesis">,</span> module_loader<span class="org-operator">=</span>module_loader
-    <span class="org-parenthesis">)</span>
+    <span class="org-variable-name">module_loader</span> <span class="org-operator">=</span> tvm.micro.AutoTvmModuleLoader(
+        template_project_dir<span class="org-operator">=</span><span class="org-string">"~/source/tvm/build/standalone_crt/template/host"</span>,
+        project_options<span class="org-operator">=</span>{<span class="org-string">"verbose"</span>: <span class="org-constant">False</span>},
+    )
+    <span class="org-variable-name">runner</span> <span class="org-operator">=</span> tvm.autotvm.LocalRunner(
+        number<span class="org-operator">=</span>1, repeat<span class="org-operator">=</span>1, timeout<span class="org-operator">=</span>100, module_loader<span class="org-operator">=</span>module_loader
+    )
 
-    <span class="org-variable-name">builder</span> <span class="org-operator">=</span> tvm.autotvm.LocalBuilder<span class="org-parenthesis">(</span>
-        n_parallel<span class="org-operator">=</span>1<span class="org-parenthesis">,</span>
-        build_kwargs<span class="org-operator">=</span><span class="org-parenthesis">{</span><span class="org-string">"build_option"</span>: <span class="org-parenthesis">{</span><span class="org-string">"tir.disable_vectorize"</span>: <span class="org-constant">True</span><span class="org-parenthesis">}},</span>
-        build_func<span class="org-operator">=</span>tvm.micro.autotvm_build_func<span class="org-parenthesis">,</span>
-    <span class="org-parenthesis">)</span>
+    <span class="org-variable-name">builder</span> <span class="org-operator">=</span> tvm.autotvm.LocalBuilder(
+        n_parallel<span class="org-operator">=</span>1,
+        build_kwargs<span class="org-operator">=</span>{<span class="org-string">"build_option"</span>: {<span class="org-string">"tir.disable_vectorize"</span>: <span class="org-constant">True</span>}},
+        build_func<span class="org-operator">=</span>tvm.micro.autotvm_build_func,
+    )
 
     <span class="org-keyword">for</span> task <span class="org-keyword">in</span> tasks:
-        <span class="org-variable-name">tuner</span> <span class="org-operator">=</span> tvm.autotvm.tuner.GATuner<span class="org-parenthesis">(</span>task<span class="org-parenthesis">)</span>
-        tuner.tune<span class="org-parenthesis">(</span>
-            n_trial<span class="org-operator">=</span>1<span class="org-parenthesis">,</span>
-            measure_option<span class="org-operator">=</span>tvm.autotvm.measure_option<span class="org-parenthesis">(</span>builder<span class="org-operator">=</span>builder<span class="org-parenthesis">,</span> runner<span class="org-operator">=</span>runner<span class="org-parenthesis">),</span>
-        <span class="org-parenthesis">)</span>
+        <span class="org-variable-name">tuner</span> <span class="org-operator">=</span> tvm.autotvm.tuner.GATuner(task)
+        tuner.tune(
+            n_trial<span class="org-operator">=</span>1,
+            measure_option<span class="org-operator">=</span>tvm.autotvm.measure_option(builder<span class="org-operator">=</span>builder, runner<span class="org-operator">=</span>runner),
+        )
 
 
 <span class="org-keyword">if</span> <span class="org-builtin">__name__</span> <span class="org-operator">==</span> <span class="org-string">"__main__"</span>:
     <span class="org-comment-delimiter"># </span><span class="org-comment">Project API &#20063;&#21487;&#20197;&#29992;&#26469;&#20570; autotvm</span>
-    tune<span class="org-parenthesis">()</span>
+    tune()
 
 </pre>
 </div>
@@ -1109,53 +1109,53 @@ MicroTVM 通过 Proejct API 和 MicroTVM RPC 支持 AutoTVM
 <div class="org-src-container">
 <pre class="src src-python"><span class="org-keyword">class</span> <span class="org-type">AutoTvmModuleLoader</span>:
     <span class="org-type">@contextlib.contextmanager</span>
-    <span class="org-keyword">def</span> <span class="org-function-name">__call__</span><span class="org-parenthesis">(</span><span class="org-keyword">self</span><span class="org-parenthesis">,</span> remote_kw<span class="org-parenthesis">,</span> build_result<span class="org-parenthesis">)</span>:
-        <span class="org-keyword">with</span> <span class="org-builtin">open</span><span class="org-parenthesis">(</span>build_result.filename<span class="org-parenthesis">,</span> <span class="org-string">"rb"</span><span class="org-parenthesis">)</span> <span class="org-keyword">as</span> build_file:
-            <span class="org-variable-name">build_result_bin</span> <span class="org-operator">=</span> build_file.read<span class="org-parenthesis">()</span>
+    <span class="org-keyword">def</span> <span class="org-function-name">__call__</span>(<span class="org-keyword">self</span>, remote_kw, build_result):
+        <span class="org-keyword">with</span> <span class="org-builtin">open</span>(build_result.filename, <span class="org-string">"rb"</span>) <span class="org-keyword">as</span> build_file:
+            <span class="org-variable-name">build_result_bin</span> <span class="org-operator">=</span> build_file.read()
 
-        <span class="org-variable-name">tracker</span> <span class="org-operator">=</span> _rpc.connect_tracker<span class="org-parenthesis">(</span>remote_kw[<span class="org-string">"host"</span>]<span class="org-parenthesis">,</span> remote_kw[<span class="org-string">"port"</span>]<span class="org-parenthesis">)</span>
-        <span class="org-variable-name">remote</span> <span class="org-operator">=</span> tracker.request<span class="org-parenthesis">(</span>
-            remote_kw[<span class="org-string">"device_key"</span>]<span class="org-parenthesis">,</span>
-            priority<span class="org-operator">=</span>remote_kw[<span class="org-string">"priority"</span>]<span class="org-parenthesis">,</span>
-            session_timeout<span class="org-operator">=</span>remote_kw[<span class="org-string">"timeout"</span>]<span class="org-parenthesis">,</span>
+        <span class="org-variable-name">tracker</span> <span class="org-operator">=</span> _rpc.connect_tracker(remote_kw[<span class="org-string">"host"</span>], remote_kw[<span class="org-string">"port"</span>])
+        <span class="org-variable-name">remote</span> <span class="org-operator">=</span> tracker.request(
+            remote_kw[<span class="org-string">"device_key"</span>],
+            priority<span class="org-operator">=</span>remote_kw[<span class="org-string">"priority"</span>],
+            session_timeout<span class="org-operator">=</span>remote_kw[<span class="org-string">"timeout"</span>],
             session_constructor_args<span class="org-operator">=</span>[
-                <span class="org-string">"tvm.micro.compile_and_create_micro_session"</span><span class="org-parenthesis">,</span>
-                build_result_bin<span class="org-parenthesis">,</span>
-                <span class="org-keyword">self</span>._template_project_dir<span class="org-parenthesis">,</span>
-                json.dumps<span class="org-parenthesis">(</span><span class="org-keyword">self</span>._project_options<span class="org-parenthesis">),</span>
-            ]<span class="org-parenthesis">,</span>
-        <span class="org-parenthesis">)</span>
-        <span class="org-variable-name">system_lib</span> <span class="org-operator">=</span> remote.get_function<span class="org-parenthesis">(</span><span class="org-string">"runtime.SystemLib"</span><span class="org-parenthesis">)()</span>
-        <span class="org-keyword">yield</span> remote<span class="org-parenthesis">,</span> system_lib
+                <span class="org-string">"tvm.micro.compile_and_create_micro_session"</span>,
+                build_result_bin,
+                <span class="org-keyword">self</span>._template_project_dir,
+                json.dumps(<span class="org-keyword">self</span>._project_options),
+            ],
+        )
+        <span class="org-variable-name">system_lib</span> <span class="org-operator">=</span> remote.get_function(<span class="org-string">"runtime.SystemLib"</span>)()
+        <span class="org-keyword">yield</span> remote, system_lib
 
 
-<span class="org-keyword">def</span> <span class="org-function-name">compile_and_create_micro_session</span><span class="org-parenthesis">(</span>
-    mod_src_bytes: <span class="org-builtin">bytes</span><span class="org-parenthesis">,</span>
-    template_project_dir: <span class="org-builtin">str</span><span class="org-parenthesis">,</span>
-    project_options: <span class="org-builtin">dict</span> <span class="org-operator">=</span> <span class="org-constant">None</span><span class="org-parenthesis">,</span>
-<span class="org-parenthesis">)</span>:
-    <span class="org-variable-name">temp_dir</span> <span class="org-operator">=</span> utils.tempdir<span class="org-parenthesis">()</span>
+<span class="org-keyword">def</span> <span class="org-function-name">compile_and_create_micro_session</span>(
+    mod_src_bytes: <span class="org-builtin">bytes</span>,
+    template_project_dir: <span class="org-builtin">str</span>,
+    project_options: <span class="org-builtin">dict</span> <span class="org-operator">=</span> <span class="org-constant">None</span>,
+):
+    <span class="org-variable-name">temp_dir</span> <span class="org-operator">=</span> utils.tempdir()
     <span class="org-comment-delimiter"># </span><span class="org-comment">Keep temp directory for generate project</span>
-    temp_dir.set_keep_for_debug<span class="org-parenthesis">(</span><span class="org-constant">True</span><span class="org-parenthesis">)</span>
+    temp_dir.set_keep_for_debug(<span class="org-constant">True</span>)
     <span class="org-variable-name">model_library_format_path</span> <span class="org-operator">=</span> temp_dir <span class="org-operator">/</span> <span class="org-string">"model.tar.gz"</span>
-    <span class="org-keyword">with</span> <span class="org-builtin">open</span><span class="org-parenthesis">(</span>model_library_format_path<span class="org-parenthesis">,</span> <span class="org-string">"wb"</span><span class="org-parenthesis">)</span> <span class="org-keyword">as</span> mlf_f:
-        mlf_f.write<span class="org-parenthesis">(</span>mod_src_bytes<span class="org-parenthesis">)</span>
+    <span class="org-keyword">with</span> <span class="org-builtin">open</span>(model_library_format_path, <span class="org-string">"wb"</span>) <span class="org-keyword">as</span> mlf_f:
+        mlf_f.write(mod_src_bytes)
 
     <span class="org-comment-delimiter"># </span><span class="org-comment">&#36825;&#37324;&#20351;&#29992;&#20102; Project API &#36827;&#34892; build, flash</span>
-    <span class="org-variable-name">template_project</span> <span class="org-operator">=</span> project.TemplateProject.from_directory<span class="org-parenthesis">(</span>template_project_dir<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">generated_project</span> <span class="org-operator">=</span> template_project.generate_project_from_mlf<span class="org-parenthesis">(</span>
-        model_library_format_path<span class="org-parenthesis">,</span>
-        <span class="org-builtin">str</span><span class="org-parenthesis">(</span>temp_dir <span class="org-operator">/</span> <span class="org-string">"generated-project"</span><span class="org-parenthesis">),</span>
-        options<span class="org-operator">=</span>json.loads<span class="org-parenthesis">(</span>project_options<span class="org-parenthesis">),</span>
-    <span class="org-parenthesis">)</span>
+    <span class="org-variable-name">template_project</span> <span class="org-operator">=</span> project.TemplateProject.from_directory(template_project_dir)
+    <span class="org-variable-name">generated_project</span> <span class="org-operator">=</span> template_project.generate_project_from_mlf(
+        model_library_format_path,
+        <span class="org-builtin">str</span>(temp_dir <span class="org-operator">/</span> <span class="org-string">"generated-project"</span>),
+        options<span class="org-operator">=</span>json.loads(project_options),
+    )
 
-    generated_project.build<span class="org-parenthesis">()</span>
-    generated_project.flash<span class="org-parenthesis">()</span>
-    <span class="org-variable-name">transport</span> <span class="org-operator">=</span> generated_project.transport<span class="org-parenthesis">()</span>
+    generated_project.build()
+    generated_project.flash()
+    <span class="org-variable-name">transport</span> <span class="org-operator">=</span> generated_project.transport()
 
     <span class="org-comment-delimiter"># </span><span class="org-comment">&#36825;&#37324;&#20351;&#29992;&#20102; transport &#21644; bin &#20013;&#30340; microtvm rpc server &#20132;&#20114;</span>
-    <span class="org-variable-name">rpc_session</span> <span class="org-operator">=</span> Session<span class="org-parenthesis">(</span>transport_context_manager<span class="org-operator">=</span>transport<span class="org-parenthesis">)</span>
-    rpc_session.__enter__<span class="org-parenthesis">()</span>
+    <span class="org-variable-name">rpc_session</span> <span class="org-operator">=</span> Session(transport_context_manager<span class="org-operator">=</span>transport)
+    rpc_session.__enter__()
     <span class="org-keyword">return</span> rpc_session._rpc._sess
 </pre>
 </div>
@@ -1200,19 +1200,19 @@ TVM Runtime 的启动有三种方式:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">export_library</span><span class="org-parenthesis">(</span><span class="org-keyword">self</span><span class="org-parenthesis">,</span> file_name<span class="org-parenthesis">,</span> fcompile<span class="org-operator">=</span><span class="org-constant">None</span><span class="org-parenthesis">,</span> addons<span class="org-operator">=</span><span class="org-constant">None</span><span class="org-parenthesis">,</span> workspace_dir<span class="org-operator">=</span><span class="org-constant">None</span><span class="org-parenthesis">,</span> <span class="org-operator">**</span>kwargs<span class="org-parenthesis">)</span>:
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">export_library</span>(<span class="org-keyword">self</span>, file_name, fcompile<span class="org-operator">=</span><span class="org-constant">None</span>, addons<span class="org-operator">=</span><span class="org-constant">None</span>, workspace_dir<span class="org-operator">=</span><span class="org-constant">None</span>, <span class="org-operator">**</span>kwargs):
     <span class="org-comment-delimiter"># </span><span class="org-comment">...</span>
     <span class="org-keyword">if</span> <span class="org-keyword">self</span>.imported_modules:
-        <span class="org-keyword">if</span> enabled<span class="org-parenthesis">(</span><span class="org-string">"llvm"</span><span class="org-parenthesis">)</span> <span class="org-keyword">and</span> llvm_target_triple:
-            <span class="org-variable-name">path_obj</span> <span class="org-operator">=</span> os.path.join<span class="org-parenthesis">(</span>workspace_dir<span class="org-parenthesis">,</span> f<span class="org-string">"devc.</span>{object_format}<span class="org-string">"</span><span class="org-parenthesis">)</span>
-            <span class="org-variable-name">m</span> <span class="org-operator">=</span> _ffi_api.ModulePackImportsToLLVM<span class="org-parenthesis">(</span><span class="org-keyword">self</span><span class="org-parenthesis">,</span> is_system_lib<span class="org-parenthesis">,</span> llvm_target_triple<span class="org-parenthesis">)</span>
-            m.save<span class="org-parenthesis">(</span>path_obj<span class="org-parenthesis">)</span>
-            files.append<span class="org-parenthesis">(</span>path_obj<span class="org-parenthesis">)</span>
+        <span class="org-keyword">if</span> enabled(<span class="org-string">"llvm"</span>) <span class="org-keyword">and</span> llvm_target_triple:
+            <span class="org-variable-name">path_obj</span> <span class="org-operator">=</span> os.path.join(workspace_dir, f<span class="org-string">"devc.</span>{object_format}<span class="org-string">"</span>)
+            <span class="org-variable-name">m</span> <span class="org-operator">=</span> _ffi_api.ModulePackImportsToLLVM(<span class="org-keyword">self</span>, is_system_lib, llvm_target_triple)
+            m.save(path_obj)
+            files.append(path_obj)
         <span class="org-keyword">else</span>:
-            <span class="org-variable-name">path_cc</span> <span class="org-operator">=</span> os.path.join<span class="org-parenthesis">(</span>workspace_dir<span class="org-parenthesis">,</span> <span class="org-string">"devc.c"</span><span class="org-parenthesis">)</span>
-            <span class="org-keyword">with</span> <span class="org-builtin">open</span><span class="org-parenthesis">(</span>path_cc<span class="org-parenthesis">,</span> <span class="org-string">"w"</span><span class="org-parenthesis">)</span> <span class="org-keyword">as</span> f:
-                f.write<span class="org-parenthesis">(</span>_ffi_api.ModulePackImportsToC<span class="org-parenthesis">(</span><span class="org-keyword">self</span><span class="org-parenthesis">,</span> is_system_lib<span class="org-parenthesis">))</span>
-            files.append<span class="org-parenthesis">(</span>path_cc<span class="org-parenthesis">)</span>
+            <span class="org-variable-name">path_cc</span> <span class="org-operator">=</span> os.path.join(workspace_dir, <span class="org-string">"devc.c"</span>)
+            <span class="org-keyword">with</span> <span class="org-builtin">open</span>(path_cc, <span class="org-string">"w"</span>) <span class="org-keyword">as</span> f:
+                f.write(_ffi_api.ModulePackImportsToC(<span class="org-keyword">self</span>, is_system_lib))
+            files.append(path_cc)
 
 </pre>
 </div>
@@ -1222,9 +1222,9 @@ ModulePackImportsToLLVM 和 ModulePackImportsToC 会生成类似下面的代码:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c++"><span class="org-keyword">extern</span> <span class="org-type">int</span> <span class="org-function-name">TVMBackendRegisterSystemLibSymbol</span><span class="org-parenthesis">(</span><span class="org-keyword">const</span> <span class="org-type">char</span>*<span class="org-parenthesis">,</span> <span class="org-type">void</span>*<span class="org-parenthesis">)</span>;
-<span class="org-keyword">static</span> <span class="org-type">int</span> <span class="org-variable-name">__tvm_dev_mblob_reg_</span> = TVMBackendRegisterSystemLibSymbol<span class="org-parenthesis">(</span>
-    <span class="org-string">"__tvm_dev_mblob"</span><span class="org-parenthesis">,</span> <span class="org-parenthesis">(</span><span class="org-type">void</span>*<span class="org-parenthesis">)</span>__tvm_dev_mblob<span class="org-parenthesis">)</span>;
+<pre class="src src-c++"><span class="org-keyword">extern</span> <span class="org-type">int</span> <span class="org-function-name">TVMBackendRegisterSystemLibSymbol</span>(<span class="org-keyword">const</span> <span class="org-type">char</span>*, <span class="org-type">void</span>*);
+<span class="org-keyword">static</span> <span class="org-type">int</span> <span class="org-variable-name">__tvm_dev_mblob_reg_</span> = TVMBackendRegisterSystemLibSymbol(
+    <span class="org-string">"__tvm_dev_mblob"</span>, (<span class="org-type">void</span>*)__tvm_dev_mblob);
 </pre>
 </div>
 
@@ -1259,26 +1259,26 @@ c++ ctor:
 
 <div class="org-src-container">
 <pre class="src src-C++"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdio.h&gt;</span>
-<span class="org-keyword">class</span> <span class="org-type">A</span> <span class="org-parenthesis">{</span>
+<span class="org-keyword">class</span> <span class="org-type">A</span> {
    <span class="org-keyword">public</span>:
-    <span class="org-function-name">A</span><span class="org-parenthesis">()</span> <span class="org-parenthesis">{</span> printf<span class="org-parenthesis">(</span><span class="org-string">"hello\n"</span><span class="org-parenthesis">)</span>; <span class="org-parenthesis">}</span>
-<span class="org-parenthesis">}</span>;
+    <span class="org-function-name">A</span>() { printf(<span class="org-string">"hello\n"</span>); }
+};
 
-<span class="org-type">A</span> <span class="org-variable-name">a</span><span class="org-parenthesis">,</span> <span class="org-variable-name">b</span><span class="org-parenthesis">,</span> <span class="org-variable-name">c</span>;
+<span class="org-type">A</span> <span class="org-variable-name">a</span>, <span class="org-variable-name">b</span>, <span class="org-variable-name">c</span>;
 
-<span class="org-keyword">typedef</span> <span class="org-type">void</span> <span class="org-parenthesis">(</span>*<span class="org-type">FP</span><span class="org-parenthesis">)()</span>;
+<span class="org-keyword">typedef</span> <span class="org-type">void</span> (*<span class="org-type">FP</span>)();
 
 <span class="org-comment-delimiter">// </span><span class="org-comment">__init_array_start, __init_array_end &#26159;&#36890;&#36807; linker script &#23450;&#20041;&#30340;&#31526;&#21495;</span>
 <span class="org-keyword">extern</span> <span class="org-type">FP</span> <span class="org-variable-name">__init_array_start</span>;
 <span class="org-keyword">extern</span> <span class="org-type">FP</span> <span class="org-variable-name">__init_array_end</span>;
 
-<span class="org-type">int</span> <span class="org-function-name">main</span><span class="org-parenthesis">(</span><span class="org-type">int</span> <span class="org-variable-name">argc</span><span class="org-parenthesis">,</span> <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-    printf<span class="org-parenthesis">(</span><span class="org-string">"----------main----------\n"</span><span class="org-parenthesis">)</span>;
-    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-type">FP</span> *<span class="org-variable-name">p</span> = &amp;__init_array_start; p &lt; &amp;__init_array_end; p++<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-        <span class="org-parenthesis">(</span>*p<span class="org-parenthesis">)()</span>;
-    <span class="org-parenthesis">}</span>
+<span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]) {
+    printf(<span class="org-string">"----------main----------\n"</span>);
+    <span class="org-keyword">for</span> (<span class="org-type">FP</span> *<span class="org-variable-name">p</span> = &amp;__init_array_start; p &lt; &amp;__init_array_end; p++) {
+        (*p)();
+    }
     <span class="org-keyword">return</span> 0;
-<span class="org-parenthesis">}</span>
+}
 </pre>
 </div>
 
@@ -1303,44 +1303,44 @@ __tvm_dev_mblob 的代码, 但 is_system_lib 的判断条件是:
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span class="org-variable-name">is_system_lib</span> <span class="org-operator">=</span> <span class="org-parenthesis">(</span>
-    module.type_key <span class="org-operator">==</span> <span class="org-string">"llvm"</span> <span class="org-keyword">and</span> module.get_function<span class="org-parenthesis">(</span><span class="org-string">"__tvm_is_system_module"</span><span class="org-parenthesis">)()</span>
-<span class="org-parenthesis">)</span>
+<pre class="src src-python"><span class="org-variable-name">is_system_lib</span> <span class="org-operator">=</span> (
+    module.type_key <span class="org-operator">==</span> <span class="org-string">"llvm"</span> <span class="org-keyword">and</span> module.get_function(<span class="org-string">"__tvm_is_system_module"</span>)()
+)
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-c++"><span class="org-type">PackedFunc</span> <span class="org-function-name">GetFunction</span><span class="org-parenthesis">(</span><span class="org-keyword">const</span> <span class="org-constant">std</span>::<span class="org-type">string</span>&amp; <span class="org-variable-name">name</span><span class="org-parenthesis">,</span> <span class="org-keyword">const</span> <span class="org-type">ObjectPtr</span>&lt;Object&gt;&amp; <span class="org-variable-name">sptr_to_self</span><span class="org-parenthesis">)</span> <span class="org-keyword">final</span> <span class="org-parenthesis">{</span>
-    <span class="org-keyword">if</span> <span class="org-parenthesis">(</span>name == <span class="org-string">"__tvm_is_system_module"</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
+<pre class="src src-c++"><span class="org-type">PackedFunc</span> <span class="org-function-name">GetFunction</span>(<span class="org-keyword">const</span> <span class="org-constant">std</span>::<span class="org-type">string</span>&amp; <span class="org-variable-name">name</span>, <span class="org-keyword">const</span> <span class="org-type">ObjectPtr</span>&lt;Object&gt;&amp; <span class="org-variable-name">sptr_to_self</span>) <span class="org-keyword">final</span> {
+    <span class="org-keyword">if</span> (name == <span class="org-string">"__tvm_is_system_module"</span>) {
       <span class="org-comment-delimiter">// </span><span class="org-comment">&#21028;&#26029;&#26377;&#27809;&#26377; __tvm_module_startup        </span>
-      <span class="org-type">bool</span> <span class="org-variable-name">flag</span> = <span class="org-parenthesis">(</span>mptr_-&gt;getFunction<span class="org-parenthesis">(</span><span class="org-string">"__tvm_module_startup"</span><span class="org-parenthesis">)</span> != <span class="org-constant">nullptr</span><span class="org-parenthesis">)</span>;
-      <span class="org-keyword">return</span> PackedFunc<span class="org-parenthesis">(</span>[<span class="org-constant">flag</span>]<span class="org-parenthesis">(</span><span class="org-type">TVMArgs</span> <span class="org-variable-name">args</span><span class="org-parenthesis">,</span> <span class="org-type">TVMRetValue</span>* <span class="org-variable-name">rv</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span> *rv = flag; <span class="org-parenthesis">})</span>;
-    <span class="org-parenthesis">}</span>
+      <span class="org-type">bool</span> <span class="org-variable-name">flag</span> = (mptr_-&gt;getFunction(<span class="org-string">"__tvm_module_startup"</span>) != <span class="org-constant">nullptr</span>);
+      <span class="org-keyword">return</span> PackedFunc([<span class="org-constant">flag</span>](<span class="org-type">TVMArgs</span> <span class="org-variable-name">args</span>, <span class="org-type">TVMRetValue</span>* <span class="org-variable-name">rv</span>) { *rv = flag; });
+    }
     <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
-<span class="org-parenthesis">}</span>
+}
 
 <span class="org-comment-delimiter">// </span><span class="org-comment">&#28155;&#21152; __tvm_module_startup &#30340;&#20195;&#30721;</span>
-<span class="org-type">void</span> <span class="org-constant">CodeGenCPU</span>::<span class="org-function-name">AddStartupFunction</span><span class="org-parenthesis">()</span> <span class="org-parenthesis">{</span>
-  <span class="org-keyword">if</span> <span class="org-parenthesis">(</span><span class="org-negation-char">!</span>target_c_runtime_<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-    <span class="org-constant">llvm</span>::<span class="org-type">FunctionType</span>* <span class="org-variable-name">ftype</span> = <span class="org-constant">llvm</span>::<span class="org-constant">FunctionType</span>::get<span class="org-parenthesis">(</span>t_void_<span class="org-parenthesis">,</span> <span class="org-parenthesis">{},</span> <span class="org-constant">false</span><span class="org-parenthesis">)</span>;
-    function_ = <span class="org-constant">llvm</span>::<span class="org-constant">Function</span>::Create<span class="org-parenthesis">(</span>ftype<span class="org-parenthesis">,</span> <span class="org-constant">llvm</span>::<span class="org-constant">Function</span>::InternalLinkage<span class="org-parenthesis">,</span>
-                                       <span class="org-string">"__tvm_module_startup"</span><span class="org-parenthesis">,</span> module_.get<span class="org-parenthesis">())</span>;
-    <span class="org-keyword">for</span> <span class="org-parenthesis">(</span><span class="org-keyword">const</span> <span class="org-keyword">auto</span>&amp; <span class="org-variable-name">kv</span> : export_system_symbols_<span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-      <span class="org-constant">llvm</span>::<span class="org-type">Value</span>* <span class="org-variable-name">name</span> = GetConstString<span class="org-parenthesis">(</span>kv.first<span class="org-parenthesis">)</span>;
-      builder_-&gt;CreateCall<span class="org-parenthesis">(</span>f_tvm_register_system_symbol_<span class="org-parenthesis">,</span>
-                           <span class="org-parenthesis">{</span>name<span class="org-parenthesis">,</span> builder_-&gt;CreateBitCast<span class="org-parenthesis">(</span>kv.second<span class="org-parenthesis">,</span> t_void_p_<span class="org-parenthesis">)})</span>;
-    <span class="org-parenthesis">}</span>    
+<span class="org-type">void</span> <span class="org-constant">CodeGenCPU</span>::<span class="org-function-name">AddStartupFunction</span>() {
+  <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>target_c_runtime_) {
+    <span class="org-constant">llvm</span>::<span class="org-type">FunctionType</span>* <span class="org-variable-name">ftype</span> = <span class="org-constant">llvm</span>::<span class="org-constant">FunctionType</span>::get(t_void_, {}, <span class="org-constant">false</span>);
+    function_ = <span class="org-constant">llvm</span>::<span class="org-constant">Function</span>::Create(ftype, <span class="org-constant">llvm</span>::<span class="org-constant">Function</span>::InternalLinkage,
+                                       <span class="org-string">"__tvm_module_startup"</span>, module_.get());
+    <span class="org-keyword">for</span> (<span class="org-keyword">const</span> <span class="org-keyword">auto</span>&amp; <span class="org-variable-name">kv</span> : export_system_symbols_) {
+      <span class="org-constant">llvm</span>::<span class="org-type">Value</span>* <span class="org-variable-name">name</span> = GetConstString(kv.first);
+      builder_-&gt;CreateCall(f_tvm_register_system_symbol_,
+                           {name, builder_-&gt;CreateBitCast(kv.second, t_void_p_)});
+    }    
     <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
-  <span class="org-parenthesis">}</span>
-<span class="org-parenthesis">}</span>
+  }
+}
 
-<span class="org-constant">std</span>::<span class="org-type">unique_ptr</span>&lt;<span class="org-constant">llvm</span>::Module&gt; <span class="org-constant">CodeGenLLVM</span>::<span class="org-function-name">Finish</span><span class="org-parenthesis">()</span> <span class="org-parenthesis">{</span>
-  <span class="org-keyword">this</span>-&gt;AddStartupFunction<span class="org-parenthesis">()</span>;
+<span class="org-constant">std</span>::<span class="org-type">unique_ptr</span>&lt;<span class="org-constant">llvm</span>::Module&gt; <span class="org-constant">CodeGenLLVM</span>::<span class="org-function-name">Finish</span>() {
+  <span class="org-keyword">this</span>-&gt;AddStartupFunction();
   <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
   <span class="org-comment-delimiter">// </span><span class="org-comment">optimize</span>
-  <span class="org-keyword">this</span>-&gt;Optimize<span class="org-parenthesis">()</span>;
-  <span class="org-keyword">return</span> <span class="org-constant">std</span>::move<span class="org-parenthesis">(</span>module_<span class="org-parenthesis">)</span>;
-<span class="org-parenthesis">}</span>
+  <span class="org-keyword">this</span>-&gt;Optimize();
+  <span class="org-keyword">return</span> <span class="org-constant">std</span>::move(module_);
+}
 
 </pre>
 </div>
@@ -1367,46 +1367,46 @@ llvm::Optimize 会把它删除&#x2026;
 <span class="org-keyword">import</span> os
 
 
-<span class="org-keyword">def</span> <span class="org-function-name">get_good_mod</span><span class="org-parenthesis">()</span>:
-    <span class="org-variable-name">d1</span> <span class="org-operator">=</span> relay.var<span class="org-parenthesis">(</span><span class="org-string">"d1"</span><span class="org-parenthesis">,</span> shape<span class="org-operator">=</span><span class="org-parenthesis">(</span>1<span class="org-parenthesis">,</span> 32<span class="org-parenthesis">,</span> 56<span class="org-parenthesis">,</span> 56<span class="org-parenthesis">),</span> dtype<span class="org-operator">=</span><span class="org-string">"float32"</span><span class="org-parenthesis">)</span>
-    <span class="org-variable-name">w1</span> <span class="org-operator">=</span> relay.var<span class="org-parenthesis">(</span><span class="org-string">"w1"</span><span class="org-parenthesis">,</span> shape<span class="org-operator">=</span><span class="org-parenthesis">(</span>32<span class="org-parenthesis">,</span> 32<span class="org-parenthesis">,</span> 3<span class="org-parenthesis">,</span> 3<span class="org-parenthesis">),</span> dtype<span class="org-operator">=</span><span class="org-string">"float32"</span><span class="org-parenthesis">)</span>
-    <span class="org-variable-name">b1</span> <span class="org-operator">=</span> relay.var<span class="org-parenthesis">(</span><span class="org-string">"b1"</span><span class="org-parenthesis">,</span> shape<span class="org-operator">=</span><span class="org-parenthesis">(</span>32<span class="org-parenthesis">,),</span> dtype<span class="org-operator">=</span><span class="org-string">"float32"</span><span class="org-parenthesis">)</span>
-    <span class="org-variable-name">conv</span> <span class="org-operator">=</span> relay.nn.conv2d<span class="org-parenthesis">(</span>d1<span class="org-parenthesis">,</span> w1<span class="org-parenthesis">,</span> strides<span class="org-operator">=</span><span class="org-parenthesis">(</span>1<span class="org-parenthesis">,</span> 1<span class="org-parenthesis">),</span> padding<span class="org-operator">=</span><span class="org-parenthesis">(</span>1<span class="org-parenthesis">,</span> 1<span class="org-parenthesis">))</span>
-    <span class="org-variable-name">bias</span> <span class="org-operator">=</span> relay.nn.bias_add<span class="org-parenthesis">(</span>conv<span class="org-parenthesis">,</span> b1<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">relu</span> <span class="org-operator">=</span> relay.nn.relu<span class="org-parenthesis">(</span>bias<span class="org-parenthesis">)</span>
+<span class="org-keyword">def</span> <span class="org-function-name">get_good_mod</span>():
+    <span class="org-variable-name">d1</span> <span class="org-operator">=</span> relay.var(<span class="org-string">"d1"</span>, shape<span class="org-operator">=</span>(1, 32, 56, 56), dtype<span class="org-operator">=</span><span class="org-string">"float32"</span>)
+    <span class="org-variable-name">w1</span> <span class="org-operator">=</span> relay.var(<span class="org-string">"w1"</span>, shape<span class="org-operator">=</span>(32, 32, 3, 3), dtype<span class="org-operator">=</span><span class="org-string">"float32"</span>)
+    <span class="org-variable-name">b1</span> <span class="org-operator">=</span> relay.var(<span class="org-string">"b1"</span>, shape<span class="org-operator">=</span>(32,), dtype<span class="org-operator">=</span><span class="org-string">"float32"</span>)
+    <span class="org-variable-name">conv</span> <span class="org-operator">=</span> relay.nn.conv2d(d1, w1, strides<span class="org-operator">=</span>(1, 1), padding<span class="org-operator">=</span>(1, 1))
+    <span class="org-variable-name">bias</span> <span class="org-operator">=</span> relay.nn.bias_add(conv, b1)
+    <span class="org-variable-name">relu</span> <span class="org-operator">=</span> relay.nn.relu(bias)
 
-    <span class="org-variable-name">func</span> <span class="org-operator">=</span> relay.Function<span class="org-parenthesis">(</span>[d1<span class="org-parenthesis">,</span> w1<span class="org-parenthesis">,</span> b1]<span class="org-parenthesis">,</span> relu<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> tvm.IRModule.from_expr<span class="org-parenthesis">(</span>func<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.transform.InferType<span class="org-parenthesis">()(</span>mod<span class="org-parenthesis">)</span>
+    <span class="org-variable-name">func</span> <span class="org-operator">=</span> relay.Function([d1, w1, b1], relu)
+    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> tvm.IRModule.from_expr(func)
+    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.transform.InferType()(mod)
     <span class="org-keyword">return</span> mod
 
 
-<span class="org-keyword">def</span> <span class="org-function-name">get_bug_mod</span><span class="org-parenthesis">()</span>:
-    <span class="org-variable-name">x</span> <span class="org-operator">=</span> relay.var<span class="org-parenthesis">(</span><span class="org-string">"x"</span><span class="org-parenthesis">,</span> shape<span class="org-operator">=</span><span class="org-parenthesis">(</span>10<span class="org-parenthesis">,),</span> dtype<span class="org-operator">=</span><span class="org-string">"float32"</span><span class="org-parenthesis">)</span>
-    <span class="org-variable-name">y</span> <span class="org-operator">=</span> relay.add<span class="org-parenthesis">(</span>x<span class="org-parenthesis">,</span> x<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">func</span> <span class="org-operator">=</span> relay.Function<span class="org-parenthesis">(</span>[x]<span class="org-parenthesis">,</span> y<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> tvm.IRModule.from_expr<span class="org-parenthesis">(</span>func<span class="org-parenthesis">)</span>
+<span class="org-keyword">def</span> <span class="org-function-name">get_bug_mod</span>():
+    <span class="org-variable-name">x</span> <span class="org-operator">=</span> relay.var(<span class="org-string">"x"</span>, shape<span class="org-operator">=</span>(10,), dtype<span class="org-operator">=</span><span class="org-string">"float32"</span>)
+    <span class="org-variable-name">y</span> <span class="org-operator">=</span> relay.add(x, x)
+    <span class="org-variable-name">func</span> <span class="org-operator">=</span> relay.Function([x], y)
+    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> tvm.IRModule.from_expr(func)
     <span class="org-keyword">return</span> mod
 
 
-<span class="org-keyword">def</span> <span class="org-function-name">prepare_relay_libs</span><span class="org-parenthesis">()</span>:
-    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> get_bug_mod<span class="org-parenthesis">()</span>
-    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.transform.AnnotateTarget<span class="org-parenthesis">(</span><span class="org-string">"dnnl"</span><span class="org-parenthesis">)(</span>mod<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.transform.PartitionGraph<span class="org-parenthesis">()(</span>mod<span class="org-parenthesis">)</span>
-    <span class="org-keyword">with</span> tvm.transform.PassContext<span class="org-parenthesis">(</span>opt_level<span class="org-operator">=</span>1<span class="org-parenthesis">)</span>:
-        <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.build<span class="org-parenthesis">(</span>mod<span class="org-parenthesis">,</span> target<span class="org-operator">=</span><span class="org-string">"llvm --system-lib --runtime=c++"</span><span class="org-parenthesis">,</span> params<span class="org-operator">=</span><span class="org-constant">None</span><span class="org-parenthesis">)</span>
-    mod.lib.export_library<span class="org-parenthesis">(</span><span class="org-string">"/tmp/libdouble_bug.tar"</span><span class="org-parenthesis">)</span>
+<span class="org-keyword">def</span> <span class="org-function-name">prepare_relay_libs</span>():
+    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> get_bug_mod()
+    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.transform.AnnotateTarget(<span class="org-string">"dnnl"</span>)(mod)
+    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.transform.PartitionGraph()(mod)
+    <span class="org-keyword">with</span> tvm.transform.PassContext(opt_level<span class="org-operator">=</span>1):
+        <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.build(mod, target<span class="org-operator">=</span><span class="org-string">"llvm --system-lib --runtime=c++"</span>, params<span class="org-operator">=</span><span class="org-constant">None</span>)
+    mod.lib.export_library(<span class="org-string">"/tmp/libdouble_bug.tar"</span>)
 
-    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> get_good_mod<span class="org-parenthesis">()</span>
-    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.transform.AnnotateTarget<span class="org-parenthesis">(</span><span class="org-string">"dnnl"</span><span class="org-parenthesis">)(</span>mod<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.transform.PartitionGraph<span class="org-parenthesis">()(</span>mod<span class="org-parenthesis">)</span>
-    <span class="org-keyword">with</span> tvm.transform.PassContext<span class="org-parenthesis">(</span>opt_level<span class="org-operator">=</span>1<span class="org-parenthesis">)</span>:
-        <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.build<span class="org-parenthesis">(</span>mod<span class="org-parenthesis">,</span> target<span class="org-operator">=</span><span class="org-string">"llvm --system-lib --runtime=c++"</span><span class="org-parenthesis">,</span> params<span class="org-operator">=</span><span class="org-constant">None</span><span class="org-parenthesis">)</span>
-    mod.lib.export_library<span class="org-parenthesis">(</span><span class="org-string">"/tmp/libdouble_good.tar"</span><span class="org-parenthesis">)</span>
+    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> get_good_mod()
+    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.transform.AnnotateTarget(<span class="org-string">"dnnl"</span>)(mod)
+    <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.transform.PartitionGraph()(mod)
+    <span class="org-keyword">with</span> tvm.transform.PassContext(opt_level<span class="org-operator">=</span>1):
+        <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.build(mod, target<span class="org-operator">=</span><span class="org-string">"llvm --system-lib --runtime=c++"</span>, params<span class="org-operator">=</span><span class="org-constant">None</span>)
+    mod.lib.export_library(<span class="org-string">"/tmp/libdouble_good.tar"</span>)
 
 
 <span class="org-keyword">if</span> <span class="org-builtin">__name__</span> <span class="org-operator">==</span> <span class="org-string">"__main__"</span>:
-    prepare_relay_libs<span class="org-parenthesis">()</span>
+    prepare_relay_libs()
 </pre>
 </div>
 

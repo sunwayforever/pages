@@ -153,6 +153,78 @@ debuggerd 因为第二次 SIGABORT 被唤醒, 这时目标进程的 kernel stack
 <div id="outline-container-org0000017" class="outline-3">
 <h3 id="org0000017"><span class="section-number-3">1.8.</span> 总结</h3>
 <div class="outline-text-3" id="text-1-8">
+<div class="org-src-container">
+<pre class="src src-plantuml"><span class="org-keyword">box</span> <span class="org-string">"target process"</span>
+<span class="org-type">participant</span> debugger as db
+<span class="org-type">participant</span>  app
+<span class="org-keyword">end</span> box
+
+<span class="org-keyword">box</span> <span class="org-string">"debuggerd"</span>
+<span class="org-type">participant</span>  debuggerd as dd
+<span class="org-keyword">end</span> box
+
+<span class="org-keyword">box</span> <span class="org-string">"kernel"</span>
+<span class="org-type">participant</span>  kernel
+<span class="org-keyword">end</span> box
+== 1st sigabrt ==
+app <span class="org-keyword">-&gt;</span> kernel: SIGABRT
+
+<span class="org-keyword">activate</span> kernel
+kernel <span class="org-keyword">-&gt;</span> kernel: save_context
+<span class="org-keyword">note</span> right: tombstone in kernel stack
+kernel <span class="org-keyword">-&gt;</span> kernel: construct_sigframe
+<span class="org-keyword">note</span> right
+     kernel stack empty,
+     tombstone moved to sigframe
+<span class="org-keyword">end</span> note
+kernel <span class="org-keyword">-&gt;</span> kernel: block_SIGABRT
+kernel <span class="org-keyword">-&gt;</span> db: call signal_handler
+<span class="org-keyword">deactivate</span> kernel
+
+<span class="org-keyword">activate</span> db
+db <span class="org-keyword">-&gt;</span> dd: send_request
+<span class="org-keyword">activate</span> dd
+db <span class="org-keyword">-&gt;</span> db: wait_for_response
+<span class="org-keyword">deactivate</span> db
+
+dd <span class="org-keyword">-&gt;</span> app: ptrace(ATTACH)
+app <span class="org-keyword">--&gt;</span> dd: ATTACHED
+dd <span class="org-keyword">-&gt;</span> db: send_response
+<span class="org-keyword">activate</span> db
+dd <span class="org-keyword">-&gt;</span> dd: waitpid
+app <span class="org-keyword">-&gt;</span> dd: SIGSTOP
+dd <span class="org-keyword">-&gt;</span> dd: waitpid_for_2nd_SIGABRT
+<span class="org-keyword">deactivate</span> dd
+
+db <span class="org-keyword">-&gt;</span> db: signal(SIG_DFL)
+db <span class="org-keyword">-&gt;</span> db: kill(2nd SIGABRT)
+db <span class="org-keyword">-&gt;</span> kernel: sigreturn
+<span class="org-keyword">deactivate</span> db
+
+== 2nd sigabrt ==
+<span class="org-keyword">activate</span> kernel
+kernel <span class="org-keyword">-&gt;</span> kernel: unblock_SIGABRT
+kernel <span class="org-keyword">-&gt;</span> kernel: restore_context_from_sigframe
+<span class="org-keyword">note</span> right: tombstone moved to kernel stack
+kernel <span class="org-keyword">-&gt;</span> dd: wakeup (SIGABRT)
+<span class="org-keyword">activate</span> dd
+kernel <span class="org-keyword">-&gt;</span> app: ret_to_user
+
+<span class="org-keyword">deactivate</span> kernel
+
+dd <span class="org-keyword">-&gt;</span> app: PTRACE(PT_GETREGS)
+<span class="org-keyword">note</span> left: got tombstone from kernel stack
+app <span class="org-keyword">--&gt;</span> dd: got_regs
+dd <span class="org-keyword">-&gt;</span> dd: dump_tombstone
+dd <span class="org-keyword">-&gt;</span> app: PTRACE(continue)
+<span class="org-keyword">activate</span> app
+<span class="org-keyword">deactivate</span> dd
+
+app <span class="org-keyword">-&gt;</span> app: exit (SIGABRT)
+<span class="org-keyword">deactivate</span> app
+</pre>
+</div>
+
 
 <div id="org0000015" class="figure">
 <p><img src="../extra/tombstone_handling.png" alt="tombstone_handling.png" />

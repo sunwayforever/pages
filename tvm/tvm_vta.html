@@ -64,60 +64,60 @@
 <h3 id="org0000004"><span class="section-number-3">1.1.</span> Overview</h3>
 <div class="outline-text-3" id="text-1-1">
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> os
-<span class="org-keyword">import</span> tvm
-<span class="org-keyword">from</span> tvm <span class="org-keyword">import</span> te
-<span class="org-keyword">import</span> vta
-<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<pre class="src src-ipython">import os
+import tvm
+from tvm import te
+import vta
+import numpy as np
 
-<span class="org-variable-name">env</span> <span class="org-operator">=</span> vta.get_env<span class="org-parenthesis">()</span>
+env = vta.get_env()
 
-<span class="org-keyword">from</span> tvm <span class="org-keyword">import</span> rpc
-<span class="org-keyword">from</span> tvm.contrib <span class="org-keyword">import</span> utils
-<span class="org-keyword">from</span> vta.testing <span class="org-keyword">import</span> simulator
+from tvm import rpc
+from tvm.contrib import utils
+from vta.testing import simulator
 
-<span class="org-variable-name">remote</span> <span class="org-operator">=</span> rpc.LocalSession<span class="org-parenthesis">()</span>
+remote = rpc.LocalSession()
 
-<span class="org-comment-delimiter"># </span><span class="org-comment">Output channel factor m - total 64 x 16 = 1024 output channels</span>
-<span class="org-variable-name">m</span> <span class="org-operator">=</span> 64
-<span class="org-comment-delimiter"># </span><span class="org-comment">Batch factor o - total 1 x 1 = 1</span>
-<span class="org-variable-name">o</span> <span class="org-operator">=</span> 1
-<span class="org-variable-name">A</span> <span class="org-operator">=</span> te.placeholder<span class="org-parenthesis">((</span>o<span class="org-parenthesis">,</span> m<span class="org-parenthesis">,</span> env.BATCH<span class="org-parenthesis">,</span> env.BLOCK_OUT<span class="org-parenthesis">),</span> name<span class="org-operator">=</span><span class="org-string">"A"</span><span class="org-parenthesis">,</span> dtype<span class="org-operator">=</span>env.acc_dtype<span class="org-parenthesis">)</span>
-<span class="org-variable-name">B</span> <span class="org-operator">=</span> te.placeholder<span class="org-parenthesis">((</span>o<span class="org-parenthesis">,</span> m<span class="org-parenthesis">,</span> env.BATCH<span class="org-parenthesis">,</span> env.BLOCK_OUT<span class="org-parenthesis">),</span> name<span class="org-operator">=</span><span class="org-string">"B"</span><span class="org-parenthesis">,</span> dtype<span class="org-operator">=</span>env.acc_dtype<span class="org-parenthesis">)</span>
+# Output channel factor m - total 64 x 16 = 1024 output channels
+m = 64
+# Batch factor o - total 1 x 1 = 1
+o = 1
+A = te.placeholder((o, m, env.BATCH, env.BLOCK_OUT), name="A", dtype=env.acc_dtype)
+B = te.placeholder((o, m, env.BATCH, env.BLOCK_OUT), name="B", dtype=env.acc_dtype)
 
-<span class="org-comment-delimiter"># </span><span class="org-comment">A copy buffer</span>
-<span class="org-variable-name">A_buf</span> <span class="org-operator">=</span> te.compute<span class="org-parenthesis">((</span>o<span class="org-parenthesis">,</span> m<span class="org-parenthesis">,</span> env.BATCH<span class="org-parenthesis">,</span> env.BLOCK_OUT<span class="org-parenthesis">),</span> <span class="org-keyword">lambda</span> <span class="org-operator">*</span>i: A<span class="org-parenthesis">(</span><span class="org-operator">*</span>i<span class="org-parenthesis">),</span> <span class="org-string">"A_buf"</span><span class="org-parenthesis">)</span>
-<span class="org-comment-delimiter"># </span><span class="org-comment">B copy buffer</span>
-<span class="org-variable-name">B_buf</span> <span class="org-operator">=</span> te.compute<span class="org-parenthesis">((</span>o<span class="org-parenthesis">,</span> m<span class="org-parenthesis">,</span> env.BATCH<span class="org-parenthesis">,</span> env.BLOCK_OUT<span class="org-parenthesis">),</span> <span class="org-keyword">lambda</span> <span class="org-operator">*</span>i: B<span class="org-parenthesis">(</span><span class="org-operator">*</span>i<span class="org-parenthesis">),</span> <span class="org-string">"B_buf"</span><span class="org-parenthesis">)</span>
+# A copy buffer
+A_buf = te.compute((o, m, env.BATCH, env.BLOCK_OUT), lambda *i: A(*i), "A_buf")
+# B copy buffer
+B_buf = te.compute((o, m, env.BATCH, env.BLOCK_OUT), lambda *i: B(*i), "B_buf")
 
-<span class="org-variable-name">C_buf</span> <span class="org-operator">=</span> te.compute<span class="org-parenthesis">(</span>
-    <span class="org-parenthesis">(</span>o<span class="org-parenthesis">,</span> m<span class="org-parenthesis">,</span> env.BATCH<span class="org-parenthesis">,</span> env.BLOCK_OUT<span class="org-parenthesis">),</span>
-    <span class="org-keyword">lambda</span> <span class="org-operator">*</span>i: A_buf<span class="org-parenthesis">(</span><span class="org-operator">*</span>i<span class="org-parenthesis">)</span>.astype<span class="org-parenthesis">(</span>env.acc_dtype<span class="org-parenthesis">)</span> <span class="org-operator">+</span> B_buf<span class="org-parenthesis">(</span><span class="org-operator">*</span>i<span class="org-parenthesis">)</span>.astype<span class="org-parenthesis">(</span>env.acc_dtype<span class="org-parenthesis">),</span>
-    name<span class="org-operator">=</span><span class="org-string">"C_buf"</span><span class="org-parenthesis">,</span>
-<span class="org-parenthesis">)</span>
+C_buf = te.compute(
+    (o, m, env.BATCH, env.BLOCK_OUT),
+    lambda *i: A_buf(*i).astype(env.acc_dtype) + B_buf(*i).astype(env.acc_dtype),
+    name="C_buf",
+)
 
-<span class="org-variable-name">C</span> <span class="org-operator">=</span> te.compute<span class="org-parenthesis">(</span>
-    <span class="org-parenthesis">(</span>o<span class="org-parenthesis">,</span> m<span class="org-parenthesis">,</span> env.BATCH<span class="org-parenthesis">,</span> env.BLOCK_OUT<span class="org-parenthesis">),</span>
-    <span class="org-keyword">lambda</span> <span class="org-operator">*</span>i: C_buf<span class="org-parenthesis">(</span><span class="org-operator">*</span>i<span class="org-parenthesis">)</span>.astype<span class="org-parenthesis">(</span>env.inp_dtype<span class="org-parenthesis">),</span>
-    name<span class="org-operator">=</span><span class="org-string">"C"</span><span class="org-parenthesis">,</span>
-<span class="org-parenthesis">)</span>
+C = te.compute(
+    (o, m, env.BATCH, env.BLOCK_OUT),
+    lambda *i: C_buf(*i).astype(env.inp_dtype),
+    name="C",
+)
 
-<span class="org-variable-name">s</span> <span class="org-operator">=</span> te.create_schedule<span class="org-parenthesis">(</span>C.op<span class="org-parenthesis">)</span>
+s = te.create_schedule(C.op)
 
-s[A_buf].set_scope<span class="org-parenthesis">(</span>env.acc_scope<span class="org-parenthesis">)</span>
-s[B_buf].set_scope<span class="org-parenthesis">(</span>env.acc_scope<span class="org-parenthesis">)</span>
-s[C_buf].set_scope<span class="org-parenthesis">(</span>env.acc_scope<span class="org-parenthesis">)</span>
+s[A_buf].set_scope(env.acc_scope)
+s[B_buf].set_scope(env.acc_scope)
+s[C_buf].set_scope(env.acc_scope)
 
-s[A_buf].pragma<span class="org-parenthesis">(</span>s[A_buf].op.axis[0]<span class="org-parenthesis">,</span> env.dma_copy<span class="org-parenthesis">)</span>
-s[B_buf].pragma<span class="org-parenthesis">(</span>s[B_buf].op.axis[0]<span class="org-parenthesis">,</span> env.dma_copy<span class="org-parenthesis">)</span>
-s[C].pragma<span class="org-parenthesis">(</span>s[C].op.axis[0]<span class="org-parenthesis">,</span> env.dma_copy<span class="org-parenthesis">)</span>
+s[A_buf].pragma(s[A_buf].op.axis[0], env.dma_copy)
+s[B_buf].pragma(s[B_buf].op.axis[0], env.dma_copy)
+s[C].pragma(s[C].op.axis[0], env.dma_copy)
 
-s[C_buf].pragma<span class="org-parenthesis">(</span>C_buf.op.axis[0]<span class="org-parenthesis">,</span> env.alu<span class="org-parenthesis">)</span>
+s[C_buf].pragma(C_buf.op.axis[0], env.alu)
 
-<span class="org-builtin">print</span><span class="org-parenthesis">(</span>vta.lower<span class="org-parenthesis">(</span>s<span class="org-parenthesis">,</span> [A<span class="org-parenthesis">,</span> B<span class="org-parenthesis">,</span> C]<span class="org-parenthesis">,</span> simple_mode<span class="org-operator">=</span><span class="org-constant">True</span><span class="org-parenthesis">))</span>
+print(vta.lower(s, [A, B, C], simple_mode=True))
 
-<span class="org-variable-name">my_vadd</span> <span class="org-operator">=</span> vta.build<span class="org-parenthesis">(</span>s<span class="org-parenthesis">,</span> [A<span class="org-parenthesis">,</span> B<span class="org-parenthesis">,</span> C]<span class="org-parenthesis">,</span> <span class="org-string">"ext_dev"</span><span class="org-parenthesis">,</span> <span class="org-string">"llvm"</span><span class="org-parenthesis">,</span> name<span class="org-operator">=</span><span class="org-string">"my_vadd"</span><span class="org-parenthesis">)</span>
-my_vadd.save<span class="org-parenthesis">(</span><span class="org-string">"/tmp/my_vadd.o"</span><span class="org-parenthesis">)</span>
+my_vadd = vta.build(s, [A, B, C], "ext_dev", "llvm", name="my_vadd")
+my_vadd.save("/tmp/my_vadd.o")
 </pre>
 </div>
 
@@ -269,13 +269,13 @@ tir.add_lower_pass 添加的 pass 会在 <a href="tvm_build.html#org0000037">Low
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">build</span><span class="org-parenthesis">(</span><span class="org-operator">*</span>args<span class="org-parenthesis">,</span> <span class="org-operator">**</span>kwargs<span class="org-parenthesis">)</span>:
-    <span class="org-variable-name">pass_ctx</span> <span class="org-operator">=</span> tvm.transform.PassContext.current<span class="org-parenthesis">()</span>
-    <span class="org-keyword">with</span> build_config<span class="org-parenthesis">()</span>:
-        <span class="org-keyword">return</span> tvm.build<span class="org-parenthesis">(</span><span class="org-operator">*</span>args<span class="org-parenthesis">,</span> <span class="org-operator">**</span>kwargs<span class="org-parenthesis">)</span>
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">build</span>(<span class="org-operator">*</span>args, <span class="org-operator">**</span>kwargs):
+    <span class="org-variable-name">pass_ctx</span> <span class="org-operator">=</span> tvm.transform.PassContext.current()
+    <span class="org-keyword">with</span> build_config():
+        <span class="org-keyword">return</span> tvm.build(<span class="org-operator">*</span>args, <span class="org-operator">**</span>kwargs)
 
 
-<span class="org-keyword">def</span> <span class="org-function-name">build_config</span><span class="org-parenthesis">(</span>debug_flag<span class="org-operator">=</span>0<span class="org-parenthesis">,</span> <span class="org-operator">**</span>kwargs<span class="org-parenthesis">)</span>:
+<span class="org-keyword">def</span> <span class="org-function-name">build_config</span>(debug_flag<span class="org-operator">=</span>0, <span class="org-operator">**</span>kwargs):
     <span class="org-doc">"""Build a build config for VTA.</span>
 <span class="org-doc">    Example</span>
 <span class="org-doc">    --------</span>
@@ -285,34 +285,34 @@ tir.add_lower_pass 添加的 pass 会在 <a href="tvm_build.html#org0000037">Low
 <span class="org-doc">      with vta.build_config():</span>
 <span class="org-doc">          vta_module = tvm.build(s, ...)</span>
 <span class="org-doc">    """</span>
-    <span class="org-variable-name">env</span> <span class="org-operator">=</span> get_env<span class="org-parenthesis">()</span>
+    <span class="org-variable-name">env</span> <span class="org-operator">=</span> get_env()
 
-    <span class="org-type">@tvm.tir.transform.prim_func_pass</span><span class="org-parenthesis">(</span>opt_level<span class="org-operator">=</span>0<span class="org-parenthesis">)</span>
-    <span class="org-keyword">def</span> <span class="org-function-name">add_debug</span><span class="org-parenthesis">(</span>f<span class="org-parenthesis">,</span> <span class="org-operator">*</span>_<span class="org-parenthesis">)</span>:
-        <span class="org-variable-name">debug</span> <span class="org-operator">=</span> tvm.tir.call_extern<span class="org-parenthesis">(</span>
-            <span class="org-string">"int32"</span><span class="org-parenthesis">,</span> <span class="org-string">"VTASetDebugMode"</span><span class="org-parenthesis">,</span> env.dev.command_handle<span class="org-parenthesis">,</span> debug_flag
-        <span class="org-parenthesis">)</span>
+    <span class="org-type">@tvm.tir.transform.prim_func_pass</span>(opt_level<span class="org-operator">=</span>0)
+    <span class="org-keyword">def</span> <span class="org-function-name">add_debug</span>(f, <span class="org-operator">*</span>_):
+        <span class="org-variable-name">debug</span> <span class="org-operator">=</span> tvm.tir.call_extern(
+            <span class="org-string">"int32"</span>, <span class="org-string">"VTASetDebugMode"</span>, env.dev.command_handle, debug_flag
+        )
 
-        <span class="org-keyword">return</span> f.with_body<span class="org-parenthesis">(</span>tvm.tir.stmt_seq<span class="org-parenthesis">(</span>debug<span class="org-parenthesis">,</span> f.body<span class="org-parenthesis">))</span>
+        <span class="org-keyword">return</span> f.with_body(tvm.tir.stmt_seq(debug, f.body))
 
     <span class="org-variable-name">pass_list</span> <span class="org-operator">=</span> [
-        <span class="org-parenthesis">(</span>0<span class="org-parenthesis">,</span> transform.InjectConv2DTransposeSkip<span class="org-parenthesis">()),</span>
-        <span class="org-parenthesis">(</span>1<span class="org-parenthesis">,</span> transform.InjectDMAIntrin<span class="org-parenthesis">()),</span>
-        <span class="org-parenthesis">(</span>1<span class="org-parenthesis">,</span> transform.InjectSkipCopy<span class="org-parenthesis">()),</span>
-        <span class="org-parenthesis">(</span>1<span class="org-parenthesis">,</span> transform.AnnotateALUCoProcScope<span class="org-parenthesis">()),</span>
-        <span class="org-parenthesis">(</span>1<span class="org-parenthesis">,</span> tvm.tir.transform.LiftAttrScope<span class="org-parenthesis">(</span><span class="org-string">"coproc_uop_scope"</span><span class="org-parenthesis">)),</span>
-        <span class="org-parenthesis">(</span>1<span class="org-parenthesis">,</span> transform.LiftAllocToScopeBegin<span class="org-parenthesis">()),</span>
-        <span class="org-parenthesis">(</span>1<span class="org-parenthesis">,</span> tvm.tir.transform.LiftAttrScope<span class="org-parenthesis">(</span><span class="org-string">"coproc_scope"</span><span class="org-parenthesis">)),</span>
-        <span class="org-parenthesis">(</span>1<span class="org-parenthesis">,</span> transform.InjectCoProcSync<span class="org-parenthesis">()),</span>
-        <span class="org-parenthesis">(</span>1<span class="org-parenthesis">,</span> EarlyRewrite<span class="org-parenthesis">()),</span>
+        (0, transform.InjectConv2DTransposeSkip()),
+        (1, transform.InjectDMAIntrin()),
+        (1, transform.InjectSkipCopy()),
+        (1, transform.AnnotateALUCoProcScope()),
+        (1, tvm.tir.transform.LiftAttrScope(<span class="org-string">"coproc_uop_scope"</span>)),
+        (1, transform.LiftAllocToScopeBegin()),
+        (1, tvm.tir.transform.LiftAttrScope(<span class="org-string">"coproc_scope"</span>)),
+        (1, transform.InjectCoProcSync()),
+        (1, EarlyRewrite()),
     ]
-    pass_list.append<span class="org-parenthesis">((</span>2<span class="org-parenthesis">,</span> transform.InjectALUIntrin<span class="org-parenthesis">()))</span>
-    pass_list.append<span class="org-parenthesis">((</span>3<span class="org-parenthesis">,</span> tvm.tir.transform.LowerDeviceStorageAccessInfo<span class="org-parenthesis">()))</span>
-    pass_list.append<span class="org-parenthesis">((</span>3<span class="org-parenthesis">,</span> transform.FoldUopLoop<span class="org-parenthesis">()))</span>
-    pass_list.append<span class="org-parenthesis">((</span>3<span class="org-parenthesis">,</span> transform.CPUAccessRewrite<span class="org-parenthesis">()))</span>
-    <span class="org-variable-name">config</span> <span class="org-operator">=</span> <span class="org-parenthesis">{</span><span class="org-string">"tir.add_lower_pass"</span>: pass_list<span class="org-parenthesis">}</span>
+    pass_list.append((2, transform.InjectALUIntrin()))
+    pass_list.append((3, tvm.tir.transform.LowerDeviceStorageAccessInfo()))
+    pass_list.append((3, transform.FoldUopLoop()))
+    pass_list.append((3, transform.CPUAccessRewrite()))
+    <span class="org-variable-name">config</span> <span class="org-operator">=</span> {<span class="org-string">"tir.add_lower_pass"</span>: pass_list}
 
-    <span class="org-keyword">return</span> tvm.transform.PassContext<span class="org-parenthesis">(</span>config<span class="org-operator">=</span>config<span class="org-parenthesis">,</span> <span class="org-operator">**</span>kwargs<span class="org-parenthesis">)</span>
+    <span class="org-keyword">return</span> tvm.transform.PassContext(config<span class="org-operator">=</span>config, <span class="org-operator">**</span>kwargs)
 </pre>
 </div>
 </div>
@@ -327,79 +327,79 @@ VTAUopPush 等的调用
 </p>
 
 <div class="org-src-container">
-<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">InjectALUIntrin</span><span class="org-parenthesis">()</span>:
-    <span class="org-keyword">def</span> <span class="org-function-name">_ftransform</span><span class="org-parenthesis">(</span>func<span class="org-parenthesis">,</span> mod<span class="org-parenthesis">,</span> ctx<span class="org-parenthesis">)</span>:
-        <span class="org-variable-name">env</span> <span class="org-operator">=</span> get_env<span class="org-parenthesis">()</span>
+<pre class="src src-python"><span class="org-keyword">def</span> <span class="org-function-name">InjectALUIntrin</span>():
+    <span class="org-keyword">def</span> <span class="org-function-name">_ftransform</span>(func, mod, ctx):
+        <span class="org-variable-name">env</span> <span class="org-operator">=</span> get_env()
         <span class="org-variable-name">idxm</span> <span class="org-operator">=</span> tvm.tir.indexmod
-        <span class="org-variable-name">analyzer</span> <span class="org-operator">=</span> tvm.arith.Analyzer<span class="org-parenthesis">()</span>
+        <span class="org-variable-name">analyzer</span> <span class="org-operator">=</span> tvm.arith.Analyzer()
 
-        <span class="org-keyword">def</span> <span class="org-function-name">_do_fold</span><span class="org-parenthesis">(</span>stmt<span class="org-parenthesis">)</span>:
+        <span class="org-keyword">def</span> <span class="org-function-name">_do_fold</span>(stmt):
             <span class="org-comment-delimiter"># </span><span class="org-comment">...</span>
             <span class="org-comment-delimiter"># </span><span class="org-comment">the `alu` pragma</span>
-            <span class="org-keyword">if</span> _match_pragma<span class="org-parenthesis">(</span>stmt<span class="org-parenthesis">,</span> <span class="org-string">"alu"</span><span class="org-parenthesis">)</span>:
+            <span class="org-keyword">if</span> _match_pragma(stmt, <span class="org-string">"alu"</span>):
                 <span class="org-comment-delimiter"># </span><span class="org-comment">Get to the innermost loop body</span>
                 <span class="org-variable-name">loop_body</span> <span class="org-operator">=</span> stmt.body
                 <span class="org-variable-name">nest_size</span> <span class="org-operator">=</span> 0
-                <span class="org-keyword">while</span> <span class="org-builtin">isinstance</span><span class="org-parenthesis">(</span>loop_body<span class="org-parenthesis">,</span> tvm.tir.For<span class="org-parenthesis">)</span>:
+                <span class="org-keyword">while</span> <span class="org-builtin">isinstance</span>(loop_body, tvm.tir.For):
                     <span class="org-variable-name">loop_body</span> <span class="org-operator">=</span> loop_body.body
                     <span class="org-variable-name">nest_size</span> <span class="org-operator">+=</span> 1
                 <span class="org-comment-delimiter"># </span><span class="org-comment">...</span>
-                <span class="org-keyword">if</span> <span class="org-builtin">isinstance</span><span class="org-parenthesis">(</span>loop_body.value<span class="org-parenthesis">,</span> tvm.tir.Add<span class="org-parenthesis">)</span>:
+                <span class="org-keyword">if</span> <span class="org-builtin">isinstance</span>(loop_body.value, tvm.tir.Add):
                     <span class="org-variable-name">alu_opcode</span> <span class="org-operator">=</span> env.dev.ALU_OPCODE_ADD
                     <span class="org-variable-name">lhs</span> <span class="org-operator">=</span> loop_body.value.a
                     <span class="org-variable-name">rhs</span> <span class="org-operator">=</span> loop_body.value.b
-                <span class="org-keyword">elif</span> <span class="org-builtin">isinstance</span><span class="org-parenthesis">(</span>loop_body.value<span class="org-parenthesis">,</span> tvm.tir.Sub<span class="org-parenthesis">)</span>:
+                <span class="org-keyword">elif</span> <span class="org-builtin">isinstance</span>(loop_body.value, tvm.tir.Sub):
                     <span class="org-variable-name">alu_opcode</span> <span class="org-operator">=</span> env.dev.ALU_OPCODE_SUB
                     <span class="org-variable-name">lhs</span> <span class="org-operator">=</span> loop_body.value.a
                     <span class="org-variable-name">rhs</span> <span class="org-operator">=</span> loop_body.value.b
-                <span class="org-keyword">elif</span> <span class="org-builtin">isinstance</span><span class="org-parenthesis">(</span>loop_body.value<span class="org-parenthesis">,</span> tvm.tir.Mul<span class="org-parenthesis">)</span>:
+                <span class="org-keyword">elif</span> <span class="org-builtin">isinstance</span>(loop_body.value, tvm.tir.Mul):
                     <span class="org-variable-name">alu_opcode</span> <span class="org-operator">=</span> env.dev.ALU_OPCODE_MUL
                     <span class="org-variable-name">lhs</span> <span class="org-operator">=</span> loop_body.value.a
                     <span class="org-variable-name">rhs</span> <span class="org-operator">=</span> loop_body.value.b
-                <span class="org-keyword">elif</span> <span class="org-builtin">isinstance</span><span class="org-parenthesis">(</span>loop_body.value<span class="org-parenthesis">,</span> tvm.tir.Min<span class="org-parenthesis">)</span>:
+                <span class="org-keyword">elif</span> <span class="org-builtin">isinstance</span>(loop_body.value, tvm.tir.Min):
                     <span class="org-variable-name">alu_opcode</span> <span class="org-operator">=</span> env.dev.ALU_OPCODE_MIN
                     <span class="org-variable-name">lhs</span> <span class="org-operator">=</span> loop_body.value.a
                     <span class="org-variable-name">rhs</span> <span class="org-operator">=</span> loop_body.value.b
-                <span class="org-keyword">elif</span> <span class="org-builtin">isinstance</span><span class="org-parenthesis">(</span>loop_body.value<span class="org-parenthesis">,</span> tvm.tir.Max<span class="org-parenthesis">)</span>:
+                <span class="org-keyword">elif</span> <span class="org-builtin">isinstance</span>(loop_body.value, tvm.tir.Max):
                     <span class="org-variable-name">alu_opcode</span> <span class="org-operator">=</span> env.dev.ALU_OPCODE_MAX
                     <span class="org-variable-name">lhs</span> <span class="org-operator">=</span> loop_body.value.a
                     <span class="org-variable-name">rhs</span> <span class="org-operator">=</span> loop_body.value.b
                 <span class="org-comment-delimiter"># </span><span class="org-comment">...</span>
                 <span class="org-comment-delimiter"># </span><span class="org-comment">Insert ALU micro-ops</span>
-                <span class="org-variable-name">irb</span> <span class="org-operator">=</span> tvm.tir.ir_builder.create<span class="org-parenthesis">()</span>
-                <span class="org-keyword">for</span> idx<span class="org-parenthesis">,</span> extent <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span><span class="org-parenthesis">(</span>extents<span class="org-parenthesis">)</span>:
-                    irb.emit<span class="org-parenthesis">(</span>
-                        tvm.tir.call_extern<span class="org-parenthesis">(</span>
-                            <span class="org-string">"int32"</span><span class="org-parenthesis">,</span> <span class="org-string">"VTAUopLoopBegin"</span><span class="org-parenthesis">,</span> extent<span class="org-parenthesis">,</span> dst_coeff[idx]<span class="org-parenthesis">,</span> src_coeff[idx]<span class="org-parenthesis">,</span> 0
-                        <span class="org-parenthesis">)</span>
-                    <span class="org-parenthesis">)</span>
-                <span class="org-variable-name">use_imm</span> <span class="org-operator">=</span> <span class="org-builtin">int</span><span class="org-parenthesis">(</span>use_imm<span class="org-parenthesis">)</span>
-                irb.emit<span class="org-parenthesis">(</span>
-                    tvm.tir.call_intrin<span class="org-parenthesis">(</span>
-                        <span class="org-string">"int32"</span><span class="org-parenthesis">,</span>
-                        <span class="org-string">"tir.vta.uop_push"</span><span class="org-parenthesis">,</span>
-                        1<span class="org-parenthesis">,</span>
-                        0<span class="org-parenthesis">,</span>
-                        dst_coeff[<span class="org-builtin">len</span><span class="org-parenthesis">(</span>dst_coeff<span class="org-parenthesis">)</span> <span class="org-operator">-</span> 1]<span class="org-parenthesis">,</span>
-                        src_coeff[<span class="org-builtin">len</span><span class="org-parenthesis">(</span>src_coeff<span class="org-parenthesis">)</span> <span class="org-operator">-</span> 1]<span class="org-parenthesis">,</span>
-                        0<span class="org-parenthesis">,</span>
-                        alu_opcode<span class="org-parenthesis">,</span>
-                        use_imm<span class="org-parenthesis">,</span>
-                        imm_val<span class="org-parenthesis">,</span>
-                    <span class="org-parenthesis">)</span>
-                <span class="org-parenthesis">)</span>
+                <span class="org-variable-name">irb</span> <span class="org-operator">=</span> tvm.tir.ir_builder.create()
+                <span class="org-keyword">for</span> idx, extent <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(extents):
+                    irb.emit(
+                        tvm.tir.call_extern(
+                            <span class="org-string">"int32"</span>, <span class="org-string">"VTAUopLoopBegin"</span>, extent, dst_coeff[idx], src_coeff[idx], 0
+                        )
+                    )
+                <span class="org-variable-name">use_imm</span> <span class="org-operator">=</span> <span class="org-builtin">int</span>(use_imm)
+                irb.emit(
+                    tvm.tir.call_intrin(
+                        <span class="org-string">"int32"</span>,
+                        <span class="org-string">"tir.vta.uop_push"</span>,
+                        1,
+                        0,
+                        dst_coeff[<span class="org-builtin">len</span>(dst_coeff) <span class="org-operator">-</span> 1],
+                        src_coeff[<span class="org-builtin">len</span>(src_coeff) <span class="org-operator">-</span> 1],
+                        0,
+                        alu_opcode,
+                        use_imm,
+                        imm_val,
+                    )
+                )
                 <span class="org-keyword">for</span> extent <span class="org-keyword">in</span> extents:
-                    irb.emit<span class="org-parenthesis">(</span>tvm.tir.call_extern<span class="org-parenthesis">(</span><span class="org-string">"int32"</span><span class="org-parenthesis">,</span> <span class="org-string">"VTAUopLoopEnd"</span><span class="org-parenthesis">))</span>
-                <span class="org-keyword">return</span> irb.get<span class="org-parenthesis">()</span>
+                    irb.emit(tvm.tir.call_extern(<span class="org-string">"int32"</span>, <span class="org-string">"VTAUopLoopEnd"</span>))
+                <span class="org-keyword">return</span> irb.get()
             <span class="org-keyword">return</span> stmt
 
-        <span class="org-keyword">return</span> func.with_body<span class="org-parenthesis">(</span>
-            tvm.tir.stmt_functor.ir_transform<span class="org-parenthesis">(</span>func.body<span class="org-parenthesis">,</span> <span class="org-constant">None</span><span class="org-parenthesis">,</span> _do_fold<span class="org-parenthesis">,</span> [<span class="org-string">"tir.AttrStmt"</span>]<span class="org-parenthesis">)</span>
-        <span class="org-parenthesis">)</span>
+        <span class="org-keyword">return</span> func.with_body(
+            tvm.tir.stmt_functor.ir_transform(func.body, <span class="org-constant">None</span>, _do_fold, [<span class="org-string">"tir.AttrStmt"</span>])
+        )
 
-    <span class="org-keyword">return</span> tvm.tir.transform.prim_func_pass<span class="org-parenthesis">(</span>
-        _ftransform<span class="org-parenthesis">,</span> opt_level<span class="org-operator">=</span>0<span class="org-parenthesis">,</span> name<span class="org-operator">=</span><span class="org-string">"tir.vta.InjectALUIntrin"</span>
-    <span class="org-parenthesis">)</span>
+    <span class="org-keyword">return</span> tvm.tir.transform.prim_func_pass(
+        _ftransform, opt_level<span class="org-operator">=</span>0, name<span class="org-operator">=</span><span class="org-string">"tir.vta.InjectALUIntrin"</span>
+    )
 
 </pre>
 </div>
@@ -435,10 +435,10 @@ tir.add_lower_pass 来处理那些 pragma
 <div class="org-src-container">
 <pre class="src src-python"><span class="org-comment-delimiter"># </span><span class="org-comment">env.target_host &#20026; llvm</span>
 <span class="org-comment-delimiter"># </span><span class="org-comment">env.target &#20026; ext_dev -keys=vta,cpu -device=vta -model=sim_1x16_i8w8a32_15_15_18_17</span>
-<span class="org-keyword">with</span> vta.build_config<span class="org-parenthesis">(</span>opt_level<span class="org-operator">=</span>3<span class="org-parenthesis">,</span> disabled_pass<span class="org-operator">=</span><span class="org-parenthesis">{</span><span class="org-string">"AlterOpLayout"</span><span class="org-parenthesis">})</span>:
-    <span class="org-variable-name">graph</span><span class="org-parenthesis">,</span> <span class="org-variable-name">lib</span><span class="org-parenthesis">,</span> <span class="org-variable-name">params</span> <span class="org-operator">=</span> relay.build<span class="org-parenthesis">(</span>
-        relay_prog<span class="org-parenthesis">,</span> target<span class="org-operator">=</span>env.target<span class="org-parenthesis">,</span> params<span class="org-operator">=</span>params<span class="org-parenthesis">,</span> target_host<span class="org-operator">=</span>env.target_host
-    <span class="org-parenthesis">)</span>
+<span class="org-keyword">with</span> vta.build_config(opt_level<span class="org-operator">=</span>3, disabled_pass<span class="org-operator">=</span>{<span class="org-string">"AlterOpLayout"</span>}):
+    <span class="org-variable-name">graph</span>, <span class="org-variable-name">lib</span>, <span class="org-variable-name">params</span> <span class="org-operator">=</span> relay.build(
+        relay_prog, target<span class="org-operator">=</span>env.target, params<span class="org-operator">=</span>params, target_host<span class="org-operator">=</span>env.target_host
+    )
 </pre>
 </div></li>
 </ol>
@@ -491,50 +491,50 @@ NCHW 中的 C, 对 dense 来说是 output size, 这个限制非常大, 直接限
 
 <span class="org-keyword">import</span> tvm
 <span class="org-keyword">from</span> tvm <span class="org-keyword">import</span> te
-<span class="org-keyword">from</span> tvm <span class="org-keyword">import</span> rpc<span class="org-parenthesis">,</span> autotvm<span class="org-parenthesis">,</span> relay
-<span class="org-keyword">from</span> tvm.contrib <span class="org-keyword">import</span> graph_executor<span class="org-parenthesis">,</span> utils<span class="org-parenthesis">,</span> download<span class="org-parenthesis">,</span> graph_runtime
+<span class="org-keyword">from</span> tvm <span class="org-keyword">import</span> rpc, autotvm, relay
+<span class="org-keyword">from</span> tvm.contrib <span class="org-keyword">import</span> graph_executor, utils, download, graph_runtime
 <span class="org-keyword">from</span> tvm.contrib.debugger <span class="org-keyword">import</span> debug_executor
 <span class="org-keyword">from</span> tvm.relay <span class="org-keyword">import</span> transform
 
 <span class="org-keyword">import</span> vta
 <span class="org-keyword">from</span> vta.top <span class="org-keyword">import</span> graph_pack
 
-<span class="org-variable-name">env</span> <span class="org-operator">=</span> vta.get_env<span class="org-parenthesis">()</span>
+<span class="org-variable-name">env</span> <span class="org-operator">=</span> vta.get_env()
 <span class="org-variable-name">target</span> <span class="org-operator">=</span> env.target
 
-<span class="org-variable-name">dtype_dict</span> <span class="org-operator">=</span> <span class="org-parenthesis">{</span><span class="org-string">"data"</span>: <span class="org-string">"float32"</span><span class="org-parenthesis">}</span>
-<span class="org-variable-name">shape_dict</span> <span class="org-operator">=</span> <span class="org-parenthesis">{</span><span class="org-string">"data"</span>: <span class="org-parenthesis">(</span>env.BATCH<span class="org-parenthesis">,</span> 3<span class="org-parenthesis">,</span> 224<span class="org-parenthesis">,</span> 224<span class="org-parenthesis">)}</span>
+<span class="org-variable-name">dtype_dict</span> <span class="org-operator">=</span> {<span class="org-string">"data"</span>: <span class="org-string">"float32"</span>}
+<span class="org-variable-name">shape_dict</span> <span class="org-operator">=</span> {<span class="org-string">"data"</span>: (env.BATCH, 3, 224, 224)}
 
-<span class="org-variable-name">gluon_model</span> <span class="org-operator">=</span> vision.get_model<span class="org-parenthesis">(</span><span class="org-string">"resnet18_v1"</span><span class="org-parenthesis">,</span> pretrained<span class="org-operator">=</span><span class="org-constant">True</span><span class="org-parenthesis">)</span>
-<span class="org-variable-name">mod</span><span class="org-parenthesis">,</span> <span class="org-variable-name">params</span> <span class="org-operator">=</span> relay.frontend.from_mxnet<span class="org-parenthesis">(</span>gluon_model<span class="org-parenthesis">,</span> shape_dict<span class="org-parenthesis">)</span>
+<span class="org-variable-name">gluon_model</span> <span class="org-operator">=</span> vision.get_model(<span class="org-string">"resnet18_v1"</span>, pretrained<span class="org-operator">=</span><span class="org-constant">True</span>)
+<span class="org-variable-name">mod</span>, <span class="org-variable-name">params</span> <span class="org-operator">=</span> relay.frontend.from_mxnet(gluon_model, shape_dict)
 
-shape_dict.update<span class="org-parenthesis">({</span>k: v.shape <span class="org-keyword">for</span> k<span class="org-parenthesis">,</span> v <span class="org-keyword">in</span> params.items<span class="org-parenthesis">()})</span>
-dtype_dict.update<span class="org-parenthesis">({</span>k: <span class="org-builtin">str</span><span class="org-parenthesis">(</span>v.dtype<span class="org-parenthesis">)</span> <span class="org-keyword">for</span> k<span class="org-parenthesis">,</span> v <span class="org-keyword">in</span> params.items<span class="org-parenthesis">()})</span>
+shape_dict.update({k: v.shape <span class="org-keyword">for</span> k, v <span class="org-keyword">in</span> params.items()})
+dtype_dict.update({k: <span class="org-builtin">str</span>(v.dtype) <span class="org-keyword">for</span> k, v <span class="org-keyword">in</span> params.items()})
 
-<span class="org-keyword">with</span> tvm.transform.PassContext<span class="org-parenthesis">(</span>opt_level<span class="org-operator">=</span>3<span class="org-parenthesis">)</span>:
-    <span class="org-keyword">with</span> relay.quantize.qconfig<span class="org-parenthesis">(</span>global_scale<span class="org-operator">=</span>8.0<span class="org-parenthesis">,</span> skip_conv_layers<span class="org-operator">=</span>[0]<span class="org-parenthesis">)</span>:
-        <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.quantize.quantize<span class="org-parenthesis">(</span>mod<span class="org-parenthesis">,</span> params<span class="org-operator">=</span>params<span class="org-parenthesis">)</span>
-    <span class="org-variable-name">relay_prog</span> <span class="org-operator">=</span> graph_pack<span class="org-parenthesis">(</span>
-        mod[<span class="org-string">"main"</span>]<span class="org-parenthesis">,</span>
-        env.BATCH<span class="org-parenthesis">,</span>
-        env.BLOCK_OUT<span class="org-parenthesis">,</span>
-        env.WGT_WIDTH<span class="org-parenthesis">,</span>
-        start_name<span class="org-operator">=</span><span class="org-string">"nn.max_pool2d"</span><span class="org-parenthesis">,</span>
-        stop_name<span class="org-operator">=</span><span class="org-string">"nn.global_avg_pool2d"</span><span class="org-parenthesis">,</span>
-        annot_start_name<span class="org-operator">=</span><span class="org-string">"nn.conv2d"</span><span class="org-parenthesis">,</span>
-        annot_end_name<span class="org-operator">=</span><span class="org-string">"annotation.stop_fusion"</span><span class="org-parenthesis">,</span>        
-        device_annot<span class="org-operator">=</span><span class="org-parenthesis">(</span>env.TARGET <span class="org-operator">==</span> <span class="org-string">"intelfocl"</span> <span class="org-keyword">or</span> env.TARGET <span class="org-operator">==</span> <span class="org-string">"sim"</span><span class="org-parenthesis">),</span>
-    <span class="org-parenthesis">)</span>
+<span class="org-keyword">with</span> tvm.transform.PassContext(opt_level<span class="org-operator">=</span>3):
+    <span class="org-keyword">with</span> relay.quantize.qconfig(global_scale<span class="org-operator">=</span>8.0, skip_conv_layers<span class="org-operator">=</span>[0]):
+        <span class="org-variable-name">mod</span> <span class="org-operator">=</span> relay.quantize.quantize(mod, params<span class="org-operator">=</span>params)
+    <span class="org-variable-name">relay_prog</span> <span class="org-operator">=</span> graph_pack(
+        mod[<span class="org-string">"main"</span>],
+        env.BATCH,
+        env.BLOCK_OUT,
+        env.WGT_WIDTH,
+        start_name<span class="org-operator">=</span><span class="org-string">"nn.max_pool2d"</span>,
+        stop_name<span class="org-operator">=</span><span class="org-string">"nn.global_avg_pool2d"</span>,
+        annot_start_name<span class="org-operator">=</span><span class="org-string">"nn.conv2d"</span>,
+        annot_end_name<span class="org-operator">=</span><span class="org-string">"annotation.stop_fusion"</span>,        
+        device_annot<span class="org-operator">=</span>(env.TARGET <span class="org-operator">==</span> <span class="org-string">"intelfocl"</span> <span class="org-keyword">or</span> env.TARGET <span class="org-operator">==</span> <span class="org-string">"sim"</span>),
+    )
 
-<span class="org-builtin">print</span><span class="org-parenthesis">(</span>relay_prog<span class="org-parenthesis">)</span>
+<span class="org-builtin">print</span>(relay_prog)
 
-<span class="org-keyword">with</span> vta.build_config<span class="org-parenthesis">(</span>opt_level<span class="org-operator">=</span>3<span class="org-parenthesis">,</span> disabled_pass<span class="org-operator">=</span><span class="org-parenthesis">{</span><span class="org-string">"AlterOpLayout"</span><span class="org-parenthesis">})</span>:
-    <span class="org-variable-name">graph</span><span class="org-parenthesis">,</span> <span class="org-variable-name">lib</span><span class="org-parenthesis">,</span> <span class="org-variable-name">params</span> <span class="org-operator">=</span> relay.build<span class="org-parenthesis">(</span>
-        relay_prog<span class="org-parenthesis">,</span>
-        target<span class="org-operator">=</span><span class="org-parenthesis">{</span><span class="org-string">"cpu"</span>: env.target_vta_cpu<span class="org-parenthesis">,</span> <span class="org-string">"ext_dev"</span>: target<span class="org-parenthesis">},</span>
-        params<span class="org-operator">=</span>params<span class="org-parenthesis">,</span>
-        target_host<span class="org-operator">=</span>env.target_host<span class="org-parenthesis">,</span>
-    <span class="org-parenthesis">)</span>
+<span class="org-keyword">with</span> vta.build_config(opt_level<span class="org-operator">=</span>3, disabled_pass<span class="org-operator">=</span>{<span class="org-string">"AlterOpLayout"</span>}):
+    <span class="org-variable-name">graph</span>, <span class="org-variable-name">lib</span>, <span class="org-variable-name">params</span> <span class="org-operator">=</span> relay.build(
+        relay_prog,
+        target<span class="org-operator">=</span>{<span class="org-string">"cpu"</span>: env.target_vta_cpu, <span class="org-string">"ext_dev"</span>: target},
+        params<span class="org-operator">=</span>params,
+        target_host<span class="org-operator">=</span>env.target_host,
+    )
 </pre>
 </div>
 
@@ -633,8 +633,8 @@ VTAPushALUOp 先生成 instruction 放在 insn_queue_ 中
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c++"><span class="org-type">void</span> <span class="org-function-name">PushALUUop</span><span class="org-parenthesis">(</span><span class="org-type">UopKernel</span>* <span class="org-variable-name">kernel</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-    <span class="org-type">VTAAluInsn</span>* <span class="org-variable-name">insn</span> = insn_queue_.CreateAluInsn<span class="org-parenthesis">()</span>;
+<pre class="src src-c++"><span class="org-type">void</span> <span class="org-function-name">PushALUUop</span>(<span class="org-type">UopKernel</span>* <span class="org-variable-name">kernel</span>) {
+    <span class="org-type">VTAAluInsn</span>* <span class="org-variable-name">insn</span> = insn_queue_.CreateAluInsn();
     insn-&gt;opcode = VTA_OPCODE_ALU;
     insn-&gt;reset_reg = kernel-&gt;reset_out_;
     insn-&gt;uop_bgn = kernel-&gt;sram_begin_;
@@ -642,7 +642,7 @@ VTAPushALUOp 先生成 instruction 放在 insn_queue_ 中
     insn-&gt;alu_opcode = kernel-&gt;opcode_;
     insn-&gt;use_imm = kernel-&gt;use_imm_;
     insn-&gt;imm = kernel-&gt;imm_val_;
-    <span class="org-keyword">const</span> <span class="org-constant">std</span>::<span class="org-type">vector</span>&lt;<span class="org-constant">UopKernel</span>::LoopEntry&gt;&amp; <span class="org-variable-name">loop</span> = kernel-&gt;loop<span class="org-parenthesis">()</span>;
+    <span class="org-keyword">const</span> <span class="org-constant">std</span>::<span class="org-type">vector</span>&lt;<span class="org-constant">UopKernel</span>::LoopEntry&gt;&amp; <span class="org-variable-name">loop</span> = kernel-&gt;loop();
     <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
     insn-&gt;iter_out = loop[0].extent;
     insn-&gt;dst_factor_out = loop[0].dst_factor;
@@ -651,7 +651,7 @@ VTAPushALUOp 先生成 instruction 放在 insn_queue_ 中
     insn-&gt;dst_factor_in = loop[1].dst_factor;
     insn-&gt;src_factor_in = loop[1].src_factor;
     <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
-<span class="org-parenthesis">}</span>
+}
 </pre>
 </div></li>
 
@@ -660,15 +660,15 @@ VTASynchronize 会把 insn_queue_ 从本地复制到 fpga, 然后再让 fpga 执
 </p>
 
 <div class="org-src-container">
-<pre class="src src-c++"><span class="org-type">void</span> <span class="org-function-name">Synchronize</span><span class="org-parenthesis">(</span><span class="org-type">uint32_t</span> <span class="org-variable-name">wait_cycles</span><span class="org-parenthesis">)</span> <span class="org-parenthesis">{</span>
-    insn_queue_.AutoReadBarrier<span class="org-parenthesis">()</span>;
+<pre class="src src-c++"><span class="org-type">void</span> <span class="org-function-name">Synchronize</span>(<span class="org-type">uint32_t</span> <span class="org-variable-name">wait_cycles</span>) {
+    insn_queue_.AutoReadBarrier();
         <span class="org-comment-delimiter">// </span><span class="org-comment">dram_buffer_ &#26159;&#26412;&#22320;&#30340;&#19968;&#20010; std::vector</span>
         <span class="org-comment-delimiter">// </span><span class="org-comment">fpga_buff_ &#26159;&#36890;&#36807; VTAMemAlloc &#20998;&#37197;&#30340; fpga &#19978;&#30340;&#20869;&#23384;</span>
-        VTAMemCopyFromHost<span class="org-parenthesis">(</span>fpga_buff_<span class="org-parenthesis">,</span> dram_buffer_.data<span class="org-parenthesis">(),</span> buff_size<span class="org-parenthesis">)</span>;
+        VTAMemCopyFromHost(fpga_buff_, dram_buffer_.data(), buff_size);
 
-    VTADeviceRun<span class="org-parenthesis">(</span>
-        device_<span class="org-parenthesis">,</span> insn_queue_.dram_phy_addr<span class="org-parenthesis">(),</span> insn_queue_.count<span class="org-parenthesis">(),</span> wait_cycles<span class="org-parenthesis">)</span>;
-<span class="org-parenthesis">}</span>
+    VTADeviceRun(
+        device_, insn_queue_.dram_phy_addr(), insn_queue_.count(), wait_cycles);
+}
 </pre>
 </div></li>
 </ol>
