@@ -1,0 +1,980 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>GC</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">GC</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000059">1. GC</a>
+<ul>
+<li><a href="#org0000000">1.1. Overview</a></li>
+<li><a href="#org0000029">1.2. Collector</a>
+<ul>
+<li><a href="#org0000005">1.2.1. Hierachy</a></li>
+<li><a href="#org0000008">1.2.2. Collector Type</a></li>
+<li><a href="#org000000b">1.2.3. Gc Type</a></li>
+<li><a href="#org000001a">1.2.4. GcRoot</a></li>
+<li><a href="#org0000026">1.2.5. Collector.Run</a></li>
+</ul>
+</li>
+<li><a href="#org0000038">1.3. Heap</a>
+<ul>
+<li><a href="#org000002c">1.3.1. gc related</a></li>
+<li><a href="#org000002f">1.3.2. CollectGarbageInternal</a></li>
+<li><a href="#org0000032">1.3.3. DoPendingCollectorTransition</a></li>
+<li><a href="#org0000035">1.3.4. ConcurrentGC</a></li>
+</ul>
+</li>
+<li><a href="#org0000053">1.4. Accounting</a>
+<ul>
+<li><a href="#org0000041">1.4.1. HeapBitmap</a></li>
+<li><a href="#org000004a">1.4.2. ObjectStack</a></li>
+<li><a href="#org000004d">1.4.3. ModUnionTable</a></li>
+<li><a href="#org0000050">1.4.4. CardTable</a></li>
+</ul>
+</li>
+<li><a href="#org0000056">1.5. GC Daemon</a></li>
+</ul>
+</li>
+<li><a href="#org0000088">2. allocator</a>
+<ul>
+<li><a href="#org000007f">2.1. Space</a>
+<ul>
+<li><a href="#org0000062">2.1.1. Overview</a></li>
+<li><a href="#org0000067">2.1.2. Space hierachy</a></li>
+<li><a href="#org000006a">2.1.3. ImageSpace</a></li>
+<li><a href="#org000006d">2.1.4. DlMallocSpace</a></li>
+<li><a href="#org0000070">2.1.5. RosAllocSpace</a></li>
+<li><a href="#org0000073">2.1.6. BumpPointerSpace</a></li>
+<li><a href="#org0000076">2.1.7. LargeObjectSpace</a></li>
+<li><a href="#org0000079">2.1.8. ZygoteSpace</a></li>
+<li><a href="#org000007c">2.1.9. GcRetentionPolicy</a></li>
+</ul>
+</li>
+<li><a href="#org0000082">2.2. Allocator</a></li>
+<li><a href="#org0000085">2.3. AllocObject</a></li>
+</ul>
+</li>
+<li><a href="#org000008b">3. collector</a></li>
+<li><a href="#org000008e">4. space</a></li>
+<li><a href="#org0000091">5. gc_root</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000059" class="outline-2">
+<h2 id="org0000059"><span class="section-number-2">1.</span> GC</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org0000000" class="outline-3">
+<h3 id="org0000000"><span class="section-number-3">1.1.</span> Overview</h3>
+</div>
+
+<div id="outline-container-org0000029" class="outline-3">
+<h3 id="org0000029"><span class="section-number-3">1.2.</span> Collector</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-org0000005" class="outline-4">
+<h4 id="org0000005"><span class="section-number-4">1.2.1.</span> Hierachy</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<div class="org-src-container">
+<pre class="src src-dot">digraph "art::gc::collector::GarbageCollector"
+{
+  edge [fontname="Helvetica",fontsize="10",labelfontname="Helvetica",labelfontsize="10"];
+  node [fontname="Helvetica",fontsize="10",shape=record];
+  Node0 [label="art::gc::collector\l::GarbageCollector",height=0.2,width=0.4,color="black", fillcolor="grey75", style="filled", fontcolor="black"];
+  Node0 -&gt; Node4 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node4 [label="art::gc::collector\l::ConcurrentCopying",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"];
+  Node0 -&gt; Node5 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node5 [label="art::gc::collector\l::MarkCompact",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"];
+  Node0 -&gt; Node6 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node6 [label="art::gc::collector\l::MarkSweep",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"];
+  Node6 -&gt; Node7 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node7 [label="art::gc::collector\l::PartialMarkSweep",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"];
+  Node7 -&gt; Node8 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node8 [label="art::gc::collector\l::StickyMarkSweep",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"];
+  Node0 -&gt; Node9 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node9 [label="art::gc::collector\l::SemiSpace",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"];
+  Node9 -&gt; Node10 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node10 [label="art::gc::collector\l::ZygoteCompactingCollector",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"];
+}
+</pre>
+</div>
+
+
+<div id="org0000003" class="figure">
+<p><img src="../extra/art_collector.png" alt="art_collector.png" />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000008" class="outline-4">
+<h4 id="org0000008"><span class="section-number-4">1.2.2.</span> Collector Type</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<ol class="org-ol">
+<li>kCollectorTypeMS, kCollectorTypeCMS
+MarkSweep</li>
+<li>kCollectorTypeSS, kCollectorTypeGSS
+SemiSpace</li>
+<li>kCollectorTypeMC
+MarkCompact</li>
+<li>kCollectorTypeCC
+ConcurrentCopying</li>
+<li>kCollectorTypeHomogeneousSpaceCompact</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org000000b" class="outline-4">
+<h4 id="org000000b"><span class="section-number-4">1.2.3.</span> Gc Type</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<ol class="org-ol">
+<li>kGcTypeSticky
+StickyMarkSweep 属于 sticky gc</li>
+<li>kGcTypePartial
+PartialMarkSweep, SemiSpace, MarkCompact, ConcurrentCopying 都属于 partial gc</li>
+<li>kGcTypeFull
+MarkSweep 属于 full gc</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org000001a" class="outline-4">
+<h4 id="org000001a"><span class="section-number-4">1.2.4.</span> GcRoot</h4>
+<div class="outline-text-4" id="text-1-2-4">
+</div>
+<div id="outline-container-org000000e" class="outline-5">
+<h5 id="org000000e"><span class="section-number-5">1.2.4.1.</span> RootType</h5>
+<div class="outline-text-5" id="text-1-2-4-1">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">enum</span> <span class="org-type">RootType</span> {
+    <span class="org-variable-name">kRootUnknown</span> = 0,
+    <span class="org-variable-name">kRootJNIGlobal</span>,
+    <span class="org-variable-name">kRootJNILocal</span>,
+    <span class="org-variable-name">kRootJavaFrame</span>,
+    <span class="org-variable-name">kRootNativeStack</span>,
+    <span class="org-variable-name">kRootStickyClass</span>,
+    <span class="org-variable-name">kRootThreadBlock</span>,
+    <span class="org-variable-name">kRootMonitorUsed</span>,
+    <span class="org-variable-name">kRootThreadObject</span>,
+    <span class="org-variable-name">kRootInternedString</span>,
+    <span class="org-variable-name">kRootFinalizing</span>,  <span class="org-comment-delimiter">// </span><span class="org-comment">used for HPROF's conversion to HprofHeapTag</span>
+    <span class="org-variable-name">kRootDebugger</span>,
+    <span class="org-variable-name">kRootReferenceCleanup</span>,  <span class="org-comment-delimiter">// </span><span class="org-comment">used for HPROF's conversion to HprofHeapTag</span>
+    <span class="org-variable-name">kRootVMInternal</span>,
+    <span class="org-variable-name">kRootJNIMonitor</span>,
+};
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000011" class="outline-5">
+<h5 id="org0000011"><span class="section-number-5">1.2.4.2.</span> non-concurrent gc root</h5>
+<div class="outline-text-5" id="text-1-2-4-2">
+<ol class="org-ol">
+<li>local IndirectReferenceTable</li>
+<li>StackHandleScope</li>
+<li>monitor_enter_object</li>
+<li>stack frame(shadow/quick)</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000014" class="outline-5">
+<h5 id="org0000014"><span class="section-number-5">1.2.4.3.</span> concurrent gc root</h5>
+<div class="outline-text-5" id="text-1-2-4-3">
+<ol class="org-ol">
+<li>global IndirectReferenceTable</li>
+<li>intern_table_</li>
+<li>class_linker_
+<ol class="org-ol">
+<li>class_roots_</li>
+<li>dex_caches_</li>
+</ol></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000017" class="outline-5">
+<h5 id="org0000017"><span class="section-number-5">1.2.4.4.</span> MarkRoots</h5>
+<div class="outline-text-5" id="text-1-2-4-4">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-constant">MarkRoots</span>:
+  Runtime::VisitRoots(visitor)
+    <span class="org-function-name">VisitNonConcurrentRoots</span>(visitor);
+    <span class="org-function-name">VisitConcurrentRoots</span>(visitor, flags);
+
+<span class="org-constant">VisitNonConcurrentRoots</span>:
+  thread_list_-&gt;VisitRoots(visitor);
+    thread-&gt;VisitRoots(visitor);
+      <span class="org-comment-delimiter">// </span><span class="org-comment">monitor_enter_object</span>
+      visitor-&gt;VisitRootIfNonNull(&amp;tlsPtr_.monitor_enter_object, RootInfo(kRootNativeStack, thread_id));
+      <span class="org-comment-delimiter">// </span><span class="org-comment">local indirect_reference_table</span>
+      tlsPtr_.jni_env-&gt;locals.VisitRoots(visitor, RootInfo(kRootJNILocal, thread_id));
+      <span class="org-comment-delimiter">// </span><span class="org-comment">jni monitor</span>
+      tlsPtr_.jni_env-&gt;monitors.VisitRoots(visitor, RootInfo(kRootJNIMonitor, thread_id));
+      <span class="org-comment-delimiter">// </span><span class="org-comment">StackHandleScope</span>
+      <span class="org-function-name">HandleScopeVisitRoots</span>(visitor, thread_id);
+      <span class="org-comment-delimiter">// </span><span class="org-comment">frame: shadow and quick</span>
+      <span class="org-type">RootCallbackVisitor</span> <span class="org-function-name">visitor_to_callback</span>(visitor, thread_id);
+      ReferenceMapVisitor&lt;RootCallbackVisitor&gt; mapper(this, context, visitor_to_callback);
+      mapper.WalkStack();
+  <span class="org-function-name">VisitNonThreadRoots</span>(visitor);
+
+<span class="org-constant">VisitConcurrentRoots</span>:
+  <span class="org-comment-delimiter">// </span><span class="org-comment">intern_table_</span>
+  intern_table_-&gt;VisitRoots(visitor, flags);
+  class_linker_-&gt;VisitRoots(visitor, flags);
+    class_roots_.VisitRootIfNonNull(visitor, RootInfo(kRootVMInternal));
+  heap_-&gt;VisitAllocationRecords(visitor);
+
+<span class="org-constant">visitor</span>:
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#19981;&#21516;&#30340; collector &#26377;&#19981;&#21516;&#30340; visitor, &#20197; MS &#20026;&#20363;, visitor.VisitRoots &#23601;&#26159;&#25226;&#23545;&#35937;&#25918;&#22312; MarkStack &#20013;</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000026" class="outline-4">
+<h4 id="org0000026"><span class="section-number-4">1.2.5.</span> Collector.Run</h4>
+<div class="outline-text-4" id="text-1-2-5">
+<div class="org-src-container">
+<pre class="src src-c">GarbageCollector::Run():
+  collector.RunPhases()
+    <span class="org-comment-delimiter">// </span><span class="org-comment">&#21508;&#31181; collector &#30340; RunPhases &#26377;&#20123;&#24046;&#21035;, &#20197; CMS &#20026;&#20363;</span>
+    MarkSweep::RunPhases():
+      InitializePhase()
+      <span class="org-keyword">if</span> (IsConcurrent()):
+        <span class="org-comment-delimiter">// </span><span class="org-comment">for CMS, MarkingPhase is concurrent</span>
+        MarkingPhase();
+        {
+          <span class="org-type">ScopedPause</span> <span class="org-function-name">pause</span> (this);
+          PausePhase ()
+        }
+        <span class="org-comment-delimiter">// </span><span class="org-comment">ReclaimPhase is concurrent</span>
+        <span class="org-function-name">ReclaimPhase</span>()
+      <span class="org-keyword">else</span>:
+        {
+          <span class="org-type">ScopedPause</span> <span class="org-function-name">pause</span>(this);
+          <span class="org-comment-delimiter">// </span><span class="org-comment">for MS, MarkingPhase is not concurrent</span>
+          MarkingPhase();
+          PausePhase()
+        }
+        <span class="org-comment-delimiter">// </span><span class="org-comment">ReclaimPhase is concurrent even for MS</span>
+        <span class="org-function-name">ReclaimPhase</span>()
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org000001d" class="outline-5">
+<h5 id="org000001d"><span class="section-number-5">1.2.5.1.</span> MarkingPhase</h5>
+<div class="outline-text-5" id="text-1-2-5-1">
+<div class="org-src-container">
+<pre class="src src-text">MarkingPhase:
+  // &#25152;&#35859; BindBitmaps, &#23454;&#38469;&#25351;&#30340;&#26159; bind mark bitmaps, &#21363;&#22312;&#25195;&#25551;&#20043;&#21069;&#23601;
+  // &#25226;&#19968;&#20123;&#28385;&#36275;&#26465;&#20214;&#30340;&#23545;&#35937;&#22312; mark bitmaps &#20013;&#32622;&#20301;, &#20363;&#22914;:
+  // 1. &#33509;&#19968;&#20010; space &#23646;&#20110; kGcRetentionPolicyNeverCollect, &#21017;&#35813; space
+  // &#20013;&#30340;&#25152;&#26377; live bitmaps &#20013;&#30340;&#23545;&#35937;&#37117;&#34987;&#25918;&#21040; mark bitmaps &#20013;
+  // 2. &#33509;&#24403;&#21069;&#30340; collector &#20026; partial_mark_sweep, &#21017; zygote space &#30340;
+  // live bitmaps &#20250;&#34987;&#22797;&#21046;&#21040; mark bitmaps, &#34920;&#31034; zygote space &#22312;
+  // partial_mark_sweep &#26102;&#19981;&#20250;&#34987;&#22238;&#25910;
+  // 3. &#33509;&#24403;&#21069;&#20026; sticky_mark_sweep, &#21017; DlMallocSpace &#20013;&#30340; live bitmaps
+  // &#20063;&#20250;&#34987;&#22797;&#21046;&#21040; mark bitmaps, &#36825;&#20010;&#30475;&#36215;&#26469;&#26377;&#20123;&#22855;&#24618;: live bitmaps &#20013;&#19981;
+  // &#19968;&#23450;&#37117;&#26159;&#34987; mark &#30340;&#23545;&#35937;&#21834;...
+  // &#19982; dalvik &#19981;&#21516;&#30340;&#26159;, &#26032;&#20998;&#37197;&#30340;&#23545;&#35937;&#19981;&#20445;&#23384;&#22312; live bitmaps, &#32780;&#26159;&#20808;&#20445;&#23384;
+  // &#22312; allocation stack &#20013;, &#25152;&#20197; live bitmaps &#20195;&#34920;&#30340;&#23454;&#38469;&#19978;&#26159;&#19978;&#19968;&#27425; GC
+  // &#32467;&#26463;&#26102;&#30340; mark bitmaps. sticky_mark_sweep &#20026;&#20102;&#21152;&#24555; mark &#19982; sweep
+  // &#30340;&#36807;&#31243;, &#20551;&#35774;&#19978;&#19968;&#27425; GC &#32467;&#26463;&#26102;&#30340; mark bitmaps &#22312;&#36825;&#19968;&#27425; GC &#26102;&#36824;&#26159;&#26377;
+  // &#25928;&#30340;, &#21363;&#19978;&#19968;&#27425; GC &#26102;&#30340;&#23545;&#35937;&#37117;&#19981;&#20250;&#34987;&#37322;&#25918;: sticky_mark_sweep &#21482;&#20250;&#25195;
+  // &#25551;&#37027;&#20123;&#26032;&#22686;&#30340;&#23545;&#35937;
+  // &#20026;&#20102;&#20248;&#21270; GC, collector &#21487;&#20197;&#20570;&#19968;&#20123;&#20551;&#35774;, &#20294;&#23427;&#21482;&#21487;&#20197;&#20551;&#35774;&#26576;&#23545;&#35937;&#34987;
+  // mark, &#32780;&#19981;&#33021;&#20551;&#35774;&#26576;&#23545;&#35937;&#27809;&#26377;&#34987; mark.
+  BindBitmaps();
+  FindDefaultMarkBitmap();
+  // Process dirty cards and add dirty cards to mod union tables.
+  heap_-&gt;ProcessCards(timings_);
+  MarkRoots(self);
+  MarkReachableObjects();
+    UpdateAndMarkModUnion();
+    RecursiveMark();
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000020" class="outline-5">
+<h5 id="org0000020"><span class="section-number-5">1.2.5.2.</span> PausePhase</h5>
+<div class="outline-text-5" id="text-1-2-5-2">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-constant">PausePhase</span>:
+  <span class="org-keyword">if</span> (IsConcurrent()):
+    <span class="org-comment-delimiter">// </span><span class="org-comment">CMS &#38656;&#22312;&#22312; PausePhase &#20351;&#29992; CardTable &#36827;&#34892;&#37325;&#26631;&#35760;</span>
+    ReMarkRoots();
+    <span class="org-comment-delimiter">// </span><span class="org-comment">Scan dirty objects, this is only required if we are not doing concurrent GC.</span>
+    RecursiveMarkDirtyObjects(<span class="org-constant">true</span>, accounting::CardTable::kCardDirty);
+
+  <span class="org-comment-delimiter">// </span><span class="org-comment">SwapStacks &#26159;&#23558; allocation_stack_ &#19982; live_stack_ &#20132;&#25442;, &#20174;&#27492;&#20197;&#21518;,</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#26032;&#20998;&#37197;&#30340;&#23545;&#35937;&#20250;&#34987; push &#21040;&#26032;&#30340; allocation_stack_ &#20013;, &#32780;&#20043;&#21069;</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">allocation_stack_ &#30340;&#20869;&#23481;&#29616;&#22312;&#20301;&#20110; live_stack_ &#20013;.</span>
+  <span class="org-comment-delimiter">// </span><span class="org-comment">&#21518;&#32493; sticky_mark_sweep &#20250;&#20351;&#29992; live_stack_ &#26469;&#26597;&#25214;&#26368;&#36817;&#26032;&#20998;&#37197;&#30340;&#23545;&#35937;</span>
+  heap_-&gt;SwapStacks();
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000023" class="outline-5">
+<h5 id="org0000023"><span class="section-number-5">1.2.5.3.</span> ReclaimPhase</h5>
+<div class="outline-text-5" id="text-1-2-5-3">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-constant">ReclaimPhase</span>:
+  <span class="org-function-name">ProcessReferences</span>(self);
+  Sweep(<span class="org-constant">false</span>);
+  <span class="org-function-name">SwapBitmaps</span>();
+  <span class="org-function-name">UnBindBitmaps</span>();
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000038" class="outline-3">
+<h3 id="org0000038"><span class="section-number-3">1.3.</span> Heap</h3>
+<div class="outline-text-3" id="text-1-3">
+</div>
+<div id="outline-container-org000002c" class="outline-4">
+<h4 id="org000002c"><span class="section-number-4">1.3.1.</span> gc related</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<ol class="org-ol">
+<li>collector_type_ heap 当前使用的 collector_type_, 进行
+CollectGarbageInternal 时需要根据 collector_type_ 和
+CollectGarbageInternal 的 gc_type 参数选择一个 collector</li>
+
+<li>background_collector_type_, foreground_collector_type_
+TransitionCollector 时根据当前为 backgroup 或 foreground 把
+collector_type_ 设置为 background_collector_type_ 或
+foreground_collector_type_</li>
+
+<li><p>
+gc_plan_
+gc_plan_ 是一个数组, 包含多个当前 collector 支持的 gc_type, 例如,
+若 collector_type_ 为 MS, 则 gc_plan_ 为:
+</p>
+
+<p>
+[kGcTypeSticky, kGcTypePartial, kGcTypeFull]
+</p>
+
+<p>
+当 AllocateInternalWithGc 时, 会依次尝试使用 gc_plan_ 中指定的
+gc_type 进行 CollectGarbageInternal, 以期望能尽量的进行轻量级的 gc
+</p>
+
+<p>
+另外, gc 成功时会记下本次使用的 gc_type 为 next_gc_type_, 当进行
+ConcurrentGC 时, 它只会尝试 next_gc_type_ 及其之后的 gc_type
+</p></li>
+</ol>
+</div>
+</div>
+
+
+<div id="outline-container-org000002f" class="outline-4">
+<h4 id="org000002f"><span class="section-number-4">1.3.2.</span> CollectGarbageInternal</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<p>
+CollectGarbageInternal 是进行 GC 的入口, 无论 ConcurrentGC 线程, 还是
+AllocObject 导致的 GC, 或者强制进行的 GC, 最终都调用该接口.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-text">// gc_type &#20195;&#34920;&#35201;&#36827;&#34892;&#20309;&#31181; gc: sticky, partial, full
+// gc_cause &#34920;&#31034; gc &#30340;&#21407;&#22240;: alloc, background(concurrent), explicit
+// clear_soft_references: &#26159;&#21542;&#28165;&#38500; soft reference
+// &#30001;&#20110; ART &#19968;&#33324;&#20351;&#29992; concurrent_gc_, &#25152;&#20197;&#23454;&#38469;&#19978;&#36825;&#20010;&#20989;&#25968;&#30340;&#26576;&#20123;&#21442;&#25968;&#32452;&#21512;
+// &#26159;&#19981;&#23384;&#22312;&#30340;, &#20363;&#22914;:
+// 1. &#33509; gc_cause &#20026; concurrent, &#21017; gc_type &#21482;&#33021;&#26159; sticky &#25110; partial
+// 2. &#33509; gc_cause &#20026; explicit, &#21017; gc_type &#21482;&#33021;&#26159; full
+collector::GcType Heap::CollectGarbageInternal(collector::GcType gc_type, GcCause gc_cause,bool clear_soft_references):
+  bool start_collect = false;
+  // &#33719;&#24471; gc_complete_lock_, &#38450;&#27490;&#26377;&#20854;&#20182;&#30340; gc &#21516;&#26102;&#36827;&#34892;
+  // &#33509;&#26080;&#27861;&#33719;&#24471;&#38145;, &#21017;&#31561;&#24453; concurrent_gc &#23436;&#25104;
+  while (!start_collect):
+    MutexLock mu(self, *gc_complete_lock_);
+    if (!is_gc_running_)"
+      is_gc_running_ = true;
+      start_collect = true;
+    if (!start_collect):
+      WaitForConcurrentGcToComplete(self);
+
+  // &#26681;&#25454; gc_type &#36873;&#25321; collector, mark_sweep_collectors_ &#26159;&#19982; Heap &#19968;
+  // &#36215;&#21021;&#22987;&#21270;&#30340;, &#21253;&#21547;&#20845;&#20010; collector:
+  // 1. full no concurrent
+  // 2. partial no concurrent
+  // 3. sticky no concurrent
+  // 4. full concurrent
+  // 5. partial concurrent
+  // 6. sticky concurrent
+
+  // &#26681;&#25454; gc_type &#36873;&#25321;&#23545;&#24212;&#30340; collector
+  for (const auto&amp; cur_collector : mark_sweep_collectors_) {
+    if (cur_collector-&gt;IsConcurrent() == concurrent_gc_
+        &amp;&amp; cur_collector-&gt;GetGcType() == gc_type):
+      collector = cur_collector;
+      break;
+
+  collector-&gt;clear_soft_references_ = clear_soft_references;
+  collector-&gt;Run();
+
+  RequestTrim(self);
+  // Enqueue cleared references.
+  reference_processor_-&gt;EnqueueClearedReferences(self);
+  // Grow the heap so that we know when to perform the next GC.
+  GrowForUtilization(collector, bytes_allocated_before_gc);
+
+  FinishGC()
+    is_gc_running_ = false;
+    last_gc_type_ = gc_type;
+    // Wake anyone who may have been waiting for the GC to complete.
+    gc_complete_cond_-&gt;Broadcast(self);
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000032" class="outline-4">
+<h4 id="org0000032"><span class="section-number-4">1.3.3.</span> DoPendingCollectorTransition</h4>
+</div>
+
+<div id="outline-container-org0000035" class="outline-4">
+<h4 id="org0000035"><span class="section-number-4">1.3.4.</span> ConcurrentGC</h4>
+</div>
+</div>
+
+<div id="outline-container-org0000053" class="outline-3">
+<h3 id="org0000053"><span class="section-number-3">1.4.</span> Accounting</h3>
+<div class="outline-text-3" id="text-1-4">
+</div>
+<div id="outline-container-org0000041" class="outline-4">
+<h4 id="org0000041"><span class="section-number-4">1.4.1.</span> HeapBitmap</h4>
+<div class="outline-text-4" id="text-1-4-1">
+</div>
+<div id="outline-container-org000003b" class="outline-5">
+<h5 id="org000003b"><span class="section-number-5">1.4.1.1.</span> live_bitmap_</h5>
+</div>
+
+<div id="outline-container-org000003e" class="outline-5">
+<h5 id="org000003e"><span class="section-number-5">1.4.1.2.</span> mark_bitmap_</h5>
+</div>
+</div>
+
+<div id="outline-container-org000004a" class="outline-4">
+<h4 id="org000004a"><span class="section-number-4">1.4.2.</span> ObjectStack</h4>
+<div class="outline-text-4" id="text-1-4-2">
+</div>
+<div id="outline-container-org0000044" class="outline-5">
+<h5 id="org0000044"><span class="section-number-5">1.4.2.1.</span> mark_stack_</h5>
+<div class="outline-text-5" id="text-1-4-2-1">
+<p>
+mark_stack_ 与 MarkingPhase 有关
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000047" class="outline-5">
+<h5 id="org0000047"><span class="section-number-5">1.4.2.2.</span> allocation_stack_ &amp;&amp; live_stack_</h5>
+<div class="outline-text-5" id="text-1-4-2-2">
+<p>
+sticky gc 有关
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000004d" class="outline-4">
+<h4 id="org000004d"><span class="section-number-4">1.4.3.</span> ModUnionTable</h4>
+<div class="outline-text-4" id="text-1-4-3">
+<p>
+只有 ZygoteSpace 和 ImageSpace 有相应的 ModUnionTable, 用来支持 sticky
+或 partial gc 时的 immune_region 的逻辑。
+</p>
+
+<p>
+具体来说， mod_union_table 是一个 dirty card 的集合， 并且这个集合是持久的 (不像 card table 那样每次 gc 时被清空 （或者说 aged).
+</p>
+
+<p>
+marking phase 的 ProcessCards 会负责将所有 dirty card (其值为 0x70) 减一, 同时将所有上次已经 age 过的 card (0x69) 置 0, 达到清理旧的 dirty
+card 的目的.然后, 对于 image_sapce 和 zygote_space, 将 dirty card 加入到相应的 mod_union_table 的 cleared_cards 中 (这些 mod_union_table 的
+cleared_cards 的累积的, 不会因为 gc被清空).
+</p>
+
+<p>
+所以, mod_union_table 本质上来源于 dirty_card, 其意义为"image_space(或
+zygote_space) 中可能的指向 alloc_space 的对象"
+</p>
+
+<p>
+marking phase 的后续阶段会通过 UpdateAndMarkModUnion 对上面那些可能的指向外部 space 的对象进行扫描 (scan object).
+</p>
+
+<p>
+之所以说 mod_union_table 是为了和 sticky 或 partial gc 配合工作的, 是因为:
+</p>
+
+<p>
+以 partial gc 为例, 其代码逻辑为:
+</p>
+<ol class="org-ol">
+<li>将 image_space 和 zygote_space 标记为 immune_region (通过
+BindBitmaps), 对于这些 immune_region, 其中的对象不经过扫描会直接被标记为 marked.</li>
+<li>在 MarkReachableObjects 阶段, 通过 mod_union_table 找到那些可能的从
+image_space (zygote_space) 引用到外部 space 的对象, 然后 scan 这些
+object</li>
+</ol>
+
+<p>
+通过这两步, 可以确保从 image_space (zygote_space) 出发, 能引用到的所有对象都被标记了. 如果没有 mod_union_table, 那么对 immune_region 完整的扫描是无法避免的.
+</p>
+
+<p>
+&#x2014; Q: 为什么需要 mod_union_table, 直接使用 card_table 不行么? A:
+card_table 每次 gc 都会被清空, 无法保存信息.
+</p>
+
+<p>
+&#x2014; Q: 为什么 alloc_space 没有 mod_union_table? sticky gc 也是会对
+alloc_space 进行类似 immune_region 的操作的 &#x2026; A: mod_union_table 的用处是持久的保存"从一个 space 引用其它 space" 的情况. 对于
+alloc_space, 它只可能引用 image_space, zygote_space 或 LOS, 而对
+alloc_space 进行immune_region 操作时, image_space, zygote_space 或 LOS
+肯定也是 immune_region 的 &#x2026;
+</p>
+
+<p>
+&#x2014; Q: 不对, 如果 alloc_space 引用 LOS 呢? A: sticky gc 会把 LOS 也
+immune_region &#x2026; (StickyMarkSweep::BindBitmaps)
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000050" class="outline-4">
+<h4 id="org0000050"><span class="section-number-4">1.4.4.</span> CardTable</h4>
+<div class="outline-text-4" id="text-1-4-4">
+<p>
+card table 是一个 write barrier, 用来标记 heap (continious space) 上哪些内存有改变.它有两个用处:
+</p>
+<ol class="org-ol">
+<li>在 gc 的 marking phase, 构造 mod_union_table, 和 immune_region 配合进行初始的标记</li>
+<li>在 gc 的 pause phase, ScanGrayObjects 会使用 card table 来进行重新标记 (但不会 age card table, card table 只会在 marking phase 被 age
+一次)</li>
+</ol>
+
+<p>
+marking phase 的 ProcessCards 会 age card table, 这里的 age 是指:
+</p>
+<ol class="org-ol">
+<li>对于 dirty card, 其值为 0x70, age 会将它变为 0x69</li>
+<li>对于 0x69, 即已经 age 过一次的 dirty card, age 会将它变为 0, 即
+clean</li>
+</ol>
+
+<p>
+之所以 card 有 0x70, 0x69, 0x0 这三种值 (而不是两种: dirty or clean),
+是因为 card table 在一次 gc 会使用两次(markReachableObjects 与
+scanGrayObjects), 为了避免重复的 scan dirty card, 所以用一个 0x69 加以区别,表示这个 card 之前已经 scan 过了.更具体来说, 0x69 这种 “准 dirty”
+card 是为了 sticky gc 准备的： sticky gc 时 alloc_space 没有
+mod_union_table 这种东西， 可以用 0x69 类型的 card 来有限的代替
+mod_union_table。
+</p>
+
+<p>
+因为 LOS 不是连续的, 所以它没有 card table.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000056" class="outline-3">
+<h3 id="org0000056"><span class="section-number-3">1.5.</span> GC Daemon</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+注: android N 已经不存在 GC Daemon, concurrent gc 由 runtime 直接完成
+</p>
+
+<p>
+dalvik 在初始化时会通过 gcDaemonThread 函数启动一个名为 "GC" 的线程负责 concurrent gc.
+</p>
+
+<p>
+ART 中也存在类似的线程, 但它是一个 java daemon, 不是一个 native 的 thread.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c">StartDaemonThreads @ runtime.cc
+  Daemons.start @ daemons.java
+    ReferenceQueueDaemon.INSTANCE.start();
+    FinalizerDaemon.INSTANCE.start();
+    FinalizerWatchdogDaemon.INSTANCE.start();
+    <span class="org-comment-delimiter">// </span><span class="org-comment">&#21518;&#38754;&#20004;&#20010;&#26159; ART &#26032;&#22686;&#30340; daemon</span>
+    HeapTrimmerDaemon.INSTANCE.start();
+    GCDaemon.INSTANCE.start();
+      <span class="org-keyword">while</span> (count == 0):
+        wait();
+      --count;
+      VMRuntime.getRuntime().concurrentGC();
+        Runtime::Current()-&gt;GetHeap()-&gt;ConcurrentGC(self);
+          <span class="org-keyword">if</span> (WaitForConcurrentGcToComplete(self) == collector::kGcTypeNone): @ heap.cc
+            CollectGarbageInternal(next_gc_type_, kGcCauseBackground, <span class="org-constant">false</span>);
+</pre>
+</div>
+
+<p>
+至于 GCDaemon 被唤醒的条件, 与 dalvik 是一致的: 当前内存低于某个阀值时,
+runtime 会通过 RequestConcurrentGC 唤醒 GCDaemon, 进行 concurrentGC.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c">Heap::AllocObject @ heap.cc
+  <span class="org-keyword">if</span> (UNLIKELY(static_cast&lt;size_t&gt;(num_bytes_allocated_) &gt;= concurrent_start_bytes_)):
+    RequestConcurrentGC(self);
+      GCDaemon.requestGC @ Daemons.java
+        ++count;
+        <span class="org-function-name">notify</span>();
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000088" class="outline-2">
+<h2 id="org0000088"><span class="section-number-2">2.</span> allocator</h2>
+<div class="outline-text-2" id="text-2">
+</div>
+<div id="outline-container-org000007f" class="outline-3">
+<h3 id="org000007f"><span class="section-number-3">2.1.</span> Space</h3>
+<div class="outline-text-3" id="text-2-1">
+</div>
+<div id="outline-container-org0000062" class="outline-4">
+<h4 id="org0000062"><span class="section-number-4">2.1.1.</span> Overview</h4>
+<div class="outline-text-4" id="text-2-1-1">
+<p>
+ART 的 space 类似于 dalvik 中的 HeapSource-&gt;heap[], 代表一块可以用来分配的内存区域.
+</p>
+</div>
+
+<div id="outline-container-org000005c" class="outline-5">
+<h5 id="org000005c"><span class="section-number-5">2.1.1.1.</span> dalvik heap</h5>
+<div class="outline-text-5" id="text-2-1-1-1">
+<p>
+在 dalvik 中 HeapSource-&gt;heap[] 只有两项: 在 zygote 启动期间, heap[]只有一项 heap[0], 用来做为 zygote 启动时的 GC heap. zygote 启动完毕,
+fork 新的 java 进程前, zygote 使用的 heap[0] 会被移动到 heap[1], 然后
+dalvik 会再初始化一块内存做为新的 heap[0], 用来做为后续 java 进程的 GC
+heap. 在任何时候, dalvik 都只使用 heap[0] 做为 GC heap 来分配对象.
+</p>
+
+<p>
+zygote pre-fork 时初始化一个新的 GC heap, 主要是为了防止后续 java 进程再写那块旧的 GC heap: 这会导致大量的 copy on write 开销.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000005f" class="outline-5">
+<h5 id="org000005f"><span class="section-number-5">2.1.1.2.</span> art space</h5>
+<div class="outline-text-5" id="text-2-1-1-2">
+<p>
+在 ART 也有类似的机制, 不过 ART 设计的更好一些: 它抽象出几个 space:
+</p>
+
+<ol class="org-ol">
+<li>ImageSpace
+boot.art 的一部分 (0~image_size_部分) 会直接映射为 ImageSpace</li>
+<li><p>
+DlMallocSpace
+dalvik 上的 heap[] 相当于 DlMallocSpace, 即它是用 dlmalloc 来实现对象分配的.
+</p>
+
+<p>
+ART 上一般包含两个 DlMallocSpace:
+</p>
+
+<ol class="org-ol">
+<li>ZygoteSpace
+这个 ZygoteSpace 保存在 continuous_spaces_ 数组中, zygote
+pre-fork 后不再使用它分配内存</li>
+<li>alloc_space_
+这个也保存在 continuous_spaces_ 数组中, zygote pre-fork 后会使用它来分配内存, 因为很常用, 所以有一个单独的 alloc_space_ 变量引用着它.</li>
+</ol></li>
+<li>LargeObjectSpace
+dalvik 中不存在类似概念, ART 使用 LargeObjectSpace 来分配大型
+primitive 数组. 该对象有两个子类: FreeListSpace 和 LargeObjectMapSpace</li>
+</ol>
+
+<p>
+另外, 根据 space 是否是连续的, 又分为 ContinuousSpace 和
+DiscontinuousSpace, 所谓连续, 是指整个 space 是否有一个固定的大小, 所有空间都从这个固定大小的空间里分配. 例如, ImageSpace, DlMallocSpace 是
+ContinuousSpace, 而 LargeObjectSpace 是 DiscontinuousSpace.
+</p>
+
+<p>
+ContinuousSpace 因为空间有固定的大小,所以可以使用 SpaceBitmap 和 card
+table 来标识对象.
+</p>
+
+<p>
+DiscontinuousSpace 因为空间大小不定, 无法使用 SpaceBitmap 来标识对象,
+它使用 SpaceSetMap 来标识对象, SpaceSetMap 是使用 std::set 实现的
+bitmap.
+</p>
+
+<p>
+不同的 space 需要使用不同的 gc 算法 (collector), 例如:
+</p>
+
+<ol class="org-ol">
+<li>MallocSpace 会使用 CMS 算法 (Concurrent MarkSweep)</li>
+<li>BumpPointerSpace 只能使用 SS 算法 (SemiSpace), 因为
+BumpPointerSpace 不支持单个对象的释放, 也没有live_bitmap 和
+mark_bitmap, 无法使用 CMS 类算法</li>
+<li>RegionSpace 只能使用 CC 算法 (ConcurrentCopying)</li>
+<li>&#x2026;</li>
+</ol>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000067" class="outline-4">
+<h4 id="org0000067"><span class="section-number-4">2.1.2.</span> Space hierachy</h4>
+<div class="outline-text-4" id="text-2-1-2">
+<div class="org-src-container">
+<pre class="src src-dot">digraph "art::gc::space::Space"
+{
+  edge [fontname="Helvetica",fontsize="10",labelfontname="Helvetica",labelfontsize="10"];
+  node [fontname="Helvetica",fontsize="10",shape=record];
+  Node0 [label="art::gc::space::Space",height=0.2,width=0.4,color="black", fillcolor="grey75", style="filled", fontcolor="black"];
+  Node0 -&gt; Node1 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node1 [label="art::gc::space::Continuous\lSpace",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"];
+  Node1 -&gt; Node3 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node3 [label="art::gc::space::MemMapSpace",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"]
+  Node3 -&gt; Node4 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node16 [label="art::gc::space::AllocSpace",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"]
+  Node16 -&gt; Node4 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node4 [label="art::gc::space::Continuous\lMemMapAllocSpace",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"];
+  Node4 -&gt; Node6 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node14 [label="art::gc::space::BumpPointerSpace",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"];
+  Node4 -&gt; Node14 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node15 [label="art::gc::space::RegionSpace",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"];
+  Node4 -&gt; Node15 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node6 [label="art::gc::space::MallocSpace",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"];
+  Node6 -&gt; Node7 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node7 [label="art::gc::space::DlMalloc\lSpace",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"];
+  Node6 -&gt; Node8 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node8 [label="art::gc::space::RosAlloc\lSpace",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"];
+  Node3 -&gt; Node9 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node9 [label="art::gc::space::ImageSpace",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"];
+  Node0 -&gt; Node11 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node11 [label="art::gc::space::Discontinuous\lSpace",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"];
+  Node11 -&gt; Node12 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node12 [label="art::gc::space::LargeObject\lSpace",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"];
+  Node12 -&gt; Node13 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node13 [label="art::gc::space::LargeObject\lMapSpace",height=0.2,width=0.4,color="black", fillcolor="white", style="filled"];
+}
+
+</pre>
+</div>
+
+
+<div id="org0000065" class="figure">
+<p><img src="../extra/art_space.png" alt="art_space.png" />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000006a" class="outline-4">
+<h4 id="org000006a"><span class="section-number-4">2.1.3.</span> ImageSpace</h4>
+</div>
+
+<div id="outline-container-org000006d" class="outline-4">
+<h4 id="org000006d"><span class="section-number-4">2.1.4.</span> DlMallocSpace</h4>
+</div>
+
+<div id="outline-container-org0000070" class="outline-4">
+<h4 id="org0000070"><span class="section-number-4">2.1.5.</span> RosAllocSpace</h4>
+</div>
+
+<div id="outline-container-org0000073" class="outline-4">
+<h4 id="org0000073"><span class="section-number-4">2.1.6.</span> BumpPointerSpace</h4>
+</div>
+
+<div id="outline-container-org0000076" class="outline-4">
+<h4 id="org0000076"><span class="section-number-4">2.1.7.</span> LargeObjectSpace</h4>
+</div>
+
+<div id="outline-container-org0000079" class="outline-4">
+<h4 id="org0000079"><span class="section-number-4">2.1.8.</span> ZygoteSpace</h4>
+<div class="outline-text-4" id="text-2-1-8">
+<p>
+在最初的 alloc_space_ 在 PreZygoteFork 时被转换为 ZygoteSpace 时, 会调用这个函数:
+</p>
+<div class="org-src-container">
+<pre class="src src-c++">zygote_space-&gt;SetGcRetentionPolicy(<span class="org-constant">space</span>::kGcRetentionPolicyFullCollect);
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000007c" class="outline-4">
+<h4 id="org000007c"><span class="section-number-4">2.1.9.</span> GcRetentionPolicy</h4>
+<div class="outline-text-4" id="text-2-1-9">
+<p>
+所谓的 GcRetentionPolicy 有三种选择:
+</p>
+
+<ol class="org-ol">
+<li>kGcRetentionPolicyNeverCollect,
+这种 space 中的对象永远不会被 GC. 例如 ImageSpace</li>
+<li>kGcRetentionPolicyAlwaysCollect,
+任何类型的 GC (Partial, Full) 都会 GC 这个 space 中的对象.
+例如 LargeObjectSpace, DlMallocSpace 中的非 ZygoteSpace (例如 alloc_space_)</li>
+<li>kGcRetentionPolicyFullCollect,
+只有在进行 FULL GC 时才对这个 space 的对象进行 GC. 例如 ZygoteSpace</li>
+</ol>
+
+<p>
+GcRetentionPolicy 与 collector 的 GcType 有直接的关系
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000082" class="outline-3">
+<h3 id="org0000082"><span class="section-number-3">2.2.</span> Allocator</h3>
+</div>
+
+<div id="outline-container-org0000085" class="outline-3">
+<h3 id="org0000085"><span class="section-number-3">2.3.</span> AllocObject</h3>
+<div class="outline-text-3" id="text-2-3">
+<div class="org-src-container">
+<pre class="src src-text">Heap::AllocObject(Thread* self, mirror::Class* c, size_t byte_count) @ heap.cc
+  // &#23545;&#20110;&#22823;&#22411;&#30340; primitive &#25968;&#32452;, &#20250;&#34987;&#20998;&#37197;&#21040; large_object_space_ &#20013;
+  // art &#26377;&#20004;&#31181; large_object_space_ &#23454;&#29616;: FreeListSpace &#21644; LargeObjectMapSpace, &#21069;&#32773;&#22312;&#19968;&#22359;&#22823;&#30340; mmap &#31354;&#38388;&#19978;&#20351;&#29992; free list &#26469;&#20998;&#37197;
+  // &#21518;&#32773;&#29992; mmap &#30452;&#25509;&#20998;&#37197;. &#30446;&#21069;&#21482;&#20351;&#29992; LargeObjectMapSpace
+  bool large_object_allocation = byte_count &gt;= large_object_threshold_ &amp;&amp; have_zygote_space_ &amp;&amp; c-&gt;IsPrimitiveArray();
+  if (UNLIKELY(large_object_allocation)):
+    obj = Allocate(self, large_object_space_, byte_count, &amp;bytes_allocated);
+  else:
+    obj = Allocate(self, alloc_space_, byte_count, &amp;bytes_allocated);
+      // ART &#30340; allocate &#19982; dalvik &#31867;&#20284;, &#20063;&#26159;&#19968;&#20010;&#22810;&#27425;&#23581;&#35797;&#30340;&#36807;&#31243;, &#20013;&#38388;&#20276;&#38543;&#30528;
+      // GC, &#22788;&#29702; SoftReferences, GC heap footprint grow &#31561;&#36807;&#31243;.
+      Object* Heap::Allocate(Thread* self, T* space, size_t alloc_size,...)
+        ptr = TryToAllocate(self, space, alloc_size, false, bytes_allocated);
+          if (UNLIKELY(IsOutOfMemoryOnAllocation(alloc_size, grow))):
+            // &gt;&gt;&gt; IsOutOfMemoryOnAllocation
+            if (UNLIKELY(new_footprint &gt; growth_limit_)):
+              return true;
+            // ART &#40664;&#35748;&#20250;&#20351;&#29992; concurrent_gc, &#25152;&#20197; concurrent_gc_ &#19968;&#33324;
+            // &#20026;&#30495;, &#25152;&#20197;&#21518;&#38754;&#30340;&#20195;&#30721;&#22522;&#26412;&#19981;&#20250;&#36305;&#21040;...&#32780; dalvik &#20250;&#36305;&#21040;&#31867;&#20284;&#19979;&#38754;
+            // &#30340;&#20195;&#30721;. &#25152;&#20197; concurrent_gc_ &#26159;&#19981;&#32771;&#34385; grow &#21442;&#25968;&#30340;.
+            if (!concurrent_gc_):
+              if (!grow):
+                return true;
+              else:
+                max_allowed_footprint_ = new_footprint;
+            // &lt;&lt;&lt; IsOutOfMemoryOnAllocation
+            return NULL;
+
+        if (ptr != NULL):
+          return ptr;
+        return AllocateInternalWithGc(self, space, alloc_size, bytes_allocated);
+          last_gc = WaitForConcurrentGcToComplete(self);
+          if (last_gc != collector::kGcTypeNone):
+            ptr = TryToAllocate(self, space, alloc_size, false, bytes_allocated);
+            if (ptr != NULL) return ptr;
+          // last_gc &#21453;&#26144;&#30340;&#26159;&#26368;&#36817;&#19968;&#27425; concurrent gc &#36827;&#34892;&#30340;&#26159;&#21738;&#31181; gc
+          // &#20540;&#36234;&#23567;&#34920;&#29616;&#36234;&#36731;&#37327;&#32423;. &#29616;&#22312;&#19968;&#20849;&#26377;&#19977;&#31181; gc, &#20174;&#36731;&#21040;&#37325;&#20381;&#27425;&#26159;
+          // sticky -&gt; partial -&gt; full
+          // sticky &#34920;&#31034;&#21482;&#22238;&#25910;&#19978;&#19968;&#27425; gc &#20197;&#26469;&#26032;&#20998;&#37197;&#30340;&#23545;&#35937;
+          // partial &#34920;&#31034;&#19981;&#22238;&#25910; zygote space
+          // full &#34920;&#31034;&#23436;&#20840;&#22238;&#25910;&#25152;&#26377;&#23545;&#35937;
+          // for &#24490;&#29615;&#30340;&#36215;&#28857;&#26159; last_gc+1, &#34920;&#31034;&#20351;&#29992;&#27604;&#26368;&#36817;&#19968;&#27425; concurrent gc
+          // &#20351;&#29992;&#30340; gc type &#26356;&#37325;&#37327;&#32423;&#30340; collector
+          for (size_t i = static_cast&lt;size_t&gt;(last_gc) + 1;
+            i &lt; static_cast&lt;size_t&gt;(collector::kGcTypeMax); ++i):
+            // &#23581;&#35797;&#35843;&#29992;&#27599;&#19968;&#31181; collector, &#20294;&#20107;&#20808;&#38656;&#35201;&#28385;&#36275;&#19968;&#23450;&#30340;&#26465;&#20214;
+            collector::GcType gc_type = static_cast&lt;collector::GcType&gt;(i);
+            switch (gc_type):
+              case collector::kGcTypeSticky:
+                // &#24403;&#21487;&#29992;&#20869;&#23384;&#24456;&#23569;&#26102;&#19981;&#20351;&#29992; sticky gc
+                run_gc = alloc_space_size &gt; min_alloc_space_size_for_sticky_gc_ &amp;&amp;
+                            alloc_space_-&gt;Capacity() - alloc_space_size &gt;= min_remaining_space_for_sticky_gc_;
+              case collector::kGcTypePartial:
+                // &#21482;&#26377;&#22312;&#26377; zygote space &#26102;&#20351;&#29992; partial gc &#25165;&#26377;&#24847;&#20041;
+                run_gc = have_zygote_space_;
+              case collector::kGcTypeFull:
+                run_gc = true;
+          // end for
+          if run_gc:
+            CollectGarbageInternal(gc_type, kGcCauseForAlloc, false);
+            TryToAllocate(self, space, alloc_size, false, bytes_allocated);
+          // &#22914;&#26524;&#19978;&#19968;&#27493;&#20173;&#27809;&#26377;&#20998;&#37197;&#21040;&#20869;&#23384;, &#20877;&#35843;&#29992;&#19968;&#27425; TryToAllocate, &#20294;&#23558;
+          // grow &#32622;&#20026; true. (&#20294;&#22312; concurrent_gc_ &#26465;&#20214;&#19979;, &#36825;&#19968;&#21442;&#25968;&#26159;&#19981;&#36215;&#20316;&#29992;&#30340;...)
+          ptr = TryToAllocate(self, space, alloc_size, true, bytes_allocated);
+          // &#33509;&#36824;&#26159;&#19981;&#34892;, &#22238;&#25910; SoftReferences
+          CollectGarbageInternal(collector::kGcTypeFull, kGcCauseForAlloc, true);
+          TryToAllocate(self, space, alloc_size, true, bytes_allocated);
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000008b" class="outline-2">
+<h2 id="org000008b"><span class="section-number-2">3.</span> collector</h2>
+</div>
+
+<div id="outline-container-org000008e" class="outline-2">
+<h2 id="org000008e"><span class="section-number-2">4.</span> space</h2>
+</div>
+
+<div id="outline-container-org0000091" class="outline-2">
+<h2 id="org0000091"><span class="section-number-2">5.</span> gc_root</h2>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: 2017-04-01 Sat 00:00<br />
+Last updated: 2024-05-08 Wed 15:25</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>

@@ -1,0 +1,1385 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>Dalvik: Dex</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">Dalvik: Dex</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org0000078">1. Dalvik: Dex</a>
+<ul>
+<li><a href="#org0000027">1.1. dex 文件结构</a>
+<ul>
+<li><a href="#org0000000">1.1.1. dex header</a></li>
+<li><a href="#org0000003">1.1.2. dex string ids</a></li>
+<li><a href="#org0000006">1.1.3. dex type ids</a></li>
+<li><a href="#org000000c">1.1.4. dex proto ids</a></li>
+<li><a href="#org000000f">1.1.5. dex field ids</a></li>
+<li><a href="#org0000012">1.1.6. dex method ids</a></li>
+<li><a href="#org0000021">1.1.7. dex class defs</a></li>
+<li><a href="#org0000024">1.1.8. dex map list</a></li>
+</ul>
+</li>
+<li><a href="#org0000030">1.2. odex 文件结构</a>
+<ul>
+<li><a href="#org000002a">1.2.1. classLookup</a></li>
+<li><a href="#org000002d">1.2.2. registerMap</a></li>
+</ul>
+</li>
+<li><a href="#org0000033">1.3. class 文件结构</a></li>
+<li><a href="#org0000036">1.4. DexFile 与 DvmDex</a></li>
+<li><a href="#org0000044">1.5. dexopt</a>
+<ul>
+<li><a href="#org000003b">1.5.1. dexopt 的作用</a></li>
+<li><a href="#org000003e">1.5.2. There are three ways to launch dexopt</a></li>
+<li><a href="#org0000041">1.5.3. dex 何时被 dexopt</a></li>
+</ul>
+</li>
+<li><a href="#org0000066">1.6. load</a>
+<ul>
+<li><a href="#org000004e">1.6.1. ClassLoader</a></li>
+<li><a href="#org0000051">1.6.2. 双亲委派</a></li>
+<li><a href="#org0000060">1.6.3. 类的加载</a></li>
+<li><a href="#org0000063">1.6.4. 总结</a></li>
+</ul>
+</li>
+<li><a href="#org0000075">1.7. verify</a>
+<ul>
+<li><a href="#org0000069">1.7.1. pre-verify</a></li>
+<li><a href="#org000006c">1.7.2. dvmVerifyClass</a></li>
+<li><a href="#org0000072">1.7.3. 关于 verify 和 dexopt 的实验</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000078" class="outline-2">
+<h2 id="org0000078"><span class="section-number-2">1.</span> Dalvik: Dex</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org0000027" class="outline-3">
+<h3 id="org0000027"><span class="section-number-3">1.1.</span> dex 文件结构</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+<a href="http://www.retrodev.com/android/dexformat.html">http://www.retrodev.com/android/dexformat.html</a>
+<a href="http://stackoverflow.com/questions/7750448/dex-file-in-android">http://stackoverflow.com/questions/7750448/dex-file-in-android</a>
+<a href="http://source.android.com/devices/tech/dalvik/dex-format.html">http://source.android.com/devices/tech/dalvik/dex-format.html</a>
+<a href="http://blog.csdn.net/hlchou/article/details/6303566">http://blog.csdn.net/hlchou/article/details/6303566</a>
+<a href="http://www.2cto.com/Article/201308/236054.html">http://www.2cto.com/Article/201308/236054.html</a>
+</p>
+
+<p>
+dex 文件主要由一个 dex header, 多个表(ids, defs)和数据 (data) 部分组成.
+构成一个复杂的索引关系, 这些表和数据的位置大约是:
+</p>
+
+<ol class="org-ol">
+<li>dex header</li>
+<li>dex string ids</li>
+<li>dex type ids</li>
+<li>dex field ids</li>
+<li>dex method ids                 o</li>
+<li>dex class defs</li>
+<li>data</li>
+<li>dex map list</li>
+</ol>
+</div>
+
+<div id="outline-container-org0000000" class="outline-4">
+<h4 id="org0000000"><span class="section-number-4">1.1.1.</span> dex header</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<p>
+dex header 中主要下面提到的各个 ids, defs 的 size 和 offset, 以便能找到这些 table, 例如:
+</p>
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-type">header_item</span> {
+    <span class="org-keyword">struct</span> <span class="org-type">dex_magic</span> {
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">dex..</span><span class="org-comment-delimiter"> */</span>
+    };
+    <span class="org-type">uint</span> <span class="org-variable-name">checksum</span>;
+    <span class="org-type">char</span> <span class="org-variable-name">signature</span>[20];
+    <span class="org-type">uint</span> <span class="org-variable-name">file_size</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">header_size</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">endian_tag</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">link_size</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">link_off</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">map_off</span>;               <span class="org-comment-delimiter">/* </span><span class="org-comment">map list offset</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">uint</span> <span class="org-variable-name">string_ids_size</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">string_ids_off</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">type_ids_size</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">type_ids_off</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">proto_ids_size</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">proto_ids_off</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">field_ids_size</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">field_ids_off</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">method_ids_size</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">mehtod_ids_off</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">class_defs_size</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">class_defs_off</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">data_size</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">data_off</span>;              <span class="org-comment-delimiter">/* </span><span class="org-comment">data_off &#21487;&#33021;&#20027;&#35201;&#29992;&#26469;&#26816;&#26597;</span><span class="org-comment-delimiter"> */</span>
+};
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000003" class="outline-4">
+<h4 id="org0000003"><span class="section-number-4">1.1.2.</span> dex string ids</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-type">string_id_list</span> {
+    <span class="org-keyword">struct</span> <span class="org-type">string_id_item</span> {
+        <span class="org-type">uint</span> <span class="org-variable-name">string_data_off</span>;
+    } [string_ids_size];
+};
+
+</pre>
+</div>
+
+<p>
+通过这个 string_data_off, 可以在 data 部分找到这个 string 对应的
+string_item 结构.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000006" class="outline-4">
+<h4 id="org0000006"><span class="section-number-4">1.1.3.</span> dex type ids</h4>
+<div class="outline-text-4" id="text-1-1-3">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-type">type_id_list</span> {
+    <span class="org-keyword">struct</span> <span class="org-type">type_id_item</span> {
+        <span class="org-type">uint</span> <span class="org-variable-name">descriptor_idx</span>;    <span class="org-comment-delimiter">/* </span><span class="org-comment">=&gt; string_id_item</span><span class="org-comment-delimiter"> */</span>
+    } [type_ids_size];
+};
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000000c" class="outline-4">
+<h4 id="org000000c"><span class="section-number-4">1.1.4.</span> dex proto ids</h4>
+<div class="outline-text-4" id="text-1-1-4">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-type">proto_id_list</span> {
+    <span class="org-keyword">struct</span> <span class="org-type">proto_id_item</span> {
+        <span class="org-type">uint</span> <span class="org-variable-name">shorty_idx</span>;            <span class="org-comment-delimiter">/* </span><span class="org-comment">=&gt; string_id_item</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-type">uint</span> <span class="org-variable-name">reture_type_idx</span>;       <span class="org-comment-delimiter">/* </span><span class="org-comment">=&gt; type_id_item</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-type">unit</span> <span class="org-variable-name">parameters_off</span>;
+    } [proto_ids_size];
+};
+</pre>
+</div>
+</div>
+
+
+<div id="outline-container-org0000009" class="outline-5">
+<h5 id="org0000009"><span class="section-number-5">1.1.4.1.</span> prarameters_off</h5>
+<div class="outline-text-5" id="text-1-1-4-1">
+<p>
+parameters_off 表示该函数的参数情况, 指向 data 部分的一个
+type_item_list 结构
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-type">type_item_list</span> {
+    <span class="org-type">uint</span> <span class="org-variable-name">size</span>;                  <span class="org-comment-delimiter">/* </span><span class="org-comment">&#21442;&#25968;&#30340;&#20010;&#25968;</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-keyword">struct</span> <span class="org-type">type_item</span> [size];
+};
+<span class="org-keyword">struct</span> <span class="org-type">type_item</span> {
+    <span class="org-type">ushort</span> <span class="org-variable-name">type_idx</span>;            <span class="org-comment-delimiter">/* </span><span class="org-comment">&#25351;&#21521; string ids</span><span class="org-comment-delimiter"> */</span>
+};
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000000f" class="outline-4">
+<h4 id="org000000f"><span class="section-number-4">1.1.5.</span> dex field ids</h4>
+<div class="outline-text-4" id="text-1-1-5">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-type">field_id_list</span> {
+    <span class="org-keyword">struct</span> <span class="org-type">field_id_item</span> {
+        <span class="org-type">uint</span> <span class="org-variable-name">class_idx</span>;             <span class="org-comment-delimiter">/* </span><span class="org-comment">=&gt; type_id_item</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-type">uint</span> <span class="org-variable-name">type_idx</span>;              <span class="org-comment-delimiter">/* </span><span class="org-comment">=&gt; type_id_item</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-type">uint</span> <span class="org-variable-name">name_idx</span>;              <span class="org-comment-delimiter">/* </span><span class="org-comment">=&gt; string_id_item</span><span class="org-comment-delimiter"> */</span>
+    } [field_ids_size];
+};
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000012" class="outline-4">
+<h4 id="org0000012"><span class="section-number-4">1.1.6.</span> dex method ids</h4>
+<div class="outline-text-4" id="text-1-1-6">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-type">method_id_list</span> {
+    <span class="org-keyword">struct</span> <span class="org-type">method_id_item</span> {
+        <span class="org-type">ushort</span> <span class="org-variable-name">class_idx</span>;           <span class="org-comment-delimiter">/* </span><span class="org-comment">=&gt; type_id_item</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-type">ushort</span> <span class="org-variable-name">proto_idx</span>;           <span class="org-comment-delimiter">/* </span><span class="org-comment">=&gt; proto_id_item</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-type">uint</span> <span class="org-variable-name">name_idx</span>;              <span class="org-comment-delimiter">/* </span><span class="org-comment">=&gt; string_id_item</span><span class="org-comment-delimiter"> */</span>
+    } [method_ids_size];
+};
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000021" class="outline-4">
+<h4 id="org0000021"><span class="section-number-4">1.1.7.</span> dex class defs</h4>
+<div class="outline-text-4" id="text-1-1-7">
+<p>
+class defs 是这些表中是复杂的一个表.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-type">class_def_item_list</span> {
+    <span class="org-keyword">struct</span> <span class="org-type">class_def_item</span> {
+        <span class="org-type">uint</span> <span class="org-variable-name">class_idx</span>;             <span class="org-comment-delimiter">/* </span><span class="org-comment">=&gt; type_id_item</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-keyword">enum</span> <span class="org-type">ACCESS_FLAGS</span>;
+        <span class="org-type">uint</span> <span class="org-variable-name">superclass_idx</span>;        <span class="org-comment-delimiter">/* </span><span class="org-comment">=&gt; type_id_item</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-type">uint</span> <span class="org-variable-name">interface_off</span>;
+        <span class="org-type">uint</span> <span class="org-variable-name">source_file_idx</span>;       <span class="org-comment-delimiter">/* </span><span class="org-comment">=&gt; string_id_item</span><span class="org-comment-delimiter"> */</span>
+        <span class="org-type">uint</span> <span class="org-variable-name">annotation_off</span>;
+        <span class="org-type">uint</span> <span class="org-variable-name">class_data_off</span>;
+        <span class="org-type">uint</span> <span class="org-variable-name">static_value_off</span>;
+    } [class_defs_size];
+};
+
+</pre>
+</div>
+
+<p>
+与 string_id_item 中的 string_data_off 及 proto_id_item 中的
+parameters_off 类似, class_def_item 中包含四项 off 也存在到 data 部分,
+</p>
+</div>
+
+
+<div id="outline-container-org0000015" class="outline-5">
+<h5 id="org0000015"><span class="section-number-5">1.1.7.1.</span> interface_off</h5>
+<div class="outline-text-5" id="text-1-1-7-1">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-type">type_item_list</span> {
+    <span class="org-type">uint</span> <span class="org-variable-name">size</span>;
+    <span class="org-keyword">struct</span> <span class="org-type">type_item</span>[size];
+};
+
+<span class="org-keyword">struct</span> <span class="org-type">type_item</span> {
+    <span class="org-type">ushort</span> <span class="org-variable-name">type_index</span>;          <span class="org-comment-delimiter">/* </span><span class="org-comment">=&gt; type_id_item</span><span class="org-comment-delimiter"> */</span>
+};
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000018" class="outline-5">
+<h5 id="org0000018"><span class="section-number-5">1.1.7.2.</span> static_value_off</h5>
+</div>
+
+<div id="outline-container-org000001e" class="outline-5">
+<h5 id="org000001e"><span class="section-number-5">1.1.7.3.</span> class_data_off</h5>
+<div class="outline-text-5" id="text-1-1-7-3">
+<p>
+class_data_off 是 class_def_item 中最复杂的.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-type">class_data_item</span> {
+    <span class="org-type">uleb128</span> <span class="org-variable-name">static_fields_size</span>;
+    <span class="org-type">uleb128</span> <span class="org-variable-name">instance_fields_size</span>;
+    <span class="org-type">uleb128</span> <span class="org-variable-name">direct_methods_size</span>;
+    <span class="org-type">uleb128</span> <span class="org-variable-name">virtual_methods_size</span>;
+
+    <span class="org-keyword">struct</span> <span class="org-type">encoded_field_list</span> {
+        <span class="org-keyword">struct</span> <span class="org-type">encoded_field</span> {
+            <span class="org-comment-delimiter">/* </span><span class="org-comment">field_idx_diff &#19982;&#21069;&#38754;&#25552;&#21040;&#30340; xxx_idx &#19981;&#21516;:</span>
+<span class="org-comment">               actual_idx[i]= sum_{0}^{i}(field_idx_diff[x]d(x))</span>
+<span class="org-comment">             ,</span><span class="org-comment-delimiter">*/</span>
+            <span class="org-type">uleb128</span> <span class="org-variable-name">field_idx_diff</span>; <span class="org-comment-delimiter">/* </span><span class="org-comment">=&gt; field_id_item</span><span class="org-comment-delimiter"> */</span>
+        } [static_fields_size];
+    } <span class="org-variable-name">static_fields</span>;
+
+    <span class="org-keyword">struct</span> <span class="org-type">encoded_field_list</span> {
+        <span class="org-keyword">struct</span> <span class="org-type">encoded_field</span> {
+            <span class="org-type">uleb128</span> <span class="org-variable-name">field_idx_diff</span>; <span class="org-comment-delimiter">/* </span><span class="org-comment">=&gt; field_id_item</span><span class="org-comment-delimiter"> */</span>
+            <span class="org-type">uleb128</span> <span class="org-variable-name">access_flags</span>;
+        } [instance_fields_size];
+    } <span class="org-variable-name">instance_fields</span>;
+
+    <span class="org-keyword">struct</span> <span class="org-type">encoded_methods_list</span> {
+        <span class="org-keyword">struct</span> <span class="org-type">encoded_method</span> {
+            <span class="org-type">uleb128</span> <span class="org-variable-name">method_idx_diff</span>; <span class="org-comment-delimiter">/* </span><span class="org-comment">=&gt; method_id_item</span><span class="org-comment-delimiter"> */</span>
+            <span class="org-type">uleb128</span> <span class="org-variable-name">access_flags</span>;
+            <span class="org-type">uleb128</span> <span class="org-variable-name">code_off</span>;
+        } [direct_methods_size];
+    } <span class="org-variable-name">direct_methods</span>;
+
+    <span class="org-keyword">struct</span> <span class="org-type">encoded_methods_list</span> {
+        <span class="org-keyword">struct</span> <span class="org-type">encoded_method</span> {
+            <span class="org-type">uleb128</span> <span class="org-variable-name">method_idx_diff</span>; <span class="org-comment-delimiter">/* </span><span class="org-comment">=&gt; method_id_item</span><span class="org-comment-delimiter"> */</span>
+            <span class="org-type">uleb128</span> <span class="org-variable-name">access_flags</span>;
+            <span class="org-type">uleb128</span> <span class="org-variable-name">code_off</span>;
+        } [virtual_methods_size];
+    } <span class="org-variable-name">virtual_methods</span>;
+};
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org000001b" class="outline-6">
+<h6 id="org000001b"><span class="section-number-6">1.1.7.3.1.</span> code off</h6>
+<div class="outline-text-6" id="text-1-1-7-3-1">
+<p>
+encoded_method 中包含一个 code_off 的指针, 指向真正的 code_item
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-type">code_item</span> {
+    <span class="org-type">ushort</span> <span class="org-variable-name">register_size</span>;       <span class="org-comment-delimiter">/* </span><span class="org-comment">&#20351;&#29992;&#22810;&#23569;&#20010; register, &#21253;&#25324;&#21442;&#25968;, &#23616;&#22495;</span>
+<span class="org-comment">                                 * &#21464;&#37327;&#31561;</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">ushort</span> <span class="org-variable-name">ins_size</span>;            <span class="org-comment-delimiter">/* </span><span class="org-comment">&#21442;&#25968;&#29992;&#21040;&#30340; register &#20010;&#25968;</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">ushort</span> <span class="org-variable-name">outs_size</span>;           <span class="org-comment-delimiter">/* </span><span class="org-comment">&#35843;&#29992;&#20854;&#20182;&#20989;&#25968;&#38656;&#35201;&#29992;&#21040;&#30340; register &#20010;</span>
+<span class="org-comment">                                 * &#25968;</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">ushort</span> <span class="org-variable-name">tries_size</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">debug_info_off</span>;
+    <span class="org-type">uint</span> <span class="org-variable-name">insns_size</span>;            <span class="org-comment-delimiter">/* </span><span class="org-comment">instruction size, &#20197; 16 bits &#20026;&#21333;&#20301;</span><span class="org-comment-delimiter"> */</span>
+    <span class="org-type">ushort</span> <span class="org-variable-name">insns</span>[insns_size];   <span class="org-comment-delimiter">/*  </span><span class="org-comment">&#30495;&#27491;&#30340; byte code</span><span class="org-comment-delimiter">*/</span>
+};
+</pre>
+</div>
+<p>
+如果 tries_size 不为 0, 则 insns 后还会有另两部分和 exception 相关的内容:
+</p>
+<ol class="org-ol">
+<li>try_item_list</li>
+<li>encoded_catch_handler_list</li>
+</ol>
+
+<p>
+这两个 list 对应着 exception table.
+</p>
+
+<p>
+其中 tries_item 为:
+</p>
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-type">try_item</span> {
+    <span class="org-comment-delimiter">// </span><span class="org-comment">catcher &#23545;&#24212;&#30340; start_addr</span>
+    <span class="org-type">uint</span> <span class="org-variable-name">start_addr</span>;
+    <span class="org-comment-delimiter">// </span><span class="org-comment">catcher &#23545;&#24212;&#30340; end_addr &#20026; start_addr + insn_count</span>
+    <span class="org-type">ushort</span> <span class="org-variable-name">insn_count</span>;
+    <span class="org-comment-delimiter">// </span><span class="org-comment">catcher &#30340;&#20301;&#32622;. &#20197;&#19978;&#19977;&#20010;&#20540;&#37117;&#26159;&#24403;&#21069; method &#20013;&#30340;&#30456;&#23545;&#22320;&#22336;</span>
+    <span class="org-type">ushort</span> <span class="org-variable-name">handler_off</span>;
+}
+</pre>
+</div>
+
+<p>
+根据 handler_off 可以找到 encoded_catch_handler, encoded_catch_handler
+结构比较啰嗦, 但基本信息为:
+</p>
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-type">encoded_type_addr_pair</span> {
+    <span class="org-comment-delimiter">// </span><span class="org-comment">catcher &#35201; catch &#30340;&#24322;&#24120;&#30340;&#31867;&#22411;</span>
+    <span class="org-type">uleb128</span> <span class="org-variable-name">type_idx</span>;
+    <span class="org-comment-delimiter">// </span><span class="org-comment">catcher &#30340;&#20195;&#30721;, &#20063;&#26159;&#30456;&#23545;&#22320;&#22336;</span>
+    <span class="org-type">uleb128</span> <span class="org-variable-name">addr</span>;
+};
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000024" class="outline-4">
+<h4 id="org0000024"><span class="section-number-4">1.1.8.</span> dex map list</h4>
+<div class="outline-text-4" id="text-1-1-8">
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-keyword">struct</span> <span class="org-type">map_list_type</span> {
+    <span class="org-type">uint</span> <span class="org-variable-name">size</span>;
+    <span class="org-keyword">struct</span> <span class="org-type">map_item_list</span> {
+        <span class="org-keyword">struct</span> <span class="org-type">map_item</span> {
+            <span class="org-keyword">enum</span> <span class="org-type">type</span>;
+            <span class="org-type">ushort</span> <span class="org-variable-name">unused</span>;
+            <span class="org-type">uint</span> <span class="org-variable-name">size</span>;
+            <span class="org-type">uint</span> <span class="org-variable-name">offset</span>;
+        } [size];
+    };
+};
+</pre>
+</div>
+
+<p>
+`This is a list of the entire contents of a file, in order. It contains
+some redundancy with respect to the header_item but is intended to be
+an easy form to use to iterate over an entire file.`
+</p>
+
+<p>
+map_list 中保存着许多不同类型的 entry 对应的 offset, 与 header_item 有些重复,
+例如以下类型的 entry 在 header_item 中也是存在的
+</p>
+
+<ul class="org-ul">
+<li>TYPE_TYPE_ID_ITEM</li>
+<li>TYPE_PROTO_ID_ITEM</li>
+<li>TYPE_FIELD_ID_ITEM</li>
+<li>&#x2026;</li>
+</ul>
+
+<p>
+但它也可以包含以下类型:
+</p>
+
+<ul class="org-ul">
+<li>TYPE_CLASS_DATA_ITEM</li>
+<li>TYPE_CODE_ITEM</li>
+<li>TYPE_STRING_DATA_ITEM</li>
+<li>&#x2026;</li>
+</ul>
+
+<p>
+这些数据在 header_item 是不存在的, 以 CLASS_DATA_ITEM 为例, 如果不使用中 map_list, 必须通过 header_item -&gt; class_def_item -&gt; class_data_item
+这条路径才能找到. 有了 map_list, 代码可以用一种更简单一致的方法来遍历整个 dex 文件.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000030" class="outline-3">
+<h3 id="org0000030"><span class="section-number-3">1.2.</span> odex 文件结构</h3>
+<div class="outline-text-3" id="text-1-2">
+<p>
+odex 文件对 dex 做了如下的修改:
+</p>
+<ol class="org-ol">
+<li>文件开头加入一个 odex header</li>
+<li>dex 文件本身会被修改, 例如 xxx =&gt; xxx_quick</li>
+<li>在文件末尾加入两个数据结构: classLookup 与 registerMapPool</li>
+</ol>
+</div>
+
+<div id="outline-container-org000002a" class="outline-4">
+<h4 id="org000002a"><span class="section-number-4">1.2.1.</span> classLookup</h4>
+</div>
+
+<div id="outline-container-org000002d" class="outline-4">
+<h4 id="org000002d"><span class="section-number-4">1.2.2.</span> registerMap</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<p>
+register map 主要用来帮助 dvm 知道在每个函数的每个 GC Point 处当前各个寄存器中哪些保存着 java 对象.以便进行 exact GC. register map 导致 odex
+比 dex 大了 9% 左右.
+</p>
+
+<p>
+在 Hotspot 中, 也有一个类似的结构称为 OopMap
+</p>
+
+<p>
+若没有这个 map, 则 GC 只能进行 conservative GC, 即 GC 时 dvm 只能假设当前所有寄存器中都保存着对象引用, 从而导致一些本来已经是 garbage 的对象没有被回收. (例如 r1 本来保存着一个整数 0xxxxx, 但这个整数刚好对应着某个已经不可达的对象的地址, 那么这个对象就会被重新标记为可达).
+</p>
+
+<p>
+conservative GC 可能通过堆内存上下界检查, 对齐检查 (java 对象都是 8 字节对齐) 等方法过滤掉一些明显不可能是引用的值. 但它相对于 exact GC 还是有两方面明显的问题:
+</p>
+<ol class="org-ol">
+<li>某些对象不会被回收, 导致内存压力</li>
+<li>无法支持 copying GC.</li>
+</ol>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-org0000033" class="outline-3">
+<h3 id="org0000033"><span class="section-number-3">1.3.</span> class 文件结构</h3>
+</div>
+
+<div id="outline-container-org0000036" class="outline-3">
+<h3 id="org0000036"><span class="section-number-3">1.4.</span> DexFile 与 DvmDex</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+dalvik 在扫描 class path 时, 会负责将所有的 odex 文件 parse 一遍. parse
+的过程基本是:
+</p>
+
+<ol class="org-ol">
+<li>通过 mmap 将 odex 映射到内存 A</li>
+<li>生成 DexFile 结构, 将其成员设置为到 A 各个区域的指针</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-text">pDexFile-&gt;pStringIds = (const DexStringId*) (A + pHeader-&gt;stringIdsOff);
+pDexFile-&gt;pTypeIds = (const DexTypeId*) (A + pHeader-&gt;typeIdsOff);
+pDexFile-&gt;pFieldIds = (const DexFieldId*) (A + pHeader-&gt;fieldIdsOff);
+pDexFile-&gt;pMethodIds = (const DexMethodId*) (A + pHeader-&gt;methodIdsOff);
+pDexFile-&gt;pProtoIds = (const DexProtoId*) (A + pHeader-&gt;protoIdsOff);
+pDexFile-&gt;pClassDefs = (const DexClassDef*) (A + pHeader-&gt;classDefsOff);
+pDexFile-&gt;pLinkData = (const DexLink*) (A + pHeader-&gt;linkOff);
+</pre>
+</div>
+
+<ol class="org-ol">
+<li><p>
+生成 DvmDex 结构
+</p>
+
+<p>
+这个结构实际就是 procmem 时显示的 "dalvik-aux-structure".这是一个辅助的数据结构: 因为 DexFile 基本是直接映射了 odex 文件, 里面的内容都是一些 "ID", 但实际执行时程序需要的通常不是 "ID", 而是真正的内容,
+这时 DvmDex 相当于一个将 "ID" 映射为真正内容的一个 cache: cache 中包括 StringObject, ClassObject, Method, Field 等内容.
+</p>
+
+<p>
+以 dvmResolveClass 为例:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-text">dvmResolveClass
+  resClass = dvmDexGetResolvedClass(pDvmDex, classIdx);
+    return pDvmDex-&gt;pResClasses[classIdx];
+  if (resClass != NULL):
+    return resClass;
+</pre>
+</div></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000044" class="outline-3">
+<h3 id="org0000044"><span class="section-number-3">1.5.</span> dexopt</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+dexopt is located in dalvik/dexopt/OptMain.cpp
+</p>
+</div>
+
+<div id="outline-container-org000003b" class="outline-4">
+<h4 id="org000003b"><span class="section-number-4">1.5.1.</span> dexopt 的作用</h4>
+<div class="outline-text-4" id="text-1-5-1">
+<ul class="org-ul">
+<li>verification</li>
+
+<li>optimization
+/dalvik/vm/analysis/Optimize.cpp::optimizeMethod
+
+<ol class="org-ol">
+<li><p>
+quick 替换 与 符号解析
+</p>
+
+<p>
+将本来 java 在类加载时完成的符号解析的工作拿出来,提前将符号解析出来, 并且使用相应的 `quick' 指令代替原来的基于常量池符号引用的指令,
+例如: 将之前的
+</p>
+
+<pre class="example" id="org0000039">
+invoke-virtual {v0,v1},Ljava/io/PrintStream;-&gt;println(Ljava/lang/String;)V
+</pre>
+
+<p>
+替换为
+</p>
+
+<pre class="example" id="org000003a">
+invoke-virtual-quick {v0,v1},vtable #0x3b
+</pre></li>
+
+<li>inline method</li>
+
+<li>&#x2026;</li>
+</ol></li>
+
+<li>register map</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000003e" class="outline-4">
+<h4 id="org000003e"><span class="section-number-4">1.5.2.</span> There are three ways to launch dexopt</h4>
+<div class="outline-text-4" id="text-1-5-2">
+<ol class="org-ol">
+<li>From the VM.  This takes a dozen args, one of which is a file
+descriptor that acts as both input and output.  This allows us to
+remain ignorant of where the DEX data originally came from.</li>
+
+<li>From installd or another native application.  Pass in a file
+descriptor for a zip file, a file descriptor for the output, and a
+filename for debug messages.  Many assumptions are made about
+what's going on (verification + optimization are enabled, boot
+class path is in BOOTCLASSPATH, etc).</li>
+
+<li>On the host during a build for preoptimization. This behaves almost
+the same as (2), except it takes file names instead of file
+descriptors.</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000041" class="outline-4">
+<h4 id="org0000041"><span class="section-number-4">1.5.3.</span> dex 何时被 dexopt</h4>
+<div class="outline-text-4" id="text-1-5-3">
+<ol class="org-ol">
+<li>zygote 启动时
+zygote 启动时会负责 boot class 的 dexopt (通过 dvmClassStartup -&gt;
+prepareCpe -&gt; dvmRawDexFileOpen)</li>
+<li>PMS.performBootDexOpt
+PMS 启动时</li>
+<li>AMS.ensurePackageDexOpt
+AMS 启动应用之前</li>
+<li>dvmRawDexFileOpen
+ClassLoader 初始化时</li>
+<li>app 被安装时</li>
+</ol>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000066" class="outline-3">
+<h3 id="org0000066"><span class="section-number-3">1.6.</span> load</h3>
+<div class="outline-text-3" id="text-1-6">
+</div>
+<div id="outline-container-org000004e" class="outline-4">
+<h4 id="org000004e"><span class="section-number-4">1.6.1.</span> ClassLoader</h4>
+<div class="outline-text-4" id="text-1-6-1">
+<p>
+ClassLoader 并不是一定要在 native 实现的, 有些 ClassLoader 是完全用
+Java 写的. 但 dalvik 的 ClassLoader 因为底层都依赖于 dex, 所以都是通过
+native 层的 DexFile (代表 dex), RawDexFile (代表 odex), DvmDex (代表
+auxiliary cache) 实现的.
+</p>
+
+<p>
+Java 层和 ClassLoader 相关的类主要有:
+</p>
+
+<ol class="org-ol">
+<li>VMClassLoader</li>
+<li>ClassLoader</li>
+<li>BootClassLoader</li>
+<li>BaseDexClassLoader</li>
+<li>PathClassLoader</li>
+</ol>
+
+
+<pre class="example" id="org0000047">
+
+                 -+-------------+
+                  | ClassLoader |
+                 -+-----+-------+
+                        |
+                        |
+          -+------------+-----------------+
+           |                              |
+           |                              |
+    -+-----+-----------+          -+------+-------------+
+     | BootClassLoader |           | BaseDexClassLoader |
+    -+-----+-----------+          -+------+-------------+
+           |                              |
+ comp      |                       comp   |
+-+---------+-----+                -+------+---+
+ | VMClassLoader |                 | DexFile  |
+-+---------+-----+                -+------+---+
+           |                              |
+           |                              |
+       native                         native
+
+
+</pre>
+</div>
+
+<div id="outline-container-org0000048" class="outline-5">
+<h5 id="org0000048"><span class="section-number-5">1.6.1.1.</span> PathClassLoader</h5>
+<div class="outline-text-5" id="text-1-6-1-1">
+<p>
+当 PathClassLoader 初始化时, 会初始化 DexFile, 相当的会设置对应的 odex 的路径.
+</p>
+
+<ol class="org-ol">
+<li>ContextImpl.getClassLoader 最终返回的是一个 PathClassLoader</li>
+
+<li><p>
+PathClassLoader 的构造函数
+</p>
+<div class="org-src-container">
+<pre class="src src-java"><span class="org-keyword">public</span> PathClassLoader(<span class="org-type">String</span> <span class="org-variable-name">dexPath</span>, ClassLoader parent) {
+    <span class="org-keyword">super</span>(dexPath, <span class="org-constant">null</span>, <span class="org-constant">null</span>, parent);
+}
+</pre>
+</div>
+
+<p>
+其中, 基类的第一个参数表示 apk/jar, 第二个参数表示
+optimizedDirectory, 表示 odex 放置在哪里, 以后查找和生成 odex 时会使用该目录, 若该参数为 null, 则表示使用默认的 `/data/dalvik-cache/`
+</p></li>
+
+<li><p>
+PathClassLoader 的基类: BaseDexClassLoader 的构造函数
+</p>
+<div class="org-src-container">
+<pre class="src src-java"><span class="org-keyword">public</span> BaseDexClassLoader(<span class="org-type">String</span> <span class="org-variable-name">dexPath</span>, <span class="org-type">File</span> <span class="org-variable-name">optimizedDirectory</span>,
+                          <span class="org-type">String</span> <span class="org-variable-name">libraryPath</span>, ClassLoader parent) {
+    <span class="org-keyword">super</span>(parent);
+    <span class="org-keyword">this</span>.originalPath = dexPath;
+    <span class="org-keyword">this</span>.pathList =
+        <span class="org-keyword">new</span> <span class="org-type">DexPathList</span>(<span class="org-keyword">this</span>, dexPath, libraryPath, optimizedDirectory);
+}
+
+</pre>
+</div>
+
+<p>
+其中 optimizedDirectory 为 null, 表示使用默认的 `/data/dalvik-cache/`
+</p></li>
+
+<li><p>
+DexPathList 构造函数
+</p>
+
+<div class="org-src-container">
+<pre class="src src-text">this.dexElements = makeDexElements(splitDexPath(dexPath), optimizedDirectory);
+  dex = loadDexFile(file, optimizedDirectory);
+    if (optimizedDirectory == null):
+      return new DexFile(file);
+        mCookie = openDexFile(sourceName, outputName, flags);
+          Dalvik_dalvik_system_DexFile_openDexFile(const u4* args,)
+            dvmRawDexFileOpen(sourceName, outputName, &amp;pRawDexFile,)
+              if (odexOutputName == NULL):
+                // &#29983;&#25104; odex &#23545;&#24212;&#30340;&#25991;&#20214;&#21517;.
+                cachedName = dexOptGenerateCacheFileName(fileName,  NULL);
+              optFd = dvmOpenCachedDexFile(fileName, cachedName, modTime,);
+              ...
+    else:
+      String optimizedPath = optimizedPathFor(file, optimizedDirectory);
+      return DexFile.loadDex(file.getPath(), optimizedPath, 0);
+
+</pre>
+</div></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org000004b" class="outline-5">
+<h5 id="org000004b"><span class="section-number-5">1.6.1.2.</span> BootClassLoader</h5>
+<div class="outline-text-5" id="text-1-6-1-2">
+<div class="org-src-container">
+<pre class="src src-text">app_process.main()
+  AndroidRuntime::start
+    AndroidRuntime::startVM
+      JNI_CreateJavaVM
+        dvmStartup
+          dvmClassStartup()
+            // bootClassPathStr &#21253;&#25324; core.jar, bouncycastle.jar ...
+            processClassPath(gDvm.bootClassPathStr, true);
+              foreach entry in bootClassPathStr:
+                prepareCpe(&amp;entry, isBootstrap);
+                  dvmRawDexFileOpen(cpe-&gt;fileName, NULL, &amp;pRawDexFile, isBootstrap);
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000051" class="outline-4">
+<h4 id="org0000051"><span class="section-number-4">1.6.2.</span> 双亲委派</h4>
+<div class="outline-text-4" id="text-1-6-2">
+<p>
+ClassLoader 这个基类主要作用是实现双亲委派
+</p>
+
+<div class="org-src-container">
+<pre class="src src-java"><span class="org-keyword">protected</span> <span class="org-type">Class</span>&lt;?&gt; <span class="org-function-name">loadClass</span>(<span class="org-type">String</span> <span class="org-variable-name">className</span>) {
+    <span class="org-type">Class</span>&lt;?&gt; <span class="org-variable-name">clazz</span> = findLoadedClass(className);
+
+    <span class="org-keyword">if</span> (clazz == <span class="org-constant">null</span>) {
+        <span class="org-keyword">try</span> {
+            clazz = parent.loadClass(className, <span class="org-constant">false</span>);
+        } <span class="org-keyword">catch</span> (ClassNotFoundException e) {
+            <span class="org-comment-delimiter">// </span><span class="org-comment">Don't want to see this.</span>
+        }
+
+        <span class="org-keyword">if</span> (clazz == <span class="org-constant">null</span>) {
+            clazz = findClass(className);
+        }
+    }
+    <span class="org-keyword">return</span> clazz;
+}
+</pre>
+</div>
+
+<p>
+ClassLoader 通过 parent 指针可以形成一棵树, BootClassLoader 是树根.
+</p>
+
+<p>
+在 dalvik 底层代码中并没有 BootClassLoader 这个东西: dalvik 通过把
+clazz-&gt;classLoader 置为 NULL 表示该 class 是由 BootClassLoader 加载的.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-text">/* defining class loader, or NULL for the "bootstrap" system loader */
+Object*         classLoader;
+</pre>
+</div>
+
+<p>
+简单起见, 我们假设 BaseDexClassLoader 的 parent 都是
+BootClassLoader, 所以 PathClassLoader 的 loadClass 会先调用
+BootClassLoader 的 loadClass:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-text">BootClassLoader.loadClass
+  BootClassLoader.findClass
+    VMClassLoader.loadClass(name, false);
+      // native, &#20854;&#20013; null &#34920;&#31034; ClassLoader &#20026; null, &#20197;
+      // &#20415;&#20174; bootstrap class &#20013;&#26597;&#25214;
+      clazz = dvmFindClassByName(nameObj, NULL, resolve);
+        dvmFindClassNoInit
+          dvmFindSystemClassNoInit
+            findClassNoInit(descriptor, null);
+</pre>
+</div>
+
+<p>
+若 BootClassLoader 没有找到 class, 则使用 BaseDexClassLoader 有加载
+</p>
+
+<div class="org-src-container">
+<pre class="src src-text">BaseDexClassLoader.findClass(String name)
+  Class c = pathList.findClass(name, suppressedExceptions);
+    Class clazz = dex.loadClassBinaryName(name, definingContext, suppressed);
+      DexFile.defineClassNative(name, loader, cookie);
+        // native
+        clazz = dvmDefineClass(pDvmDex, descriptor, loader);
+          findClassNoInit(descriptor, loader);
+</pre>
+</div>
+
+<p>
+无论是 VMClassLoader 或是 DexFile, 最终都通过 native 的
+findClassNoInit 进行 dex 的加载
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000060" class="outline-4">
+<h4 id="org0000060"><span class="section-number-4">1.6.3.</span> 类的加载</h4>
+<div class="outline-text-4" id="text-1-6-3">
+<p>
+和类加载相关的入口主要有:
+</p>
+<ol class="org-ol">
+<li>dvmFindClassNoInit
+<ol class="org-ol">
+<li>findClassNoInit</li>
+</ol></li>
+<li>dvmResolveClass</li>
+<li>java 层的 classForName</li>
+<li>java 层的 ClassLoader.loadClass</li>
+</ol>
+</div>
+
+<div id="outline-container-org0000054" class="outline-5">
+<h5 id="org0000054"><span class="section-number-5">1.6.3.1.</span> dvmFindClassNoInit</h5>
+<div class="outline-text-5" id="text-1-6-3-1">
+<p>
+dvmFindClassNoInit 较底层的加载类的方法, 它需要指定一个字符串来表示要加载的类, 以及一个 ClassLoader, 它作的基本上就是这么一件事:
+</p>
+<ol class="org-ol">
+<li>若 ClassLoader 为空, 则调用更底层的 findClassNoInit 从 boot class
+path 中加载类</li>
+<li>若 ClassLoader 不为空, 则通过反射去调用 java 层的
+ClassLoader.loadClass. 而后者会先通过双亲委派以 NULL 做为
+ClassLoader 再次调用 dvmFindClassNoInit (对应
+BootClassLoader.loadClass), 然后会通过 DexFile 调用 findClassNoInit</li>
+</ol>
+
+<p>
+后面提到的 dvmResolveClass 实际上就是把 ref 转换为字符串, 并且根据
+referrer 找到调用者的 ClassLoader 后直接调用 dvmFindClassNoInit. 而
+classForName 因为本身就使用字符串表示要加载的类, 所以它只需要找到调用者的 ClassLoader 后就可以直接调用 dvmFindClassNoInit
+</p>
+
+<div class="org-src-container">
+<pre class="src src-text">dvmFindClassNoInit(className, referrer-&gt;classLoader);
+  // &#27492;&#26102; loader &#19981;&#20026;&#31354;, &#23427;&#23545;&#24212;&#30340;&#26159; app &#30340; BaseDexClassLoader,
+  // &#25152;&#20197;&#20250;&#35843;&#29992; findClassFromLoaderNoInit
+  if (loader != NULL):
+    return findClassFromLoaderNoInit(descriptor, loader);
+      // &#22312;&#35843;&#29992; class loader &#20043;&#21069;, &#36890;&#36807; dvmLookupClass &#20174; gDvm.loadedClasses &#20013;
+      // &#26597;&#25214;&#35201;&#21152;&#36733;&#30340; class &#26159;&#21542;&#24050;&#32463;&#21152;&#36733;, found &#30340;&#26465;&#20214;&#26377;&#20004;&#20010;:
+      // 1. loadedClasses &#20013;&#23384;&#22312;&#19968;&#20010; class, class-&gt;descriptor &#21644; class-&gt;loader &#19982;
+      // &#21442;&#25968;&#20013;&#30340;&#20540;&#37117;&#26159;&#19968;&#33268;&#30340;.
+      // 2. loadedClasses &#20013;&#23384;&#22312;&#19968;&#20010; class, class-&gt;descriptor &#26159;&#19968;&#33268;&#30340;, class-&gt;initiatingLoaderList
+      // &#20013;&#21253;&#21547;&#21442;&#25968;&#20013;&#30340; loader
+      ClassObject* clazz = dvmLookupClass(descriptor, loader, false);
+      // ClassLoader &#24320;&#22987;&#24037;&#20316;
+      // &#35843;&#29992; ClassLoader.java &#30340; loadClass &#20989;&#25968;
+      const Method* loadClass =
+        loader-&gt;clazz-&gt;vtable[gDvm.voffJavaLangClassLoader_loadClass];
+      dvmCallMethod(self, loadClass, loader, &amp;result, nameObj);
+        // &#21452;&#20146;&#22996;&#27966;&#23548;&#33268; ClassLoader.loadClass &#34987;&#35843;&#29992;
+        // BootClassLoader &#23548;&#33268; dvmFindClassNoInit &#20877;&#27425;&#34987;&#35843;&#29992;, &#20294;&#26159;
+        // loader &#21442;&#25968;&#20026; null
+        ClassLoader.loadClass
+          BootClassLoader.loadClass
+            dvmFindClassNoInit(className, null);
+              return dvmFindSystemClassNoInit(descriptor);
+                // &#36825;&#20010;&#21644;&#21452;&#20146;&#22996;&#27966;&#26080;&#20851;, &#30452;&#25509;&#20351;&#29992; dexFile &#26469;&#30495;&#27491;&#21152;&#36733;&#31867;
+                findClassNoInit(descriptor, NULL, NULL);
+                  clazz = dvmLookupClass(descriptor, loader, true);
+                  if (clazz == NULL):
+                    // !!! THE HARD WORK !!!
+                    clazz = loadClassFromDex(pDvmDex, pClassDef, loader);
+                    dvmAddClassToHash(clazz);
+                    // &#21518;&#38754;&#30340;&#37096;&#20998;&#21442;&#32771; &lt;oo.org: findClassNoInit&gt;
+          // &#33509; BootClassLoader.loadClass &#22833;&#36133;, &#35828;&#26126;&#36825;&#20010;&#31867;&#26159; BaseDexClassLoader
+          // &#23450;&#20041;&#30340;, &#21452;&#20146;&#22996;&#27966;&#20250;&#35843;&#29992; BaseDexClassLoader.findClass
+          BaseDexClassLoader.findClass
+            pathList.findClass(name);
+              findClassNoInit(className, loader);
+      // findClassFromLoaderNoInit &#26368;&#21518;&#20250;&#23558; loader &#21152;&#20837;&#21040; clazz &#30340; initiatingLoaderList &#20013;
+      // &#25152;&#35859;&#30340; initiatingLoaderList, &#26159;&#25351;&#24403;&#21069; class &#30340;&#21152;&#36733;&#26159;&#30001;&#36825;&#20010; loader &#21457;&#36215;&#30340;, &#22240;&#20026;&#26368;&#32456;
+      // &#36127;&#36131;&#21152;&#36733;&#30340; loader (clazz-&gt;loader) &#21487;&#33021;&#24182;&#19981;&#26159;&#36825;&#20010; loader. &#36825;&#20010; initiatingLoaderList &#22312; dvmLookupClass
+      // &#20250;&#29992;&#21040;.
+      dvmAddInitiatingLoader(clazz, loader);
+      // end of findClassFromLoaderNoInit
+  else:
+    dvmFindSystemClassNoInit(descriptor);
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000057" class="outline-5">
+<h5 id="org0000057"><span class="section-number-5">1.6.3.2.</span> dvmResolveClass 是 byte code 中加载 class 的入口 (因为它使用 ref 指示 class</h5>
+<div class="outline-text-5" id="text-1-6-3-2">
+<p>
+而且不是 class 名)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-text">HANDLE_OPCODE(OP_NEW_INSTANCE /*vAA, class@BBBB*/)
+  clazz = dvmResolveClass(curMethod-&gt;clazz, ref, false);
+    dvmResolveClass(referrer, ref, init)
+      // referrer-&gt;classLoader &#35843;&#29992;&#35813;&#20195;&#30721;&#30340;&#23545;&#35937;&#20351;&#29992;&#30340; BaseDexClassLoader
+      // jvm spec &#35268;&#23450;&#20102;&#33509; A &#30001; cl &#21152;&#36733;, &#21017; A-&gt;B &#26102;&#20063;&#35201;&#30001; cl &#36127;&#36131;&#21152;&#36733; B
+      dvmFindClassNoInit(className, referrer-&gt;classLoader);
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000005a" class="outline-5">
+<h5 id="org000005a"><span class="section-number-5">1.6.3.3.</span> classForName</h5>
+<div class="outline-text-5" id="text-1-6-3-3">
+<p>
+classForName 即 Class.forName(str, classLoader), 若不指定 classLoader,
+根据 jvm 规范, 当前方法所属的 class 的 classLoader 负责加载这个类. 即像 dvmResolveClass 中展示的那样: curMethod-&gt;clazz-&gt;classLoader.
+</p>
+
+<p>
+这里有个问题: 若 Class.forName 在 java 层不指定 classLoader, 而要求
+jni 层像 dvmResolveClass 那样自己获得 curMethod-&gt;clazz-&gt;classLoader 是否可行? 不可行, 因为:
+</p>
+
+<p>
+若 classForName 对应的 native 函数 Dalvik_java_lang_Class_classForName
+方法调用 curMethod, curMethod 代表是当前 jni 方法, 而它的 clazz 是
+Class 类, 最终会使用 BootClassLoader 来加载, 这不是我们想要的.
+</p>
+
+<p>
+因此, java 层调用 classForName 时, 需要提交获得
+curMethod-&gt;clazz-&gt;classLoader, 并做为参数传给 findClassNoInit.
+</p>
+
+<p>
+而 java 层获得当前的 classLoader 是使用 native
+VMStack.getCallingClassLoader
+</p>
+
+<div class="org-src-container">
+<pre class="src src-text">VMStack.getCallingClassLoader
+  static void Dalvik_dalvik_system_VMStack_getCallingClassLoader
+    ClassObject* clazz = dvmGetCaller2Class(dvmThreadSelf()-&gt;interpSave.curFrame);
+      // dvmGetCaller2Class:  Get the caller's caller's class.  Pass in the current fp.
+      // &#25152;&#35859;&#30340; caller's caller's class, &#26159;&#36825;&#20040;&#22238;&#20107;:
+      // &#31532;&#19968;&#20010; caller &#26159;&#25351; &#35843;&#29992; VMStack &#30340; getCallingClassLoader &#36825;&#20010;&#26041;&#27861;&#30340;&#26041;&#27861;, &#21363;
+      // Class.forName &#26041;&#27861;, &#26174;&#28982;&#19981;&#26159;&#25105;&#20204;&#24819;&#35201;&#30340;.
+      // caller's caller &#26159;&#35843;&#29992; Class.forName &#30340;&#37027;&#20010;&#26041;&#27861;, &#26159;&#25105;&#20204;&#24819;&#35201;&#30340;.
+
+      // &#24403;&#21069;&#30340; frame &#23545;&#24212;&#30340;&#26159; getCallingClassLoader &#36825;&#20010; jni &#26041;&#27861;,
+      // prevFrame &#23545;&#24212; Class.forName &#26041;&#27861;
+      void* caller = SAVEAREA_FROM_FP(curFrame)-&gt;prevFrame;
+      callerCaller = dvmGetCallerFP(caller);
+        void* caller = SAVEAREA_FROM_FP(curFrame)-&gt;prevFrame;
+        if (dvmIsBreakFrame((u4*)caller)):
+          caller = SAVEAREA_FROM_FP(caller)-&gt;prevFrame;
+        return caller;
+      return SAVEAREA_FROM_FP(callerCaller)-&gt;method-&gt;clazz;
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000005d" class="outline-5">
+<h5 id="org000005d"><span class="section-number-5">1.6.3.4.</span> ClassLoader.loadClass</h5>
+<div class="outline-text-5" id="text-1-6-3-4">
+<p>
+ClassLoader.loadClass 可能比 classForName 快一些.
+因为 classForName 的调用路径是:
+</p>
+
+<ol class="org-ol">
+<li>先通过 jni 调用到 Dalvik_java_lang_Class_classForName</li>
+<li>然后调用到 dvmFindClassNoInit</li>
+<li>然后 dvmFindClassNoInit 通过 dvmCallMethod 反过来再调用
+ClassLoader.loadClass 进行双亲委派</li>
+</ol>
+
+<p>
+显然, 若直接调用 ClassLoader.loadClass 的话可以跳过前两步.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000063" class="outline-4">
+<h4 id="org0000063"><span class="section-number-4">1.6.4.</span> 总结</h4>
+<div class="outline-text-4" id="text-1-6-4">
+<ol class="org-ol">
+<li>对于 dvmResolveClass 和 classForName 都需要提交根据
+curMethod-&gt;clazz-&gt;classLoader 获得`定义当前 method 的 class 使用的
+classLoader`, 并使用这个 classLoader 调用 dvmFindClassNoInit, 这是
+jvm 规范要求的.</li>
+
+<li><p>
+dvmFindClassNoInit 加载类时, 要 classLoader 不为空, 则使用
+classLoader 来加载, 否则使用 dvmFindSystemClassNoInit 从 bootstrap
+classpath 中加载 (即从 `BootClassLoader` 中加载)
+</p>
+
+<p>
+通过 ClassLoader 加载时, java 层的双亲委派会优先使用 BootClassLoader 来加载, BootClassLoader 最终会通过 dvmFindSystemClassNoInit 来加载.
+</p>
+
+<p>
+若 BootClassLoader 没有加载成功, 则 BaseDexClassLoader 的 findClass 会负责通过 dvmDefineClass(pDvmDex, descriptor, loader) 在 app 自己的 dex
+中加载类.
+</p>
+
+<p>
+即 dvmFindClassNoInit 与 java 层的各种 ClassLoader 类实现了 dalvik 的双亲委派模型.
+</p></li>
+
+<li>最终 dex 都是通过 findClassNoInit 加载进来的. findClassNoInit 是负责从 ClassLoader 对应的 dexFile (若 ClassLoader 为空则从 boot class
+path) 中加载类, 它无须再考虑双亲委派.</li>
+
+<li><p>
+dvmFindClassNoInit 或 findClassNoInit 过程中, 都会用到
+dvmLookupClass 来避免重复的加载.
+</p>
+
+<p>
+dvmLookupClass 进行查找时考虑到 clazz-&gt;loader 因为双亲委派的原因可能不是真正发起类加载的那个 ClassLoader, 所以它使用了
+clazz-&gt;initiatingLoaderList 来记录这些信息.
+</p></li>
+</ol>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000075" class="outline-3">
+<h3 id="org0000075"><span class="section-number-3">1.7.</span> verify</h3>
+<div class="outline-text-3" id="text-1-7">
+<p>
+<a href="http://www.netmite.com/android/mydroid/dalvik/docs/verifier.html">http://www.netmite.com/android/mydroid/dalvik/docs/verifier.html</a>
+<a href="http://www.netmite.com/android/mydroid/dalvik/docs/dexopt.html">http://www.netmite.com/android/mydroid/dalvik/docs/dexopt.html</a>
+<a href="http://www.netmite.com/android/mydroid/dalvik/docs/embedded-vm-control.html">http://www.netmite.com/android/mydroid/dalvik/docs/embedded-vm-control.html</a>
+</p>
+
+<p>
+verify 的发生有两种场合:
+</p>
+<ol class="org-ol">
+<li>pre-verify</li>
+<li>dvmVerifyClass</li>
+</ol>
+</div>
+
+<div id="outline-container-org0000069" class="outline-4">
+<h4 id="org0000069"><span class="section-number-4">1.7.1.</span> pre-verify</h4>
+<div class="outline-text-4" id="text-1-7-1">
+<p>
+pre-verify 实际上指的就是 dexopt 时进行的 verify. 在默认配制下, dexopt
+会先对 dex 进行 verify, 然后再进行 optimization. 实际上, 默认配制下
+dexopt 要求必须先 verify 以后才能进行 optimization. 所以 pre-verify 发生的时机就是 dexopt 发生的时机: 例如通过 zygote 的 dvmClassStartup.
+</p>
+
+<p>
+通过 dexopt 的 pre-verify, odex 中的 class 对象的 CLASS_ISPREVERIFIED
+标志会被置位, 这个标记会阻止后续 dvminitclass 时的 dvmVerifyClass 调用.
+</p>
+
+<p>
+实际上, pre-verify, dexopt 合起来做为 dex 的 prepare
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000006c" class="outline-4">
+<h4 id="org000006c"><span class="section-number-4">1.7.2.</span> dvmVerifyClass</h4>
+<div class="outline-text-4" id="text-1-7-2">
+<p>
+通过 setprop dalvik.vm.verify-bytecode false, 可以禁用整个 dex prepare
+过程 (包括 pre-verify 和 dexopt). 若开机启动时因为这个 prop 没有进行
+verify, 但运行时通过 setprop dalvik.vm.verify-bytecode true 或直接通过
+dalvik 的启动参数 (-Xverify:all 或 -Xverify:remote) 重新启用了 verify,
+则在 class 初始化时, 会调用 dvmVerifyClass 进行 verify. 这种运行时的
+verify 会导致应用加载明显变慢 (可能 40% 以上)
+</p>
+
+<p>
+Xverify 参数接受三种值:
+</p>
+<ol class="org-ol">
+<li>all
+所有 class 被需要被 verify</li>
+<li>remote
+boot class 以外的 class 需要被 verify</li>
+<li>none
+任何 class 都不会被 verify</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000072" class="outline-4">
+<h4 id="org0000072"><span class="section-number-4">1.7.3.</span> 关于 verify 和 dexopt 的实验</h4>
+<div class="outline-text-4" id="text-1-7-3">
+<p>
+这里有一个 java 文件:
+</p>
+<div class="org-src-container">
+<pre class="src src-java"><span class="org-keyword">class</span> <span class="org-type">Test2</span> {
+    <span class="org-keyword">private</span> <span class="org-keyword">static</span> <span class="org-type">int</span> <span class="org-variable-name">a</span> = 10;
+}
+
+<span class="org-keyword">public</span> <span class="org-keyword">class</span> <span class="org-type">Test</span> {
+    <span class="org-keyword">public</span> <span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">main</span>(<span class="org-type">String</span>[] <span class="org-variable-name">args</span>) {
+        System.out.println(<span class="org-string">"hello: "</span>+Test2.a);
+    }
+}
+</pre>
+</div>
+
+<p>
+但这个 java 文件是编译不过, 为了让 javac 能生成这个语义的 class 文件(让
+class 中的 main 函数直接访问 Test2 的私有成员), 我们可以这样操作:
+</p>
+
+<ol class="org-ol">
+<li>把 private 暂时改为 public, javac Test.java</li>
+<li>把生成的 Test.class 保存起来</li>
+<li>把 public 变回 private, 但把 System.out.println 一行去掉, 然后
+javac Test.java, 把 Test2.class 保存起来</li>
+<li>把两次保存的 Test.class 和 Test2.class 打包为 Test.dex. 这样
+Test.dex 中就会包含 Test 访问 Test2 的私有变量这样的非法代码.</li>
+</ol>
+
+<p>
+在手机上用 dalvikvm 命令执行, 分别指定不同的 Xverify 和 Sexpot 参数:
+</p>
+
+<ol class="org-ol">
+<li>dalvikvm -Xverify:none -Xdexopt:all -cp Test.dex Test
+<ul class="org-ul">
+<li>dalvik-cache 下有 odex 生成, 且 Test 确实被优化了 (invoke-virtual
+被替换为 invoke-virtual-quick)</li>
+<li>程序正常输出 10</li>
+</ul></li>
+
+<li>dalvikvm -Xverify:all -Xdexopt:all -cp Test.dex Test
+<ul class="org-ul">
+<li>dalvik-cache 下有 odex 生成, 且 Test 被优化</li>
+<li><p>
+程序报错:
+</p>
+<div class="org-src-container">
+<pre class="src src-text">root@scx15_sp7715ga:/data # dalvikvm -Xverify:all -Xdexopt:all -cp Test.dex Te&gt;
+Unable to find static main(String[]) in 'Test'
+java.lang.VerifyError: Test
+        at dalvik.system.NativeStart.main(Native Method)
+java.lang.VerifyError: Test
+        at dalvik.system.NativeStart.main(Native Method)
+</pre>
+</div>
+
+<p>
+这里报错是因为: Xverify:all 会导致 dexopt 时进行 pre-verify, 但这里 verify 会失败, 所以 class 不会被标记为 PREVERIFIED, 但因为
+Xdexopt:all, 所以虽然 pre-verify 失败了, dexopt 还是会进行优化,
+最终 odex 中包括的 Test 类是优化后的结果.
+</p>
+
+<p>
+dvminitclass @ Class.cpp 中的这段代码:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++"><span class="org-keyword">if</span> (clazz-&gt;status &lt; CLASS_VERIFIED) {
+    <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+    <span class="org-keyword">if</span> (IS_CLASS_FLAG_SET(clazz, CLASS_ISOPTIMIZED)) {
+        ALOGW(<span class="org-string">"Class '%s' was optimized without verification; "</span>
+              <span class="org-string">"not verifying now"</span>,
+              clazz-&gt;descriptor);
+        ALOGW(<span class="org-string">"  ('rm /data/dalvik-cache/*' and restart to fix this)"</span>);
+        <span class="org-comment-delimiter">// </span><span class="org-comment">verify_failed &#22788;&#20250;&#25243;&#20986;&#24322;&#24120;</span>
+        <span class="org-keyword">goto</span> <span class="org-constant">verify_failed</span>;
+    }
+}
+</pre>
+</div>
+
+<p>
+会抛出上面的异常.
+</p>
+
+<p>
+即: 若 class 没有通过 verify 就被 dexopt, 则在 dvmInitClass 的阶段,
+dalvik 就会主动抛出异常. 这样做的原因可能是: 因为 code 已经被
+dexopt, 这里可能无法再 replaceFailingInstruction
+</p></li>
+</ul></li>
+
+<li>dalvikvm -Xverify:all -Xdexopt:none -cp Test.dex Test
+<ul class="org-ul">
+<li>dalvik-cache 下有 odex 生成, 但 Test 没有被优化</li>
+<li><p>
+程序报错:
+</p>
+<div class="org-src-container">
+<pre class="src src-text">root@scx15_sp7715ga:/data # dalvikvm -Xverify:all -Xdexopt:none -cp Test.dex T&gt;
+java.lang.IllegalAccessError: tried to access field Test2.a from class Test
+        at Test.main(Test.java:6)
+        at dalvik.system.NativeStart.main(Native Method)
+</pre>
+</div>
+
+<p>
+这里报错是因为:
+Xverify:all 会导致 pre-verify, 但 pre-verify 会失败, 导致后续
+dvmInitClass 还会再次调用 dvmVerifyClass 进行 late verify. (因为
+Xdexopt 为 none, 所以不会发生 case 2 的问题). late verify 时还是会失败, 这里会通过 replaceFailingInstruction 将原来的指令 (sget)
+替换为一个抛出异常的指令, 但这里做的仅仅是指令替换, 并不会直接抛出异常. 当被替换的指令直接执行时, 才会报错.
+</p></li>
+</ul></li>
+</ol>
+
+<p>
+综上:
+</p>
+<ol class="org-ol">
+<li>无法 Xdexopt 如何指定, odex 总是会生成, 但 Xdexopt 会影响 odex 中的代码是优化过的还是 dex 中的原始代码.</li>
+<li>Xverify 会影响 dexopt 时的 pre-verify 和 class 加载时的 late verify</li>
+<li>在 late verify 阶段, 若当前代码并没有被 dexopt 优化, 则会通过 replaceFailingInstruction 进行指令替换, 否则直接报错</li>
+<li>默认情况下 Xverify = all, Xdexopt = verified, 所以, 若一个类有问题,
+则会在运行时报错 (通过 replaceFailingInstruction), 而不是在 verify
+阶段 (pre-verify 或 late verify) 报错. 抛开 pre-verify, dexopt 这些不谈, java 的 verify 的功能本质上就是 replaceFailingInstruction</li>
+</ol>
+</div>
+
+<div id="outline-container-org000006f" class="outline-5">
+<h5 id="org000006f"><span class="section-number-5">1.7.3.1.</span> 关于 replaceFailingInstruction</h5>
+<div class="outline-text-5" id="text-1-7-3-1">
+<p>
+在 pre-verify 阶段, 即使 verify 失败, 也不会进行
+replaceFailingInstruction 的, 因为:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c++">verifyInstruction @ CodeVerify.cpp
+<span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+<span class="org-keyword">if</span> (<span class="org-negation-char">!</span>VERIFY_OK(failure)) {
+    <span class="org-comment-delimiter">// </span><span class="org-comment">&#22312; pre-verify &#38454;&#27573;, gDvm.optimizing &#20026; true</span>
+    <span class="org-keyword">if</span> (failure == VERIFY_ERROR_GENERIC || gDvm.optimizing) {
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">immediate failure, reject class</span><span class="org-comment-delimiter"> */</span>
+        LOG_VFY_METH(meth, <span class="org-string">"VFY:  rejecting opcode 0x%02x at 0x%04x"</span>,
+                     decInsn.opcode, insnIdx);
+        <span class="org-keyword">goto</span> <span class="org-constant">bail</span>;
+    } <span class="org-keyword">else</span> {
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">replace opcode and continue on</span><span class="org-comment-delimiter"> */</span>
+        ALOGD(<span class="org-string">"VFY: replacing opcode 0x%02x at 0x%04x"</span>,
+              decInsn.opcode, insnIdx);
+        <span class="org-keyword">if</span> (<span class="org-negation-char">!</span>replaceFailingInstruction(meth, insnFlags, insnIdx, failure)) {
+            LOG_VFY_METH(meth, <span class="org-string">"VFY:  rejecting opcode 0x%02x at 0x%04x"</span>,
+                         decInsn.opcode, insnIdx);
+            <span class="org-keyword">goto</span> <span class="org-constant">bail</span>;
+        }
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">IMPORTANT: meth-&gt;insns may have been changed</span><span class="org-comment-delimiter"> */</span>
+        insns = meth-&gt;insns + insnIdx;
+
+        <span class="org-comment-delimiter">/* </span><span class="org-comment">continue on as if we just handled a throw-verification-error</span><span class="org-comment-delimiter"> */</span>
+        failure = VERIFY_ERROR_NONE;
+        nextFlags = kInstrCanThrow;
+    }
+}
+</pre>
+</div>
+
+<p>
+replaceFailingInstruction 需要修改 odex 映射的内存, 而不是 odex 本身.
+因为 odex 都是以只读方式进行 mmap 的, 所以 replaceFailingInstruction
+需要先修改 mmap 区域的权限, 再进行写操作, 这会导致额外的内存开销.
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: sunway@dogdog.run<br />
+Date: <br />
+Last updated: 2024-05-10 Fri 17:03</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
