@@ -13,14 +13,14 @@
 <link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
 <link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
 <link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
-<!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script> -->
-<!-- <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script> -->
-<!-- <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script> -->
-<!-- <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script> -->
-<!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script> -->
-<!-- <link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
-     <link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
-     <link rel="stylesheet" type="text/css" href="./main.css" media="screen" /> -->
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
 <link rel = "icon" href = "/icon.png"  type = "image/x-icon">
 </head>
 <body>
@@ -30,14 +30,43 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents" role="doc-toc">
 <ul>
-<li><a href="#org0000000">1. SHA256: ARM vs. RISC-V</a></li>
+<li><a href="#org000000c">1. SHA256: ARM vs. RISC-V</a>
+<ul>
+<li><a href="#org0000000">1.1. stack spilling</a></li>
+<li><a href="#org0000003">1.2. arm shifting bits</a></li>
+<li><a href="#org0000006">1.3. rolw</a></li>
+<li><a href="#org0000009">1.4. sched-pressure</a></li>
+</ul>
+</li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-org0000000" class="outline-2">
-<h2 id="org0000000"><span class="section-number-2">1.</span> SHA256: ARM vs. RISC-V</h2>
+<div id="outline-container-org000000c" class="outline-2">
+<h2 id="org000000c"><span class="section-number-2">1.</span> SHA256: ARM vs. RISC-V</h2>
 <div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org0000000" class="outline-3">
+<h3 id="org0000000"><span class="section-number-3">1.1.</span> stack spilling</h3>
+<div class="outline-text-3" id="text-1-1">
+<p>
+commit e919fae01b89fa6d7fc742d140bb15dc2600becb
+</p>
+
+<p>
+gcc 本意是通过 fmv 指令做 register spilling, 由于 fmv 的 cost 设置的较小, gcc 生成了大量的 register spilling, 但最终可能是因为 gcc 有什么 bug, 并没有生成 fmv 指令.
+</p>
+
+<p>
+这笔提交增大了 fmv 的 cost, 间接减少了 register spilling, 指令减少了 ~1700 条
+(4400 -&gt; 2700)
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000003" class="outline-3">
+<h3 id="org0000003"><span class="section-number-3">1.2.</span> arm shifting bits</h3>
+<div class="outline-text-3" id="text-1-2">
 <p>
 <a href="https://godbolt.org/z/h6rEc179r">https://godbolt.org/z/h6rEc179r</a>
 </p>
@@ -71,12 +100,14 @@ SHA256_STEP 函数的指令对比:
 <td>eor w1, w1, w3, ror 6</td>
 <td>roriw a5,a3,6</td>
 </tr>
+
 <tr>
-<td></td>
+<td>&#xa0;</td>
 <td>xor a5,a5,a6</td>
 </tr>
+
 <tr>
-<td></td>
+<td>&#xa0;</td>
 <td>sext.w a5,a5</td>
 </tr>
 </tbody>
@@ -137,8 +168,9 @@ SHA256_STEP 函数的指令对比:
 <td>mov w1, 12184</td>
 <td>li a5,1116352512</td>
 </tr>
+
 <tr>
-<td>movk</td>
+<td>movk w1, 0x428a, lsl 16</td>
 <td>addiw a5,a5,-104</td>
 </tr>
 </tbody>
@@ -223,7 +255,6 @@ SHA256_STEP 函数的指令对比:
 </tr>
 </tbody>
 </table>
-
 <p>
 arm 与 riscv 主要的区别在于 <code>a ^ ror(b)</code> 这个操作:
 </p>
@@ -233,6 +264,20 @@ arm 的 xor 支持 shifting bits (例如 ` eor &#x2026;., <code>ror 2</code> `),
 xor, riscv 则需要先 ror 再 xor
 </p>
 
+<p>
+总的来说一条 arm64 带 shifting bits 的 eor 指令相当于 2+ 条 riscv 指令, 在完整测试中, 这类指令有 450 占总条数(2729-1917=800) 的 56%
+</p>
+
+<p>
+剩下的 44% 里 arm 的 ldp/stp 还能贡献 30 条 (一条 arm ldp/stp 相当于两个 riscv
+ld/sd 指令)
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000006" class="outline-3">
+<h3 id="org0000006"><span class="section-number-3">1.3.</span> rolw</h3>
+<div class="outline-text-3" id="text-1-3">
 <p>
 在 <a href="https://godbolt.org/z/j3nGK8q1c">https://godbolt.org/z/j3nGK8q1c</a> 使用 `-O2` 测试完整代码时与上面的简单测试有些不同, 例如:
 </p>
@@ -245,14 +290,31 @@ spilling.</li>
 </ol>
 
 <p>
-总的来说一条 arm64 带 shifting bits 的 eor 指令相当于 2+ 条 riscv 指令, 在完整测试中, `, ror ` 形式的指令有 352 条, 导致仅这一项 riscv 就会比 arm 多 ~400 条指令,
-占总条数(2729-1917=800) 的 50%
+commit 0ccf520d349a82dafca0deb3d307a1080e8589a
 </p>
 
 <p>
-剩下的 50% 里 arm 的 ldp/stp 还能贡献 30 条 (一条 arm ldp/stp 相当于两个 riscv
-ld/sd 指令), 其它的暂时无从考证
+这笔提交用 roriw 代替 rolw, 降低了 RA 的压力, 最终减少了 100+ 条指令
 </p>
+</div>
+</div>
+
+<div id="outline-container-org0000009" class="outline-3">
+<h3 id="org0000009"><span class="section-number-3">1.4.</span> sched-pressure</h3>
+<div class="outline-text-3" id="text-1-4">
+<p>
+commit a047513c9222f14adc6e5a015e038b207bb9a653
+</p>
+
+<p>
+这笔提交默认打开了 `-fsched-pressure`, 降低了 RA 的压力, 最张减少了 100+ 条指令.
+</p>
+
+<p>
+最终指令数为 2400+ 条, 和 arm 基本相当(除了 shifting bits, ldp 等已知问题导致的
+500+ 条指令差异)
+</p>
+</div>
 </div>
 </div>
 </div>
@@ -260,7 +322,7 @@ ld/sd 指令), 其它的暂时无从考证
 
 <p class="author">Author: sunway@dogdog.run<br />
 Date: 2024-07-24 Wed 10:47<br />
-Last updated: 2024-07-24 Wed 12:09</p>
+Last updated: 2024-07-30 Tue 14:13</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
