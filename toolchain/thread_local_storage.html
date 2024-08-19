@@ -35,27 +35,27 @@
 <ul>
 <li><a href="#org0000035">1. Thread Local Storage</a>
 <ul>
-<li><a href="#org0000011">1.1. android tls</a>
+<li><a href="#ID-feaec5ac-bf34-486a-a5e3-a981b75f55e8">1.1. elf_tls</a>
 <ul>
-<li><a href="#org0000001">1.1.1. tls slot</a></li>
-<li><a href="#org0000008">1.1.2. emutls</a></li>
-<li><a href="#org000000b">1.1.3. pthread_tls</a></li>
-<li><a href="#org000000e">1.1.4. errno</a></li>
+<li><a href="#org0000015">1.1.1. arm</a></li>
+<li><a href="#org0000019">1.1.2. riscv</a></li>
+<li><a href="#org000001c">1.1.3. pthread_tls</a></li>
+<li><a href="#org0000021">1.1.4. dso</a></li>
 </ul>
 </li>
-<li><a href="#ID-feaec5ac-bf34-486a-a5e3-a981b75f55e8">1.2. elf_tls</a>
+<li><a href="#org0000032">1.2. emutls</a>
 <ul>
-<li><a href="#org0000015">1.2.1. arm</a></li>
-<li><a href="#org0000019">1.2.2. riscv</a></li>
-<li><a href="#org000001c">1.2.3. pthread_tls</a></li>
-<li><a href="#org0000021">1.2.4. dso</a></li>
+<li><a href="#org0000028">1.2.1. __emutls_v</a></li>
+<li><a href="#org000002b">1.2.2. __emutls_t</a></li>
+<li><a href="#org000002f">1.2.3. example</a></li>
 </ul>
 </li>
-<li><a href="#org0000032">1.3. emutls</a>
+<li><a href="#org0000011">1.3. android tls</a>
 <ul>
-<li><a href="#org0000028">1.3.1. __emutls_v</a></li>
-<li><a href="#org000002b">1.3.2. __emutls_t</a></li>
-<li><a href="#org000002f">1.3.3. example</a></li>
+<li><a href="#org0000001">1.3.1. tls slot</a></li>
+<li><a href="#org0000029">1.3.2. emutls</a></li>
+<li><a href="#org000002c">1.3.3. pthread_tls</a></li>
+<li><a href="#org000000e">1.3.4. errno</a></li>
 </ul>
 </li>
 </ul>
@@ -68,218 +68,24 @@
 <h2 id="org0000035"><span class="section-number-2">1.</span> Thread Local Storage</h2>
 <div class="outline-text-2" id="text-1">
 <p>
-使用 tls 主要有两种方式:
+使用 tls 主要有几种方式:
 </p>
 
 <ol class="org-ol">
 <li>使用 __thread (gcc 扩展) 或 thread_local (c++11) 关键字.</li>
 <li>使用 pthread</li>
+<li>直接使用某个 tls slot, 例如 errno</li>
 </ol>
 
 <p>
-它们对应不同的 tls slot, 具体的 tls 实现可以是 elf_tls 或 emutls, 前者使用
-thread_pointer 寄存器, 后者使用 emutls 来模拟
+它们对应不同的 tls slot. 具体的 tls 实现可以是 elf_tls 或 emutls, 前者使用
+thread_pointer 寄存器保存 tls slot 的地址, 后者使用 emutls 模拟 thread_pointer
 </p>
-</div>
-
-<div id="outline-container-org0000011" class="outline-3">
-<h3 id="org0000011"><span class="section-number-3">1.1.</span> android tls</h3>
-<div class="outline-text-3" id="text-1-1">
-<p>
-android 使用 emutls, 但 emutls 底层还是会使用 thread pointer 寄存器 (tpidr_el0),
-而不是用模拟的方式.
-</p>
-
-<pre class="example" id="org0000000">
-
-                    +-----------------+
-thread_pointer ---&gt; | slot_self       |
-                    +-----------------+      +-----------------+
-                    | slot_pthread_id | ---&gt; | key_emutls      | &lt;--- emutls
-                    +-----------------+      +-----------------+
-                    | slot_errno      |      | key_xxx         | &lt;--- pthread_tls
-                    +-----------------+      +-----------------+
-                    | ...             |      | ...             |
-                    +-----------------+      +-----------------+
-
-
-</pre>
-</div>
-
-<div id="outline-container-org0000001" class="outline-4">
-<h4 id="org0000001"><span class="section-number-4">1.1.1.</span> tls slot</h4>
-<div class="outline-text-4" id="text-1-1-1">
-<p>
-tls 会指向一块和线程相关的内存, 这块内存相当于一个 `void *[N]`, 称为 tls_slot,
-slot 中的每个指针指向不同的 buffer, 常用的 slot 有:
-</p>
-
-<ol class="org-ol">
-<li><p>
-SLOT_SELF
-</p>
-
-<p>
-elf_tls 使用这个 slot
-</p></li>
-
-<li><p>
-SLOT_THREAD_ID
-</p>
-
-<p>
-pthread_tls 使用这个 slot
-</p></li>
-
-<li><p>
-SLOT_ERRNO
-</p>
-
-<p>
-errno 使用这个 slot
-</p></li>
-</ol>
-</div>
-</div>
-
-<div id="outline-container-org0000008" class="outline-4">
-<h4 id="org0000008"><span class="section-number-4">1.1.2.</span> emutls</h4>
-<div class="outline-text-4" id="text-1-1-2">
-<p>
-android toolchain 使用 emutls 来支持 `__thread` 关键字. 但它并非模拟的, 而是使用真实的 thread_pointer. gcc 的 emutls 实现在 <a href="libgcc.html#ID-27a07646-18c6-4504-b36e-a5d63871a0d2">libgcc</a> 中, clang 的实现在
-libcompiler_rt
-</p>
-
-<p>
-emutls 使用 pthread_tls 实现. emutls 底层对应 pthread_tls 的一个 key
-</p>
-
-<div class="org-src-container">
-<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;errno.h&gt;</span>
-
-__thread <span class="org-type">int</span> <span class="org-variable-name">xxx</span> = 1;
-__thread <span class="org-type">int</span> <span class="org-variable-name">yyy</span> = 1;
-__thread <span class="org-type">int</span> <span class="org-variable-name">zzz</span> = 1;
-
-<span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]) {
-  xxx = yyy + zzz;
-  <span class="org-keyword">return</span> 0;
-}
-
-</pre>
-</div>
-
-<pre class="example" id="org0000004">
-$&gt; aarch64-linux-android-gcc test.c -O0 -g3  -fPIE -pie
-$&gt; aarch64-linux-android-objdump -D ./a.out
-
-0000000000000be8 &lt;main&gt;:
- be8:	a9bd7bfd 	stp	x29, x30, [sp,#-48]!
- bec:	910003fd 	mov	x29, sp
- bf0:	f9000bf3 	str	x19, [sp,#16]
- bf4:	b9002fa0 	str	w0, [x29,#44]
- bf8:	f90013a1 	str	x1, [x29,#32]
- bfc:	d0000080 	adrp	x0, 12000 &lt;__dso_handle&gt;
- c00:	9100a000 	add	x0, x0, #0x28
- c04:	94000055 	bl	d58 &lt;__emutls_get_address&gt;
- c08:	b9400013 	ldr	w19, [x0]
- c0c:	d0000080 	adrp	x0, 12000 &lt;__dso_handle&gt;
- c10:	91002000 	add	x0, x0, #0x8
- c14:	94000051 	bl	d58 &lt;__emutls_get_address&gt;
- c18:	b9400000 	ldr	w0, [x0]
- c1c:	0b000273 	add	w19, w19, w0
- c20:	d0000080 	adrp	x0, 12000 &lt;__dso_handle&gt;
- c24:	91012000 	add	x0, x0, #0x48
- c28:	9400004c 	bl	d58 &lt;__emutls_get_address&gt;
- c2c:	b9000013 	str	w19, [x0]
-
-// 其中 __emutls_get_address 表示使用了 libgcc 提供的 emutls
-
-</pre>
-</div>
-
-<div id="outline-container-org0000005" class="outline-5">
-<h5 id="org0000005"><span class="section-number-5">1.1.2.1.</span> __emutls_get_address</h5>
-<div class="outline-text-5" id="text-1-1-2-1">
-<div class="org-src-container">
-<pre class="src src-c">libcompiler_rt::emutls.c
-
-  <span class="org-type">void</span>* __emutls_get_address(<span class="org-type">__emutls_control</span>* <span class="org-variable-name">control</span>)
-    <span class="org-type">uintptr_t</span> <span class="org-variable-name">index</span> = emutls_get_index(control);
-    <span class="org-type">emutls_address_array</span>* <span class="org-variable-name">array</span> = emutls_get_address_array(index);
-      <span class="org-type">emutls_address_array</span>* <span class="org-variable-name">array</span> = pthread_getspecific(emutls_pthread_key);
-    <span class="org-keyword">return</span> array-&gt;data[index - 1];
-
-  <span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">emutls_init</span>(<span class="org-type">void</span>):
-    pthread_key_create(&amp;emutls_pthread_key, emutls_key_destructor)
-</pre>
-</div>
-
-<p>
-可见 android 的 emutls 是依赖 pthread_tls 来实现的.
-</p>
-</div>
-</div>
-</div>
-
-<div id="outline-container-org000000b" class="outline-4">
-<h4 id="org000000b"><span class="section-number-4">1.1.3.</span> pthread_tls</h4>
-<div class="outline-text-4" id="text-1-1-3">
-<p>
-pthread 要求用户使用 pthread_key_create, pthread_get_specific 等 api 来设置 tls.
-</p>
-
-<p>
-在 bionic 的实现中, pthread_tls 使用 tls_slot[1] 来实现. 在 glibc 中, 也是类似的实现.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-c"><span class="org-function-name">pthread_getspecific</span>(<span class="org-type">pthread_key_t</span> <span class="org-variable-name">key</span>):
-  pthread_key_data_t* data = &amp;(__get_thread()-&gt;key_data[key]);
-  <span class="org-keyword">return</span> data-&gt;data;
-
-<span class="org-type">pthread_internal_t</span>* <span class="org-function-name">__get_thread</span>():
-  <span class="org-keyword">return</span> reinterpret_cast&lt;pthread_internal_t*&gt;(__get_tls()[TLS_SLOT_THREAD_ID]);
-
-<span class="org-keyword">enum</span> {
-  <span class="org-variable-name">TLS_SLOT_SELF</span> = 0, <span class="org-comment-delimiter">// </span><span class="org-comment">The kernel requires this specific slot for x86.</span>
-  <span class="org-variable-name">TLS_SLOT_THREAD_ID</span>,
-  <span class="org-variable-name">TLS_SLOT_ERRNO</span>,
-  <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
-}
-
-<span class="org-preprocessor">#define</span> <span class="org-function-name">__get_tls</span>() ({ <span class="org-type">void</span>** <span class="org-variable-name">__val</span>; <span class="org-keyword">__asm__</span>(<span class="org-string">"mrs %0, tpidr_el0"</span> : <span class="org-string">"=r"</span>(__val)); __val; })
-</pre>
-</div>
-
-<p>
-pthread_tls 最终会使用 thread pointer: arm 的 thread pointer 是 tpidr_el0
-</p>
-</div>
-</div>
-
-<div id="outline-container-org000000e" class="outline-4">
-<h4 id="org000000e"><span class="section-number-4">1.1.4.</span> errno</h4>
-<div class="outline-text-4" id="text-1-1-4">
-<p>
-error 是使用 tls 实现的: 它使用一个单独的 pthread_tls slot
-</p>
-
-<div class="org-src-container">
-<pre class="src src-C"><span class="org-preprocessor">#define</span>  <span class="org-variable-name">errno</span>   (*__errno())
-
-<span class="org-keyword">volatile</span> <span class="org-type">int</span>*  <span class="org-function-name">__errno</span>() {
-  <span class="org-keyword">return</span> reinterpret_cast&lt;<span class="org-type">int</span>*&gt;(&amp;(__get_tls()[TLS_SLOT_ERRNO]));
-}
-</pre>
-</div>
-</div>
-</div>
 </div>
 
 <div id="outline-container-ID-feaec5ac-bf34-486a-a5e3-a981b75f55e8" class="outline-3">
-<h3 id="ID-feaec5ac-bf34-486a-a5e3-a981b75f55e8"><span class="section-number-3">1.2.</span> elf_tls</h3>
-<div class="outline-text-3" id="text-1-2">
+<h3 id="ID-feaec5ac-bf34-486a-a5e3-a981b75f55e8"><span class="section-number-3">1.1.</span> elf_tls</h3>
+<div class="outline-text-3" id="text-1-1">
 <p>
 <a href="https://www.akkadia.org/drepper/tls.pdf">https://www.akkadia.org/drepper/tls.pdf</a>
 </p>
@@ -306,8 +112,8 @@ pthread_create也需要执行类似的动作.</li>
 </div>
 
 <div id="outline-container-org0000015" class="outline-4">
-<h4 id="org0000015"><span class="section-number-4">1.2.1.</span> arm</h4>
-<div class="outline-text-4" id="text-1-2-1">
+<h4 id="org0000015"><span class="section-number-4">1.1.1.</span> arm</h4>
+<div class="outline-text-4" id="text-1-1-1">
 <div class="org-src-container">
 <pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;errno.h&gt;</span>
 
@@ -327,7 +133,7 @@ __thread <span class="org-type">int</span> <span class="org-variable-name">zzz</
 </pre>
 </div>
 
-<pre class="example" id="org0000014">
+<pre class="example" id="org0000000">
 $&gt; aarch64-linux-gnu-gcc test.c -O0 -g3 -static
 $&gt; aarch64-linux-gnu-objdump -D ./a.out
 
@@ -364,9 +170,9 @@ $&gt; ./a.out
 </div>
 
 <div id="outline-container-org0000019" class="outline-4">
-<h4 id="org0000019"><span class="section-number-4">1.2.2.</span> riscv</h4>
-<div class="outline-text-4" id="text-1-2-2">
-<pre class="example" id="org0000018">
+<h4 id="org0000019"><span class="section-number-4">1.1.2.</span> riscv</h4>
+<div class="outline-text-4" id="text-1-1-2">
+<pre class="example" id="org0000004">
 $&gt; cat test.c
 
 __thread int x = 0xa;
@@ -405,8 +211,8 @@ riscv 使用 tp 做为 thread pointer, 直接通过 `0(tp), 4(tp)` 访问 `x, y`
 </div>
 
 <div id="outline-container-org000001c" class="outline-4">
-<h4 id="org000001c"><span class="section-number-4">1.2.3.</span> pthread_tls</h4>
-<div class="outline-text-4" id="text-1-2-3">
+<h4 id="org000001c"><span class="section-number-4">1.1.3.</span> pthread_tls</h4>
+<div class="outline-text-4" id="text-1-1-3">
 <p>
 由于 elf_tls 和 pthread_tls 都需要使用 thread_pointer, 为了避免两者冲突, 需要分配一下 tp 指向的内存, 一部分给 elf_tls, 一部分给 pthread_tls.
 </p>
@@ -435,8 +241,8 @@ ps. arm 的 xxx 在 tp[0x10] 而 riscv 的 x 在 tp[0], 这个 offset 取决于 
 </div>
 
 <div id="outline-container-org0000021" class="outline-4">
-<h4 id="org0000021"><span class="section-number-4">1.2.4.</span> dso</h4>
-<div class="outline-text-4" id="text-1-2-4">
+<h4 id="org0000021"><span class="section-number-4">1.1.4.</span> dso</h4>
+<div class="outline-text-4" id="text-1-1-4">
 <p>
 当 dso 中使用了 __thread 时， 情况会变得复杂, 因为链接 dso 时无法确定变量相对 tp
 的 offset.
@@ -457,7 +263,7 @@ ps. arm 的 xxx 在 tp[0x10] 而 riscv 的 x 在 tp[0], 这个 offset 取决于 
 </p>
 
 
-<div id="org000001f" class="figure">
+<div id="org000000b" class="figure">
 <p><img src="../extra/tls.png" alt="tls.png" />
 </p>
 </div>
@@ -481,7 +287,7 @@ __thread <span class="org-type">int</span> <span class="org-variable-name">zzz</
 </pre>
 </div>
 
-<pre class="example" id="org0000020">
+<pre class="example" id="org000000c">
 $&gt; riscv-gcc test.c -O0 -g -c -fPIC
 $&gt; riscv-objdump -dr test.o
 
@@ -513,9 +319,9 @@ $&gt; riscv-objdump -dr test.o
 </div>
 
 
-<div id="outline-container-org0000024" class="outline-4 references">
-<h4 id="org0000024">Backlinks</h4>
-<div class="outline-text-4" id="text-org0000024">
+<div id="outline-container-org0000038" class="outline-4 references">
+<h4 id="org0000038">Backlinks</h4>
+<div class="outline-text-4" id="text-org0000038">
 <p>
 <a href="linker_relaxation.html#ID-b861e156-7ced-4e25-b047-455b5b075c1e">Linker Relaxation</a>
 (<i>Linker Relaxation</i>):  1. 如果 symbol 在 .tdata 中, 使用 tp 做基址寄存器, 以支持 <a href="#ID-feaec5ac-bf34-486a-a5e3-a981b75f55e8">elf_tls</a>
@@ -531,8 +337,8 @@ $&gt; riscv-objdump -dr test.o
 
 
 <div id="outline-container-org0000032" class="outline-3">
-<h3 id="org0000032"><span class="section-number-3">1.3.</span> emutls</h3>
-<div class="outline-text-3" id="text-1-3">
+<h3 id="org0000032"><span class="section-number-3">1.2.</span> emutls</h3>
+<div class="outline-text-3" id="text-1-2">
 <div class="org-src-container">
 <pre class="src src-c">__thread <span class="org-type">int</span> <span class="org-variable-name">xxx</span> = 0xa;
 
@@ -556,7 +362,7 @@ gcc 编译以上代码时, 会生成几个特殊的符号:
 __emutls_get_address 拿到 tls 数据
 </p>
 
-<pre class="example" id="org0000027">
+<pre class="example" id="org0000013">
 $&gt; aarch64-linux-android-gcc foo.c -fPIC -shared -o libfoo.so -O0 -g3
 $&gt; nm libfoo.so|grep xxx
 0000000000000d24 r __emutls_t.xxx
@@ -567,8 +373,8 @@ $&gt; nm libfoo.so|grep xxx
 </div>
 
 <div id="outline-container-org0000028" class="outline-4">
-<h4 id="org0000028"><span class="section-number-4">1.3.1.</span> __emutls_v</h4>
-<div class="outline-text-4" id="text-1-3-1">
+<h4 id="org0000028"><span class="section-number-4">1.2.1.</span> __emutls_v</h4>
+<div class="outline-text-4" id="text-1-2-1">
 <p>
 __emutls_v 的类型是 __emutls_control:
 </p>
@@ -616,8 +422,8 @@ emutls array 中找到 xxx 真正的 tls 地址
 
 
 <div id="outline-container-org000002b" class="outline-4">
-<h4 id="org000002b"><span class="section-number-4">1.3.2.</span> __emutls_t</h4>
-<div class="outline-text-4" id="text-1-3-2">
+<h4 id="org000002b"><span class="section-number-4">1.2.2.</span> __emutls_t</h4>
+<div class="outline-text-4" id="text-1-2-2">
 <p>
 __emutls_t.xxx 保存着 xxx 的初值
 </p>
@@ -625,9 +431,9 @@ __emutls_t.xxx 保存着 xxx 的初值
 </div>
 
 <div id="outline-container-org000002f" class="outline-4">
-<h4 id="org000002f"><span class="section-number-4">1.3.3.</span> example</h4>
-<div class="outline-text-4" id="text-1-3-3">
-<pre class="example" id="org000002e">
+<h4 id="org000002f"><span class="section-number-4">1.2.3.</span> example</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<pre class="example" id="org000001a">
 $&gt; objdump -D libfoo.so
 
 0000000000000a4c &lt;foo&gt;:
@@ -675,12 +481,207 @@ Disassembly of section .rodata:
 </div>
 </div>
 </div>
+
+<div id="outline-container-org0000011" class="outline-3">
+<h3 id="org0000011"><span class="section-number-3">1.3.</span> android tls</h3>
+<div class="outline-text-3" id="text-1-3">
+<p>
+android 使用 emutls, 但 emutls 底层还是会使用 thread pointer 寄存器 (tpidr_el0),
+而不是用模拟的方式.
+</p>
+
+<pre class="example" id="org0000022">
+
+                    +-----------------+
+thread_pointer ---&gt; | slot_self       |
+                    +-----------------+      +-----------------+
+                    | slot_pthread_id | ---&gt; | key_emutls      | &lt;--- emutls
+                    +-----------------+      +-----------------+
+                    | slot_errno      |      | key_xxx         | &lt;--- pthread_tls
+                    +-----------------+      +-----------------+
+                    | ...             |      | ...             |
+                    +-----------------+      +-----------------+
+
+
+</pre>
+</div>
+
+<div id="outline-container-org0000001" class="outline-4">
+<h4 id="org0000001"><span class="section-number-4">1.3.1.</span> tls slot</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<p>
+tls 会指向一块和线程相关的内存, 这块内存相当于一个 `void *[N]`, 称为 tls_slot,
+slot 中的每个指针指向不同的 buffer, 常用的 slot 有:
+</p>
+
+<ol class="org-ol">
+<li><p>
+SLOT_SELF
+</p>
+
+<p>
+elf_tls 使用这个 slot
+</p></li>
+
+<li><p>
+SLOT_THREAD_ID
+</p>
+
+<p>
+pthread_tls 使用这个 slot
+</p></li>
+
+<li><p>
+SLOT_ERRNO
+</p>
+
+<p>
+errno 使用这个 slot
+</p></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org0000029" class="outline-4">
+<h4 id="org0000029"><span class="section-number-4">1.3.2.</span> emutls</h4>
+<div class="outline-text-4" id="text-1-3-2">
+<p>
+android toolchain 使用 emutls 来支持 `__thread` 关键字. 但它并非模拟的, 而是使用真实的 thread_pointer. gcc 的 emutls 实现在 <a href="libgcc.html#ID-27a07646-18c6-4504-b36e-a5d63871a0d2">libgcc</a> 中, clang 的实现在
+libcompiler_rt
+</p>
+
+<p>
+emutls 使用 pthread_tls 实现. emutls 底层对应 pthread_tls 的一个 key
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;errno.h&gt;</span>
+
+__thread <span class="org-type">int</span> <span class="org-variable-name">xxx</span> = 1;
+__thread <span class="org-type">int</span> <span class="org-variable-name">yyy</span> = 1;
+__thread <span class="org-type">int</span> <span class="org-variable-name">zzz</span> = 1;
+
+<span class="org-type">int</span> <span class="org-function-name">main</span>(<span class="org-type">int</span> <span class="org-variable-name">argc</span>, <span class="org-type">char</span> *<span class="org-variable-name">argv</span>[]) {
+  xxx = yyy + zzz;
+  <span class="org-keyword">return</span> 0;
+}
+
+</pre>
+</div>
+
+<pre class="example" id="org0000025">
+$&gt; aarch64-linux-android-gcc test.c -O0 -g3  -fPIE -pie
+$&gt; aarch64-linux-android-objdump -D ./a.out
+
+0000000000000be8 &lt;main&gt;:
+ be8:	a9bd7bfd 	stp	x29, x30, [sp,#-48]!
+ bec:	910003fd 	mov	x29, sp
+ bf0:	f9000bf3 	str	x19, [sp,#16]
+ bf4:	b9002fa0 	str	w0, [x29,#44]
+ bf8:	f90013a1 	str	x1, [x29,#32]
+ bfc:	d0000080 	adrp	x0, 12000 &lt;__dso_handle&gt;
+ c00:	9100a000 	add	x0, x0, #0x28
+ c04:	94000055 	bl	d58 &lt;__emutls_get_address&gt;
+ c08:	b9400013 	ldr	w19, [x0]
+ c0c:	d0000080 	adrp	x0, 12000 &lt;__dso_handle&gt;
+ c10:	91002000 	add	x0, x0, #0x8
+ c14:	94000051 	bl	d58 &lt;__emutls_get_address&gt;
+ c18:	b9400000 	ldr	w0, [x0]
+ c1c:	0b000273 	add	w19, w19, w0
+ c20:	d0000080 	adrp	x0, 12000 &lt;__dso_handle&gt;
+ c24:	91012000 	add	x0, x0, #0x48
+ c28:	9400004c 	bl	d58 &lt;__emutls_get_address&gt;
+ c2c:	b9000013 	str	w19, [x0]
+
+// 其中 __emutls_get_address 表示使用了 libgcc 提供的 emutls
+
+</pre>
+</div>
+
+<div id="outline-container-org0000005" class="outline-5">
+<h5 id="org0000005"><span class="section-number-5">1.3.2.1.</span> __emutls_get_address</h5>
+<div class="outline-text-5" id="text-1-3-2-1">
+<div class="org-src-container">
+<pre class="src src-c">libcompiler_rt::emutls.c
+
+  <span class="org-type">void</span>* __emutls_get_address(<span class="org-type">__emutls_control</span>* <span class="org-variable-name">control</span>)
+    <span class="org-type">uintptr_t</span> <span class="org-variable-name">index</span> = emutls_get_index(control);
+    <span class="org-type">emutls_address_array</span>* <span class="org-variable-name">array</span> = emutls_get_address_array(index);
+      <span class="org-type">emutls_address_array</span>* <span class="org-variable-name">array</span> = pthread_getspecific(emutls_pthread_key);
+    <span class="org-keyword">return</span> array-&gt;data[index - 1];
+
+  <span class="org-keyword">static</span> <span class="org-type">void</span> <span class="org-function-name">emutls_init</span>(<span class="org-type">void</span>):
+    pthread_key_create(&amp;emutls_pthread_key, emutls_key_destructor)
+</pre>
+</div>
+
+<p>
+可见 android 的 emutls 是依赖 pthread_tls 来实现的.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000002c" class="outline-4">
+<h4 id="org000002c"><span class="section-number-4">1.3.3.</span> pthread_tls</h4>
+<div class="outline-text-4" id="text-1-3-3">
+<p>
+pthread 要求用户使用 pthread_key_create, pthread_get_specific 等 api 来设置 tls.
+</p>
+
+<p>
+在 bionic 的实现中, pthread_tls 使用 tls_slot[1] 来实现. 在 glibc 中, 也是类似的实现.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-function-name">pthread_getspecific</span>(<span class="org-type">pthread_key_t</span> <span class="org-variable-name">key</span>):
+  pthread_key_data_t* data = &amp;(__get_thread()-&gt;key_data[key]);
+  <span class="org-keyword">return</span> data-&gt;data;
+
+<span class="org-type">pthread_internal_t</span>* <span class="org-function-name">__get_thread</span>():
+  <span class="org-keyword">return</span> reinterpret_cast&lt;pthread_internal_t*&gt;(__get_tls()[TLS_SLOT_THREAD_ID]);
+
+<span class="org-keyword">enum</span> {
+  <span class="org-variable-name">TLS_SLOT_SELF</span> = 0, <span class="org-comment-delimiter">// </span><span class="org-comment">The kernel requires this specific slot for x86.</span>
+  <span class="org-variable-name">TLS_SLOT_THREAD_ID</span>,
+  <span class="org-variable-name">TLS_SLOT_ERRNO</span>,
+  <span class="org-comment-delimiter">// </span><span class="org-comment">...</span>
+}
+
+<span class="org-preprocessor">#define</span> <span class="org-function-name">__get_tls</span>() ({ <span class="org-type">void</span>** <span class="org-variable-name">__val</span>; <span class="org-keyword">__asm__</span>(<span class="org-string">"mrs %0, tpidr_el0"</span> : <span class="org-string">"=r"</span>(__val)); __val; })
+</pre>
+</div>
+
+<p>
+pthread_tls 最终会使用 thread pointer: arm 的 thread pointer 是 tpidr_el0
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000000e" class="outline-4">
+<h4 id="org000000e"><span class="section-number-4">1.3.4.</span> errno</h4>
+<div class="outline-text-4" id="text-1-3-4">
+<p>
+error 是使用 tls 实现的: 它使用一个单独的 pthread_tls slot
+</p>
+
+<div class="org-src-container">
+<pre class="src src-C"><span class="org-preprocessor">#define</span>  <span class="org-variable-name">errno</span>   (*__errno())
+
+<span class="org-keyword">volatile</span> <span class="org-type">int</span>*  <span class="org-function-name">__errno</span>() {
+  <span class="org-keyword">return</span> reinterpret_cast&lt;<span class="org-type">int</span>*&gt;(&amp;(__get_tls()[TLS_SLOT_ERRNO]));
+}
+</pre>
+</div>
+</div>
+</div>
+</div>
 </div>
 
 
-<div id="outline-container-org0000038" class="outline-2 references">
-<h2 id="org0000038">Backlinks</h2>
-<div class="outline-text-2" id="text-org0000038">
+<div id="outline-container-org0000039" class="outline-2 references">
+<h2 id="org0000039">Backlinks</h2>
+<div class="outline-text-2" id="text-org0000039">
 <p>
 <a href="../riscv/riscv_tutorial.html#ID-653c6b58-7ee1-4e07-bf3f-d5eea450748e">RISC-V Tutorial</a>
 (<i>RISC-V Tutorial &gt; RISC-V Assembly &gt; Register</i>):  - tp 是 thread pointer, 用来实现 <a href="thread_local_storage.html#ID-aee24416-b9d0-4295-9511-7dcf4b29468d">Thread Local Storage</a>
@@ -697,7 +698,7 @@ Disassembly of section .rodata:
 
 <p class="author">Author: <a href="mailto:sunway@dogdog.run">sunway@dogdog.run</a><br />
 Date: 2017-04-01 Sat 00:00<br />
-Last updated: 2024-08-17 Sat 13:56</p>
+Last updated: 2024-08-17 Sat 15:15</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
