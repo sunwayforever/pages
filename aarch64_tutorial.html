@@ -1,0 +1,1766 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>AArch64 Tutorial</title>
+
+
+<link rel="stylesheet" type="text/css" href="/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="./htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="../../htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="/readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="./readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../readtheorg.css"/>
+<link rel="stylesheet" type="text/css" href="../../readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+<link rel="stylesheet" type="text/css" href="/main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="../../main.css" media="screen" />
+<link rel="stylesheet" type="text/css" href="./main.css" media="screen" />
+<link rel = "icon" href = "/icon.png"  type = "image/x-icon">
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">AArch64 Tutorial</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org000010d">1. AArch64 Tutorial</a>
+<ul>
+<li><a href="#org00000e9">1.1. AArch64 Assembly</a>
+<ul>
+<li><a href="#org0000001">1.1.1. Register</a></li>
+<li><a href="#org00000d8">1.1.2. instructions</a></li>
+<li><a href="#org00000e6">1.1.3. demo</a></li>
+</ul>
+</li>
+<li><a href="#org00000f8">1.2. Calling Convention</a>
+<ul>
+<li><a href="#org00000ec">1.2.1. 普通的参数和返回值</a></li>
+<li><a href="#org00000ef">1.2.2. 返回结构体</a></li>
+<li><a href="#org00000f2">1.2.3. 参数为结构体</a></li>
+<li><a href="#org00000f5">1.2.4. 变长参数</a></li>
+</ul>
+</li>
+<li><a href="#org0000104">1.3. Assembler</a>
+<ul>
+<li><a href="#org0000101">1.3.1. directive and modifier</a></li>
+</ul>
+</li>
+<li><a href="#org000010a">1.4. Privileged ISA</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000010d" class="outline-2">
+<h2 id="org000010d"><span class="section-number-2">1.</span> AArch64 Tutorial</h2>
+<div class="outline-text-2" id="text-1">
+</div>
+<div id="outline-container-org00000e9" class="outline-3">
+<h3 id="org00000e9"><span class="section-number-3">1.1.</span> AArch64 Assembly</h3>
+<div class="outline-text-3" id="text-1-1">
+</div>
+<div id="outline-container-org0000001" class="outline-4">
+<h4 id="org0000001"><span class="section-number-4">1.1.1.</span> Register</h4>
+<div class="outline-text-4" id="text-1-1-1">
+<ul class="org-ul">
+<li><p>
+31 个 64 bits GPR (X0~X30)
+</p>
+
+<p>
+w0 对应 x0 的低 32 位, w1 对应 x1 的低 32 位, 并不存对应 x0 的高 32位的寄存器,
+因为 Wd 为 w0 的指令会将 x0 的高 32 位清零
+</p>
+
+<ul class="org-ul">
+<li>X0~X7 用作函数调用时的参数</li>
+<li>X8 称为 XR, 在函数调用时用来保存要返回的结构体的地址</li>
+<li>X9~X15 是 caller saved</li>
+<li>X19~X28 是 callee saved</li>
+<li>X29 是 FP</li>
+<li>X30 是 LR</li>
+</ul></li>
+
+<li><p>
+不存在 X31 或 W31
+</p>
+
+<p>
+XZR (64bit zero 寄存器), WZR (32 bit zero 寄存器) 以及 SP 都编码为 31
+</p>
+
+<p>
+虽然 SP 和 XZR 编码都为 31, 但并不会有冲突, 例如:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">add</span> <span class="org-keyword">x0</span>, xzr, x1
+<span class="org-function-name">add</span> <span class="org-keyword">x0</span>, sp, x1
+</pre>
+</div>
+
+<p>
+对应的编码为:
+</p>
+
+<pre class="example" id="org0000000">
+8b0103e0        add     x0, xzr, x1
+8b2163e0        add     x0, sp, x1
+</pre>
+
+<p>
+第一条对应 `ADD (shifted register)`, 第二条对应 `ADD (extended register)`, 这两类指令有不同的指令编码格式, 虽然 xzr/sp 都编码为 31, 即 `3e0` (0b1111100000)
+中的 `11111`
+</p>
+
+<p>
+另外, load/store 类指令通常不会用 zero 做 base, 所以这类指令中 31 会被编码为
+sp 而不是 xzr
+</p></li>
+
+<li><p>
+32 个 128 bits FPR 及向量寄存器 (V0~V31)
+</p>
+
+<p>
+{B,H,S,D,Q}0 对应的 V0 的 低{8,16,32,64,128}位.
+</p>
+
+<p>
+即 H 代表 half float, S 代表 float, D 代表 double.
+</p>
+
+<p>
+其中 V0~V7 用作参数, V8~V31 是 callee-saved register
+</p></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org00000d8" class="outline-4">
+<h4 id="org00000d8"><span class="section-number-4">1.1.2.</span> instructions</h4>
+<div class="outline-text-4" id="text-1-1-2">
+</div>
+<div id="outline-container-org00000b8" class="outline-5">
+<h5 id="org00000b8"><span class="section-number-5">1.1.2.1.</span> arith</h5>
+<div class="outline-text-5" id="text-1-1-2-1">
+</div>
+<div id="outline-container-org000001a" class="outline-6">
+<h6 id="org000001a"><span class="section-number-6">1.1.2.1.1.</span> ADD</h6>
+<div class="outline-text-6" id="text-1-1-2-1-1">
+</div>
+<ol class="org-ol">
+<li><a id="org0000005"></a>ADD (extended register)<br />
+<div class="outline-text-7" id="text-1-1-2-1-1-1">
+<p>
+<code>ADD &lt;Xd|SP&gt;, &lt;Xn|SP&gt;, &lt;R&gt;&lt;m&gt;{, &lt;extend&gt; {#&lt;amount&gt;}}</code>
+</p>
+
+<ul class="org-ul">
+<li><code>&lt;Xd|SP&gt;</code> 表示 rd 是 64 位 GPR(X0~X30) 或 SP</li>
+<li><code>&lt;Xn|SP&gt;</code> 表示 rs1 是 64 位 GPR 或 SP</li>
+<li><code>&lt;R&gt;&lt;m&gt;</code> 表示 rs2 是寄存器 (R, 可以是 X 或 W), 例如 X30, W30 或 XZR&#x2026;</li>
+<li><code>&lt;extend&gt;</code> 表示 rs2 需要先经过哪种扩展</li>
+<li><code>#&lt;amount&gt;</code> 表示 rs2 扩展后还需要经过 <b>left</b> shift</li>
+</ul>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">mov</span> <span class="org-keyword">x0</span>, #1
+<span class="org-function-name">mov</span> <span class="org-keyword">x1</span>, #0b101111111
+# x1 &#36890;&#36807; UXTB &#21518;&#21464;&#20026; 0b01111111
+# x1 &#36890;&#36807; lsl 1 &#21464;&#20026; 0b11111110
+# x0=x1+1 &#21363; 0b11111111
+<span class="org-function-name">add</span> <span class="org-keyword">x0</span>, x0, x1, UXTB #1
+</pre>
+</div>
+
+<pre class="example" id="org0000004">
+$&gt; cat test.S
+int64_t foo(int64_t x, int y) { return x + ((int64_t)y &lt;&lt; 1); }
+
+$&gt; arm-objdump test.o
+foo:
+    add	x0, x0, w1, sxtw 1
+    ret
+</pre>
+</div>
+</li>
+
+<li><a id="org0000009"></a>ADD (shifted register)<br />
+<div class="outline-text-7" id="text-1-1-2-1-1-2">
+<p>
+<code>ADD &lt;Xd&gt;, &lt;Xn&gt;, &lt;Xm&gt;{, &lt;shift&gt; #&lt;amount&gt;}</code>
+</p>
+
+<ul class="org-ul">
+<li><code>&lt;Xd&gt;</code> 表示 rd 是 64 位 GPR (X0~X30) 或 XZR</li>
+</ul>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">mov</span> <span class="org-keyword">x1</span>, #0b10
+# x1 lsr #1 &#20026; 0b1
+# x0 &#20026; xzr+0b1=0b1
+<span class="org-function-name">add</span> <span class="org-keyword">x0</span>, xzr, x1, lsr #1
+</pre>
+</div>
+
+<pre class="example" id="org0000008">
+int64_t foo(int64_t x, int64_t y) { return x + (y &gt;&gt; 1); }
+
+foo:
+    add	x0, x0, x1, asr 1
+    ret
+</pre>
+</div>
+</li>
+
+<li><a id="org000000d"></a>ADD (immediate)<br />
+<div class="outline-text-7" id="text-1-1-2-1-1-3">
+<p>
+<code>ADD &lt;Xd|SP&gt;, &lt;Xn|SP&gt;, #&lt;imm&gt;{, &lt;shift&gt;}</code>
+</p>
+
+<ul class="org-ul">
+<li><code>#&lt;imm&gt;</code> 是 12 位的 unsigned imm, 所以无法支持负数, 但 as 支持打负数的 add 转换为 sub</li>
+<li>shift 只能是默认的 <code>lsl #0</code> 或 <code>lsl #12</code>, 类似于 RISC-V 的 lui 指令</li>
+<li>Rn 支持 SP, 所以不能使用 XZR</li>
+</ul>
+
+<div class="org-src-container">
+<pre class="src src-asm"># 91000420        add     x0, x1, #0x1
+<span class="org-function-name">add</span> <span class="org-keyword">x0</span>, x1, #1, lsl #0
+# d1400420        sub     x0, x1, #0x1, lsl #12
+# add &#36127;&#25968;&#20250;&#21464;&#25104; sub
+<span class="org-function-name">add</span> <span class="org-keyword">x0</span>, x1, #-1, lsl #12
+</pre>
+</div>
+
+<pre class="example" id="org000000c">
+int64_t foo(int64_t x, int64_t y) { return x + (4 &lt;&lt; 12); }
+
+foo:
+0	add	x0, x0, #0x4, lsl #12
+4	ret
+</pre>
+</div>
+</li>
+
+<li><a id="org0000011"></a>ADDS<br />
+<div class="outline-text-7" id="text-1-1-2-1-1-4">
+<p>
+上面三个 ADD 都有对应的 ADDS, 会根据 Rd 的值设置 NZCV (Negative, Zero, Carry,
+oVerflow) 值. 算术和逻辑运算都可以加 S 后缀表示运算会影响 NZCV
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">mov</span> <span class="org-keyword">x0</span>, #-2
+<span class="org-function-name">mov</span> <span class="org-keyword">x1</span>, #1
+<span class="org-function-name">adds</span> <span class="org-keyword">x0</span>, x0, x1
+# x2 &#20026; 0x80000000, &#22240;&#20026; N bit &#34987;&#32622;&#20301;
+<span class="org-function-name">mrs</span> <span class="org-keyword">x2</span>, nzcv
+</pre>
+</div>
+
+<pre class="example" id="org0000010">
+int foo(int a, int b) { return (a &gt;= (-4) &lt;&lt; 13); }
+
+foo:
+0	cmn	w0, #0x8, lsl #12
+4	cset	w0, ge  // ge = tcont
+8	ret
+</pre>
+</div>
+</li>
+
+<li><a id="org0000014"></a>CMP<br />
+<div class="outline-text-7" id="text-1-1-2-1-1-5">
+<p>
+CMP 实际上是使用 SUBS 实现的伪指令, 以 CMP (immediate) 为例:
+</p>
+
+<p>
+<code>CMP &lt;Xn|SP&gt;, #&lt;imm&gt;{, &lt;shift&gt;}</code> 相当于 <code>SUBS XZR, &lt;Xn|SP&gt;, #&lt;imm&gt; {, &lt;shift&gt;}</code>
+</p>
+
+<p>
+B.cond 会根据 CMP 设置的 NZCV 来跳转
+</p>
+</div>
+</li>
+
+<li><a id="org0000017"></a>CMN<br />
+<div class="outline-text-7" id="text-1-1-2-1-1-6">
+<p>
+CoMpare Negative 是使用 ADDS 实现的伪指令, 以 CMN(immediate) 为例:
+</p>
+
+<p>
+<code>CMN &lt;Xn|SP&gt;, #&lt;imm&gt;{, &lt;shift&gt;}</code> 相当于 <code>ADDS XZR, &lt;Xn|SP&gt;, #&lt;imm&gt; {, &lt;shift&gt;}</code>
+</p>
+
+<p>
+相当于拿 Xn 和 -imm 做 SUBS, 所以称为 compare negative
+</p>
+</div>
+</li>
+</ol>
+</div>
+
+<div id="outline-container-org000001d" class="outline-6">
+<h6 id="org000001d"><span class="section-number-6">1.1.2.1.2.</span> SUB/NEG</h6>
+</div>
+
+<div id="outline-container-org0000022" class="outline-6">
+<h6 id="org0000022"><span class="section-number-6">1.1.2.1.3.</span> MUL/SMULL/UMULL</h6>
+<div class="outline-text-6" id="text-1-1-2-1-3">
+<pre class="example" id="org0000020">
+#include &lt;stdint.h&gt;
+int64_t foo(int32_t a, int32_t b) { return (int64_t)a * b; }
+
+uint64_t foo2(uint32_t a, uint32_t b) { return (uint64_t)a * b; }
+
+foo:
+0	smull	x0, w0, w1
+4	ret
+
+foo2:
+10	umull	x0, w0, w1
+14	ret
+</pre>
+
+<p>
+UMULL/SMULL 使得输入不需要做 sext/zext, 对比 RISC-V:
+</p>
+
+<pre class="example" id="org0000021">
+foo2:
+    slli	a0,a0,32
+    slli	a1,a1,32
+    srli	a1,a1,32
+    srli	a0,a0,32
+    mul	a0,a0,a1
+    ret
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000026" class="outline-6">
+<h6 id="org0000026"><span class="section-number-6">1.1.2.1.4.</span> MADD</h6>
+<div class="outline-text-6" id="text-1-1-2-1-4">
+<pre class="example" id="org0000025">
+int32_t foo(int32_t a, int32_t b, int32_t c) { return a + b * c; }
+
+foo:
+    madd	w0, w1, w2, w0
+    ret
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000029" class="outline-6">
+<h6 id="org0000029"><span class="section-number-6">1.1.2.1.5.</span> SDIV/UDIV</h6>
+</div>
+</div>
+
+<div id="outline-container-org0000030" class="outline-5">
+<h5 id="org0000030"><span class="section-number-5">1.1.2.2.</span> ADR</h5>
+<div class="outline-text-5" id="text-1-1-2-2">
+<p>
+<code>ADR &lt;Xd&gt;, &lt;label&gt;</code>
+</p>
+
+<ul class="org-ul">
+<li>汇编时会把 label 与 pc 的差表示为一个 21 bit 的 signed int (+/-1M)</li>
+<li>运行时 pc 加上这个值可以得到 label 的地址</li>
+</ul>
+
+<div class="org-src-container">
+<pre class="src src-asm">    # _start &#22320;&#22336;&#20026; 0x4000d8
+<span class="org-function-name">_start</span>:
+    # x0 &#30340;&#20540;&#20026; 0x4000d9
+    <span class="org-keyword">adr</span> x0, 1
+</pre>
+</div>
+
+<p>
+ADR 用于小范围的 pc 相对寻址.
+</p>
+
+<pre class="example" id="org000002f">
+$&gt; cat test.c
+int foo() { return &amp;foo; }
+
+$&gt; arm-gcc test.c -O3 -mcmodel=tiny
+$&gt; arm-objdump -d test.o
+foo:
+0	adr	x0, 0 &lt;foo&gt;
+4	ret
+</pre>
+
+<p>
+正常情况下 gcc 取 symbol 地址会使用 `adrp+add`. 通过 <code>-mcmodel=tiny</code>, 表明 symbol
+地址在 pc-relative 1MB 范围内, 可以使用 `adr` 指令
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000034" class="outline-5">
+<h5 id="org0000034"><span class="section-number-5">1.1.2.3.</span> 关于 cmodel</h5>
+<div class="outline-text-5" id="text-1-1-2-3">
+<p>
+arm 有三种 cmodel, 默认为 small
+</p>
+
+<ol class="org-ol">
+<li><p>
+tiny
+</p>
+
+<p>
+symbol 距离较小, 可以使用 `adr` 指令来加载 symbol 地址
+</p></li>
+
+<li><p>
+small
+</p>
+
+<p>
+symbol 距离较大, 需要使用 `adrp+add`
+</p></li>
+
+<li><p>
+large
+</p>
+
+<p>
+symbol 距离很大, 需要使用 literal pool 做跳板
+</p></li>
+</ol>
+
+<pre class="example" id="org0000033">
+$&gt; cat test.c
+int foo() { return &amp;foo; }
+$&gt; arm-gcc -O3 -mcmodel=tiny -c
+$&gt; arm-objdump -dr test.o
+
+0000000000000000 &lt;foo&gt;:
+   0:   10000000        adr     x0, 0 &lt;foo&gt;
+                        0: R_AARCH64_ADR_PREL_LO21      foo
+   4:   d65f03c0        ret
+
+$&gt; arm-gcc -O3 -mcmodel=small -c
+$&gt; arm-objdump -dr test.o
+
+0000000000000000 &lt;foo&gt;:
+   0:   90000000        adrp    x0, 0 &lt;foo&gt;
+                        0: R_AARCH64_ADR_PREL_PG_HI21   foo
+   4:   91000000        add     x0, x0, #0x0
+                        4: R_AARCH64_ADD_ABS_LO12_NC    foo
+   8:   d65f03c0        ret
+
+$&gt; arm-gcc -O3 -mcmodel=larget -fno-PIC
+$&gt; arm-objdump -dr test.o
+
+0000000000000000 &lt;foo&gt;:
+   0:   90000000        adrp    x0, 0 &lt;foo&gt;
+                        0: R_AARCH64_ADR_PREL_PG_HI21   .text+0x10
+   4:   b9400000        ldr     w0, [x0]
+                        4: R_AARCH64_LDST32_ABS_LO12_NC .text+0x10
+   8:   d65f03c0        ret
+   c:   d503201f        nop
+        ...
+                        10: R_AARCH64_ABS64     foo
+</pre>
+
+<p>
+做为对比, RISC-V 的 cmodel 有 medlow 和 medany 两种, 区别在于使用 lui 还是 auipc
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000038" class="outline-5">
+<h5 id="org0000038"><span class="section-number-5">1.1.2.4.</span> ADRP (ADR Page)</h5>
+<div class="outline-text-5" id="text-1-1-2-4">
+<p>
+<code>ADRP &lt;Xd&gt;, &lt;label&gt;</code>
+</p>
+
+<ul class="org-ul">
+<li>汇编时获得 label 所在的 page, 和 pc 所在 page 做差后保存 21 bit 的 signed
+int.</li>
+<li>执行时把 pc 所在 page 加上这个值得到 label 所在 page</li>
+</ul>
+
+<p>
+所以 ADRP 与 RISC-V 的 auipc 功能类似但并不相同.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm">    # _start &#22320;&#22336;&#20026; 0x4000d4
+<span class="org-function-name">_start</span>:
+    # x0 &#20026; 0x400000
+    <span class="org-keyword">adrp</span> x0, _start
+</pre>
+</div>
+
+<p>
+通过 adrp+add, 可以定位 pc+/-4G 的符号, 和 RISC-V 的 auipc+add 作用类似:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">_start</span>:
+    <span class="org-keyword">adrp</span> x0, _start
+    # :lo12: &#31867;&#20284;&#20110; RISC-V gas &#30340; <span class="org-variable-name">%lo</span>
+    # x0 &#31561;&#20110; _start &#22320;&#22336;
+    <span class="org-keyword">add</span> x0, x0, :lo12:_start
+</pre>
+</div>
+
+<p>
+gcc 针对全局符号访问会生成 adrp+add, 和 RISC-V 的 auipc+add 一样:
+</p>
+
+<pre class="example" id="org0000037">
+$&gt; cat test.c
+int x;
+int foo () {
+    return x;
+}
+
+$&gt; arm-objdump -dr test.o
+
+0000000000000000 &lt;foo&gt;:
+   0:	90000000 	adrp	x0, 0 &lt;foo&gt;
+            0: R_AARCH64_ADR_PREL_PG_HI21	x
+   4:	91000000 	add	x0, x0, #0x0
+            4: R_AARCH64_ADD_ABS_LO12_NC	x
+   8:	b9400000 	ldr	w0, [x0]
+   c:	d65f03c0 	ret
+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000053" class="outline-5">
+<h5 id="org0000053"><span class="section-number-5">1.1.2.5.</span> Logical</h5>
+<div class="outline-text-5" id="text-1-1-2-5">
+</div>
+<div id="outline-container-org000003b" class="outline-6">
+<h6 id="org000003b"><span class="section-number-6">1.1.2.5.1.</span> AND (immediate)</h6>
+<div class="outline-text-6" id="text-1-1-2-5-1">
+<p>
+<code>AND &lt;Xd|SP&gt;, &lt;Xn&gt;, #&lt;imm&gt;</code>
+</p>
+
+<ul class="org-ul">
+<li>汇编时需要把 imm 编码成 bitmask 的形式
+(<a href="https://dinfuehr.github.io/blog/encoding-of-immediate-values-on-aarch64/">encoding-of-immediate-values-on-aarch64</a>), 并不是所有 imm 都可以被编码</li>
+</ul>
+
+<p>
+imm 需要满足如下的格式:
+</p>
+
+<ol class="org-ol">
+<li>imm 是某个长度为 (2,4,8,16,32,64) 的 patten 的重复, 例如
+0x0110011001100110&#x2026; 是 0110 这个长度为 4 的 patten 重复</li>
+
+<li><p>
+patten 只能包含连续的 1, 或者能由连续的 1 通过循环右移得到, 例如 0110, 1001
+是合法的 patten, 但 0101 不是
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"># 4&#20301;&#30340; 0b0011 &#24490;&#29615;&#21491;&#31227;&#19968;&#20301;, &#37325;&#22797; 8 &#27425;
+<span class="org-function-name">and</span> <span class="org-keyword">w0</span>, w0, #0x99999999
+# 32&#20301;&#30340; 0x00000006, &#19981;&#31227;&#20301;, &#19981;&#37325;&#22797;
+<span class="org-function-name">and</span> <span class="org-keyword">x0</span>, x0, #0x6
+</pre>
+</div></li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org000003e" class="outline-6">
+<h6 id="org000003e"><span class="section-number-6">1.1.2.5.2.</span> AND (shifted register)</h6>
+<div class="outline-text-6" id="text-1-1-2-5-2">
+<p>
+<code>AND &lt;Xd&gt;, &lt;Xn&gt;, &lt;Xm&gt;{, &lt;shift&gt; #&lt;amount&gt;}</code>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000041" class="outline-6">
+<h6 id="org0000041"><span class="section-number-6">1.1.2.5.3.</span> ORR</h6>
+<div class="outline-text-6" id="text-1-1-2-5-3">
+<p>
+or
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000044" class="outline-6">
+<h6 id="org0000044"><span class="section-number-6">1.1.2.5.4.</span> EOR</h6>
+<div class="outline-text-6" id="text-1-1-2-5-4">
+<p>
+Exclusive OR, 异或
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000047" class="outline-6">
+<h6 id="org0000047"><span class="section-number-6">1.1.2.5.5.</span> MVN</h6>
+<div class="outline-text-6" id="text-1-1-2-5-5">
+<p>
+not
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000004a" class="outline-6">
+<h6 id="org000004a"><span class="section-number-6">1.1.2.5.6.</span> TST</h6>
+<div class="outline-text-6" id="text-1-1-2-5-6">
+<p>
+<code>TST &lt;Xn&gt;, #&lt;imm&gt;</code> 即 <code>ANDS XZR, &lt;Xn&gt;, #&lt;imm&gt;</code>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000004d" class="outline-6">
+<h6 id="org000004d"><span class="section-number-6">1.1.2.5.7.</span> BIC</h6>
+<div class="outline-text-6" id="text-1-1-2-5-7">
+<p>
+<code>BIC &lt;Xd&gt;, &lt;Xn&gt;, &lt;Xm&gt;{, &lt;shift&gt; #&lt;amount&gt;}</code>
+</p>
+
+<p>
+Xn 中与 Xm 掩码对应的 bit 被 clear, BIC 不支持 imm
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000050" class="outline-6">
+<h6 id="org0000050"><span class="section-number-6">1.1.2.5.8.</span> ORN</h6>
+<div class="outline-text-6" id="text-1-1-2-5-8">
+<p>
+<code>ORN &lt;Xd&gt;, &lt;Xn&gt;, &lt;Xm&gt;{, &lt;shift&gt; #&lt;amount&gt;}</code>
+</p>
+
+<p>
+Rd = Rn OR NOT shift(Rm, amount)
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000006e" class="outline-5">
+<h5 id="org000006e"><span class="section-number-5">1.1.2.6.</span> Bit</h5>
+<div class="outline-text-5" id="text-1-1-2-6">
+</div>
+<div id="outline-container-org0000056" class="outline-6">
+<h6 id="org0000056"><span class="section-number-6">1.1.2.6.1.</span> ASR</h6>
+<div class="outline-text-6" id="text-1-1-2-6-1">
+<p>
+算术右移
+</p>
+
+<ul class="org-ul">
+<li><p>
+register
+</p>
+
+<p>
+<code>ASR &lt;Xd&gt;, &lt;Xn&gt;, &lt;Xm&gt;</code>
+</p></li>
+
+<li><p>
+immediate
+</p>
+
+<p>
+<code>ASR &lt;Xd&gt;, &lt;Xn&gt;, #&lt;shift&gt;</code>
+</p>
+
+<p>
+shift 范围为 0~63
+</p></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0000059" class="outline-6">
+<h6 id="org0000059"><span class="section-number-6">1.1.2.6.2.</span> LSR</h6>
+</div>
+
+<div id="outline-container-org000005c" class="outline-6">
+<h6 id="org000005c"><span class="section-number-6">1.1.2.6.3.</span> LSL</h6>
+</div>
+
+<div id="outline-container-org000005f" class="outline-6">
+<h6 id="org000005f"><span class="section-number-6">1.1.2.6.4.</span> ROR</h6>
+<div class="outline-text-6" id="text-1-1-2-6-4">
+<p>
+循环右移
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000062" class="outline-6">
+<h6 id="org0000062"><span class="section-number-6">1.1.2.6.5.</span> UBFX/SBFX</h6>
+<div class="outline-text-6" id="text-1-1-2-6-5">
+<p>
+Unsigned BitField eXtract
+</p>
+
+<p>
+<code>UBFX &lt;Xd&gt;, &lt;Xn&gt;, #&lt;lsb&gt;, #&lt;width&gt;</code>
+</p>
+
+<p>
+假设 X0 为 0b0000000 <b>0101011</b> 000110100001110100
+</p>
+
+<p>
+为了取出 0101011 部分, 需要用 `UBFX X1, X0, #18, #7`
+</p>
+
+<p>
+若使用 SBFX, 则取出部分的最高位会作为符号位做符号扩展
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000065" class="outline-6">
+<h6 id="org0000065"><span class="section-number-6">1.1.2.6.6.</span> BFI</h6>
+<div class="outline-text-6" id="text-1-1-2-6-6">
+<p>
+BitField Insert, leaving other bits unchanged
+</p>
+
+<p>
+<code>BFI &lt;Xd&gt;, &lt;Xn&gt;, #&lt;lsb&gt;, #&lt;width&gt;</code>
+</p>
+
+<p>
+假设 X0 为 0x1234, X1 为 0xabcd, 则 `bfi x0, x1, #4, #16` 后 X0 为 0xabcd4
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000068" class="outline-6">
+<h6 id="org0000068"><span class="section-number-6">1.1.2.6.7.</span> UXTB/SXTB/UXTH/SXTH/SXTW</h6>
+<div class="outline-text-6" id="text-1-1-2-6-7">
+<p>
+UXTB: Unsigned eXTend Byte
+SXTH: Signed eXTend Halfword
+</p>
+
+<p>
+<code>SXTH &lt;Xd&gt;, &lt;Wn&gt;</code>
+</p>
+
+<p>
+不存在 UXTW, 因为可以用 `MOV Wd, Wn` 代替: 操作 Wd 时 Xd 的高 32 位会清零
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000006b" class="outline-6">
+<h6 id="org000006b"><span class="section-number-6">1.1.2.6.8.</span> REV/REV16/REV32</h6>
+</div>
+</div>
+
+<div id="outline-container-org0000081" class="outline-5">
+<h5 id="org0000081"><span class="section-number-5">1.1.2.7.</span> Branch</h5>
+<div class="outline-text-5" id="text-1-1-2-7">
+</div>
+<div id="outline-container-org0000071" class="outline-6">
+<h6 id="org0000071"><span class="section-number-6">1.1.2.7.1.</span> B/BL</h6>
+<div class="outline-text-6" id="text-1-1-2-7-1">
+<p>
+<code>B &lt;label&gt;</code>
+<code>BL &lt;label&gt;</code>
+</p>
+
+<p>
+无条件相对跳转, 类似于 RISC-V 的 jal.
+</p>
+
+<p>
+B 指令不需要编码 link register, BL 会隐式的使用 LR (X30), 所以指令不需要编码返回地址寄存器, 因此 imm 的地址可以达到 26 位带符号数(而不是 jal 的 20 位)
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000074" class="outline-6">
+<h6 id="org0000074"><span class="section-number-6">1.1.2.7.2.</span> BR/BLR</h6>
+<div class="outline-text-6" id="text-1-1-2-7-2">
+<p>
+<code>BR &lt;Xn&gt;</code>
+<code>BLR &lt;Xn&gt;</code>
+</p>
+
+<p>
+相当于 RISC-V 的 jalr
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000078" class="outline-6">
+<h6 id="org0000078"><span class="section-number-6">1.1.2.7.3.</span> B.cond</h6>
+<div class="outline-text-6" id="text-1-1-2-7-3">
+<p>
+<code>B.&lt;cond&gt; &lt;label&gt;</code>
+</p>
+
+
+<div id="org0000077" class="figure">
+<p><img src="extra/nzcv.png" alt="nzcv.png" />
+</p>
+</div>
+
+<p>
+label 为 imm19, 而 RISC-V 的 blt 类指令的 label 为 imm12, 因为 B.cond 不需要在指令中编码要比较的寄存器
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000007b" class="outline-6">
+<h6 id="org000007b"><span class="section-number-6">1.1.2.7.4.</span> CBZ/CBNZ</h6>
+<div class="outline-text-6" id="text-1-1-2-7-4">
+<p>
+<code>CBZ &lt;Xt&gt;, &lt;label&gt;</code>
+</p>
+
+<p>
+跳转到 label 如果 Xt 为/不为 0. label 为 imm19
+</p>
+</div>
+</div>
+
+<div id="outline-container-org000007e" class="outline-6">
+<h6 id="org000007e"><span class="section-number-6">1.1.2.7.5.</span> TBZ/TBNZ</h6>
+<div class="outline-text-6" id="text-1-1-2-7-5">
+<p>
+<code>TBZ &lt;R&gt;&lt;t&gt;, #&lt;imm&gt;, &lt;label&gt;</code>
+</p>
+
+<p>
+其中 imm 表示要测试第几个 bit, 而不是一个 bitmask
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000085" class="outline-5">
+<h5 id="org0000085"><span class="section-number-5">1.1.2.8.</span> CSEL/CINC/CSINC</h5>
+<div class="outline-text-5" id="text-1-1-2-8">
+<p>
+<code>CSEL &lt;Xd&gt;, &lt;Xn&gt;, &lt;Xm&gt;, &lt;cond&gt;</code>
+</p>
+
+<p>
+ccmov
+</p>
+
+<pre class="example" id="org0000084">
+$&gt; cat test.c
+
+int foo(int x) {
+    if (x &gt; 0) {
+        return 4;
+    }
+    return 2;
+}
+
+$&gt; arm-objdump test.o
+
+0000000000000000 &lt;foo&gt;:
+   0:   7100001f        cmp     w0, #0x0
+   4:   52800041        mov     w1, #0x2                        // #2
+   8:   52800080        mov     w0, #0x4                        // #4
+   c:   1a80d020        csel    w0, w1, w0, le
+  10:   d65f03c0        ret
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org000009c" class="outline-5">
+<h5 id="org000009c"><span class="section-number-5">1.1.2.9.</span> Load</h5>
+<div class="outline-text-5" id="text-1-1-2-9">
+</div>
+<div id="outline-container-org0000088" class="outline-6">
+<h6 id="org0000088"><span class="section-number-6">1.1.2.9.1.</span> LDR(immediate)</h6>
+<div class="outline-text-6" id="text-1-1-2-9-1">
+<ul class="org-ul">
+<li><p>
+offset
+</p>
+
+<p>
+<code>LDR &lt;Xt&gt;, [&lt;Xn|SP&gt;{, #&lt;pimm&gt;}]</code>
+</p>
+
+<p>
+pimm 是 imm12
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"># &#30456;&#24403;&#20110; RISC-V &#30340; `ld a0, 12(a1)`
+<span class="org-function-name">ldr</span> <span class="org-keyword">x0</span>, [x1, #12]
+</pre>
+</div>
+
+<p>
+它和 RISC-V 的 load 类指令相同, RISC-V 只支持这一种寻址方式
+</p></li>
+
+<li><p>
+post-index
+</p>
+
+<p>
+<code>LDR &lt;Xt&gt;, [&lt;Xn|SP&gt;], #&lt;simm&gt;</code>
+</p>
+
+<p>
+simm 是 imm9, 因为需要占用额外的比特来编码 post/pre index
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">ldr</span> <span class="org-keyword">x0</span>, [x1], #12
+</pre>
+</div>
+
+<p>
+post-index 类似 <code>i++</code>, 使用 Xn 寻址, 然后 `Xn=Xn+simm`
+</p></li>
+
+<li><p>
+pre-index
+</p>
+
+<p>
+<code>LDR &lt;Xt&gt;, [&lt;Xn|SP&gt;, #&lt;simm&gt;]!</code>
+</p>
+
+<p>
+simm 是 imm9
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">ldr</span> <span class="org-keyword">x0</span>, [x1, #12]!
+</pre>
+</div>
+
+<p>
+pre-index 类似于 <code>++i</code>, 即 `Xn=Xn+simm`, 然后再用 Xn 寻址
+</p></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org000008c" class="outline-6">
+<h6 id="org000008c"><span class="section-number-6">1.1.2.9.2.</span> LDR(literal)</h6>
+<div class="outline-text-6" id="text-1-1-2-9-2">
+<p>
+<code>LDR &lt;Xt&gt;, &lt;label&gt;</code>
+</p>
+
+<p>
+汇编时 label 被编码为 pc-relative literal, imm19
+</p>
+
+<p>
+相当于 adr + ldr, RISC-V 不支持这种寻址, 需要先用 auipc 获得 label 的地址到寄存器,然后再用类似 LDR(immediate) 的方式
+</p>
+
+<p>
+另外, 通过 <code>LDR &lt;Xt&gt;, ==imm</code> 类似于 RISC-V 的 la/li 伪指令, 但是通过 literal pool
+实现
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm">    <span class="org-keyword">.text</span>
+    <span class="org-keyword">.global</span> main
+<span class="org-function-name">main</span>:
+    # load main &#30340;&#25968;&#25454;
+    <span class="org-keyword">ldr</span> x0, main
+    # load main &#30340;&#22320;&#22336;, &#27880;&#24847; `=` &#26159;&#24517;&#35201;&#30340;
+    <span class="org-keyword">ldr</span> x1, =main
+    <span class="org-keyword">ldr</span> x2, =0x1234
+</pre>
+</div>
+
+<pre class="example" id="org000008b">
+Disassembly of section .text:
+
+0000000000000000 &lt;main&gt;:
+   0:   58000000        ldr     x0, 0 &lt;main&gt;
+                        0: R_AARCH64_LD_PREL_LO19       main
+   4:   58000061        ldr     x1, 10 &lt;main+0x10&gt;   ---------------+
+   8:   58000082        ldr     x2, 18 &lt;main+0x18&gt;   ----+          |
+        ...                                              |          |
+                        10: R_AARCH64_ABS64     main &lt;---+----------+
+  18:   00001234        .word   0x00001234           &lt;---+
+  1c:   00000000        .word   0x00000000
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000090" class="outline-6">
+<h6 id="org0000090"><span class="section-number-6">1.1.2.9.3.</span> LDR (register)</h6>
+<div class="outline-text-6" id="text-1-1-2-9-3">
+<p>
+<code>LDR &lt;Xt&gt;, [&lt;Xn|SP&gt;, &lt;R&gt;&lt;m&gt;{, &lt;extend&gt; {&lt;amount&gt;}}]</code>
+</p>
+
+<p>
+基址变址寻址
+</p>
+
+<pre class="example" id="org000008f">
+$&gt; cat test.S
+int foo (int64_t * x, int y) {
+    return *(x + y);
+}
+
+$&gt; arm-objdump test.o
+foo:
+    ldr	x0, [x0, w1, sxtw 3]
+    ret
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org0000093" class="outline-6">
+<h6 id="org0000093"><span class="section-number-6">1.1.2.9.4.</span> LDRB/LDRH/LDRSB/LDRSH/LDRSW</h6>
+<div class="outline-text-6" id="text-1-1-2-9-4">
+<p>
+类似于 RISC-V 的 lb, lh, 但 RISC-V 会自动做 sext, aarch64 的 LDRB 会做 zext,
+LDRSB 做 sext.
+</p>
+
+<p>
+并不存在 LDRW, 因为 `ldr Wd &#x2026;` 相当于 LDRW
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000096" class="outline-6">
+<h6 id="org0000096"><span class="section-number-6">1.1.2.9.5.</span> LDXR</h6>
+<div class="outline-text-6" id="text-1-1-2-9-5">
+<p>
+load exclusive register, 类似于 RISC-V 的 lr (load reserved) 指令
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0000099" class="outline-6">
+<h6 id="org0000099"><span class="section-number-6">1.1.2.9.6.</span> LDP</h6>
+</div>
+</div>
+
+<div id="outline-container-org00000ab" class="outline-5">
+<h5 id="org00000ab"><span class="section-number-5">1.1.2.10.</span> STORE</h5>
+<div class="outline-text-5" id="text-1-1-2-10">
+</div>
+<div id="outline-container-org000009f" class="outline-6">
+<h6 id="org000009f"><span class="section-number-6">1.1.2.10.1.</span> STR</h6>
+</div>
+
+<div id="outline-container-org00000a2" class="outline-6">
+<h6 id="org00000a2"><span class="section-number-6">1.1.2.10.2.</span> STRB/STRH</h6>
+</div>
+
+<div id="outline-container-org00000a5" class="outline-6">
+<h6 id="org00000a5"><span class="section-number-6">1.1.2.10.3.</span> STXR</h6>
+<div class="outline-text-6" id="text-1-1-2-10-3">
+<p>
+和 LDXR 对应, 类似于 RISC-V 的 sc (store conditional) 指令
+</p>
+</div>
+</div>
+
+<div id="outline-container-org00000a8" class="outline-6">
+<h6 id="org00000a8"><span class="section-number-6">1.1.2.10.4.</span> STP</h6>
+</div>
+</div>
+
+<div id="outline-container-org00000b5" class="outline-5">
+<h5 id="org00000b5"><span class="section-number-5">1.1.2.11.</span> MOV</h5>
+<div class="outline-text-5" id="text-1-1-2-11">
+<p>
+根据操作数不同, MOV 可能是 ADD, ORR, MOVZ 等的伪指令
+</p>
+</div>
+
+<div id="outline-container-org00000ae" class="outline-6">
+<h6 id="org00000ae"><span class="section-number-6">1.1.2.11.1.</span> MOVZ</h6>
+<div class="outline-text-6" id="text-1-1-2-11-1">
+<p>
+<code>MOVZ &lt;Xd&gt;, #&lt;imm&gt;{, LSL #&lt;shift&gt;}</code>
+</p>
+
+<p>
+`mov X0, #0x12340000` 相当于 `movz X0, #0x1234, lsl#16`
+</p>
+</div>
+</div>
+
+<div id="outline-container-org00000b2" class="outline-6">
+<h6 id="org00000b2"><span class="section-number-6">1.1.2.11.2.</span> MOVK</h6>
+<div class="outline-text-6" id="text-1-1-2-11-2">
+<p>
+MOVe and Keep
+</p>
+
+<p>
+<code>MOVK &lt;Xd&gt;, #&lt;imm&gt;{, LSL #&lt;shift&gt;}</code>
+</p>
+
+<p>
+shift 只能是 0, 16, 32, 48.
+</p>
+
+<p>
+`MOVK X0, #0xab, LSL#16` 会把 X0 的 `16~31` 位设为 0xab, 且 X0 的其它部分保持不变
+</p>
+
+<p>
+通过多个 MOVK 可以加载任意 64 位 imm 到寄存器, 例如
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">movk</span> <span class="org-keyword">X0</span>, 0xaaaa, lsl #48
+<span class="org-function-name">movk</span> <span class="org-keyword">X0</span>, 0xbbbb, lsl #32
+<span class="org-function-name">movk</span> <span class="org-keyword">X0</span>, 0xcccc, lsl #16
+<span class="org-function-name">movk</span> <span class="org-keyword">X0</span>, 0xdddd
+</pre>
+</div>
+
+<p>
+X0 最终为 0xaaaabbbbccccdddd
+</p>
+
+<pre class="example" id="org00000b1">
+$&gt; cat test.c
+
+int64_t foo () {
+    return 0xaaaabbbbccccdddd;
+}
+
+$&gt; arm-objdump -d test.o
+
+0000000000000000 &lt;foo&gt;:
+   0:   d29bbba0        mov     x0, #0xdddd                     // #56797
+   4:   f2b99980        movk    x0, #0xcccc, lsl #16
+   8:   f2d77760        movk    x0, #0xbbbb, lsl #32
+   c:   f2f55540        movk    x0, #0xaaaa, lsl #48
+  10:   d65f03c0        ret
+</pre>
+
+<p>
+RISC-V 的 lui 和 movk 有一点累似
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org00000c4" class="outline-5">
+<h5 id="org00000c4"><span class="section-number-5">1.1.2.12.</span> floating pointer</h5>
+<div class="outline-text-5" id="text-1-1-2-12">
+</div>
+<div id="outline-container-org00000b9" class="outline-6">
+<h6 id="org00000b9"><span class="section-number-6">1.1.2.12.1.</span> arith</h6>
+<div class="outline-text-6" id="text-1-1-2-12-1">
+<ul class="org-ul">
+<li>FADD/FSUB/FMUL/FDIV</li>
+<li>FNEG/FMOV</li>
+<li>FCMP</li>
+<li>FSQRT</li>
+<li>FMAX/FMIN</li>
+<li>FNMUL</li>
+<li>FMADD/FMSUB/FNMADD</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org00000bb" class="outline-6">
+<h6 id="org00000bb"><span class="section-number-6">1.1.2.12.2.</span> FCVT/SCVTF/UCVTF</h6>
+</div>
+
+<div id="outline-container-org00000be" class="outline-6">
+<h6 id="org00000be"><span class="section-number-6">1.1.2.12.3.</span> FCSEL</h6>
+</div>
+
+<div id="outline-container-org00000c1" class="outline-6">
+<h6 id="org00000c1"><span class="section-number-6">1.1.2.12.4.</span> LOAD/STORE</h6>
+<div class="outline-text-6" id="text-1-1-2-12-4">
+<p>
+普通的 LDR/STR 等指令也可以 load/store 浮点数, 只要指定 FPR, 例如 `ldr d0, [sp]`
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org00000c7" class="outline-5">
+<h5 id="org00000c7"><span class="section-number-5">1.1.2.13.</span> SIMD</h5>
+<div class="outline-text-5" id="text-1-1-2-13">
+<p>
+aarch64 的指令有一部分支持 vector, 例如 add. 另外一部分 SIMD 指令则包含在 NEON
+中.
+</p>
+
+<p>
+以 add vector 为例:
+</p>
+
+<p>
+<code>ADD &lt;Vd&gt;.&lt;T&gt;, &lt;Vn&gt;.&lt;T&gt;, &lt;Vm&gt;.&lt;T&gt;</code>
+</p>
+
+<p>
+其中 T 表示 Vd 寄存器中的数据如何解释:
+</p>
+
+<ul class="org-ul">
+<li>8B, 表示使用 Vd 的低 64 bit, 表示 8 个 byte</li>
+<li>16B</li>
+<li>4H, 8H, int16 或 fp16</li>
+<li>2S, 4S, int32 或 float</li>
+<li>2D, int64 或 double</li>
+</ul>
+
+<div class="org-src-container">
+<pre class="src src-asm"># &#20351;&#29992; SIMD &#25191;&#34892;&#20004;&#20010; int64 &#30340;&#21152;&#27861;
+<span class="org-function-name">mov</span> <span class="org-keyword">x0</span>, 1
+<span class="org-function-name">mov</span> <span class="org-keyword">v20.d</span>[0],x0
+<span class="org-function-name">mov</span> <span class="org-keyword">v20.d</span>[1],x0
+<span class="org-function-name">add</span> <span class="org-keyword">v20.2d</span>, v20.2d, v20.2d
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org00000d5" class="outline-5">
+<h5 id="org00000d5"><span class="section-number-5">1.1.2.14.</span> misc</h5>
+<div class="outline-text-5" id="text-1-1-2-14">
+</div>
+<div id="outline-container-org00000ca" class="outline-6">
+<h6 id="org00000ca"><span class="section-number-6">1.1.2.14.1.</span> RET</h6>
+</div>
+
+<div id="outline-container-org00000cd" class="outline-6">
+<h6 id="org00000cd"><span class="section-number-6">1.1.2.14.2.</span> MRS/MSR</h6>
+<div class="outline-text-6" id="text-1-1-2-14-2">
+<p>
+MRS: move from system register to GPR
+</p>
+
+<p>
+MSR: move from GPT to system register
+</p>
+</div>
+</div>
+
+<div id="outline-container-org00000d2" class="outline-6">
+<h6 id="org00000d2"><span class="section-number-6">1.1.2.14.3.</span> PACIBSP/AUTIBSP</h6>
+<div class="outline-text-6" id="text-1-1-2-14-3">
+<p>
+PACIBSP: <b>P</b> ointer <b>A</b> uthentication <b>C</b> ode for <b>I</b> nstruction address using key <b>B</b> and
+<b>SP</b> register
+</p>
+
+<p>
+AUTIBSP: <b>AUT</b> henticate and restore <b>I</b> nstruction address that was encoded with
+key <b>B</b> and <b>SP</b> register
+</p>
+
+<p>
+pacibsp 会使用 lr 低位有效比特/sp/secret register `B` 生成一个 hash, 放在 lr 的冗余高位. autibsp 会使用与 pacibsp 同样的信息验证 lr 高位的 hash 是正确的并去掉
+hash, 恢复原始的 lr. 若验证失败则 lr 会使 ret 时 crash
+</p>
+
+<p>
+这个机制用来保证栈上被篡改的 lr 无法工作
+</p>
+
+<p>
+验证成功的例子:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">main</span>:
+    <span class="org-keyword">pacibsp</span>
+    <span class="org-keyword">autibsp</span>
+    <span class="org-keyword">ret</span>
+</pre>
+</div>
+
+<pre class="example" id="org00000d0">
+Breakpoint 1, main () at test.S:5
+5           pacibsp
+(gdb) p /x $lr
+$1 = 0x400784
+(gdb) ni
+6           autibsp
+(gdb) p /x $lr
+$2 = 0x53000000400784    #  0x53000000 是 pacibsp 生成的 hash
+(gdb) ni
+7           ret
+(gdb) p /x $lr
+$3 = 0x400784            # autibsp 验证 hash 通过后去掉了高位的 hash,
+                         # 恢复了原始的 lr
+(gdb) c
+Continuing.
+[Inferior 1 (process 1) exited with code 01
+</pre>
+
+<p>
+验证失败的例子:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">main</span>:
+    <span class="org-keyword">pacibsp</span>
+    <span class="org-keyword">add</span> sp, sp, #16
+    <span class="org-keyword">autibsp</span>
+    <span class="org-keyword">ret</span>
+</pre>
+</div>
+
+<pre class="example" id="org00000d1">
+Breakpoint 1, main () at test.S:5
+5           pacibsp
+(gdb) p /x $lr
+$1 = 0x400794
+(gdb) ni
+6           add sp, sp, #16
+(gdb) p /x $lr
+$2 = 0x9000000400794
+(gdb) ni
+main () at test.S:7
+7           autibsp
+(gdb) ni
+8           ret
+(gdb) p /x $lr
+$3 = 0x40000000400794
+(gdb) c
+Continuing.
+
+Program received signal SIGSEGV, Segmentation fault.
+0x0040000000400794 in ?? ()
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org00000e6" class="outline-4">
+<h4 id="org00000e6"><span class="section-number-4">1.1.3.</span> demo</h4>
+<div class="outline-text-4" id="text-1-1-3">
+</div>
+<div id="outline-container-org00000dc" class="outline-5">
+<h5 id="org00000dc"><span class="section-number-5">1.1.3.1.</span> hello world</h5>
+<div class="outline-text-5" id="text-1-1-3-1">
+<div class="org-src-container">
+<pre class="src src-asm">    <span class="org-keyword">.global</span> main
+<span class="org-function-name">main</span>:
+    <span class="org-keyword">str</span> x30, [sp, #-8]!
+    <span class="org-keyword">adr</span> x0, hello
+    <span class="org-keyword">bl</span> puts
+    <span class="org-keyword">ldr</span> x30, [sp], #8
+    <span class="org-keyword">ret</span>
+
+    <span class="org-keyword">.section</span> .data
+<span class="org-function-name">hello</span>:
+    <span class="org-keyword">.asciz</span> <span class="org-string">"hello world"</span>
+</pre>
+</div>
+
+<pre class="example" id="org00000db">
+$&gt; aarch64-linux-gnu-gcc test.s -O0 -g -static
+$&gt; qemu-aarch64 ./a.out
+hello world
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org00000e0" class="outline-5">
+<h5 id="org00000e0"><span class="section-number-5">1.1.3.2.</span> argv</h5>
+<div class="outline-text-5" id="text-1-1-3-2">
+<div class="org-src-container">
+<pre class="src src-asm">    <span class="org-keyword">.global</span> main
+<span class="org-function-name">main</span>:
+    <span class="org-keyword">str</span> lr, [sp, #-8]!
+    <span class="org-keyword">stp</span> x19, x20, [sp, #-16]!
+    <span class="org-keyword">mov</span> x19, x0
+    <span class="org-keyword">mov</span> x20, x1
+<span class="org-function-name">1</span>:
+    <span class="org-keyword">subs</span> x19, x19, #1
+    <span class="org-keyword">b.eq</span> .Lend
+    <span class="org-keyword">ldr</span> x0, [x20, #8]!
+    <span class="org-keyword">bl</span> puts
+    <span class="org-keyword">b</span> 1b
+<span class="org-function-name">.Lend</span>:
+    <span class="org-keyword">mov</span> x0, xzr
+    <span class="org-keyword">ldp</span> x19, x20, [sp], #16
+    <span class="org-keyword">ldr</span> lr, [sp], #8
+    <span class="org-keyword">ret</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-asm"># &#19981;&#20351;&#29992; pre-index, post-index, subs &#31561;, &#27169;&#20223; RISC-V &#30340;&#20889;&#27861;
+    <span class="org-keyword">.global</span> main
+<span class="org-function-name">main</span>:
+    <span class="org-keyword">sub</span> sp, sp, 24
+    <span class="org-keyword">str</span> x30, [sp, #16]
+    <span class="org-keyword">str</span> x19, [sp, #8]
+    <span class="org-keyword">str</span> x20, [sp]
+    <span class="org-keyword">mov</span> x19, x0
+    <span class="org-keyword">mov</span> x20, x1
+    <span class="org-keyword">sub</span> x19, x19, #1
+<span class="org-function-name">1</span>:
+    <span class="org-keyword">cbz</span> x19, .Lend
+    <span class="org-keyword">sub</span> x19, x19, #1
+    <span class="org-keyword">add</span> x20, x20, #8
+    <span class="org-keyword">ldr</span> x0, [x20]
+    <span class="org-keyword">bl</span> puts
+    <span class="org-keyword">b</span> 1b
+<span class="org-function-name">.Lend</span>:
+    <span class="org-keyword">mov</span> x0, xzr
+    <span class="org-keyword">ldr</span> x20, [sp]
+    <span class="org-keyword">ldr</span> x19, [sp, #8]
+    <span class="org-keyword">ldr</span> x30, [sp, #16]
+    <span class="org-keyword">add</span> sp, sp, 24
+    <span class="org-keyword">ret</span>
+</pre>
+</div>
+
+<pre class="example" id="org00000df">
+$&gt; aarch64-linux-gnu-gcc test.s -O0 -g -static
+$&gt; qemu-aarch64 ./a.out hello world
+hello
+world
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org00000e3" class="outline-5">
+<h5 id="org00000e3"><span class="section-number-5">1.1.3.3.</span> fib</h5>
+<div class="outline-text-5" id="text-1-1-3-3">
+<div class="org-src-container">
+<pre class="src src-asm">    <span class="org-keyword">.global</span> main
+<span class="org-function-name">fib</span>:
+    <span class="org-keyword">sum</span> .req x20
+    <span class="org-keyword">num</span> .req x19
+    <span class="org-keyword">str</span> lr, [sp, #-8]!
+    <span class="org-keyword">stp</span> num, sum, [sp, #-16]!
+
+    <span class="org-keyword">mov</span> num, x0
+    <span class="org-keyword">mov</span> sum, xzr
+    <span class="org-keyword">mov</span> x0, #1
+    <span class="org-keyword">cmp</span> num, #2
+    <span class="org-keyword">b.lt</span> .Lend
+    # check cache
+    <span class="org-keyword">adr</span> x9, .Lcache
+    <span class="org-keyword">ldr</span> x0, [x9, num, lsl#3]
+    <span class="org-keyword">cbnz</span> x0, .Lend
+
+    <span class="org-keyword">sub</span> x0, num, #1
+    <span class="org-keyword">bl</span> fib
+    <span class="org-keyword">add</span> sum, sum, x0
+    <span class="org-keyword">sub</span> x0, num, #2
+    <span class="org-keyword">bl</span> fib
+    <span class="org-keyword">add</span> sum, sum, x0
+    <span class="org-keyword">mov</span> x0, sum
+
+    # save cache
+    <span class="org-keyword">adr</span> x9, .Lcache
+    <span class="org-keyword">str</span> x0, [x9, num, lsl#3]
+
+<span class="org-function-name">.Lend</span>:
+    <span class="org-keyword">ldp</span> num, sum, [sp], #16
+    <span class="org-keyword">ldr</span> lr, [sp], #8
+    <span class="org-keyword">ret</span>
+
+<span class="org-function-name">main</span>:
+    <span class="org-keyword">.equ</span> max, 9
+    <span class="org-keyword">str</span> lr, [sp, #-8]!
+    <span class="org-keyword">mov</span> x0, max
+    <span class="org-keyword">bl</span> fib
+    <span class="org-keyword">mov</span> x1, x0
+    <span class="org-keyword">adr</span> x0, .Lfmt
+    <span class="org-keyword">bl</span> printf
+    <span class="org-keyword">mov</span> x0, xzr
+    <span class="org-keyword">ldr</span> lr, [sp], #8
+    <span class="org-keyword">ret</span>
+
+    <span class="org-keyword">.section</span> .data
+<span class="org-function-name">.Lfmt</span>:
+    <span class="org-keyword">.asciz</span> <span class="org-string">"%d\n"</span>
+<span class="org-function-name">.Lcache</span>:
+    <span class="org-keyword">.fill</span> max+1, 8, 0
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org00000f8" class="outline-3">
+<h3 id="org00000f8"><span class="section-number-3">1.2.</span> Calling Convention</h3>
+<div class="outline-text-3" id="text-1-2">
+</div>
+<div id="outline-container-org00000ec" class="outline-4">
+<h4 id="org00000ec"><span class="section-number-4">1.2.1.</span> 普通的参数和返回值</h4>
+<div class="outline-text-4" id="text-1-2-1">
+<p>
+参数使用 r0~r7, f0~f7, 多余参数在栈上, 返回值使用 r0, f0
+</p>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdint.h&gt;</span>
+<span class="org-type">int</span> <span class="org-function-name">foo</span>(
+    <span class="org-type">int</span> <span class="org-variable-name">g0</span>, <span class="org-type">int</span> <span class="org-variable-name">g1</span>, <span class="org-type">int64_t</span> <span class="org-variable-name">g2</span>, <span class="org-type">int</span> <span class="org-variable-name">g3</span>, <span class="org-type">int</span> <span class="org-variable-name">g4</span>, <span class="org-type">int</span> <span class="org-variable-name">g5</span>, <span class="org-type">int</span> <span class="org-variable-name">g6</span>, <span class="org-type">int</span> <span class="org-variable-name">g7</span>, <span class="org-type">int</span> <span class="org-variable-name">g8</span>, <span class="org-type">int</span> <span class="org-variable-name">g9</span>,
+    <span class="org-type">float</span> <span class="org-variable-name">f0</span>, <span class="org-type">double</span> <span class="org-variable-name">f1</span>) {
+    <span class="org-keyword">return</span> g9;
+}
+
+<span class="org-type">float</span> <span class="org-function-name">bar</span>(<span class="org-type">float</span> <span class="org-variable-name">x</span>) {
+    <span class="org-keyword">return</span> x;
+}
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-asm"><span class="org-function-name">foo</span>:
+    <span class="org-keyword">sub</span> sp, sp, #48
+    <span class="org-keyword">str</span> w0, [sp, 44]
+    <span class="org-keyword">str</span> w1, [sp, 40]
+    <span class="org-keyword">str</span> x2, [sp, 32]
+    <span class="org-keyword">str</span> w3, [sp, 28]
+    <span class="org-keyword">str</span> w4, [sp, 24]
+    <span class="org-keyword">str</span> w5, [sp, 20]
+    <span class="org-keyword">str</span> w6, [sp, 16]
+    <span class="org-keyword">str</span> w7, [sp, 12]
+    <span class="org-keyword">str</span> s0, [sp, 8]
+    <span class="org-keyword">str</span> d1, [sp]
+    <span class="org-keyword">ldr</span> w0, [sp, 56]            # [sp, 48] &#20026; g8, [sp, 56] &#20026; g9
+    <span class="org-keyword">add</span> sp, sp, 48
+    <span class="org-keyword">ret</span>
+<span class="org-function-name">bar</span>:
+    <span class="org-keyword">sub</span> sp, sp, #16
+    <span class="org-keyword">str</span> s0, [sp, 12]
+    <span class="org-keyword">ldr</span> s0, [sp, 12]
+    <span class="org-keyword">add</span> sp, sp, 16
+    <span class="org-keyword">ret</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org00000ef" class="outline-4">
+<h4 id="org00000ef"><span class="section-number-4">1.2.2.</span> 返回结构体</h4>
+<div class="outline-text-4" id="text-1-2-2">
+<ul class="org-ul">
+<li>较小的结构体使用用 r0/r1 或 f0/f1 返回</li>
+<li>较小的结构体中两个 int 会合并成一个 X 寄存器, 但两个 float 无法合并成一个 D 寄存器</li>
+<li>较小的结构体中如果同时包含 int, float, 会把 float 转换为 int 用 GPR 返回, 而不会混合用 GPR, FPR 返回</li>
+<li>较大的结构体使用 XR (r8) 传入引用</li>
+<li><b>较小</b> 的定义: 可以用最多两个 GPR 或 FPR 表示的结构体</li>
+</ul>
+
+<div class="org-src-container">
+<pre class="src src-c"><span class="org-preprocessor">#include</span> <span class="org-string">&lt;stdint.h&gt;</span>
+<span class="org-keyword">struct</span> <span class="org-type">X</span> {
+    <span class="org-type">double</span> <span class="org-variable-name">a</span>;
+    <span class="org-type">double</span> <span class="org-variable-name">b</span>;
+};
+<span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-function-name">foo0</span>(<span class="org-type">int</span> <span class="org-variable-name">a</span>) {
+    <span class="org-keyword">struct</span> <span class="org-type">X</span> <span class="org-variable-name">x</span> = {1.0, 2.0};
+    <span class="org-keyword">return</span> x;
+}
+
+<span class="org-keyword">struct</span> <span class="org-type">Y</span> {
+    <span class="org-type">int</span> <span class="org-variable-name">a</span>;
+    <span class="org-type">int</span> <span class="org-variable-name">b</span>;
+};
+
+<span class="org-keyword">struct</span> <span class="org-type">Y</span> <span class="org-function-name">foo1</span>(<span class="org-type">int</span> <span class="org-variable-name">a</span>) {
+    <span class="org-keyword">struct</span> <span class="org-type">Y</span> <span class="org-variable-name">y</span> = {1, 2};
+    <span class="org-keyword">return</span> y;
+}
+
+<span class="org-keyword">struct</span> <span class="org-type">Z</span> {
+    <span class="org-type">int</span> <span class="org-variable-name">a</span>;
+    <span class="org-type">int64_t</span> <span class="org-variable-name">b</span>;
+};
+
+<span class="org-keyword">struct</span> <span class="org-type">Z</span> <span class="org-function-name">foo2</span>(<span class="org-type">int</span> <span class="org-variable-name">a</span>) {
+    <span class="org-keyword">struct</span> <span class="org-type">Z</span> <span class="org-variable-name">z</span> = {1, 2};
+    <span class="org-keyword">return</span> z;
+}
+<span class="org-keyword">struct</span> <span class="org-type">K</span> {
+    <span class="org-type">int</span> <span class="org-variable-name">a</span>;
+    <span class="org-type">float</span> <span class="org-variable-name">b</span>;
+};
+
+<span class="org-keyword">struct</span> <span class="org-type">K</span> <span class="org-function-name">foo3</span>(<span class="org-type">int</span> <span class="org-variable-name">a</span>) {
+    <span class="org-keyword">struct</span> <span class="org-type">K</span> <span class="org-variable-name">k</span> = {1, 3.0};
+    <span class="org-keyword">return</span> k;
+}
+
+<span class="org-keyword">struct</span> <span class="org-type">G</span> {
+    <span class="org-type">int64_t</span> <span class="org-variable-name">a</span>;
+    <span class="org-type">int64_t</span> <span class="org-variable-name">b</span>;
+    <span class="org-type">float</span> <span class="org-variable-name">c</span>;
+};
+
+<span class="org-keyword">struct</span> <span class="org-type">G</span> <span class="org-function-name">foo4</span>(<span class="org-type">int</span> <span class="org-variable-name">a</span>) {
+    <span class="org-keyword">struct</span> <span class="org-type">G</span> <span class="org-variable-name">g</span> = {1, 1, 3.0};
+    <span class="org-keyword">return</span> g;
+}
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-asm">    # struct X &#21482;&#26377;&#20004;&#20010; double &#25104;&#21592;, &#20351;&#29992; d0/d1 &#36820;&#22238;
+<span class="org-function-name">foo0</span>:
+    <span class="org-keyword">fmov</span>        d1, 2.0e+0
+    <span class="org-keyword">fmov</span>        d0, 1.0e+0
+    <span class="org-keyword">ret</span>
+    # struct Y &#26377;&#20004;&#20010; int &#25104;&#21592;, &#21512;&#24182;&#25104;&#19968;&#20010; x0 &#36820;&#22238;
+<span class="org-function-name">foo1</span>:
+    <span class="org-keyword">mov</span> x0, 1
+    <span class="org-keyword">movk</span>        x0, 0x2, lsl 32
+    <span class="org-keyword">ret</span>
+    # struct Z &#26377;&#19968;&#20010; int, &#19968;&#20010; int64, &#20351;&#29992; x0/x1 &#36820;&#22238;
+<span class="org-function-name">foo2</span>:
+    <span class="org-keyword">mov</span> x0, 1
+    <span class="org-keyword">mov</span> x1, 2
+    <span class="org-keyword">ret</span>
+    # struct K &#26377;&#19968;&#20010; int, &#19968;&#20010; float, &#21512;&#24182;&#25104; x0 &#36820;&#22238;
+<span class="org-function-name">foo3</span>:
+    <span class="org-keyword">mov</span> x0, 1
+    <span class="org-keyword">movk</span>        x0, 0x4040, lsl 48
+    <span class="org-keyword">ret</span>
+    # struct G &#36229;&#36807;&#20004;&#20010; gpr &#25110; fpr &#33021;&#34920;&#31034;&#30340;&#22823;&#23567;, &#20351;&#29992; X8 &#20256;&#20837;&#24341;&#29992;
+<span class="org-function-name">foo4</span>:
+    <span class="org-keyword">adrp</span>        x0, .LANCHOR0
+    <span class="org-keyword">add</span> x0, x0, :lo12:.LANCHOR0
+    <span class="org-keyword">ldp</span> x2, x3, [x0]
+    <span class="org-keyword">stp</span> x2, x3, [x8]
+    <span class="org-keyword">ldr</span> x0, [x0, 16]
+    <span class="org-keyword">str</span> x0, [x8, 16]
+    <span class="org-keyword">ret</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org00000f2" class="outline-4">
+<h4 id="org00000f2"><span class="section-number-4">1.2.3.</span> 参数为结构体</h4>
+<div class="outline-text-4" id="text-1-2-3">
+<p>
+与返回结构体的情况基本相同, 除了传入结构体的引用会使用 X0/X1/&#x2026;
+</p>
+</div>
+</div>
+
+<div id="outline-container-org00000f5" class="outline-4">
+<h4 id="org00000f5"><span class="section-number-4">1.2.4.</span> 变长参数</h4>
+<div class="outline-text-4" id="text-1-2-4">
+<p>
+caller 会使用 r0~r7, f0~f7 以及 stack 传递参数, 和正常的函数调用一样. 但 callee
+看起来会把所有 GPR/FPR 寄存器保存在栈上不同位置, 然后通过 va_arg 根据参数类型访问栈上的 GPR/FPR 区域
+</p>
+
+<p>
+RISC-V 的处理与 aarch64 不同: 无论参数是否是 float, caller 都只会使用 GPR 传递参数.
+</p>
+
+<p>
+具体需要看一下 <code>__builtin_va_arg</code> 的实现
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0000104" class="outline-3">
+<h3 id="org0000104"><span class="section-number-3">1.3.</span> Assembler</h3>
+<div class="outline-text-3" id="text-1-3">
+</div>
+<div id="outline-container-org0000101" class="outline-4">
+<h4 id="org0000101"><span class="section-number-4">1.3.1.</span> directive and modifier</h4>
+<div class="outline-text-4" id="text-1-3-1">
+</div>
+<div id="outline-container-org00000fb" class="outline-5">
+<h5 id="org00000fb"><span class="section-number-5">1.3.1.1.</span> .req/.set/.equ</h5>
+<div class="outline-text-5" id="text-1-3-1-1">
+<div class="org-src-container">
+<pre class="src src-asm"># .req &#35774;&#32622;&#23492;&#23384;&#22120;&#21035;&#21517;
+<span class="org-function-name">index</span> .req x9
+# .set &#21644; .equ &#30456;&#21516;, &#35774;&#32622;&#20854;&#23427;&#30340;&#21035;&#21517;
+<span class="org-keyword">.set</span> count, 10
+<span class="org-keyword">.equ</span> count, main
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org00000fe" class="outline-5">
+<h5 id="org00000fe"><span class="section-number-5">1.3.1.2.</span> :lo12:/:pghi_21:</h5>
+<div class="outline-text-5" id="text-1-3-1-2">
+<p>
+和 RISC-V 的 %lo, %hi, %pcrel_hi 等功能类似, 例如 `add x0, x0, #:lo12:main`
+</p>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org000010a" class="outline-3">
+<h3 id="org000010a"><span class="section-number-3">1.4.</span> Privileged ISA</h3>
+<div class="outline-text-3" id="text-1-4">
+</div>
+<div id="outline-container-org0000107" class="outline-5">
+<h5 id="org0000107"><span class="section-number-5">1.4.0.1.</span> SVC/HVC/SMC/ERET</h5>
+<div class="outline-text-5" id="text-1-4-0-1">
+<ul class="org-ul">
+<li>SVC: EL0 -&gt; EL1</li>
+<li>HVC: EL1 -&gt; EL2</li>
+<li>SMC: EL1/EL2 -&gt; EL3</li>
+<li>ERET: 返回上一个异常等级</li>
+</ul>
+
+<p>
+和 RISC-V 不同, RISC-V 使用 ecall 更改运行模式, 通过 mret/hret/sret 返回上一个异常等级
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+
+<p class="author">Author: <a href="mailto:sunway@dogdog.run">sunway@dogdog.run</a><br />
+Date: 2022-02-08 Tue 15:30<br />
+Last updated: 2024-09-09 Mon 21:14</p>
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+</div>
+</body>
+</html>
