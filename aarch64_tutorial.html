@@ -152,8 +152,8 @@ sp 而不是 xzr
 <h4 id="org00000d8"><span class="section-number-4">1.1.2.</span> instructions</h4>
 <div class="outline-text-4" id="text-1-1-2">
 </div>
-<div id="outline-container-org00000b8" class="outline-5">
-<h5 id="org00000b8"><span class="section-number-5">1.1.2.1.</span> arith</h5>
+<div id="outline-container-org00000b9" class="outline-5">
+<h5 id="org00000b9"><span class="section-number-5">1.1.2.1.</span> arith</h5>
 <div class="outline-text-5" id="text-1-1-2-1">
 </div>
 <div id="outline-container-org000001a" class="outline-6">
@@ -394,7 +394,7 @@ foo:
 </div>
 
 <p>
-ADR 用于小范围的 pc 相对寻址.
+ADR 用于小范围的 pc 相对寻址, RISC-V 并没有对应的指令
 </p>
 
 <pre class="example" id="org000002f">
@@ -469,7 +469,7 @@ $&gt; arm-objdump -dr test.o
                         4: R_AARCH64_ADD_ABS_LO12_NC    foo
    8:   d65f03c0        ret
 
-$&gt; arm-gcc -O3 -mcmodel=larget -fno-PIC
+$&gt; arm-gcc -O3 -mcmodel=large -fno-PIC
 $&gt; arm-objdump -dr test.o
 
 0000000000000000 &lt;foo&gt;:
@@ -628,12 +628,35 @@ not
 </div>
 </div>
 
-<div id="outline-container-org000004a" class="outline-6">
-<h6 id="org000004a"><span class="section-number-6">1.1.2.5.6.</span> TST</h6>
+<div id="outline-container-org000004b" class="outline-6">
+<h6 id="org000004b"><span class="section-number-6">1.1.2.5.6.</span> TST</h6>
 <div class="outline-text-6" id="text-1-1-2-5-6">
 <p>
 <code>TST &lt;Xn&gt;, #&lt;imm&gt;</code> 即 <code>ANDS XZR, &lt;Xn&gt;, #&lt;imm&gt;</code>
 </p>
+
+<pre class="example" id="org000004a">
+int foo(int x, int y) {
+    if (x &amp; 0x3) {return x;}
+    return y;
+}
+
+int bar(int x, int y) {
+    if (x &amp; 0x5) {return x;}
+    return y;
+}
+
+foo:
+    tst	x0, 3
+    csel	w0, w1, w0, eq
+    ret
+
+bar:
+    mov	w2, 5
+    tst	w0, w2
+    csel	w0, w1, w0, eq
+    ret
+</pre>
 </div>
 </div>
 
@@ -647,6 +670,14 @@ not
 <p>
 Xn 中与 Xm 掩码对应的 bit 被 clear, BIC 不支持 imm
 </p>
+
+<pre class="example" id="org000004e">
+int foo(int x, int y) { return x &amp; ~(y &lt;&lt; 2); }
+
+foo:
+    bic	w0, w0, w1, lsl 2
+    ret
+</pre>
 </div>
 </div>
 
@@ -660,6 +691,14 @@ Xn 中与 Xm 掩码对应的 bit 被 clear, BIC 不支持 imm
 <p>
 Rd = Rn OR NOT shift(Rm, amount)
 </p>
+
+<pre class="example" id="org0000052">
+int foo(int x, int y) { return x | ~(y &gt;&gt; 2); }
+
+foo:
+    orn	w0, w0, w1, asr 2
+    ret
+</pre>
 </div>
 </div>
 </div>
@@ -713,11 +752,23 @@ shift 范围为 0~63
 <p>
 循环右移
 </p>
+
+<pre class="example" id="org0000062">
+uint64_t foo(uint64_t x) { return x &gt;&gt; 8 | x &lt;&lt; 56; }
+
+foo:
+    ror	x0, x0, 8
+    ret
+</pre>
+
+<p>
+上述优化只适用于 unsigned int, 因为 `x&gt;&gt;8` 必须是逻辑右移才与 ror 等价
+</p>
 </div>
 </div>
 
-<div id="outline-container-org0000062" class="outline-6">
-<h6 id="org0000062"><span class="section-number-6">1.1.2.6.5.</span> UBFX/SBFX</h6>
+<div id="outline-container-org0000066" class="outline-6">
+<h6 id="org0000066"><span class="section-number-6">1.1.2.6.5.</span> UBFX/SBFX</h6>
 <div class="outline-text-6" id="text-1-1-2-6-5">
 <p>
 Unsigned BitField eXtract
@@ -778,6 +829,19 @@ SXTH: Signed eXTend Halfword
 
 <div id="outline-container-org000006b" class="outline-6">
 <h6 id="org000006b"><span class="section-number-6">1.1.2.6.8.</span> REV/REV16/REV32</h6>
+<div class="outline-text-6" id="text-1-1-2-6-8">
+<pre class="example" id="org000006f">
+#include &lt;stdint.h&gt;
+uint32_t foo(uint32_t x) {
+    return ((x &gt;&gt; 24) &amp; 0x000000FF) | ((x &gt;&gt; 8) &amp; 0x0000FF00) |
+           ((x &lt;&lt; 8) &amp; 0x00FF0000) | ((x &lt;&lt; 24) &amp; 0xFF000000);
+}
+
+foo:
+    rev	w0, w0
+    ret
+</pre>
+</div>
 </div>
 </div>
 
@@ -825,7 +889,7 @@ B 指令不需要编码 link register, BL 会隐式的使用 LR (X30), 所以指
 </p>
 
 
-<div id="org0000077" class="figure">
+<div id="org000007c" class="figure">
 <p><img src="extra/nzcv.png" alt="nzcv.png" />
 </p>
 </div>
@@ -874,7 +938,7 @@ label 为 imm19, 而 RISC-V 的 blt 类指令的 label 为 imm12, 因为 B.cond 
 ccmov
 </p>
 
-<pre class="example" id="org0000084">
+<pre class="example" id="org0000089">
 $&gt; cat test.c
 
 int foo(int x) {
@@ -1003,7 +1067,7 @@ pre-index 类似于 <code>++i</code>, 即 `Xn=Xn+simm`, 然后再用 Xn 寻址
 </pre>
 </div>
 
-<pre class="example" id="org000008b">
+<pre class="example" id="org0000090">
 Disassembly of section .text:
 
 0000000000000000 &lt;main&gt;:
@@ -1019,8 +1083,8 @@ Disassembly of section .text:
 </div>
 </div>
 
-<div id="outline-container-org0000090" class="outline-6">
-<h6 id="org0000090"><span class="section-number-6">1.1.2.9.3.</span> LDR (register)</h6>
+<div id="outline-container-org0000095" class="outline-6">
+<h6 id="org0000095"><span class="section-number-6">1.1.2.9.3.</span> LDR (register)</h6>
 <div class="outline-text-6" id="text-1-1-2-9-3">
 <p>
 <code>LDR &lt;Xt&gt;, [&lt;Xn|SP&gt;, &lt;R&gt;&lt;m&gt;{, &lt;extend&gt; {&lt;amount&gt;}}]</code>
@@ -1030,7 +1094,7 @@ Disassembly of section .text:
 基址变址寻址
 </p>
 
-<pre class="example" id="org000008f">
+<pre class="example" id="org0000094">
 $&gt; cat test.S
 int foo (int64_t * x, int y) {
     return *(x + y);
@@ -1069,6 +1133,21 @@ load exclusive register, 类似于 RISC-V 的 lr (load reserved) 指令
 
 <div id="outline-container-org0000099" class="outline-6">
 <h6 id="org0000099"><span class="section-number-6">1.1.2.9.6.</span> LDP</h6>
+<div class="outline-text-6" id="text-1-1-2-9-6">
+<pre class="example" id="org000009e">
+int *x;
+int foo() { return x[0] + x[1]; }
+
+foo:
+    adrp	x0, .LANCHOR0
+    ldr	x1, [x0, #:lo12:.LANCHOR0]
+    ldp	w2, w0, [x1]
+    add	w0, w2, w0
+    ret
+x:
+    .zero	8
+</pre>
+</div>
 </div>
 </div>
 
@@ -1154,7 +1233,7 @@ shift 只能是 0, 16, 32, 48.
 X0 最终为 0xaaaabbbbccccdddd
 </p>
 
-<pre class="example" id="org00000b1">
+<pre class="example" id="org00000b7">
 $&gt; cat test.c
 
 int64_t foo () {
@@ -1178,12 +1257,12 @@ RISC-V 的 lui 和 movk 有一点累似
 </div>
 </div>
 
-<div id="outline-container-org00000c4" class="outline-5">
-<h5 id="org00000c4"><span class="section-number-5">1.1.2.12.</span> floating pointer</h5>
+<div id="outline-container-org00000ca" class="outline-5">
+<h5 id="org00000ca"><span class="section-number-5">1.1.2.12.</span> floating pointer</h5>
 <div class="outline-text-5" id="text-1-1-2-12">
 </div>
-<div id="outline-container-org00000b9" class="outline-6">
-<h6 id="org00000b9"><span class="section-number-6">1.1.2.12.1.</span> arith</h6>
+<div id="outline-container-org00000be" class="outline-6">
+<h6 id="org00000be"><span class="section-number-6">1.1.2.12.1.</span> arith</h6>
 <div class="outline-text-6" id="text-1-1-2-12-1">
 <ul class="org-ul">
 <li>FADD/FSUB/FMUL/FDIV</li>
@@ -1201,8 +1280,8 @@ RISC-V 的 lui 和 movk 有一点累似
 <h6 id="org00000bb"><span class="section-number-6">1.1.2.12.2.</span> FCVT/SCVTF/UCVTF</h6>
 </div>
 
-<div id="outline-container-org00000be" class="outline-6">
-<h6 id="org00000be"><span class="section-number-6">1.1.2.12.3.</span> FCSEL</h6>
+<div id="outline-container-org00000c4" class="outline-6">
+<h6 id="org00000c4"><span class="section-number-6">1.1.2.12.3.</span> FCSEL</h6>
 </div>
 
 <div id="outline-container-org00000c1" class="outline-6">
@@ -1258,8 +1337,8 @@ aarch64 的指令有一部分支持 vector, 例如 add. 另外一部分 SIMD 指
 <h5 id="org00000d5"><span class="section-number-5">1.1.2.14.</span> misc</h5>
 <div class="outline-text-5" id="text-1-1-2-14">
 </div>
-<div id="outline-container-org00000ca" class="outline-6">
-<h6 id="org00000ca"><span class="section-number-6">1.1.2.14.1.</span> RET</h6>
+<div id="outline-container-org00000d0" class="outline-6">
+<h6 id="org00000d0"><span class="section-number-6">1.1.2.14.1.</span> RET</h6>
 </div>
 
 <div id="outline-container-org00000cd" class="outline-6">
@@ -1309,7 +1388,7 @@ hash, 恢复原始的 lr. 若验证失败则 lr 会使 ret 时 crash
 </pre>
 </div>
 
-<pre class="example" id="org00000d0">
+<pre class="example" id="org00000d6">
 Breakpoint 1, main () at test.S:5
 5           pacibsp
 (gdb) p /x $lr
@@ -1341,7 +1420,7 @@ Continuing.
 </pre>
 </div>
 
-<pre class="example" id="org00000d1">
+<pre class="example" id="org00000d7">
 Breakpoint 1, main () at test.S:5
 5           pacibsp
 (gdb) p /x $lr
@@ -1390,7 +1469,7 @@ Program received signal SIGSEGV, Segmentation fault.
 </pre>
 </div>
 
-<pre class="example" id="org00000db">
+<pre class="example" id="org00000e1">
 $&gt; aarch64-linux-gnu-gcc test.s -O0 -g -static
 $&gt; qemu-aarch64 ./a.out
 hello world
@@ -1450,7 +1529,7 @@ hello world
 </pre>
 </div>
 
-<pre class="example" id="org00000df">
+<pre class="example" id="org00000e5">
 $&gt; aarch64-linux-gnu-gcc test.s -O0 -g -static
 $&gt; qemu-aarch64 ./a.out hello world
 hello
@@ -1759,7 +1838,7 @@ RISC-V 的处理与 aarch64 不同: 无论参数是否是 float, caller 都只�
 
 <p class="author">Author: <a href="mailto:sunway@dogdog.run">sunway@dogdog.run</a><br />
 Date: 2022-02-08 Tue 15:30<br />
-Last updated: 2024-09-09 Mon 21:14</p>
+Last updated: 2024-09-10 Tue 09:44</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
