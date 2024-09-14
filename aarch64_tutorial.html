@@ -47,7 +47,7 @@
 <li><a href="#org000010e">1.2.1. 普通的参数和返回值</a></li>
 <li><a href="#org0000110">1.2.2. 返回结构体</a></li>
 <li><a href="#org00000f2">1.2.3. 参数为结构体</a></li>
-<li><a href="#org00000f5">1.2.4. 变长参数</a></li>
+<li><a href="#org0000118">1.2.4. 变长参数</a></li>
 </ul>
 </li>
 <li><a href="#org0000104">1.3. Assembler</a>
@@ -105,6 +105,7 @@ w0 对应 x0 的低 32 位, w1 对应 x1 的低 32 位, 并不存对应 x0 的�
 <li>X0~X7 用作函数调用时的参数</li>
 <li>X8 称为 XR, 在函数调用时用来保存要返回的结构体的地址</li>
 <li>X9~X15 是 caller saved</li>
+<li>X16, X17 称为 IP0, IP1, linker 生成的 veneer 会使用它做为 scratch</li>
 <li>X19~X28 是 callee saved</li>
 <li>X29 是 FP</li>
 <li>X30 是 LR</li>
@@ -173,7 +174,7 @@ sp 而不是 xzr
 </p>
 
 <p>
-在函数调用时 d0/s0~d7/s7 用作参数, d8~d31 是 callee-saved register
+在函数调用时 {h,s,d}0~7 用作浮点数参数, 8~15 是 callee-saved register
 </p></li>
 </ul>
 </div>
@@ -183,8 +184,8 @@ sp 而不是 xzr
 <h4 id="org00000d8"><span class="section-number-4">1.1.2.</span> instructions</h4>
 <div class="outline-text-4" id="text-1-1-2">
 </div>
-<div id="outline-container-org00000ca" class="outline-5">
-<h5 id="org00000ca"><span class="section-number-5">1.1.2.1.</span> arith</h5>
+<div id="outline-container-org00000cb" class="outline-5">
+<h5 id="org00000cb"><span class="section-number-5">1.1.2.1.</span> arith</h5>
 <div class="outline-text-5" id="text-1-1-2-1">
 </div>
 <div id="outline-container-org000001f" class="outline-6">
@@ -1030,18 +1031,59 @@ B 指令不需要编码 link register, BL 会隐式的使用 LR (X30), 所以指
  4b8:   91002210        add     x16, x16, #0x8
  4bc:   d61f0220        br      x17
 </pre>
+
+<p>
+RISC-V 中针对函数调用会生成 auipc+jalr, 依赖 <a href="toolchain/linker_relaxation.html#ID-b861e156-7ced-4e25-b047-455b5b075c1e">Relaxation</a> 把它转换为 jal, AArch64
+针对函数调用则会生成 bl (而不是 adrp+blr), 靠 linker 生成 veneer 来处理过远的函数调用
+</p>
+
+<pre class="example" id="org000008a">
+$&gt; cat test.S
+    .text
+    .global main
+main:
+    bl foo
+    ret
+
+    .data
+    .rep 1&lt;&lt;25
+    .dword 0
+    .endr
+foo:
+    ret
+
+$&gt; arm-objdum a.out
+...
+00000000004006d4 &lt;main&gt;:
+  4006d4:       940159d7        bl      456e30 &lt;___veneer&gt;
+  4006d8:       d65f03c0        ret
+  4006dc:       d503201f        nop
+...
+0000000000456e30 &lt;___veneer&gt;:
+  456e30:       900801f0        adrp    x16, 10492000 &lt;__dso_handle+0xfffffc0&gt;
+  456e34:       91012210        add     x16, x16, #0x48
+  456e38:       d61f0200        br      x16
+        ...
+
+Disassembly of section .data:
+
+...
+0000000010492048 &lt;foo&gt;:
+    10492048:   d65f03c0        ret
+    1049204c:   00000000        udf     #0
+</pre>
 </div>
 </div>
 
-<div id="outline-container-org000008e" class="outline-6">
-<h6 id="org000008e"><span class="section-number-6">1.1.2.7.3.</span> B.cond</h6>
+<div id="outline-container-org000008f" class="outline-6">
+<h6 id="org000008f"><span class="section-number-6">1.1.2.7.3.</span> B.cond</h6>
 <div class="outline-text-6" id="text-1-1-2-7-3">
 <p>
 <code>B.&lt;cond&gt; &lt;label&gt;</code>
 </p>
 
 
-<div id="org000008d" class="figure">
+<div id="org000008e" class="figure">
 <p><img src="extra/nzcv.png" alt="nzcv.png" />
 </p>
 </div>
@@ -1079,14 +1121,14 @@ label 为 imm19, 而 RISC-V 的 blt 类指令的 label 为 imm12, 因为 B.cond 
 </div>
 </div>
 
-<div id="outline-container-org000009b" class="outline-5">
-<h5 id="org000009b"><span class="section-number-5">1.1.2.8.</span> CSEL/CINC/CSINC/CSINV/CSNEG/CSET</h5>
+<div id="outline-container-org000009c" class="outline-5">
+<h5 id="org000009c"><span class="section-number-5">1.1.2.8.</span> CSEL/CINC/CSINC/CSINV/CSNEG/CSET</h5>
 <div class="outline-text-5" id="text-1-1-2-8">
 <p>
 <code>CSEL &lt;Xd&gt;, &lt;Xn&gt;, &lt;Xm&gt;, &lt;cond&gt;</code>
 </p>
 
-<pre class="example" id="org000009a">
+<pre class="example" id="org000009b">
 int foo(int x) {
     if (x &gt; 0) {
         return 4;
@@ -1104,12 +1146,12 @@ int foo(int x) {
 </div>
 </div>
 
-<div id="outline-container-org000009c" class="outline-5">
-<h5 id="org000009c"><span class="section-number-5">1.1.2.9.</span> Load</h5>
+<div id="outline-container-org00000b2" class="outline-5">
+<h5 id="org00000b2"><span class="section-number-5">1.1.2.9.</span> Load</h5>
 <div class="outline-text-5" id="text-1-1-2-9">
 </div>
-<div id="outline-container-org000009f" class="outline-6">
-<h6 id="org000009f"><span class="section-number-6">1.1.2.9.1.</span> LDR(immediate)</h6>
+<div id="outline-container-org00000a0" class="outline-6">
+<h6 id="org00000a0"><span class="section-number-6">1.1.2.9.1.</span> LDR(immediate)</h6>
 <div class="outline-text-6" id="text-1-1-2-9-1">
 <ul class="org-ul">
 <li><p>
@@ -1177,7 +1219,7 @@ pre-index 类似于 <code>++i</code>, 即 `Xn=Xn+simm`, 然后再用 Xn 寻址
 </p></li>
 </ul>
 
-<pre class="example" id="org000009e">
+<pre class="example" id="org000009f">
 void foo(int a) { bar(); }
 
 foo:
@@ -1194,8 +1236,8 @@ foo:
 </div>
 </div>
 
-<div id="outline-container-org00000a3" class="outline-6">
-<h6 id="org00000a3"><span class="section-number-6">1.1.2.9.2.</span> LDR(literal)</h6>
+<div id="outline-container-org00000a4" class="outline-6">
+<h6 id="org00000a4"><span class="section-number-6">1.1.2.9.2.</span> LDR(literal)</h6>
 <div class="outline-text-6" id="text-1-1-2-9-2">
 <p>
 <code>LDR &lt;Xt&gt;, &lt;label&gt;</code>
@@ -1226,7 +1268,7 @@ foo:
 </pre>
 </div>
 
-<pre class="example" id="org00000a2">
+<pre class="example" id="org00000a3">
 Disassembly of section .text:
 
 0000000000000000 &lt;main&gt;:
@@ -1242,8 +1284,8 @@ Disassembly of section .text:
 </div>
 </div>
 
-<div id="outline-container-org00000a7" class="outline-6">
-<h6 id="org00000a7"><span class="section-number-6">1.1.2.9.3.</span> LDR (register)</h6>
+<div id="outline-container-org00000a8" class="outline-6">
+<h6 id="org00000a8"><span class="section-number-6">1.1.2.9.3.</span> LDR (register)</h6>
 <div class="outline-text-6" id="text-1-1-2-9-3">
 <p>
 <code>LDR &lt;Xt&gt;, [&lt;Xn|SP&gt;, &lt;R&gt;&lt;m&gt;{, &lt;extend&gt; {&lt;amount&gt;}}]</code>
@@ -1253,7 +1295,7 @@ Disassembly of section .text:
 基址变址寻址
 </p>
 
-<pre class="example" id="org00000a6">
+<pre class="example" id="org00000a7">
 int foo (int64_t * x, int y) {
     return *(x + y);
 }
@@ -1279,10 +1321,10 @@ LDRSB 做 sext.
 </div>
 </div>
 
-<div id="outline-container-org00000a4" class="outline-6">
-<h6 id="org00000a4"><span class="section-number-6">1.1.2.9.5.</span> LDP</h6>
+<div id="outline-container-org00000af" class="outline-6">
+<h6 id="org00000af"><span class="section-number-6">1.1.2.9.5.</span> LDP</h6>
 <div class="outline-text-6" id="text-1-1-2-9-5">
-<pre class="example" id="org00000ad">
+<pre class="example" id="org00000ae">
 int *x;
 int foo() { return x[0] + x[1]; }
 
@@ -1324,8 +1366,8 @@ x:
 </p>
 </div>
 
-<div id="outline-container-org00000ae" class="outline-6">
-<h6 id="org00000ae"><span class="section-number-6">1.1.2.11.1.</span> MOVZ</h6>
+<div id="outline-container-org00000c1" class="outline-6">
+<h6 id="org00000c1"><span class="section-number-6">1.1.2.11.1.</span> MOVZ</h6>
 <div class="outline-text-6" id="text-1-1-2-11-1">
 <p>
 <code>MOVZ &lt;Xd&gt;, #&lt;imm&gt;{, LSL #&lt;shift&gt;}</code>
@@ -1337,8 +1379,8 @@ x:
 </div>
 </div>
 
-<div id="outline-container-org00000b2" class="outline-6">
-<h6 id="org00000b2"><span class="section-number-6">1.1.2.11.2.</span> MOVK</h6>
+<div id="outline-container-org00000c5" class="outline-6">
+<h6 id="org00000c5"><span class="section-number-6">1.1.2.11.2.</span> MOVK</h6>
 <div class="outline-text-6" id="text-1-1-2-11-2">
 <p>
 MOVe and Keep
@@ -1372,7 +1414,7 @@ shift 只能是 0, 16, 32, 48.
 X0 最终为 0xaaaabbbbccccdddd
 </p>
 
-<pre class="example" id="org00000c3">
+<pre class="example" id="org00000c4">
 int64_t foo () {
     return 0xaaaabbbbccccdddd;
 }
@@ -1396,8 +1438,8 @@ RISC-V 的 lui 和 movk 有一点累似
 <h5 id="org00000dc"><span class="section-number-5">1.1.2.12.</span> Floating Point</h5>
 <div class="outline-text-5" id="text-1-1-2-12">
 </div>
-<div id="outline-container-org00000cb" class="outline-6">
-<h6 id="org00000cb"><span class="section-number-6">1.1.2.12.1.</span> arith</h6>
+<div id="outline-container-org00000cc" class="outline-6">
+<h6 id="org00000cc"><span class="section-number-6">1.1.2.12.1.</span> arith</h6>
 <div class="outline-text-6" id="text-1-1-2-12-1">
 <ul class="org-ul">
 <li>FADD/FSUB/FMUL/FDIV</li>
@@ -1482,8 +1524,8 @@ int 转换为 float, 类似于 RISC-V 的 fcvt.{s,d}.{w,l}
 <h6 id="org00000d7"><span class="section-number-6">1.1.2.12.6.</span> FCSEL</h6>
 </div>
 
-<div id="outline-container-org00000c1" class="outline-6">
-<h6 id="org00000c1"><span class="section-number-6">1.1.2.12.7.</span> LOAD/STORE</h6>
+<div id="outline-container-org00000dd" class="outline-6">
+<h6 id="org00000dd"><span class="section-number-6">1.1.2.12.7.</span> LOAD/STORE</h6>
 <div class="outline-text-6" id="text-1-1-2-12-7">
 <p>
 普通的 LDR/STR 等指令也可以 load/store 浮点数, 只要指定 FPR, 例如 `ldr d0, [sp]`
@@ -1579,7 +1621,7 @@ hash, 恢复原始的 lr. 若验证失败则 lr 会使 ret 时 crash
 </pre>
 </div>
 
-<pre class="example" id="org00000eb">
+<pre class="example" id="org00000ec">
 Breakpoint 1, main () at test.S:5
 5           pacibsp
 (gdb) p /x $lr
@@ -1611,7 +1653,7 @@ Continuing.
 </pre>
 </div>
 
-<pre class="example" id="org00000ec">
+<pre class="example" id="org00000ed">
 Breakpoint 1, main () at test.S:5
 5           pacibsp
 (gdb) p /x $lr
@@ -1651,8 +1693,8 @@ Program received signal SIGSEGV, Segmentation fault.
 </div>
 </div>
 
-<div id="outline-container-org00000f4" class="outline-6">
-<h6 id="org00000f4"><span class="section-number-6">1.1.2.14.5.</span> LDXR/STXR/LDAXR/STLXR</h6>
+<div id="outline-container-org00000f5" class="outline-6">
+<h6 id="org00000f5"><span class="section-number-6">1.1.2.14.5.</span> LDXR/STXR/LDAXR/STLXR</h6>
 <div class="outline-text-6" id="text-1-1-2-14-5">
 <p>
 load/store exclusive register, 类似于 RISC-V 的 <a href="riscv/riscv_tutorial.html#ID-8c466f7a-a7ee-4c3b-b473-f939126eb191">LR/SC</a>
@@ -1715,7 +1757,7 @@ LDAXR 类似于 RISC-V 的 lr.aq, STLXR 类似于 RISC-V 的 sc.rl, 即包含隐
 </pre>
 </div>
 
-<pre class="example" id="org00000fd">
+<pre class="example" id="org00000fe">
 $&gt; aarch64-linux-gnu-gcc test.s -O0 -g -static
 $&gt; qemu-aarch64 ./a.out
 hello world
@@ -1775,7 +1817,7 @@ hello world
 </pre>
 </div>
 
-<pre class="example" id="org0000101">
+<pre class="example" id="org0000102">
 $&gt; aarch64-linux-gnu-gcc test.s -O0 -g -static
 $&gt; qemu-aarch64 ./a.out hello world
 hello
@@ -2006,8 +2048,8 @@ world
 </div>
 </div>
 
-<div id="outline-container-org00000f5" class="outline-4">
-<h4 id="org00000f5"><span class="section-number-4">1.2.4.</span> 变长参数</h4>
+<div id="outline-container-org0000118" class="outline-4">
+<h4 id="org0000118"><span class="section-number-4">1.2.4.</span> 变长参数</h4>
 <div class="outline-text-4" id="text-1-2-4">
 <p>
 caller 会使用 r0~r7, f0~f7 以及 stack 传递参数, 和正常的函数调用一样. 但 callee
@@ -2097,6 +2139,7 @@ RISC-V 的处理与 aarch64 不同: 无论参数是否是 float, caller 都只�
 <li>aarch64 支持 madd, adc 等指令</li>
 <li>aarch64 支持 movk, movz 等指令</li>
 <li>aarch64 支持 fp16</li>
+<li>aarch64 不支持 thumb 指令, 但 RISC-V 支持 c 扩展</li>
 </ul>
 </div>
 </div>
@@ -2106,7 +2149,7 @@ RISC-V 的处理与 aarch64 不同: 无论参数是否是 float, caller 都只�
 
 <p class="author">Author: <a href="mailto:sunway@dogdog.run">sunway@dogdog.run</a><br />
 Date: 2022-02-08 Tue 15:30<br />
-Last updated: 2024-09-14 Sat 16:45</p>
+Last updated: 2024-09-14 Sat 19:45</p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="知识共享许可协议" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
 </div>
 </body>
